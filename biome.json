@@ -55,6 +55,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/broker/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": "off"
+          }
+        }
+      }
     }
   ],
   "files": {
