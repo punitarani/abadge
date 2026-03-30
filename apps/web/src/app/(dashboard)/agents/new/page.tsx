@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { extractApiError } from "@/lib/api-client";
 
 export default function NewAgentPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function NewAgentPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${apiUrl}/api/agents`, {
+      const res = await fetch(`${apiUrl}/v1/agents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -35,7 +36,7 @@ export default function NewAgentPage() {
         setApiKey(data.apiKey);
       } else {
         const data = await res.json().catch(() => ({}));
-        setError((data as { error?: string }).error ?? "Failed to register agent");
+        setError(extractApiError(data, "Failed to register agent"));
       }
     } catch {
       setError("An unexpected error occurred");

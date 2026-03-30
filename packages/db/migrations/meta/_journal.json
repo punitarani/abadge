@@ -8,6 +8,13 @@
       "when": 1774848206768,
       "tag": "0000_daffy_magneto",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774934400000,
+      "tag": "0001_v2_credential_firewall",
+      "breakpoints": true
     }
   ]
 }

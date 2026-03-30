@@ -23,7 +23,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
     },
-    trustedOrigins: ["http://localhost:3000"],
+    trustedOrigins: ["http://localhost:3000", "http://localhost:3001"],
     plugins: [
       organization({
         allowUserToCreateOrganization: true,

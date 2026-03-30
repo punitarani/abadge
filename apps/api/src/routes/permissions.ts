@@ -28,6 +28,9 @@ export const permissionRoutes = new Hono<Env>()
         credentialId: agentCredentialPermissions.credentialId,
         grantedAt: agentCredentialPermissions.grantedAt,
         grantedBy: agentCredentialPermissions.grantedBy,
+        policyId: agentCredentialPermissions.policyId,
+        allowedDeliveryModes: agentCredentialPermissions.allowedDeliveryModes,
+        expiresAt: agentCredentialPermissions.expiresAt,
         agentName: apikey.name,
         agentEnabled: apikey.enabled,
       })
@@ -71,6 +74,9 @@ export const permissionRoutes = new Hono<Env>()
       agentId: body.agentId,
       credentialId: body.credentialId,
       grantedBy: userId,
+      policyId: body.policyId ?? null,
+      allowedDeliveryModes: body.allowedDeliveryModes ?? null,
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
     });
 
     return c.json({ success: true }, 201);

@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  credentialTypes,
+  deliveryModes,
+  environments,
+  ownerScopes,
+  sensitivities,
+} from "@abadge/core";
 import { clientEnv } from "@abadge/env/client";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -23,12 +30,30 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildCredentialBody,
+  type CredentialFormState,
+  deliveryModeLabels,
+  environmentStyles,
+  sensitivityVariants,
+  typeLabels,
+} from "@/lib/credential-ui";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface Credential {
   id: string;
   name: string;
   type: string;
+  environment: string | null;
+  sensitivity: string | null;
+  ownerScope: string | null;
+  service: string | null;
+  provider: string | null;
+  project: string | null;
+  tags: string[] | null;
+  allowedDeliveryModes: string[] | null;
+  allowedDestinations: string[] | null;
+  policies: { id: string; name: string }[] | null;
   metadata: Record<string, string> | null;
   createdAt: string;
   updatedAt: string;
@@ -49,17 +74,7 @@ interface AgentEntry {
   enabled: boolean | null;
 }
 
-const credentialTypes = ["api_key", "login", "token", "json_blob", "pii", "other"] as const;
-const typeLabels: Record<string, string> = {
-  api_key: "API Key",
-  login: "Login",
-  token: "Token",
-  json_blob: "JSON",
-  pii: "PII",
-  other: "Other",
-};
-
-export default function CredentialDetailPage() {
+export default function CredentialDetailPage(): React.ReactElement {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -68,7 +83,21 @@ export default function CredentialDetailPage() {
   const [permissions, setPermissions] = useState<PermissionEntry[]>([]);
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "", value: "", metadata: "" });
+  const [form, setForm] = useState<CredentialFormState>({
+    name: "",
+    type: "",
+    value: "",
+    ownerScope: "user",
+    environment: "",
+    service: "",
+    provider: "",
+    project: "",
+    sensitivity: "medium",
+    allowedDeliveryModes: [],
+    allowedDestinations: "",
+    tags: "",
+    metadata: "",
+  });
   const [selectedAgent, setSelectedAgent] = useState("");
   const [saving, setSaving] = useState(false);
   const [granting, setGranting] = useState(false);
@@ -78,19 +107,29 @@ export default function CredentialDetailPage() {
 
   const fetchData = useCallback(async () => {
     const [credRes, permRes, agentsRes] = await Promise.all([
-      fetch(`${apiUrl}/api/credentials/${id}`, { credentials: "include" }),
-      fetch(`${apiUrl}/api/permissions/credential/${id}`, { credentials: "include" }),
-      fetch(`${apiUrl}/api/agents`, { credentials: "include" }),
+      fetch(`${apiUrl}/v1/credentials/${id}`, { credentials: "include" }),
+      fetch(`${apiUrl}/v1/permissions/credential/${id}`, { credentials: "include" }),
+      fetch(`${apiUrl}/v1/agents`, { credentials: "include" }),
     ]);
 
     if (credRes.ok) {
       const data = await credRes.json();
-      setCredential(data.credential);
+      const cred = data.credential as Credential;
+      setCredential(cred);
       setForm({
-        name: data.credential.name,
-        type: data.credential.type,
+        name: cred.name,
+        type: cred.type,
         value: "",
-        metadata: data.credential.metadata ? JSON.stringify(data.credential.metadata) : "",
+        ownerScope: cred.ownerScope ?? "user",
+        environment: cred.environment ?? "",
+        service: cred.service ?? "",
+        provider: cred.provider ?? "",
+        project: cred.project ?? "",
+        sensitivity: cred.sensitivity ?? "medium",
+        allowedDeliveryModes: cred.allowedDeliveryModes ?? [...deliveryModes],
+        allowedDestinations: cred.allowedDestinations?.join(", ") ?? "",
+        tags: cred.tags?.join(", ") ?? "",
+        metadata: cred.metadata ? JSON.stringify(cred.metadata) : "",
       });
     }
     if (permRes.ok) {
@@ -107,30 +146,32 @@ export default function CredentialDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  async function handleUpdate(e: React.FormEvent) {
+  function toggleDeliveryMode(mode: string): void {
+    setForm((prev) => ({
+      ...prev,
+      allowedDeliveryModes: prev.allowedDeliveryModes.includes(mode)
+        ? prev.allowedDeliveryModes.filter((m) => m !== mode)
+        : [...prev.allowedDeliveryModes, mode],
+    }));
+  }
+
+  async function handleUpdate(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setSaving(true);
     setError("");
     try {
-      const body: Record<string, unknown> = {};
-      if (form.name !== credential?.name) body.name = form.name;
-      if (form.type !== credential?.type) body.type = form.type;
-      if (form.value) body.value = form.value;
-      if (form.metadata.trim()) {
-        try {
-          body.metadata = JSON.parse(form.metadata);
-        } catch {
-          setError("Invalid JSON in metadata field");
-          setSaving(false);
-          return;
-        }
+      const result = buildCredentialBody(form, credential);
+      if (!result.ok) {
+        setError(result.error);
+        setSaving(false);
+        return;
       }
 
-      const res = await fetch(`${apiUrl}/api/credentials/${id}`, {
+      const res = await fetch(`${apiUrl}/v1/credentials/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body: JSON.stringify(result.body),
       });
       if (res.ok) {
         setEditing(false);
@@ -145,11 +186,11 @@ export default function CredentialDetailPage() {
     }
   }
 
-  async function handleGrant() {
+  async function handleGrant(): Promise<void> {
     if (!selectedAgent) return;
     setGranting(true);
     try {
-      await fetch(`${apiUrl}/api/permissions/grant`, {
+      await fetch(`${apiUrl}/v1/permissions/grant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -162,8 +203,8 @@ export default function CredentialDetailPage() {
     }
   }
 
-  async function handleRevoke(agentId: string) {
-    await fetch(`${apiUrl}/api/permissions/revoke`, {
+  async function handleRevoke(agentId: string): Promise<void> {
+    await fetch(`${apiUrl}/v1/permissions/revoke`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -201,6 +242,92 @@ export default function CredentialDetailPage() {
         </div>
       </div>
 
+      <div className="border border-border rounded-lg p-5 space-y-4">
+        <div className="text-sm font-semibold">Details</div>
+
+        <div className="flex flex-wrap gap-2">
+          {credential.environment && (
+            <Badge variant="outline" className={environmentStyles[credential.environment] ?? ""}>
+              {credential.environment}
+            </Badge>
+          )}
+          {credential.sensitivity && (
+            <Badge variant={sensitivityVariants[credential.sensitivity]?.variant ?? "default"}>
+              {credential.sensitivity}
+            </Badge>
+          )}
+          {credential.ownerScope && <Badge variant="outline">{credential.ownerScope}</Badge>}
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="text-muted-foreground">Service</div>
+            <div className="font-medium">{credential.service ?? "\u2014"}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Provider</div>
+            <div className="font-medium">{credential.provider ?? "\u2014"}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Project</div>
+            <div className="font-medium">{credential.project ?? "\u2014"}</div>
+          </div>
+        </div>
+
+        {credential.tags && credential.tags.length > 0 && (
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Tags</div>
+            <div className="flex flex-wrap gap-1">
+              {credential.tags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {credential.allowedDeliveryModes && credential.allowedDeliveryModes.length > 0 && (
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Allowed delivery modes</div>
+            <div className="flex flex-wrap gap-1">
+              {credential.allowedDeliveryModes.map((mode) => (
+                <Badge key={mode} variant="outline" className="text-xs">
+                  {deliveryModeLabels[mode] ?? mode}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {credential.allowedDestinations && credential.allowedDestinations.length > 0 && (
+          <div>
+            <div className="text-sm text-muted-foreground mb-1">Allowed destinations</div>
+            <div className="flex flex-wrap gap-1">
+              {credential.allowedDestinations.map((dest) => (
+                <Badge key={dest} variant="outline" className="text-xs">
+                  {dest}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {credential.policies && credential.policies.length > 0 && (
+        <div className="border border-border rounded-lg p-5 space-y-3">
+          <div className="text-sm font-semibold">Policies</div>
+          <div className="flex flex-wrap gap-1">
+            {credential.policies.map((policy) => (
+              <Badge key={policy.id} variant="outline">
+                {policy.name}
+              </Badge>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Manage policies in the Policies page</p>
+        </div>
+      )}
+
       {editing && (
         <div className="border border-border rounded-lg p-5">
           <div className="text-sm font-semibold mb-4">Edit credential</div>
@@ -235,6 +362,7 @@ export default function CredentialDetailPage() {
                 </Select>
               </div>
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="edit-value">New value (leave blank to keep current)</Label>
               <Textarea
@@ -244,14 +372,141 @@ export default function CredentialDetailPage() {
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
               />
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-owner-scope">Owner scope</Label>
+                <Select
+                  value={form.ownerScope}
+                  onValueChange={(v) => setForm({ ...form, ownerScope: v })}
+                >
+                  <SelectTrigger id="edit-owner-scope">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ownerScopes.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-environment">Environment</Label>
+                <Select
+                  value={form.environment}
+                  onValueChange={(v) => setForm({ ...form, environment: v })}
+                >
+                  <SelectTrigger id="edit-environment">
+                    <SelectValue placeholder="Optional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {environments.map((env) => (
+                      <SelectItem key={env} value={env}>
+                        {env}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-sensitivity">Sensitivity</Label>
+                <Select
+                  value={form.sensitivity}
+                  onValueChange={(v) => setForm({ ...form, sensitivity: v })}
+                >
+                  <SelectTrigger id="edit-sensitivity">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sensitivities.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-service">Service</Label>
+                <Input
+                  id="edit-service"
+                  placeholder="e.g., github, aws, stripe"
+                  value={form.service}
+                  onChange={(e) => setForm({ ...form, service: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-provider">Provider</Label>
+                <Input
+                  id="edit-provider"
+                  placeholder="Optional"
+                  value={form.provider}
+                  onChange={(e) => setForm({ ...form, provider: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-project">Project</Label>
+                <Input
+                  id="edit-project"
+                  placeholder="Optional"
+                  value={form.project}
+                  onChange={(e) => setForm({ ...form, project: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Allowed delivery modes</Label>
+              <div className="flex flex-wrap gap-3">
+                {deliveryModes.map((mode) => (
+                  <label key={mode} className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.allowedDeliveryModes.includes(mode)}
+                      onChange={() => toggleDeliveryMode(mode)}
+                      className="rounded border-input"
+                    />
+                    {deliveryModeLabels[mode]}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-destinations">Allowed destinations (comma-separated)</Label>
+              <Input
+                id="edit-destinations"
+                placeholder="Optional"
+                value={form.allowedDestinations}
+                onChange={(e) => setForm({ ...form, allowedDestinations: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-tags">Tags (comma-separated)</Label>
+              <Input
+                id="edit-tags"
+                placeholder="e.g., production, deploy, ci"
+                value={form.tags}
+                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+              />
+            </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="edit-metadata">Metadata (JSON)</Label>
-              <Input
+              <Textarea
                 id="edit-metadata"
                 value={form.metadata}
                 onChange={(e) => setForm({ ...form, metadata: e.target.value })}
+                className="min-h-[60px]"
               />
             </div>
+
             <Button type="submit" size="sm" disabled={saving}>
               {saving ? "Saving..." : "Save changes"}
             </Button>

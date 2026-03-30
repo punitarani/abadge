@@ -6,9 +6,13 @@ import { getConnectionString, getDb } from "./lib/db";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { accessRoutes } from "./routes/access";
 import { agentRoutes } from "./routes/agents";
+import { approvalRoutes } from "./routes/approvals";
 import { auditRoutes } from "./routes/audit";
+import { connectorRoutes } from "./routes/connectors";
 import { credentialRoutes } from "./routes/credentials";
 import { permissionRoutes } from "./routes/permissions";
+import { policyRoutes } from "./routes/policies";
+import { sessionRoutes } from "./routes/sessions";
 import type { Bindings } from "./types";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -18,7 +22,7 @@ app.use("*", secureHeaders());
 app.use(
   "*",
   cors({
-    origin: ["https://abadge.dev", "http://localhost:3000"],
+    origin: ["https://abadge.dev", "http://localhost:3000", "http://localhost:3001"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -27,9 +31,9 @@ app.use(
 
 // Rate limit auth endpoints more aggressively
 app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
-app.use("/api/v1/*", rateLimitMiddleware(100, 60_000));
+app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 
-// Better Auth catch-all route
+// Better Auth catch-all route — must stay at /api/auth/* to match Better Auth's baseURL config
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
   const auth = createAuth(db, {
@@ -39,14 +43,16 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   return auth.handler(c.req.raw);
 });
 
-// Dashboard routes (session-authenticated) — registered individually to avoid deep type chains
-app.route("/api/credentials", credentialRoutes);
-app.route("/api/agents", agentRoutes);
-app.route("/api/permissions", permissionRoutes);
-app.route("/api/audit", auditRoutes);
-
-// Agent-facing route (API key-authenticated)
-app.route("/api/v1", accessRoutes);
+// v1 API routes — registered individually to avoid deep type chains
+app.route("/v1/credentials", credentialRoutes);
+app.route("/v1/agents", agentRoutes);
+app.route("/v1/permissions", permissionRoutes);
+app.route("/v1/audit", auditRoutes);
+app.route("/v1/policies", policyRoutes);
+app.route("/v1/approvals", approvalRoutes);
+app.route("/v1/connectors", connectorRoutes);
+app.route("/v1", accessRoutes);
+app.route("/v1/sessions", sessionRoutes);
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok" }));
@@ -57,5 +63,9 @@ export type AgentRoutesType = typeof agentRoutes;
 export type PermissionRoutesType = typeof permissionRoutes;
 export type AuditRoutesType = typeof auditRoutes;
 export type AccessRoutesType = typeof accessRoutes;
+export type PolicyRoutesType = typeof policyRoutes;
+export type ApprovalRoutesType = typeof approvalRoutes;
+export type ConnectorRoutesType = typeof connectorRoutes;
+export type SessionRoutesType = typeof sessionRoutes;
 
 export default app;

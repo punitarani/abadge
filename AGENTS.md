@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This repo builds abadge: a minimal credential vault for user-controlled agent access. Keep the codebase small, explicit, and security-first.
+This repo builds abadge: an agent credential firewall. Users store secrets, define access policies, and control how agents consume credentials — with a full audit trail. Keep the codebase small, explicit, and security-first.
 
 ## Prime directives
 
-1. Preserve the product model: users store secrets, register agents, grant access per credential, and inspect a full audit trail.
+1. Preserve the product model: users store secrets, register agents, grant access per credential with policies, approve sensitive requests, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
-3. Preserve the security model: encrypted credentials, hashed agent API keys, explicit permission checks, immutable access logging.
+3. Preserve the security model: encrypted credentials, hashed agent API keys, explicit permission checks, policy evaluation, delivery mode enforcement, immutable access logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
 5. When docs and code disagree, code wins. Then fix the docs.
 
@@ -29,13 +29,17 @@ This repo builds abadge: a minimal credential vault for user-controlled agent ac
 
 ```text
 apps/
-  api/   API worker
-  web/   dashboard
+  api/      API worker (control plane)
+  web/      dashboard
 packages/
-  auth/  Better Auth setup
-  config/ shared tsconfig
-  core/  shared types, zod schemas, constants
-  db/    schema and db client
+  auth/     Better Auth setup
+  broker/   local execution engine (env inject, file mount, session management)
+  cli/      CLI tool (`abadge` command)
+  config/   shared tsconfig
+  core/     shared types, zod schemas, constants
+  db/       schema and db client
+  env/      environment validation
+  mcp/      MCP server for AI agents
 ```
 
 ## What each layer owns
@@ -50,6 +54,9 @@ Owns:
 * encryption/decryption
 * agent auth
 * permission enforcement
+* policy evaluation
+* approval workflows
+* broker session management
 * audit log writes
 
 Does not own:
@@ -66,6 +73,7 @@ Owns:
 * auth screens
 * forms and navigation
 * rendering one-time agent keys
+* policy and approval management views
 * audit views
 
 Does not own:
@@ -98,6 +106,56 @@ Owns:
 
 * Better Auth server/client wiring
 
+### packages/env
+
+Owns:
+
+* environment variable validation schemas
+* shared env access helpers
+
+### packages/broker
+
+Owns:
+
+* API client for abadge control plane
+* subprocess secret injection (`abadge run`)
+* temp file mounting (`abadge mount`)
+* broker session lifecycle
+* connector interface and implementations (native, 1Password, AWS)
+
+Does not own:
+
+* policy evaluation (that's in the API)
+* audit log storage (that's in the API)
+* UI
+
+### packages/cli
+
+Owns:
+
+* command parsing and routing
+* user config (~/.abadge/config.json)
+* terminal output formatting
+* interactive login flow
+
+Does not own:
+
+* secret execution (delegates to broker)
+* policy decisions (delegates to API)
+
+### packages/mcp
+
+Owns:
+
+* MCP server setup and tool registration
+* tool-specific input/output schemas
+* policy-aware tool descriptions
+
+Does not own:
+
+* secret execution (delegates to broker)
+* raw secret exposure to LLM (by design)
+
 ## Non-negotiable invariants
 
 * No plaintext credential storage.
@@ -108,13 +166,22 @@ Owns:
 * No wildcard permissions for v1.
 * No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed.
 * No raw SQL unless Drizzle cannot express the query and the reason is documented inline.
+* Default delivery mode is NOT reveal.
+* LLM agents should not receive raw secrets by default.
+* Every delivery mode change must be audited.
+* Broker sessions must have TTL (max 24 hours for v1).
+* Connector configs must be encrypted at rest.
 
 ## Data model summary
 
 * `user` owns `credentials`
-* `user` owns `agents`
-* `agent_credential_permissions` is the only grant table
-* `access_log` is append-only
+* `user` owns `agents` (apikeys)
+* `agent_credential_permissions` is the grant table (with policy attachment)
+* `policies` define access rules per credential
+* `approvals` track pending access requests
+* `broker_sessions` provide short-lived scoped access tokens
+* `connectors` configure external vault integrations
+* `access_log` is append-only (includes delivery mode, outcome, session tracking)
 
 ## Main flows to protect
 
@@ -139,6 +206,32 @@ Owns:
 * verify explicit permission
 * decrypt only after authorization
 * append audit event for allow/deny
+
+### Policy-aware access
+
+* authenticate (session token or API key)
+* resolve credential
+* verify permission
+* evaluate attached policies
+* if approval required, create approval and return 202
+* enforce delivery mode constraints
+* decrypt only if deliveryMode is "reveal"
+* log comprehensive audit event
+
+### Broker session flow
+
+* agent authenticates with API key
+* creates short-lived session (TTL, scoped)
+* session token used for subsequent requests
+* session expires or is revoked
+
+### Local broker injection
+
+* CLI/MCP requests secret access
+* broker gets authorized access from API
+* injects into subprocess env or temp file
+* secret never persisted to disk long-term
+* LLM never sees raw secret
 
 ## Working rules
 
@@ -178,6 +271,8 @@ bun run lint:fix
 bun run format
 bun run typecheck
 bun run db:push
+bun run cli -- --help        # Run CLI
+bun run mcp                   # Start MCP server
 ```
 
 ## Style rules
@@ -208,7 +303,7 @@ bun run db:push
 ## Web rules
 
 * treat the dashboard as an operator surface, not marketing pages
-* keep flows obvious: credentials, agents, permissions, audit
+* keep flows obvious: credentials, agents, permissions, policies, approvals, audit
 * show the one-time API key clearly and warn that it will not be shown again
 * do not reimplement backend policy in the client
 
@@ -221,6 +316,41 @@ bun run db:push
 * ORM bypasses
 * premature caching layers
 * generic plugin systems unrelated to the documented product
+
+## Documentation rules
+
+Documentation lives in `docs/` and must stay accurate with the code.
+
+### When to update docs
+
+* **New API route** → update `docs/API.md` with method, path, auth, request/response schema
+* **Changed API route** (new field, changed behavior, removed endpoint) → update `docs/API.md`
+* **New CLI command or changed flags** → update `docs/CLI.md`
+* **New MCP tool or changed tool behavior** → update `docs/MCP.md`
+* **Architecture change** (new package, new system boundary, changed trust model) → update `docs/ARCHITECTURE.md`
+* **Security model change** (new auth method, changed encryption, new policy rule type) → update `docs/SECURITY.md`
+* **New dev setup step or changed command** → update `docs/DEVELOPMENT.md`
+* **Changed invariant or working rule** → update this file (`AGENTS.md`)
+
+### How to update docs
+
+* Keep docs terse and factual — no marketing language, no aspirational features
+* Document what IS, not what WILL BE
+* If a feature is removed, remove it from docs — do not leave stale references
+* API docs use tables for request fields: `| Field | Type | Required | Description |`
+* Test your docs by reading them as if you know nothing about the codebase
+
+### Doc inventory
+
+| File | Audience | Purpose |
+|------|----------|---------|
+| `AGENTS.md` | Devs and AI agents working in the repo | Product model, invariants, working rules, code conventions |
+| `docs/ARCHITECTURE.md` | Devs and agents | System design, entity model, trust boundaries, request flows |
+| `docs/API.md` | API consumers (CLI, SDK, integrations) | Every endpoint with method, path, auth, request/response |
+| `docs/CLI.md` | Developers using the CLI | Command reference with examples |
+| `docs/MCP.md` | AI agent integrators | MCP tool reference and security model |
+| `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, delivery modes |
+| `docs/DEVELOPMENT.md` | New contributors | Setup, commands, package structure, how to add features |
 
 ## Expected review posture
 

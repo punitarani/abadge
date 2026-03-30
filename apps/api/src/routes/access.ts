@@ -1,11 +1,32 @@
+import type { DeliveryMode } from "@abadge/core";
 import { AgentAccessRequestSchema } from "@abadge/core";
 import { and, eq } from "@abadge/db";
-import { accessLog, agentCredentialPermissions, credentials } from "@abadge/db/schema";
+import {
+  accessLog,
+  agentCredentialPermissions,
+  approvals,
+  credentials,
+  policies,
+} from "@abadge/db/schema";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { decrypt } from "../lib/crypto";
 import { agentAuthMiddleware } from "../middleware/agent-auth";
 import type { AgentEnv } from "../types";
+
+function isDeliveryModeAllowed(
+  requested: DeliveryMode,
+  credentialAllowed: DeliveryMode[] | null,
+  permissionAllowed: string[] | null,
+): boolean {
+  if (credentialAllowed && credentialAllowed.length > 0) {
+    if (!credentialAllowed.includes(requested)) return false;
+  }
+  if (permissionAllowed && permissionAllowed.length > 0) {
+    if (!permissionAllowed.includes(requested)) return false;
+  }
+  return true;
+}
 
 export const accessRoutes = new Hono<AgentEnv>()
   .use("*", agentAuthMiddleware)
@@ -17,6 +38,20 @@ export const accessRoutes = new Hono<AgentEnv>()
     const agentId = agent.id as string;
     const agentUserId = agent.referenceId as string;
     const agentName = (agent.name as string) ?? "unknown";
+    const deliveryMode = body.deliveryMode ?? "reveal";
+    const ipAddress = c.req.header("cf-connecting-ip");
+
+    const auditBase = {
+      agentId,
+      agentName,
+      purpose: body.purpose,
+      ipAddress,
+      principalType: "agent" as const,
+      requestedAction: "read",
+      deliveryMode,
+      destination: body.destination,
+      environment: body.environment,
+    };
 
     // Find the credential — always scoped to the agent's owner
     const credentialName = body.credentialName;
@@ -44,41 +79,126 @@ export const accessRoutes = new Hono<AgentEnv>()
 
     if (!permission) {
       await db.insert(accessLog).values({
-        agentId,
+        ...auditBase,
         credentialId: credential.id,
         credentialName: credential.name,
-        agentName,
         action: "denied",
-        purpose: body.purpose,
-        ipAddress: c.req.header("cf-connecting-ip"),
+        outcome: "denied",
       });
       return c.json({ error: "Access denied" }, 403);
     }
 
-    // Decrypt and return
-    const decryptedValue = await decrypt(
-      credential.encryptedValue,
-      credential.iv,
-      c.env.ENCRYPTION_KEY,
-    );
+    // Check permission expiration
+    if (permission.expiresAt && permission.expiresAt < new Date()) {
+      await db.insert(accessLog).values({
+        ...auditBase,
+        credentialId: credential.id,
+        credentialName: credential.name,
+        action: "denied",
+        outcome: "denied",
+      });
+      return c.json({ error: "Permission expired" }, 403);
+    }
+
+    // Evaluate attached policy if present
+    if (permission.policyId) {
+      const policy = await db.query.policies.findFirst({
+        where: and(eq(policies.id, permission.policyId), eq(policies.enabled, true)),
+      });
+
+      if (policy) {
+        const rules = policy.rules as Array<{ type?: string; requiresApproval?: boolean }>;
+        const needsApproval = Array.isArray(rules) && rules.some((r) => r.requiresApproval);
+        if (needsApproval) {
+          const rows = await db
+            .insert(approvals)
+            .values({
+              id: crypto.randomUUID(),
+              agentId,
+              credentialId: credential.id,
+              requesterId: agentUserId,
+              deliveryMode,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            })
+            .returning();
+
+          const approval = rows[0];
+          await db.insert(accessLog).values({
+            ...auditBase,
+            credentialId: credential.id,
+            credentialName: credential.name,
+            action: "denied",
+            outcome: "pending_approval",
+            approvalId: approval?.id,
+          });
+
+          return c.json(
+            {
+              error: "Approval required",
+              code: "PENDING_APPROVAL",
+              approvalId: approval?.id,
+            },
+            202,
+          );
+        }
+      }
+    }
+
+    // Check delivery mode is allowed
+    if (
+      !isDeliveryModeAllowed(
+        deliveryMode,
+        credential.allowedDeliveryModes as DeliveryMode[] | null,
+        permission.allowedDeliveryModes as DeliveryMode[] | null,
+      )
+    ) {
+      await db.insert(accessLog).values({
+        ...auditBase,
+        credentialId: credential.id,
+        credentialName: credential.name,
+        action: "denied",
+        outcome: "denied",
+      });
+      return c.json({ error: "Delivery mode not allowed", code: "DELIVERY_MODE_NOT_ALLOWED" }, 403);
+    }
 
     // Log successful access
     await db.insert(accessLog).values({
-      agentId,
+      ...auditBase,
       credentialId: credential.id,
       credentialName: credential.name,
-      agentName,
       action: "read",
-      purpose: body.purpose,
-      ipAddress: c.req.header("cf-connecting-ip"),
+      outcome: "allowed",
     });
 
+    // For "reveal" mode, decrypt and return the value
+    if (deliveryMode === "reveal") {
+      const decryptedValue = await decrypt(
+        credential.encryptedValue,
+        credential.iv,
+        c.env.ENCRYPTION_KEY,
+      );
+
+      return c.json({
+        credential: {
+          name: credential.name,
+          type: credential.type,
+          metadata: credential.metadata,
+        },
+        deliveryMode,
+        value: decryptedValue,
+        approved: true,
+      });
+    }
+
+    // For non-reveal modes, return metadata only — broker handles injection
     return c.json({
       credential: {
         name: credential.name,
         type: credential.type,
-        value: decryptedValue,
         metadata: credential.metadata,
       },
+      deliveryMode,
+      approved: true,
     });
   });
