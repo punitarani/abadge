@@ -22,4 +22,4 @@ export interface MountResult {
   cleanup: () => void;
 }
 
-export type ConnectorType = "native" | "onepassword" | "aws_secrets_manager";
+export type ConnectorType = "native" | "onepassword" | "aws_secrets_manager" | "bitwarden";
