@@ -46,3 +46,31 @@ export class RateLimitError extends AppError {
     this.name = "RateLimitError";
   }
 }
+
+export class PolicyViolationError extends AppError {
+  constructor(message: string) {
+    super("POLICY_VIOLATION", message, 403);
+    this.name = "PolicyViolationError";
+  }
+}
+
+export class ApprovalRequiredError extends AppError {
+  constructor(message: string) {
+    super("APPROVAL_REQUIRED", message, 202);
+    this.name = "ApprovalRequiredError";
+  }
+}
+
+export class SessionExpiredError extends AppError {
+  constructor(message: string) {
+    super("SESSION_EXPIRED", message, 401);
+    this.name = "SessionExpiredError";
+  }
+}
+
+export class DeliveryModeError extends AppError {
+  constructor(message: string) {
+    super("DELIVERY_MODE_NOT_ALLOWED", message, 400);
+    this.name = "DeliveryModeError";
+  }
+}
