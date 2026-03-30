@@ -16,7 +16,9 @@
     "db:studio": "turbo db:studio --filter=@abadge/db",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:reset": "docker compose down -v && docker compose up -d"
+    "docker:reset": "docker compose down -v && docker compose up -d",
+    "cli": "bun packages/cli/bin/abadge.ts",
+    "mcp": "bun packages/mcp/src/index.ts"
   },
   "overrides": {
     "drizzle-orm": "0.45.2"
