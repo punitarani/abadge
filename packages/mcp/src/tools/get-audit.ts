@@ -30,7 +30,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const limit = input.limit ?? 20;
-  const res = await apiGet<AuditResponse>(config, `/api/audit?limit=${limit}`);
+  const res = await apiGet<AuditResponse>(config, `/v1/audit?limit=${limit}`);
 
   if (!res.ok) {
     return JSON.stringify({ error: res.data.error ?? "Failed to fetch audit logs" });

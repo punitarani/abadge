@@ -63,7 +63,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   // Fetch the secret server-side
-  const res = await apiPost<AccessResponse>(config, "/api/v1/credentials/access", {
+  const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
     purpose: input.purpose ?? `Run command: ${input.command}`,
   });

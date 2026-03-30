@@ -57,7 +57,7 @@ export class AbadgeClient {
       metadata?: Record<string, string> | null;
     };
   }> {
-    return this.request("GET", `/credentials/${encodeURIComponent(idOrName)}`);
+    return this.request("GET", `/v1/credentials/${encodeURIComponent(idOrName)}`);
   }
 
   async accessSecret(params: {
@@ -80,7 +80,7 @@ export class AbadgeClient {
       grantedBy: string;
     }>;
   }> {
-    return this.request("GET", `/credentials/${encodeURIComponent(credentialId)}/grants`);
+    return this.request("GET", `/v1/permissions/credential/${encodeURIComponent(credentialId)}`);
   }
 
   async createGrant(params: {
@@ -119,17 +119,17 @@ export class AbadgeClient {
     }>;
   }> {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `/approvals${query}`);
+    return this.request("GET", `/v1/approvals${query}`);
   }
 
   async approveRequest(approvalId: string, reason?: string): Promise<void> {
-    await this.request("POST", `/approvals/${encodeURIComponent(approvalId)}/approve`, {
+    await this.request("POST", `/v1/approvals/${encodeURIComponent(approvalId)}/approve`, {
       reason,
     });
   }
 
   async denyRequest(approvalId: string, reason?: string): Promise<void> {
-    await this.request("POST", `/approvals/${encodeURIComponent(approvalId)}/deny`, { reason });
+    await this.request("POST", `/v1/approvals/${encodeURIComponent(approvalId)}/deny`, { reason });
   }
 
   // Audit

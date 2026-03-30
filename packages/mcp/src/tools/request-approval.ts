@@ -21,7 +21,7 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const path = input.approvalId ? `/api/v1/approvals/${input.approvalId}` : "/api/v1/approvals";
+  const path = input.approvalId ? `/v1/approvals/${input.approvalId}` : "/v1/approvals";
 
   const res = await apiGet<ApprovalResponse>(config, path);
 

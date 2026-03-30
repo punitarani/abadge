@@ -1,7 +1,10 @@
 import type { CliConfig } from "./config";
 
 export interface AccessResult {
-  value: string;
+  credential: { name: string; type: string; metadata?: Record<string, string> | null };
+  deliveryMode: string;
+  value?: string;
+  approved: boolean;
 }
 
 /** Minimal API client — inline fetch wrapper so CLI has no dependency on @abadge/broker. */

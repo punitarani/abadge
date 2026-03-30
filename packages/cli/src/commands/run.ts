@@ -43,9 +43,12 @@ export async function runCommand(args: string[]): Promise<void> {
   let secretValue: string;
   try {
     const result = await client.post<AccessResult>("/v1/credentials/access", {
-      name: secretName,
+      credentialName: secretName,
       deliveryMode: "reveal",
     });
+    if (!result.value) {
+      throw new Error("No secret value returned — delivery mode may not be 'reveal'");
+    }
     secretValue = result.value;
   } catch (err) {
     error(errorMessage(err, "Failed to access secret."));

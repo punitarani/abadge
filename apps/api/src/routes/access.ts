@@ -11,6 +11,12 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { decrypt } from "../lib/crypto";
+import {
+  evaluatePolicy,
+  type AccessRequest as PolicyAccessRequest,
+  type PolicyInput,
+  type PolicyRule,
+} from "../lib/policy";
 import { agentAuthMiddleware } from "../middleware/agent-auth";
 import type { AgentEnv } from "../types";
 
@@ -107,9 +113,34 @@ export const accessRoutes = new Hono<AgentEnv>()
       });
 
       if (policy) {
-        const rules = policy.rules as Array<{ type?: string; requiresApproval?: boolean }>;
-        const needsApproval = Array.isArray(rules) && rules.some((r) => r.requiresApproval);
-        if (needsApproval) {
+        const policyInput: PolicyInput = {
+          rules: (policy.rules as unknown as PolicyRule[]) ?? [],
+          enabled: policy.enabled ?? true,
+        };
+
+        const policyRequest: PolicyAccessRequest = {
+          deliveryMode,
+          environment: credential.environment,
+          destination: body.destination ?? null,
+          sensitivity: (credential.sensitivity as string) ?? "medium",
+          credentialAllowedDeliveryModes: credential.allowedDeliveryModes as string[] | null,
+          grantAllowedDeliveryModes: permission.allowedDeliveryModes as string[] | null,
+        };
+
+        const result = evaluatePolicy([policyInput], policyRequest);
+
+        if (!result.allowed) {
+          await db.insert(accessLog).values({
+            ...auditBase,
+            credentialId: credential.id,
+            credentialName: credential.name,
+            action: "denied",
+            outcome: "denied",
+          });
+          return c.json({ error: result.reason, code: "POLICY_VIOLATION" }, 403);
+        }
+
+        if (result.requiresApproval) {
           const rows = await db
             .insert(approvals)
             .values({
@@ -139,6 +170,21 @@ export const accessRoutes = new Hono<AgentEnv>()
               approvalId: approval?.id,
             },
             202,
+          );
+        }
+
+        // Policy passed but delivery mode may be restricted by effective modes
+        if (!result.effectiveDeliveryModes.includes(deliveryMode)) {
+          await db.insert(accessLog).values({
+            ...auditBase,
+            credentialId: credential.id,
+            credentialName: credential.name,
+            action: "denied",
+            outcome: "denied",
+          });
+          return c.json(
+            { error: "Delivery mode not allowed", code: "DELIVERY_MODE_NOT_ALLOWED" },
+            403,
           );
         }
       }

@@ -37,16 +37,7 @@ export async function handler(
   _input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const res = await apiGet<ListResponse>(config, "/api/v1/credentials/access");
-
-  if (!res.ok && res.status === 401) {
-    // Fall back to dashboard endpoint for session-authenticated users
-    const dashRes = await apiGet<ListResponse>(config, "/api/credentials");
-    if (!dashRes.ok) {
-      return JSON.stringify({ error: dashRes.data.error ?? "Failed to list credentials" });
-    }
-    return formatCredentials(dashRes.data);
-  }
+  const res = await apiGet<ListResponse>(config, "/v1/credentials");
 
   if (!res.ok) {
     return JSON.stringify({ error: res.data.error ?? "Failed to list credentials" });

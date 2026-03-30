@@ -1,5 +1,6 @@
 "use client";
 
+import { deliveryModes, environments, sensitivities } from "@abadge/core";
 import { clientEnv } from "@abadge/env/client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -14,13 +15,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { extractApiError } from "@/lib/api-client";
+import { deliveryModeLabels } from "@/lib/credential-ui";
 
 interface Credential {
   id: string;
   name: string;
 }
 
-const ruleTypes = ["delivery_mode", "environment", "sensitivity", "destination"] as const;
+const ruleTypes = ["delivery_mode", "environment", "sensitivity", "destination", "ttl"] as const;
 type RuleType = (typeof ruleTypes)[number];
 
 const ruleTypeLabels: Record<RuleType, string> = {
@@ -28,11 +30,8 @@ const ruleTypeLabels: Record<RuleType, string> = {
   environment: "Environment",
   sensitivity: "Sensitivity",
   destination: "Destination",
+  ttl: "TTL",
 };
-
-const deliveryModes = ["direct", "proxy", "ephemeral"] as const;
-const environments = ["production", "staging", "development", "ci"] as const;
-const sensitivityLevels = ["low", "medium", "high", "critical"] as const;
 
 interface RuleForm {
   type: RuleType;
@@ -255,7 +254,7 @@ export default function NewPolicyPage(): React.ReactElement {
                 {rule.type === "delivery_mode" && (
                   <div className="space-y-1.5">
                     <Label>Allowed modes</Label>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                       {deliveryModes.map((mode) => (
                         <label key={mode} className="flex items-center gap-1.5 text-sm">
                           <input
@@ -264,7 +263,7 @@ export default function NewPolicyPage(): React.ReactElement {
                             onChange={() => toggleCheckbox(index, "allowedModes", mode)}
                             className="rounded border-input"
                           />
-                          {mode}
+                          {deliveryModeLabels[mode] ?? mode}
                         </label>
                       ))}
                     </div>
@@ -301,7 +300,7 @@ export default function NewPolicyPage(): React.ReactElement {
                         <SelectValue placeholder="Select threshold..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {sensitivityLevels.map((level) => (
+                        {sensitivities.map((level) => (
                           <SelectItem key={level} value={level}>
                             {level}
                           </SelectItem>

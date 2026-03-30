@@ -22,7 +22,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   // Verify access without exposing the secret
-  const res = await apiPost<AccessResponse>(config, "/api/v1/credentials/access", {
+  const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
     purpose: `Browser login fill for ${input.targetUrl}`,
   });

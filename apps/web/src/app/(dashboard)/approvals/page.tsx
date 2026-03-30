@@ -81,6 +81,8 @@ export default function ApprovalsPage(): React.ReactElement {
         const res = await fetch(`${apiUrl}/v1/approvals/${id}/${action}`, {
           method: "POST",
           credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
         });
         if (res.ok) {
           fetchApprovals();

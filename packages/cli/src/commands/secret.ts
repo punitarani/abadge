@@ -104,7 +104,7 @@ async function secretList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const credentials = await client.get<Credential[]>("/v1/credentials");
+    const { credentials } = await client.get<{ credentials: Credential[] }>("/v1/credentials");
     if (jsonOutput) {
       json(credentials);
     } else {
@@ -145,7 +145,7 @@ async function secretGet(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const credentials = await client.get<Credential[]>("/v1/credentials");
+    const { credentials } = await client.get<{ credentials: Credential[] }>("/v1/credentials");
     const cred = credentials.find((c) => c.name === name);
     if (!cred) {
       error(`Secret "${name}" not found.`);
@@ -154,7 +154,11 @@ async function secretGet(args: string[]): Promise<void> {
 
     if (values.reveal) {
       warn("Revealing secret value. Do not share this output.");
-      const revealed = await client.get<Credential>(`/v1/credentials/${cred.id}?reveal=true`);
+      // Reveal requires agent auth — POST /v1/credentials/access with deliveryMode "reveal"
+      const revealed = await client.post<{ value?: string; credential?: { name: string } }>(
+        "/v1/credentials/access",
+        { credentialId: cred.id, deliveryMode: "reveal" },
+      );
       if (values.json) {
         json(revealed);
       } else {

@@ -26,7 +26,9 @@ export async function auditCommand(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const entries = await client.get<AuditEntry[]>(`/v1/audit?limit=${values.limit}`);
+    const { logs: entries } = await client.get<{ logs: AuditEntry[] }>(
+      `/v1/audit?limit=${values.limit}`,
+    );
     if (values.json) {
       json(entries);
     } else {

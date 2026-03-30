@@ -24,7 +24,7 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const res = await apiPost<AccessResponse>(config, "/api/v1/credentials/access", {
+  const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
     purpose: input.purpose,
   });

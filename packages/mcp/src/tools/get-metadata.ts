@@ -29,7 +29,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   // List credentials and find by name — avoids triggering an access log entry
-  const res = await apiGet<ListResponse>(config, "/api/credentials");
+  const res = await apiGet<ListResponse>(config, "/v1/credentials");
 
   if (!res.ok) {
     return JSON.stringify({ error: res.data.error ?? "Failed to fetch credential metadata" });
