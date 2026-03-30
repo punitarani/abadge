@@ -7,6 +7,7 @@ export const connectorTypeEnum = [
   "aws_secrets_manager",
   "bitwarden",
   "infisical",
+  "gcloud_secret_manager",
 ] as const;
 
 export const connectors = pgTable(

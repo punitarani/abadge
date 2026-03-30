@@ -27,4 +27,5 @@ export type ConnectorType =
   | "onepassword"
   | "aws_secrets_manager"
   | "bitwarden"
-  | "infisical";
+  | "infisical"
+  | "gcloud_secret_manager";
