@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@theme {
+  --font-sans: "Inter", -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-background: #ffffff;
+  --color-foreground: #111111;
+  --color-card: #ffffff;
+  --color-card-foreground: #111111;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #111111;
+  --color-primary: #111111;
+  --color-primary-foreground: #fafafa;
+  --color-secondary: #fafafa;
+  --color-secondary-foreground: #111111;
+  --color-muted: #fafafa;
+  --color-muted-foreground: #616161;
+  --color-accent: #fafafa;
+  --color-accent-foreground: #111111;
+  --color-destructive: #c11027;
+  --color-destructive-foreground: #c11027;
+  --color-success: #16a34a;
+  --color-border: #e1e1e1;
+  --color-input: #e1e1e1;
+  --color-ring: #111111;
+  --color-link: #0b6ec5;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-sm antialiased;
+  }
+}

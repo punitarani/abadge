@@ -1,0 +1,33 @@
+{
+  "name": "@abadge/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schema": {
+      "types": "./src/schema/index.ts",
+      "default": "./src/schema/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "latest",
+    "postgres": "^3.4.0",
+    "@abadge/env": "workspace:*"
+  },
+  "devDependencies": {
+    "drizzle-kit": "latest",
+    "dotenv": "^16.4.0",
+    "typescript": "^5.7.0"
+  }
+}

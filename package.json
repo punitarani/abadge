@@ -1,0 +1,35 @@
+{
+  "name": "abadge",
+  "private": true,
+  "packageManager": "bun@1.3.0",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "biome check apps/ packages/",
+    "lint:fix": "biome check --write apps/ packages/",
+    "format": "biome format --write apps/ packages/",
+    "typecheck": "turbo typecheck",
+    "db:generate": "turbo db:generate --filter=@abadge/db",
+    "db:migrate": "turbo db:migrate --filter=@abadge/db",
+    "db:push": "turbo db:push --filter=@abadge/db",
+    "db:studio": "turbo db:studio --filter=@abadge/db",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:reset": "docker compose down -v && docker compose up -d"
+  },
+  "overrides": {
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.21",
+    "@biomejs/biome": "latest",
+    "turbo": "latest",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "^1.5.6",
+    "@better-auth/core": "^1.5.6",
+    "better-auth": "^1.5.6"
+  }
+}
