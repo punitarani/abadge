@@ -4,3 +4,4 @@ export * from "./auth";
 export * from "./credentials";
 export * from "./organization";
 export * from "./permissions";
+export * from "./policies";
