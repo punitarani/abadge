@@ -6,6 +6,9 @@ export const accessActions = ["read", "denied"] as const;
 
 export type AccessAction = (typeof accessActions)[number];
 
+export const connectorTypes = ["native", "onepassword", "aws_secrets_manager", "doppler"] as const;
+export type ConnectorType = (typeof connectorTypes)[number];
+
 export const ERROR_CODES = {
   CREDENTIAL_NOT_FOUND: "CREDENTIAL_NOT_FOUND",
   ACCESS_DENIED: "ACCESS_DENIED",
