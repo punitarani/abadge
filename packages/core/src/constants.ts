@@ -1,5 +1,14 @@
 export const credentialTypes = ["api_key", "login", "token", "json_blob", "pii", "other"] as const;
 
+export const connectorTypes = [
+  "native",
+  "onepassword",
+  "aws_secrets_manager",
+  "hashicorp_vault",
+] as const;
+
+export type ConnectorType = (typeof connectorTypes)[number];
+
 export type CredentialType = (typeof credentialTypes)[number];
 
 export const accessActions = ["read", "denied"] as const;
