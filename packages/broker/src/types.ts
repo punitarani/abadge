@@ -28,4 +28,6 @@ export type ConnectorType =
   | "aws_secrets_manager"
   | "bitwarden"
   | "infisical"
-  | "gcloud_secret_manager";
+  | "doppler"
+  | "gcloud_secret_manager"
+  | "hashicorp_vault";

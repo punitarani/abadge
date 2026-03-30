@@ -26,7 +26,10 @@ export class InfisicalConnector implements Connector {
       await execFileAsync("infisical", ["user"], { env });
       return { success: true };
     } catch {
-      return { success: false, error: "Infisical CLI not authenticated. Run 'infisical login' first." };
+      return {
+        success: false,
+        error: "Infisical CLI not authenticated. Run 'infisical login' first.",
+      };
     }
   }
 

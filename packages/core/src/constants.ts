@@ -47,7 +47,9 @@ export const connectorTypes = [
   "aws_secrets_manager",
   "bitwarden",
   "infisical",
+  "doppler",
   "gcloud_secret_manager",
+  "hashicorp_vault",
 ] as const;
 export type ConnectorType = (typeof connectorTypes)[number];
 
