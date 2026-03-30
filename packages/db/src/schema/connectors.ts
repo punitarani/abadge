@@ -1,7 +1,12 @@
 import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
-export const connectorTypeEnum = ["native", "onepassword", "aws_secrets_manager"] as const;
+export const connectorTypeEnum = [
+  "native",
+  "onepassword",
+  "aws_secrets_manager",
+  "gcloud_secret_manager",
+] as const;
 
 export const connectors = pgTable(
   "connectors",
