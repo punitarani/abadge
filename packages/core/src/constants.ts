@@ -41,7 +41,7 @@ export type AccessOutcome = (typeof accessOutcomes)[number];
 export const approvalStatuses = ["pending", "approved", "denied", "expired"] as const;
 export type ApprovalStatus = (typeof approvalStatuses)[number];
 
-export const connectorTypes = ["native", "onepassword", "aws_secrets_manager"] as const;
+export const connectorTypes = ["native", "onepassword", "aws_secrets_manager", "infisical"] as const;
 export type ConnectorType = (typeof connectorTypes)[number];
 
 export const sessionStatuses = ["active", "expired", "revoked"] as const;
