@@ -46,6 +46,7 @@ export const connectorTypes = [
   "onepassword",
   "aws_secrets_manager",
   "bitwarden",
+  "infisical",
 ] as const;
 export type ConnectorType = (typeof connectorTypes)[number];
 
