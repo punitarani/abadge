@@ -46,3 +46,9 @@ export type CreateAgentInput = z.infer<typeof CreateAgentSchema>;
 export type GrantPermissionInput = z.infer<typeof GrantPermissionSchema>;
 export type RevokePermissionInput = z.infer<typeof RevokePermissionSchema>;
 export type AgentAccessRequestInput = z.infer<typeof AgentAccessRequestSchema>;
+
+export const ApprovalDecisionSchema = z.object({
+  reason: z.string().max(512).optional(),
+});
+
+export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionSchema>;
