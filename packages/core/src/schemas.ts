@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { credentialTypes } from "./constants";
+import { connectorTypes, credentialTypes } from "./constants";
 
 export const CreateCredentialSchema = z.object({
   name: z.string().min(1).max(128),
@@ -46,3 +46,18 @@ export type CreateAgentInput = z.infer<typeof CreateAgentSchema>;
 export type GrantPermissionInput = z.infer<typeof GrantPermissionSchema>;
 export type RevokePermissionInput = z.infer<typeof RevokePermissionSchema>;
 export type AgentAccessRequestInput = z.infer<typeof AgentAccessRequestSchema>;
+
+export const CreateConnectorSchema = z.object({
+  name: z.string().min(1).max(128),
+  type: z.enum(connectorTypes),
+  config: z.record(z.string()).optional(),
+});
+
+export const UpdateConnectorSchema = z.object({
+  name: z.string().min(1).max(128).optional(),
+  config: z.record(z.string()).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export type CreateConnectorInput = z.infer<typeof CreateConnectorSchema>;
+export type UpdateConnectorInput = z.infer<typeof UpdateConnectorSchema>;

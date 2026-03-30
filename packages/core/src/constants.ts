@@ -2,6 +2,10 @@ export const credentialTypes = ["api_key", "login", "token", "json_blob", "pii",
 
 export type CredentialType = (typeof credentialTypes)[number];
 
+export const connectorTypes = ["native", "onepassword", "aws_secrets_manager"] as const;
+
+export type ConnectorType = (typeof connectorTypes)[number];
+
 export const accessActions = ["read", "denied"] as const;
 
 export type AccessAction = (typeof accessActions)[number];
