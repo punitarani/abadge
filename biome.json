@@ -55,6 +55,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/cli/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": "off"
+          }
+        }
+      }
     }
   ],
   "files": {
