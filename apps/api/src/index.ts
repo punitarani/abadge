@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { getConnectionString, getDb } from "./lib/db";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { accessRoutes } from "./routes/access";
+import { agentGroupRoutes } from "./routes/agent-groups";
 import { agentRoutes } from "./routes/agents";
 import { approvalRoutes } from "./routes/approvals";
 import { auditRoutes } from "./routes/audit";
@@ -46,6 +47,7 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 // v1 API routes — registered individually to avoid deep type chains
 app.route("/v1/credentials", credentialRoutes);
 app.route("/v1/agents", agentRoutes);
+app.route("/v1/agent-groups", agentGroupRoutes);
 app.route("/v1/permissions", permissionRoutes);
 app.route("/v1/audit", auditRoutes);
 app.route("/v1/policies", policyRoutes);
@@ -60,6 +62,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // Export individual route types for RPC client usage
 export type CredentialRoutesType = typeof credentialRoutes;
 export type AgentRoutesType = typeof agentRoutes;
+export type AgentGroupRoutesType = typeof agentGroupRoutes;
 export type PermissionRoutesType = typeof permissionRoutes;
 export type AuditRoutesType = typeof auditRoutes;
 export type AccessRoutesType = typeof accessRoutes;
