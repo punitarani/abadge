@@ -41,6 +41,9 @@ export type AccessOutcome = (typeof accessOutcomes)[number];
 export const approvalStatuses = ["pending", "approved", "denied", "expired"] as const;
 export type ApprovalStatus = (typeof approvalStatuses)[number];
 
+export const sourceTypes = ["native", "external"] as const;
+export type SourceType = (typeof sourceTypes)[number];
+
 export const connectorTypes = [
   "native",
   "onepassword",

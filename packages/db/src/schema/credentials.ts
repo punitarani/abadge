@@ -1,5 +1,7 @@
+import type { ExternalRef } from "@abadge/core";
 import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+import { connectors } from "./connectors";
 
 export const credentialTypeEnum = [
   "api_key",
@@ -42,8 +44,14 @@ export const credentials = pgTable(
     sensitivity: text("sensitivity", { enum: sensitivityEnum }).default("medium"),
     allowedDeliveryModes: jsonb("allowed_delivery_modes").$type<string[]>(),
     allowedDestinations: jsonb("allowed_destinations").$type<string[]>(),
+    sourceType: text("source_type").default("native"),
+    connectorId: text("connector_id").references(() => connectors.id, { onDelete: "set null" }),
+    externalRef: jsonb("external_ref").$type<ExternalRef>(),
     createdBy: text("created_by"),
     updatedBy: text("updated_by"),
   },
-  (t) => [index("idx_credentials_user_id").on(t.userId)],
+  (t) => [
+    index("idx_credentials_user_id").on(t.userId),
+    index("idx_credentials_connector_id").on(t.connectorId),
+  ],
 );
