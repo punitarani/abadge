@@ -176,16 +176,16 @@ const securityChecks = [
 
 const externalSignals = [
   {
+    label: "Bitwarden Agent Access SDK",
+    href: "https://bitwarden.com/blog/introducing-agent-access-sdk/",
+  },
+  {
     label: "1Password Secure Agentic Autofill",
     href: "https://developer.1password.com/docs/agentic-autofill/",
   },
   {
     label: "1Password Unified Access",
     href: "https://1password.com/press/2026/mar/1password-unified-access",
-  },
-  {
-    label: "Model Context Protocol authorization",
-    href: "https://modelcontextprotocol.io/specification/draft/basic/authorization",
   },
 ];
 
@@ -247,7 +247,7 @@ export default function HomePage() {
               Status: Alpha
             </div>
             <h1 className="max-w-[42rem] text-[2.65rem] leading-[0.93] font-bold tracking-[-0.06em] md:text-[4.55rem]">
-              Credential control plane
+              Credential controls
               <br />
               for AI agents
             </h1>
@@ -265,14 +265,14 @@ export default function HomePage() {
                 Get started
               </Link>
               <a
-                href="#scope"
+                href="https://docs.abadge.io"
                 className="border border-black bg-white px-6 py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
               >
-                See product scope
+                Read the Docs
               </a>
             </div>
 
-            <div className="mt-12 flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap gap-2">
               {["Access", "Connect", "SDK", "CLI", "API", "MCP", "Approvals", "Audit"].map(
                 (tag) => (
                   <span
@@ -353,19 +353,13 @@ export default function HomePage() {
                 Why now
               </div>
               <h2
-                className={`${landingCondensed.variable} max-w-4xl text-[3.2rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.1rem] lg:text-[6rem]`}
+                className={`${landingCondensed.variable} max-w-4xl text-[2rem] leading-[1] font-bold uppercase tracking-[-0.04em] [font-family:var(--font-landing-condensed)] md:text-[3rem] lg:text-[3.75rem]`}
               >
-                Agents are scaling
+                Agents are scaling faster
                 <br />
-                faster than credential control
+                than your passwords
               </h2>
             </div>
-
-            <p className="max-w-md text-sm leading-[1.65] text-zinc-600">
-              The category is forming now: agent adoption is rising, over-privileged access is
-              common, and security guidance is increasingly focused on tool design, attribution, and
-              secret exposure.
-            </p>
           </div>
 
           <div className="grid gap-px border border-black bg-black md:grid-cols-2 xl:grid-cols-4">
@@ -391,8 +385,8 @@ export default function HomePage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-            <span>External signals:</span>
+          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 items-center">
+            <span className="self-center">External signals:</span>
             {externalSignals.map((item) => (
               <a
                 key={item.label}
@@ -414,7 +408,7 @@ export default function HomePage() {
               Product wedge
             </div>
             <h2
-              className={`${landingCondensed.variable} max-w-5xl text-[3.3rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.25rem] lg:text-[6.25rem]`}
+              className={`${landingCondensed.variable} max-w-7xl text-[3.3rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.25rem] lg:text-[6.25rem]`}
             >
               Access first.
               <br />
@@ -422,11 +416,6 @@ export default function HomePage() {
               <br />
               Interfaces everywhere.
             </h2>
-            <p className="mt-5 max-w-2xl text-sm leading-[1.7] text-zinc-600">
-              Native credential storage is part of the product, but it is not the lead story. The
-              lead story is deciding which agent can use which credential, under what policy, for
-              how long, through which interface, with what audit trail.
-            </p>
           </div>
 
           <div className="grid gap-px border border-black bg-black lg:grid-cols-3">
@@ -534,27 +523,23 @@ export default function HomePage() {
 
         <section className="border-b border-black bg-white px-6 py-16 text-center md:px-12 md:py-24">
           <h2 className="text-[2.7rem] leading-[0.95] font-bold tracking-[-0.06em] md:text-[4.5rem]">
-            Let AI agents use credentials safely.
+            Give agents access.
             <br />
-            <span className="text-zinc-400">Without giving them everything.</span>
+            <span className="text-zinc-400">Not your entire vault.</span>
           </h2>
-          <p className="mx-auto mt-6 max-w-2xl text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-            Store or connect credentials, grant access intentionally, and keep every attempt
-            attributable.
-          </p>
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Link
               href="/register"
               className="border border-black bg-black px-10 py-3 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
             >
-              Start building
+              Get started
             </Link>
             <a
-              href="#scope"
+              href="https://docs.abadge.io"
               className="border border-black bg-white px-10 py-3 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
             >
-              Read the scope
+              Read the Docs
             </a>
           </div>
         </section>
@@ -565,7 +550,7 @@ export default function HomePage() {
           <div className="max-w-xs">
             <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
             <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Credential control plane for AI agents
+              Credential control plane for AI
             </span>
             <span className="[font-family:var(--font-landing-mono)] text-[9px] text-zinc-300">
               {"SYSTEM_ID: ABADGE_V1.0.4 // © 2026"}
@@ -574,25 +559,21 @@ export default function HomePage() {
 
           <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest">
             <div className="flex flex-col gap-2">
-              <a href="#why-now" className="transition-colors hover:text-[#0047FF]">
-                Why now
-              </a>
-              <a href="#scope" className="transition-colors hover:text-[#0047FF]">
-                Scope
-              </a>
-              <a href="#interfaces" className="transition-colors hover:text-[#0047FF]">
-                Interfaces
-              </a>
-              <a href="#security" className="transition-colors hover:text-[#0047FF]">
-                Security
-              </a>
-            </div>
-            <div className="flex flex-col gap-2">
-              <a href="https://github.com" className="transition-colors hover:text-[#0047FF]">
+              <a
+                href="https://github.com/punitarani/abadge"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-[#0047FF]"
+              >
                 GitHub
               </a>
-              <a href="#top" className="transition-colors hover:text-[#0047FF]">
-                Status
+              <a
+                href="https://docs.abadge.io"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-[#0047FF]"
+              >
+                Docs
               </a>
             </div>
           </div>
