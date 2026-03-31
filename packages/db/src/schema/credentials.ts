@@ -1,5 +1,5 @@
 import type { ExternalRef } from "@abadge/core";
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { connectors } from "./connectors";
 
@@ -52,7 +52,7 @@ export const credentials = pgTable(
     orgId: text("org_id"),
   },
   (t) => [
-    index("idx_credentials_user_id").on(t.userId),
+    uniqueIndex("idx_credentials_user_name").on(t.userId, t.name),
     index("idx_credentials_connector_id").on(t.connectorId),
     index("idx_credentials_org_id").on(t.orgId),
   ],

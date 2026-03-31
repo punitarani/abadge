@@ -1,4 +1,4 @@
-import { jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { apikey } from "./apikey";
 import { credentials } from "./credentials";
 import { policies } from "./policies";
@@ -18,5 +18,8 @@ export const agentCredentialPermissions = pgTable(
     allowedDeliveryModes: jsonb("allowed_delivery_modes").$type<string[]>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
-  (t) => [primaryKey({ columns: [t.agentId, t.credentialId] })],
+  (t) => [
+    primaryKey({ columns: [t.agentId, t.credentialId] }),
+    index("idx_permissions_credential_id").on(t.credentialId),
+  ],
 );

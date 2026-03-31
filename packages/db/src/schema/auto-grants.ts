@@ -25,7 +25,7 @@ export const autoGrants = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    index("idx_auto_grants_agent_id").on(t.agentId),
+    index("idx_auto_grants_agent_user").on(t.agentId, t.userId),
     index("idx_auto_grants_user_id").on(t.userId),
   ],
 );
