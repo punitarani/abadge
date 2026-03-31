@@ -175,6 +175,22 @@ export interface Connector {
   updatedAt: Date;
 }
 
+export interface AutoGrant {
+  id: string;
+  agentId: string;
+  userId: string;
+  matchEnvironment: Environment | null;
+  matchTags: string[] | null;
+  matchType: CredentialType | null;
+  matchService: string | null;
+  matchSensitivity: Sensitivity | null;
+  policyId: string | null;
+  allowedDeliveryModes: DeliveryMode[] | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface AccessRequest {
   credentialId?: string;
   credentialName?: string;
