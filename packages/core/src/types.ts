@@ -9,7 +9,14 @@ import type {
   OwnerScope,
   PrincipalType,
   Sensitivity,
+  SourceType,
 } from "./constants";
+
+export interface ExternalRef {
+  name?: string;
+  path?: string;
+  version?: string;
+}
 
 export interface Credential {
   id: string;
@@ -18,6 +25,7 @@ export interface Credential {
   type: CredentialType;
   metadata: Record<string, string> | null;
   ownerScope: OwnerScope;
+  orgId: string | null;
   environment: Environment | null;
   service: string | null;
   provider: string | null;
@@ -26,6 +34,9 @@ export interface Credential {
   sensitivity: Sensitivity;
   allowedDeliveryModes: DeliveryMode[] | null;
   allowedDestinations: string[] | null;
+  sourceType: SourceType;
+  connectorId: string | null;
+  externalRef: ExternalRef | null;
   createdBy: string;
   updatedBy: string;
   createdAt: Date;
@@ -165,6 +176,22 @@ export interface Connector {
   updatedAt: Date;
 }
 
+export interface AutoGrant {
+  id: string;
+  agentId: string;
+  userId: string;
+  matchEnvironment: Environment | null;
+  matchTags: string[] | null;
+  matchType: CredentialType | null;
+  matchService: string | null;
+  matchSensitivity: Sensitivity | null;
+  policyId: string | null;
+  allowedDeliveryModes: DeliveryMode[] | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface AccessRequest {
   credentialId?: string;
   credentialName?: string;
@@ -173,4 +200,19 @@ export interface AccessRequest {
   purpose?: string;
   environment?: Environment;
   sessionId?: string;
+}
+
+export interface AgentGroup {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AgentGroupMember {
+  groupId: string;
+  agentId: string;
+  addedAt: Date;
 }

@@ -62,7 +62,7 @@ POST /v1/credentials
 |-------|------|----------|-------------|
 | `name` | string (1-128) | yes | Display name |
 | `type` | enum | yes | api_key, login, token, json_blob, oauth_client, service_account_json, cookie_session, pii, other |
-| `value` | string (1-65536) | yes | Secret value (encrypted at rest) |
+| `value` | string (1-65536) | conditional | Secret value (encrypted at rest). Required when sourceType is "native". |
 | `metadata` | Record<string, string> | no | Arbitrary key-value pairs |
 | `ownerScope` | enum | no | user, org, system (default: user) |
 | `environment` | enum | no | dev, staging, prod |
@@ -73,6 +73,20 @@ POST /v1/credentials
 | `sensitivity` | enum | no | low, medium, high, critical (default: medium) |
 | `allowedDeliveryModes` | DeliveryMode[] | no | Restrict how this credential can be consumed |
 | `allowedDestinations` | string[] (max 50) | no | Restrict where this credential can be sent |
+| `sourceType` | enum | no | native (default) or external |
+| `connectorId` | string | conditional | Required when sourceType is "external" |
+| `externalRef` | ExternalRef | no | Reference to secret in external vault (see below) |
+| `orgId` | string | no | Organization ID for team-owned credentials |
+
+**ExternalRef fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Secret name in external vault |
+| `path` | string | Secret path in external vault |
+| `version` | string | Secret version |
+
+When `sourceType` is "native", `value` is required (encrypted at rest). When `sourceType` is "external", `connectorId` is required and the value is fetched from the external vault at access time.
 
 Response: `{ credential: { id, name } }` (201)
 
@@ -304,7 +318,7 @@ POST /v1/connectors
 | Field | Type | Required |
 |-------|------|----------|
 | `name` | string (1-128) | yes |
-| `type` | enum | yes (native, onepassword, aws_secrets_manager) |
+| `type` | enum | yes (native, onepassword, aws_secrets_manager, bitwarden, infisical, doppler, gcloud_secret_manager, hashicorp_vault) |
 | `config` | Record<string, string> | no (encrypted at rest) |
 
 ### Update connector
@@ -326,6 +340,138 @@ POST /v1/connectors/:id/test
 ```
 
 Response: `{ success: boolean, error?: string }`
+
+---
+
+## Auto-Grants
+
+All routes require user session auth. Auto-grants define rules that automatically grant permissions to an agent for any credential matching the specified criteria.
+
+### List auto-grants
+
+```
+GET /v1/auto-grants
+```
+
+Response: `{ autoGrants: AutoGrant[] }`
+
+### Get auto-grant
+
+```
+GET /v1/auto-grants/:id
+```
+
+Response: `{ autoGrant: AutoGrant }`
+
+### Create auto-grant
+
+```
+POST /v1/auto-grants
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agentId` | string | yes | Agent to grant access to |
+| `matchEnvironment` | enum | no | Match credentials in this environment (dev, staging, prod) |
+| `matchTags` | string[] (max 20) | no | Match credentials with ALL of these tags |
+| `matchType` | enum | no | Match credentials of this type |
+| `matchService` | string (max 128) | no | Match credentials for this service |
+| `matchSensitivity` | enum | no | Match credentials at this sensitivity level |
+| `policyId` | uuid | no | Attach this policy to auto-granted permissions |
+| `allowedDeliveryModes` | DeliveryMode[] | no | Restrict delivery modes for auto-granted permissions |
+| `expiresAt` | ISO date | no | Expiration for auto-granted permissions |
+
+Matching is conjunctive: a credential must match ALL non-null criteria. For `matchTags`, the credential must have all specified tags (subset check).
+
+Response: `{ autoGrant: AutoGrant }` (201)
+
+### Update auto-grant
+
+```
+PUT /v1/auto-grants/:id
+```
+
+Same fields as create (except `agentId`), all optional. Set a field to `null` to clear it.
+
+### Delete auto-grant
+
+```
+DELETE /v1/auto-grants/:id
+```
+
+---
+
+## Agent Groups
+
+All routes require user session auth. Agent groups organize agents into named collections.
+
+### List agent groups
+
+```
+GET /v1/agent-groups
+```
+
+Response: `{ groups: AgentGroup[] }`
+
+### Create agent group
+
+```
+POST /v1/agent-groups
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `name` | string (1-128) | yes |
+| `description` | string (max 512) | no |
+
+Response: `{ group: AgentGroup }` (201)
+
+### Get agent group
+
+```
+GET /v1/agent-groups/:id
+```
+
+Response: `{ group: AgentGroup, members: AgentGroupMember[] }`
+
+### Update agent group
+
+```
+PUT /v1/agent-groups/:id
+```
+
+| Field | Type |
+|-------|------|
+| `name` | string (1-128) |
+| `description` | string (max 512, nullable) |
+
+### Delete agent group
+
+```
+DELETE /v1/agent-groups/:id
+```
+
+Deleting a group cascades to remove all member associations.
+
+### Add member to group
+
+```
+POST /v1/agent-groups/:id/members
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `agentId` | string | yes |
+
+Response: `{ member: AgentGroupMember }` (201)
+
+Returns 409 if the agent is already a member.
+
+### Remove member from group
+
+```
+DELETE /v1/agent-groups/:id/members/:agentId
+```
 
 ---
 

@@ -2,6 +2,7 @@
   "extends": "../../packages/config/tsconfig.worker.json",
   "compilerOptions": {
     "rootDir": "src",
+    "types": ["@cloudflare/workers-types", "@types/bun"],
     "paths": {
       "@/*": ["./src/*"]
     }
