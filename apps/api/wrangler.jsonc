@@ -4,14 +4,30 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-03-27",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "api.abadge.io",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "API_URL": "https://api.abadge.io",
+    "APP_URL": "https://abadge.io",
+    "BETTER_AUTH_URL": "https://api.abadge.io"
+  },
+  "secrets": {
+    "required": ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"]
+  },
   "placement": {
     "mode": "smart"
   },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "REPLACE_WITH_HYPERDRIVE_CONFIG_ID",
-      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
+      "id": "3ea93d0186d94581b5b66f4e670216bb",
+      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/postgres"
     }
   ]
 }

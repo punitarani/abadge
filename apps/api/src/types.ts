@@ -3,6 +3,8 @@ import type { Database } from "@abadge/db";
 export type Bindings = {
   HYPERDRIVE?: Hyperdrive;
   DATABASE_URL?: string;
+  API_URL: string;
+  APP_URL: string;
   ENCRYPTION_KEY: string;
   BETTER_AUTH_URL: string;
   BETTER_AUTH_SECRET: string;
