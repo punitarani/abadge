@@ -132,12 +132,14 @@ jobs:
           set -euo pipefail
           payload=$(
             doppler secrets download --no-file --format json | \
-              jq -c 'with_entries(select(.key as $k | ["ENCRYPTION_KEY", "BETTER_AUTH_URL", "BETTER_AUTH_SECRET"] | index($k)))'
+              jq -c 'with_entries(select(.key as $k | ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"] | index($k)))'
           )
-          if [ "$payload" = "{}" ]; then
-            echo "ERROR: Doppler did not return the required API worker secrets"
-            exit 1
-          fi
+          for key in ENCRYPTION_KEY BETTER_AUTH_SECRET; do
+            if ! printf '%s' "$payload" | jq -e --arg k "$key" 'has($k)' > /dev/null; then
+              echo "ERROR: Required secret $key not found in Doppler"
+              exit 1
+            fi
+          done
           printf '%s' "$payload" | npx wrangler secret bulk
       - working-directory: apps/api
         run: doppler run -- bun run deploy
