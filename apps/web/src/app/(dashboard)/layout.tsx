@@ -6,10 +6,25 @@ import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/credentials", label: "Credentials" },
-  { href: "/agents", label: "Agents" },
-  { href: "/audit", label: "Audit log" },
+const navSections = [
+  {
+    label: "Vault",
+    items: [
+      { href: "/credentials", label: "Credentials" },
+      { href: "/agents", label: "Agents" },
+    ],
+  },
+  {
+    label: "Security",
+    items: [
+      { href: "/policies", label: "Policies" },
+      { href: "/approvals", label: "Approvals" },
+    ],
+  },
+  {
+    label: "Observability",
+    items: [{ href: "/audit", label: "Audit log" }],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -53,20 +68,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <nav className="flex-1 px-2 py-3 space-y-0.5">
-          <div className="px-2 pb-2 pt-1 text-xs font-semibold text-muted-foreground">Vault</div>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                pathname.startsWith(item.href)
-                  ? "bg-neutral-100 text-foreground font-medium"
-                  : "text-muted-foreground hover:bg-neutral-50 hover:text-foreground",
-              )}
-            >
-              {item.label}
-            </Link>
+          {navSections.map((section, i) => (
+            <div key={section.label}>
+              <div
+                className={cn(
+                  "px-2 pb-2 text-xs font-semibold text-muted-foreground",
+                  i === 0 ? "pt-1" : "pt-4",
+                )}
+              >
+                {section.label}
+              </div>
+              {section.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                    pathname.startsWith(item.href)
+                      ? "bg-neutral-100 text-foreground font-medium"
+                      : "text-muted-foreground hover:bg-neutral-50 hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
 

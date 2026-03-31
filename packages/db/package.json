@@ -21,9 +21,10 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@abadge/core": "workspace:*",
+    "@abadge/env": "workspace:*",
     "drizzle-orm": "latest",
-    "postgres": "^3.4.0",
-    "@abadge/env": "workspace:*"
+    "postgres": "^3.4.0"
   },
   "devDependencies": {
     "drizzle-kit": "latest",

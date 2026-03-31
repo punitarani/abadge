@@ -21,5 +21,6 @@ export type AgentEnv = {
   Variables: {
     agent: Record<string, unknown>;
     db: Database;
+    sessionId?: string;
   };
 };

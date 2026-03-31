@@ -22,6 +22,12 @@ export async function encrypt(
   };
 }
 
+export async function hashToken(token: string): Promise<string> {
+  const encoded = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)));
+}
+
 export async function decrypt(ciphertext: string, iv: string, base64Key: string): Promise<string> {
   const key = await importKey(base64Key);
   const encryptedBytes = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));

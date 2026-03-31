@@ -6,9 +6,18 @@ export const credentialTypeEnum = [
   "login",
   "token",
   "json_blob",
+  "oauth_client",
+  "service_account_json",
+  "cookie_session",
   "pii",
   "other",
 ] as const;
+
+export const ownerScopeEnum = ["user", "org", "system"] as const;
+
+export const environmentEnum = ["dev", "staging", "prod"] as const;
+
+export const sensitivityEnum = ["low", "medium", "high", "critical"] as const;
 
 export const credentials = pgTable(
   "credentials",
@@ -24,6 +33,17 @@ export const credentials = pgTable(
     metadata: jsonb("metadata").$type<Record<string, string>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    ownerScope: text("owner_scope", { enum: ownerScopeEnum }).default("user"),
+    environment: text("environment", { enum: environmentEnum }),
+    service: text("service"),
+    provider: text("provider"),
+    project: text("project"),
+    tags: jsonb("tags").$type<string[]>(),
+    sensitivity: text("sensitivity", { enum: sensitivityEnum }).default("medium"),
+    allowedDeliveryModes: jsonb("allowed_delivery_modes").$type<string[]>(),
+    allowedDestinations: jsonb("allowed_destinations").$type<string[]>(),
+    createdBy: text("created_by"),
+    updatedBy: text("updated_by"),
   },
   (t) => [index("idx_credentials_user_id").on(t.userId)],
 );
