@@ -62,7 +62,7 @@ jobs:
       - name: Build web worker bundle
         working-directory: apps/web
         env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.abadge.dev' }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.abadge.io' }}
         run: bunx opennextjs-cloudflare build
 
   db-validate:
