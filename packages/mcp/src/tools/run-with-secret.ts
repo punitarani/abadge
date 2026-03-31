@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { EventEmitter } from "node:events";
 import { z } from "zod";
 import { apiPost } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -42,18 +43,16 @@ function runCommand(
     let stdout = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       if (stdout.length < MAX_OUTPUT_BYTES) stdout += chunk.toString();
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk.toString();
     });
-    // @ts-expect-error -- Bun's ChildProcessByStdio type lacks .on() but the runtime supports it
-    child.on("error", (err: Error) => {
+    (child as unknown as EventEmitter).on("error", (err: Error) => {
       resolve({ exitCode: 1, stdout: "", stderr: err.message });
     });
-    // @ts-expect-error -- Bun's ChildProcessByStdio type lacks .on() but the runtime supports it
-    child.on("close", (code: number | null) => {
+    (child as unknown as EventEmitter).on("close", (code: number | null) => {
       resolve({ exitCode: code ?? 1, stdout, stderr });
     });
   });
