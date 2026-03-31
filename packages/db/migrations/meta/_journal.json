@@ -15,6 +15,13 @@
       "when": 1774934400000,
       "tag": "0001_v2_credential_firewall",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775020800000,
+      "tag": "0002_auto_grants",
+      "breakpoints": true
     }
   ]
 }

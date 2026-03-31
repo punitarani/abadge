@@ -151,6 +151,31 @@ export const UpdateConnectorSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+// --- Auto-grants ---
+
+export const CreateAutoGrantSchema = z.object({
+  agentId: z.string().min(1),
+  matchEnvironment: z.enum(environments).optional(),
+  matchTags: z.array(z.string().max(64)).max(20).optional(),
+  matchType: z.enum(credentialTypes).optional(),
+  matchService: z.string().max(128).optional(),
+  matchSensitivity: z.enum(sensitivities).optional(),
+  policyId: z.string().uuid().optional(),
+  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
+  expiresAt: z.coerce.date().optional(),
+});
+
+export const UpdateAutoGrantSchema = z.object({
+  matchEnvironment: z.enum(environments).nullable().optional(),
+  matchTags: z.array(z.string().max(64)).max(20).nullable().optional(),
+  matchType: z.enum(credentialTypes).nullable().optional(),
+  matchService: z.string().max(128).nullable().optional(),
+  matchSensitivity: z.enum(sensitivities).nullable().optional(),
+  policyId: z.string().uuid().nullable().optional(),
+  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
+  expiresAt: z.coerce.date().nullable().optional(),
+});
+
 // --- Inferred types ---
 
 export type CreateCredentialInput = z.infer<typeof CreateCredentialSchema>;
@@ -167,3 +192,5 @@ export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionSchema>;
 export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
 export type CreateConnectorInput = z.infer<typeof CreateConnectorSchema>;
 export type UpdateConnectorInput = z.infer<typeof UpdateConnectorSchema>;
+export type CreateAutoGrantInput = z.infer<typeof CreateAutoGrantSchema>;
+export type UpdateAutoGrantInput = z.infer<typeof UpdateAutoGrantSchema>;
