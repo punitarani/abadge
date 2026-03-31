@@ -130,6 +130,7 @@ jobs:
         working-directory: apps/api
         run: |
           set -euo pipefail
+          export CLOUDFLARE_API_TOKEN=$(doppler secrets get CLOUDFLARE_API_TOKEN --plain)
           payload=$(
             doppler secrets download --no-file --format json | \
               jq -c 'with_entries(select(.key as $k | ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"] | index($k)))'
