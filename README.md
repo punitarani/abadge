@@ -111,6 +111,7 @@ packages/
 
 * [Bun](https://bun.sh) >= 1.2
 * [Docker](https://docker.com)
+* [Doppler CLI](https://docs.doppler.com/docs/install-cli)
 
 ### Quick start
 
@@ -120,6 +121,9 @@ bun install
 
 # Start local Postgres
 bun run docker:up
+
+# Configure Doppler for this repo
+doppler setup
 
 # Push schema to database
 bun run db:push
@@ -141,6 +145,8 @@ bun run db:generate   # Generate migration from schema
 bun run db:migrate    # Run pending migrations
 bun run db:push       # Push schema directly to database
 bun run db:studio     # Open Drizzle Studio
+bun run db:reset      # Drop schema and re-run migrations
+bun test              # Run the test suite
 bun run docker:up     # Start Docker services
 bun run docker:down   # Stop Docker services
 bun run docker:reset  # Reset Docker volumes and restart
@@ -148,7 +154,9 @@ bun run docker:reset  # Reset Docker volumes and restart
 
 ### Environment variables
 
-Copy `.env.example` to `.env` and fill in the values. See the file for documentation.
+Repository commands that need application secrets run through Doppler. After installing the CLI,
+run `doppler setup` in the repo root. `.env.example` remains the reference for which values need
+to exist in Doppler.
 
 ## Status
 

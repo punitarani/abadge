@@ -4,6 +4,7 @@
 
 * [Bun](https://bun.sh/) 1.3+
 * [Docker](https://docs.docker.com/get-docker/) (for local Postgres)
+* [Doppler CLI](https://docs.doppler.com/docs/install-cli)
 * Node.js 22+ (for MCP typecheck)
 
 ## Setup
@@ -16,10 +17,10 @@ bun install
 
 ### Environment
 
-Copy and configure:
+Root commands that need application secrets now run through Doppler. Configure the repo once:
 
 ```bash
-cp .env.example .env
+doppler setup
 ```
 
 Required variables:
@@ -32,11 +33,8 @@ Required variables:
 | `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
 | `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
 
-For the web app, create `apps/web/.env.local`:
-
-```
-NEXT_PUBLIC_API_URL=http://localhost:8787
-```
+`.env.example` remains the reference for the values you should store in Doppler. If you bypass the
+root scripts and run a package directly, provide the same environment variables manually.
 
 ### Database
 
@@ -63,8 +61,10 @@ bun run dev               # Starts API (8787) + Web (3000)
 | `bun run lint:fix` | Biome lint with auto-fix |
 | `bun run format` | Biome format |
 | `bun run db:generate` | Generate migration from schema changes |
+| `bun run db:migrate` | Run pending migrations |
 | `bun run db:push` | Push schema to database (no migration) |
 | `bun run db:studio` | Open Drizzle Studio |
+| `bun run db:reset` | Drop schema and re-run migrations |
 | `bun run cli -- --help` | Run CLI |
 | `bun run mcp` | Start MCP server |
 | `bun test` | Run test suite (policy, crypto, schema tests) |
