@@ -7,6 +7,35 @@ import { encrypt } from "../lib/crypto";
 import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
+const nullableFields = [
+  "metadata",
+  "ownerScope",
+  "environment",
+  "service",
+  "provider",
+  "project",
+  "tags",
+  "sensitivity",
+  "allowedDeliveryModes",
+  "allowedDestinations",
+  "connectorId",
+  "externalRef",
+] as const;
+
+function buildCredentialUpdates(
+  body: Record<string, unknown>,
+  userId: string,
+): Record<string, unknown> {
+  const updates: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
+  if (body.name) updates.name = body.name;
+  if (body.type) updates.type = body.type;
+  for (const field of nullableFields) {
+    if (body[field] !== undefined) updates[field] = body[field] ?? null;
+  }
+  if (body.sourceType !== undefined) updates.sourceType = body.sourceType;
+  return updates;
+}
+
 /** Columns safe to return — never includes encryptedValue or iv */
 const publicColumns = {
   id: credentials.id,
@@ -137,32 +166,13 @@ export const credentialRoutes = new Hono<Env>()
       return c.json({ error: "Credential not found" }, 404);
     }
 
-    const updates: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
-    if (body.name) updates.name = body.name;
-    if (body.type) updates.type = body.type;
-    if (body.metadata !== undefined) updates.metadata = body.metadata ?? null;
-    if (body.ownerScope !== undefined) updates.ownerScope = body.ownerScope ?? null;
-    if (body.environment !== undefined) updates.environment = body.environment ?? null;
-    if (body.service !== undefined) updates.service = body.service ?? null;
-    if (body.provider !== undefined) updates.provider = body.provider ?? null;
-    if (body.project !== undefined) updates.project = body.project ?? null;
-    if (body.tags !== undefined) updates.tags = body.tags ?? null;
-    if (body.sensitivity !== undefined) updates.sensitivity = body.sensitivity ?? null;
-    if (body.allowedDeliveryModes !== undefined) {
-      updates.allowedDeliveryModes = body.allowedDeliveryModes ?? null;
-    }
-    if (body.allowedDestinations !== undefined) {
-      updates.allowedDestinations = body.allowedDestinations ?? null;
-    }
+    const updates = buildCredentialUpdates(body, userId);
 
     if (body.value) {
       const { ciphertext, iv } = await encrypt(body.value, c.env.ENCRYPTION_KEY);
       updates.encryptedValue = ciphertext;
       updates.iv = iv;
     }
-    if (body.sourceType !== undefined) updates.sourceType = body.sourceType;
-    if (body.connectorId !== undefined) updates.connectorId = body.connectorId ?? null;
-    if (body.externalRef !== undefined) updates.externalRef = body.externalRef ?? null;
 
     await db.update(credentials).set(updates).where(eq(credentials.id, id));
 

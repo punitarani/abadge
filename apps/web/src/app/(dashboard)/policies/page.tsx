@@ -37,6 +37,48 @@ interface PolicyEntry {
   credentialName?: string;
 }
 
+function PolicyRow({
+  policy,
+  onToggle,
+  onDelete,
+}: {
+  policy: PolicyEntry;
+  onToggle: (policy: PolicyEntry) => void;
+  onDelete: (id: string) => void;
+}): React.ReactElement {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{policy.name}</TableCell>
+      <TableCell className="text-muted-foreground">
+        {policy.credentialName ?? (policy.credentialId ? policy.credentialId : "Global")}
+      </TableCell>
+      <TableCell>
+        <Badge variant="secondary">
+          {policy.rules.length} {policy.rules.length === 1 ? "rule" : "rules"}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Badge variant={policy.enabled ? "success" : "secondary"}>
+          {policy.enabled ? "Enabled" : "Disabled"}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {formatRelativeTime(policy.createdAt)}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onToggle(policy)}>
+            {policy.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => onDelete(policy.id)}>
+            Delete
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function PoliciesPage(): React.ReactElement {
   const [policies, setPolicies] = useState<PolicyEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +96,7 @@ export default function PoliciesPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl]);
+  }, []);
 
   useEffect(() => {
     fetchPolicies();
@@ -70,7 +112,7 @@ export default function PoliciesPage(): React.ReactElement {
       });
       fetchPolicies();
     },
-    [apiUrl, fetchPolicies],
+    [fetchPolicies],
   );
 
   const handleDelete = useCallback(
@@ -84,7 +126,7 @@ export default function PoliciesPage(): React.ReactElement {
         fetchPolicies();
       }
     },
-    [apiUrl, fetchPolicies],
+    [fetchPolicies],
   );
 
   return (
@@ -131,40 +173,12 @@ export default function PoliciesPage(): React.ReactElement {
               </TableRow>
             ) : (
               policies.map((policy) => (
-                <TableRow key={policy.id}>
-                  <TableCell className="font-medium">{policy.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {policy.credentialName ??
-                      (policy.credentialId ? policy.credentialId : "Global")}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">
-                      {policy.rules.length} {policy.rules.length === 1 ? "rule" : "rules"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={policy.enabled ? "success" : "secondary"}>
-                      {policy.enabled ? "Enabled" : "Disabled"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(policy.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleToggle(policy)}>
-                        {policy.enabled ? "Disable" : "Enable"}
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(policy.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <PolicyRow
+                  key={policy.id}
+                  policy={policy}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                />
               ))
             )}
           </TableBody>

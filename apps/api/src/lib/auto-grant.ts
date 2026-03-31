@@ -38,10 +38,8 @@ export function matchesAutoGrant(
   // For matchTags, credential must have ALL specified tags (subset check)
   if (autoGrant.matchTags != null && autoGrant.matchTags.length > 0) {
     const credTags = credential.tags ?? [];
-    for (const tag of autoGrant.matchTags) {
-      if (!credTags.includes(tag)) {
-        return false;
-      }
+    if (!autoGrant.matchTags.every((tag) => credTags.includes(tag))) {
+      return false;
     }
   }
 

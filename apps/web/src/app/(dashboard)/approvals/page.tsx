@@ -68,7 +68,7 @@ export default function ApprovalsPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl]);
+  }, []);
 
   useEffect(() => {
     fetchApprovals();
@@ -91,7 +91,7 @@ export default function ApprovalsPage(): React.ReactElement {
         setActioning(null);
       }
     },
-    [apiUrl, fetchApprovals],
+    [fetchApprovals],
   );
 
   const filtered = filter === "all" ? approvals : approvals.filter((a) => a.status === filter);

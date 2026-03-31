@@ -100,7 +100,7 @@ export default function NewPolicyPage(): React.ReactElement {
       const data = await res.json();
       setCredentials(data.credentials as Credential[]);
     }
-  }, [apiUrl]);
+  }, []);
 
   useEffect(() => {
     fetchCredentials();

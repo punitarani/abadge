@@ -35,7 +35,7 @@ export const agentAuthMiddleware = createMiddleware<AgentEnv>(async (c, next) =>
       where: eq(apikey.id, session.agentId),
     });
 
-    if (!agent || !agent.enabled) {
+    if (!agent?.enabled) {
       return c.json({ error: "Agent not found or disabled" }, 401);
     }
 

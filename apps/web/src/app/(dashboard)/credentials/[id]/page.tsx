@@ -74,6 +74,100 @@ interface AgentEntry {
   enabled: boolean | null;
 }
 
+function credentialToForm(cred: Credential): CredentialFormState {
+  return {
+    name: cred.name,
+    type: cred.type,
+    value: "",
+    ownerScope: cred.ownerScope ?? "user",
+    environment: cred.environment ?? "",
+    service: cred.service ?? "",
+    provider: cred.provider ?? "",
+    project: cred.project ?? "",
+    sensitivity: cred.sensitivity ?? "medium",
+    allowedDeliveryModes: cred.allowedDeliveryModes ?? [...deliveryModes],
+    allowedDestinations: cred.allowedDestinations?.join(", ") ?? "",
+    tags: cred.tags?.join(", ") ?? "",
+    metadata: cred.metadata ? JSON.stringify(cred.metadata) : "",
+  };
+}
+
+function CredentialDetails({ credential }: { credential: Credential }): React.ReactElement {
+  return (
+    <div className="border border-border rounded-lg p-5 space-y-4">
+      <div className="text-sm font-semibold">Details</div>
+
+      <div className="flex flex-wrap gap-2">
+        {credential.environment && (
+          <Badge variant="outline" className={environmentStyles[credential.environment] ?? ""}>
+            {credential.environment}
+          </Badge>
+        )}
+        {credential.sensitivity && (
+          <Badge variant={sensitivityVariants[credential.sensitivity]?.variant ?? "default"}>
+            {credential.sensitivity}
+          </Badge>
+        )}
+        {credential.ownerScope && <Badge variant="outline">{credential.ownerScope}</Badge>}
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <div className="text-muted-foreground">Service</div>
+          <div className="font-medium">{credential.service ?? "\u2014"}</div>
+        </div>
+        <div>
+          <div className="text-muted-foreground">Provider</div>
+          <div className="font-medium">{credential.provider ?? "\u2014"}</div>
+        </div>
+        <div>
+          <div className="text-muted-foreground">Project</div>
+          <div className="font-medium">{credential.project ?? "\u2014"}</div>
+        </div>
+      </div>
+
+      {credential.tags && credential.tags.length > 0 && (
+        <div>
+          <div className="text-sm text-muted-foreground mb-1">Tags</div>
+          <div className="flex flex-wrap gap-1">
+            {credential.tags.map((tag) => (
+              <Badge key={tag} variant="secondary" className="text-xs">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {credential.allowedDeliveryModes && credential.allowedDeliveryModes.length > 0 && (
+        <div>
+          <div className="text-sm text-muted-foreground mb-1">Allowed delivery modes</div>
+          <div className="flex flex-wrap gap-1">
+            {credential.allowedDeliveryModes.map((mode) => (
+              <Badge key={mode} variant="outline" className="text-xs">
+                {deliveryModeLabels[mode] ?? mode}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {credential.allowedDestinations && credential.allowedDestinations.length > 0 && (
+        <div>
+          <div className="text-sm text-muted-foreground mb-1">Allowed destinations</div>
+          <div className="flex flex-wrap gap-1">
+            {credential.allowedDestinations.map((dest) => (
+              <Badge key={dest} variant="outline" className="text-xs">
+                {dest}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CredentialDetailPage(): React.ReactElement {
   const params = useParams();
   const router = useRouter();
@@ -116,21 +210,7 @@ export default function CredentialDetailPage(): React.ReactElement {
       const data = await credRes.json();
       const cred = data.credential as Credential;
       setCredential(cred);
-      setForm({
-        name: cred.name,
-        type: cred.type,
-        value: "",
-        ownerScope: cred.ownerScope ?? "user",
-        environment: cred.environment ?? "",
-        service: cred.service ?? "",
-        provider: cred.provider ?? "",
-        project: cred.project ?? "",
-        sensitivity: cred.sensitivity ?? "medium",
-        allowedDeliveryModes: cred.allowedDeliveryModes ?? [...deliveryModes],
-        allowedDestinations: cred.allowedDestinations?.join(", ") ?? "",
-        tags: cred.tags?.join(", ") ?? "",
-        metadata: cred.metadata ? JSON.stringify(cred.metadata) : "",
-      });
+      setForm(credentialToForm(cred));
     }
     if (permRes.ok) {
       const data = await permRes.json();
@@ -140,7 +220,7 @@ export default function CredentialDetailPage(): React.ReactElement {
       const data = await agentsRes.json();
       setAgents(data.agents);
     }
-  }, [apiUrl, id]);
+  }, [id]);
 
   useEffect(() => {
     fetchData();
@@ -242,77 +322,7 @@ export default function CredentialDetailPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="border border-border rounded-lg p-5 space-y-4">
-        <div className="text-sm font-semibold">Details</div>
-
-        <div className="flex flex-wrap gap-2">
-          {credential.environment && (
-            <Badge variant="outline" className={environmentStyles[credential.environment] ?? ""}>
-              {credential.environment}
-            </Badge>
-          )}
-          {credential.sensitivity && (
-            <Badge variant={sensitivityVariants[credential.sensitivity]?.variant ?? "default"}>
-              {credential.sensitivity}
-            </Badge>
-          )}
-          {credential.ownerScope && <Badge variant="outline">{credential.ownerScope}</Badge>}
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <div className="text-muted-foreground">Service</div>
-            <div className="font-medium">{credential.service ?? "\u2014"}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">Provider</div>
-            <div className="font-medium">{credential.provider ?? "\u2014"}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">Project</div>
-            <div className="font-medium">{credential.project ?? "\u2014"}</div>
-          </div>
-        </div>
-
-        {credential.tags && credential.tags.length > 0 && (
-          <div>
-            <div className="text-sm text-muted-foreground mb-1">Tags</div>
-            <div className="flex flex-wrap gap-1">
-              {credential.tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-xs">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {credential.allowedDeliveryModes && credential.allowedDeliveryModes.length > 0 && (
-          <div>
-            <div className="text-sm text-muted-foreground mb-1">Allowed delivery modes</div>
-            <div className="flex flex-wrap gap-1">
-              {credential.allowedDeliveryModes.map((mode) => (
-                <Badge key={mode} variant="outline" className="text-xs">
-                  {deliveryModeLabels[mode] ?? mode}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {credential.allowedDestinations && credential.allowedDestinations.length > 0 && (
-          <div>
-            <div className="text-sm text-muted-foreground mb-1">Allowed destinations</div>
-            <div className="flex flex-wrap gap-1">
-              {credential.allowedDestinations.map((dest) => (
-                <Badge key={dest} variant="outline" className="text-xs">
-                  {dest}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <CredentialDetails credential={credential} />
 
       {credential.policies && credential.policies.length > 0 && (
         <div className="border border-border rounded-lg p-5 space-y-3">

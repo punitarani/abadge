@@ -34,6 +34,70 @@ interface Credential {
   updatedAt: string;
 }
 
+function CredentialRow({
+  cred,
+  onDelete,
+}: {
+  cred: Credential;
+  onDelete: (id: string) => void;
+}): React.ReactElement {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">
+        <Link href={`/credentials/${cred.id}`} className="text-foreground hover:underline">
+          {cred.name}
+        </Link>
+      </TableCell>
+      <TableCell>
+        <Badge variant="secondary">{typeLabels[cred.type] ?? cred.type}</Badge>
+      </TableCell>
+      <TableCell>
+        {cred.environment ? (
+          <Badge variant="outline" className={environmentStyles[cred.environment] ?? ""}>
+            {cred.environment}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">&mdash;</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {cred.sensitivity ? (
+          <Badge variant={sensitivityVariants[cred.sensitivity]?.variant ?? "default"}>
+            {cred.sensitivity}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">&mdash;</span>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground">{cred.service ?? "\u2014"}</TableCell>
+      <TableCell>
+        {cred.allowedDeliveryModes && cred.allowedDeliveryModes.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {cred.allowedDeliveryModes.map((mode) => (
+              <Badge key={mode} variant="outline" className="text-[10px] px-1.5">
+                {deliveryModeLabels[mode] ?? mode}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">&mdash;</span>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground">{formatRelativeTime(cred.createdAt)}</TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={`/credentials/${cred.id}`}>Manage</Link>
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => onDelete(cred.id)}>
+            Delete
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function CredentialsPage(): React.ReactElement {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +114,7 @@ export default function CredentialsPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl]);
+  }, []);
 
   useEffect(() => {
     fetchCredentials();
@@ -111,69 +175,7 @@ export default function CredentialsPage(): React.ReactElement {
               </TableRow>
             ) : (
               credentials.map((cred) => (
-                <TableRow key={cred.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/credentials/${cred.id}`}
-                      className="text-foreground hover:underline"
-                    >
-                      {cred.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{typeLabels[cred.type] ?? cred.type}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {cred.environment ? (
-                      <Badge
-                        variant="outline"
-                        className={environmentStyles[cred.environment] ?? ""}
-                      >
-                        {cred.environment}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">&mdash;</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {cred.sensitivity ? (
-                      <Badge variant={sensitivityVariants[cred.sensitivity]?.variant ?? "default"}>
-                        {cred.sensitivity}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">&mdash;</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {cred.service ?? "\u2014"}
-                  </TableCell>
-                  <TableCell>
-                    {cred.allowedDeliveryModes && cred.allowedDeliveryModes.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {cred.allowedDeliveryModes.map((mode) => (
-                          <Badge key={mode} variant="outline" className="text-[10px] px-1.5">
-                            {deliveryModeLabels[mode] ?? mode}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">&mdash;</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(cred.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/credentials/${cred.id}`}>Manage</Link>
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDelete(cred.id)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <CredentialRow key={cred.id} cred={cred} onDelete={handleDelete} />
               ))
             )}
           </TableBody>

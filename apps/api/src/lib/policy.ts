@@ -54,6 +54,57 @@ function intersect(a: string[], b: string[]): string[] {
   return a.filter((v) => set.has(v));
 }
 
+const denied = (reason: string): PolicyResult => ({
+  allowed: false,
+  reason,
+  requiresApproval: false,
+  effectiveDeliveryModes: [],
+});
+
+function evaluateEnvironmentRule(rule: PolicyRule, request: AccessRequest): PolicyResult | null {
+  if (
+    rule.environments &&
+    request.environment != null &&
+    !rule.environments.includes(request.environment)
+  ) {
+    return denied("environment not allowed by policy");
+  }
+  return null;
+}
+
+function evaluateDestinationRule(rule: PolicyRule, request: AccessRequest): PolicyResult | null {
+  if (request.destination == null) return null;
+  if (rule.blockedDestinations?.includes(request.destination)) {
+    return denied("destination is blocked by policy");
+  }
+  if (rule.destinations && !rule.destinations.includes(request.destination)) {
+    return denied("destination not in allowed list");
+  }
+  return null;
+}
+
+function evaluateTtlRule(rule: PolicyRule, request: AccessRequest): PolicyResult | null {
+  if (
+    rule.ttlSeconds != null &&
+    request.sessionTtlSeconds != null &&
+    request.sessionTtlSeconds > rule.ttlSeconds
+  ) {
+    return denied(
+      `session TTL ${request.sessionTtlSeconds}s exceeds policy max ${rule.ttlSeconds}s`,
+    );
+  }
+  return null;
+}
+
+function evaluateSensitivityRule(rule: PolicyRule, request: AccessRequest): boolean {
+  return !!(
+    rule.requiresApproval &&
+    rule.sensitivity &&
+    sensitivities.includes(request.sensitivity as Sensitivity) &&
+    compareSensitivity(request.sensitivity, rule.sensitivity) >= 0
+  );
+}
+
 export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest): PolicyResult {
   const enabled = policies.filter((p) => p.enabled);
 
@@ -72,80 +123,25 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
   let requiresApproval = false;
 
   for (const rule of rules) {
+    let result: PolicyResult | null = null;
     switch (rule.type) {
-      case "delivery_mode": {
-        if (rule.deliveryModes) {
-          effectiveModes = intersect(effectiveModes, rule.deliveryModes);
-        }
+      case "delivery_mode":
+        if (rule.deliveryModes) effectiveModes = intersect(effectiveModes, rule.deliveryModes);
         break;
-      }
-
-      case "environment": {
-        if (
-          rule.environments &&
-          request.environment != null &&
-          !rule.environments.includes(request.environment)
-        ) {
-          return {
-            allowed: false,
-            reason: "environment not allowed by policy",
-            requiresApproval: false,
-            effectiveDeliveryModes: [],
-          };
-        }
+      case "environment":
+        result = evaluateEnvironmentRule(rule, request);
         break;
-      }
-
-      case "sensitivity": {
-        if (
-          rule.requiresApproval &&
-          rule.sensitivity &&
-          sensitivities.includes(request.sensitivity as Sensitivity) &&
-          compareSensitivity(request.sensitivity, rule.sensitivity) >= 0
-        ) {
-          requiresApproval = true;
-        }
+      case "sensitivity":
+        if (evaluateSensitivityRule(rule, request)) requiresApproval = true;
         break;
-      }
-
-      case "destination": {
-        if (request.destination != null) {
-          if (rule.blockedDestinations?.includes(request.destination)) {
-            return {
-              allowed: false,
-              reason: "destination is blocked by policy",
-              requiresApproval: false,
-              effectiveDeliveryModes: [],
-            };
-          }
-          if (rule.destinations && !rule.destinations.includes(request.destination)) {
-            return {
-              allowed: false,
-              reason: "destination not in allowed list",
-              requiresApproval: false,
-              effectiveDeliveryModes: [],
-            };
-          }
-        }
+      case "destination":
+        result = evaluateDestinationRule(rule, request);
         break;
-      }
-
-      case "ttl": {
-        if (
-          rule.ttlSeconds != null &&
-          request.sessionTtlSeconds != null &&
-          request.sessionTtlSeconds > rule.ttlSeconds
-        ) {
-          return {
-            allowed: false,
-            reason: `session TTL ${request.sessionTtlSeconds}s exceeds policy max ${rule.ttlSeconds}s`,
-            requiresApproval: false,
-            effectiveDeliveryModes: [],
-          };
-        }
+      case "ttl":
+        result = evaluateTtlRule(rule, request);
         break;
-      }
     }
+    if (result) return result;
   }
 
   if (request.credentialAllowedDeliveryModes) {
