@@ -139,7 +139,7 @@ export default function AgentsPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl]);
+  }, []);
 
   useEffect(() => {
     fetchAgents();

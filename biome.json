@@ -38,6 +38,12 @@
       }
     }
   },
+  "css": {
+    "parser": {
+      "cssModules": true,
+      "tailwindDirectives": true
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
@@ -89,12 +95,9 @@
   ],
   "files": {
     "includes": [
-      "**/*.ts",
-      "**/*.tsx",
-      "**/*.js",
-      "**/*.jsx",
-      "**/*.json",
-      "**/*.jsonc"
+      "apps/*/src/**",
+      "packages/*/src/**",
+      "packages/*/bin/**"
     ]
   }
 }
