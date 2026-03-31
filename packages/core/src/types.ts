@@ -200,3 +200,18 @@ export interface AccessRequest {
   environment?: Environment;
   sessionId?: string;
 }
+
+export interface AgentGroup {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AgentGroupMember {
+  groupId: string;
+  agentId: string;
+  addedAt: Date;
+}

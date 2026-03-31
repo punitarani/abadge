@@ -210,6 +210,22 @@ export const UpdateAutoGrantSchema = z.object({
   expiresAt: z.coerce.date().nullable().optional(),
 });
 
+// --- Agent Groups ---
+
+export const CreateAgentGroupSchema = z.object({
+  name: z.string().min(1).max(128),
+  description: z.string().max(512).optional(),
+});
+
+export const UpdateAgentGroupSchema = z.object({
+  name: z.string().min(1).max(128).optional(),
+  description: z.string().max(512).nullable().optional(),
+});
+
+export const AddGroupMemberSchema = z.object({
+  agentId: z.string().min(1),
+});
+
 // --- Inferred types ---
 
 export type CreateCredentialInput = z.infer<typeof CreateCredentialSchema>;
@@ -228,3 +244,6 @@ export type CreateConnectorInput = z.infer<typeof CreateConnectorSchema>;
 export type UpdateConnectorInput = z.infer<typeof UpdateConnectorSchema>;
 export type CreateAutoGrantInput = z.infer<typeof CreateAutoGrantSchema>;
 export type UpdateAutoGrantInput = z.infer<typeof UpdateAutoGrantSchema>;
+export type CreateAgentGroupInput = z.infer<typeof CreateAgentGroupSchema>;
+export type UpdateAgentGroupInput = z.infer<typeof UpdateAgentGroupSchema>;
+export type AddGroupMemberInput = z.infer<typeof AddGroupMemberSchema>;

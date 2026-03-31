@@ -1,3 +1,4 @@
+export * from "./agent-groups";
 export * from "./apikey";
 export * from "./approvals";
 export * from "./audit-log";
