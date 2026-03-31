@@ -1,0 +1,15 @@
+## Worker environment variable keys
+## Derived from Bindings in apps/api/src/types.ts,
+## excluding Cloudflare-managed bindings (e.g. HYPERDRIVE).
+## Used by: generate-dev-vars.sh
+## Note: generate-dev-vars.sh only writes keys that currently have non-empty values.
+
+# Database (local dev / fallback when not using Hyperdrive binding)
+DATABASE_URL
+
+# Credential encryption (AES-256-GCM)
+ENCRYPTION_KEY
+
+# Auth — Better Auth
+BETTER_AUTH_URL
+BETTER_AUTH_SECRET

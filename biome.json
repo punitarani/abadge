@@ -94,10 +94,6 @@
     }
   ],
   "files": {
-    "includes": [
-      "apps/*/src/**",
-      "packages/*/src/**",
-      "packages/*/bin/**"
-    ]
+    "includes": ["apps/*/src/**", "packages/*/src/**", "packages/*/bin/**", "scripts/**/*.ts"]
   }
 }

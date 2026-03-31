@@ -49,6 +49,27 @@ bun run db:push           # Apply schema
 bun run dev               # Starts API (8787) + Web (3000)
 ```
 
+### API worker local files (Wrangler)
+
+`wrangler dev` reads secrets from `apps/api/.dev.vars` (gitignored). To generate that file from
+your Doppler `dev` config:
+
+```bash
+bun run dev:vars          # Writes apps/api/.dev.vars from Doppler env
+```
+
+To run only the API worker with Wrangler (after generating `.dev.vars`):
+
+```bash
+bun run api:dev:worker
+```
+
+Clear Wrangler’s local state if local dev gets stuck:
+
+```bash
+bun run api:clean:worker
+```
+
 ## Commands
 
 | Command | Description |
@@ -60,6 +81,9 @@ bun run dev               # Starts API (8787) + Web (3000)
 | `bun run lint` | Biome lint |
 | `bun run lint:fix` | Biome lint with auto-fix |
 | `bun run format` | Biome format |
+| `bun run dev:vars` | Generate `apps/api/.dev.vars` from Doppler (for Wrangler) |
+| `bun run api:dev:worker` | Generate `.dev.vars` then `wrangler dev` for API only |
+| `bun run api:clean:worker` | Remove `apps/api/.wrangler` cache |
 | `bun run db:generate` | Generate migration from schema changes |
 | `bun run db:migrate` | Run pending migrations |
 | `bun run db:push` | Push schema to database (no migration) |
