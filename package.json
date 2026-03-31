@@ -17,7 +17,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v && docker compose up -d",
-    "cli": "bun packages/cli/bin/abadge.ts",
+    "cli": "bun apps/cli/bin/abadge.ts",
     "mcp": "bun packages/mcp/src/index.ts"
   },
   "overrides": {

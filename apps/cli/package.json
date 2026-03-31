@@ -1,0 +1,19 @@
+{
+  "name": "abadge",
+  "version": "0.1.0",
+  "description": "CLI for the abadge agent credential firewall",
+  "type": "module",
+  "bin": {
+    "abadge": "./bin/abadge.ts"
+  },
+  "files": ["dist", "bin"],
+  "scripts": {
+    "build": "bun build --compile --outfile dist/abadge bin/abadge.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "bun bin/abadge.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0"
+  }
+}
