@@ -9,7 +9,7 @@ Agents should be able to use credentials without defaulting to plaintext exposur
 * **Algorithm**: AES-256-GCM
 * **IV**: 12 random bytes per credential, stored alongside ciphertext
 * **Key**: Base64-encoded 32-byte key, stored in Cloudflare Worker Secrets (never in DB or code)
-* **Scope**: credential values, connector configs
+* **Scope**: credential values, connector configs (including HTTP connector tokens and auth material)
 
 Generate a key: `openssl rand -base64 32`
 
@@ -92,9 +92,28 @@ Policies are sets of rules attached to credentials or permission grants:
 
 Policy evaluation is a pure function with no side effects. It takes resolved policy data and request context, returns allow/deny/approval-required.
 
+## HTTP connector isolation
+
+HTTP connectors (Doppler, HashiCorp Vault, Infisical) run server-side in the API worker. Their security model:
+
+* Connector configs (tokens, addresses, namespaces) are encrypted at rest with AES-256-GCM, same as credential values
+* Outbound requests to external vaults happen only in the API worker -- connector credentials never leave the server
+* Fetched secret values pass through the same authorization, policy evaluation, and audit pipeline as native credentials
+* A credential with `sourceType: "external"` does not store a secret value -- it stores a reference (`externalRef`) that the connector resolves at access time
+* Connector test endpoints (`POST /v1/connectors/:id/test`) verify connectivity without fetching secrets
+
+## Org access control
+
+Credentials can be scoped to an organization via `orgId`:
+
+* Org-scoped credentials (`ownerScope: "org"`) are accessible to members of the organization
+* Org admin or owner role is required for credential management operations on org-scoped credentials
+* Org membership is resolved via Better Auth's organization system
+* Cross-org credential access is not permitted
+
 ## What is NOT in scope for v1
 
-* End-to-end encryption (user → server → user)
+* End-to-end encryption (user -> server -> user)
 * Hardware security modules (HSM/KMS integration)
 * Key rotation automation
 * Multi-party approval

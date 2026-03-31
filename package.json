@@ -14,11 +14,13 @@
     "db:migrate": "doppler run -- turbo db:migrate --filter=@abadge/db",
     "db:push": "doppler run -- turbo db:push --filter=@abadge/db",
     "db:studio": "doppler run -- turbo db:studio --filter=@abadge/db",
+    "db:reset": "doppler run -- turbo db:reset --filter=@abadge/db",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v && docker compose up -d",
-    "cli": "bun packages/cli/bin/abadge.ts",
-    "mcp": "doppler run -- bun packages/mcp/src/index.ts"
+    "cli": "bun apps/cli/bin/abadge.ts",
+    "mcp": "doppler run -- bun packages/mcp/src/index.ts",
+    "test": "turbo test"
   },
   "overrides": {
     "drizzle-orm": "0.45.2"
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@better-auth/cli": "^1.4.21",
     "@biomejs/biome": "latest",
+    "@types/bun": "^1.3.11",
     "turbo": "latest",
     "typescript": "^5.7.0"
   },

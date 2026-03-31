@@ -61,10 +61,13 @@ bun run dev               # Starts API (8787) + Web (3000)
 | `bun run lint:fix` | Biome lint with auto-fix |
 | `bun run format` | Biome format |
 | `bun run db:generate` | Generate migration from schema changes |
+| `bun run db:migrate` | Run pending migrations |
 | `bun run db:push` | Push schema to database (no migration) |
 | `bun run db:studio` | Open Drizzle Studio |
+| `bun run db:reset` | Drop schema and re-run migrations |
 | `bun run cli -- --help` | Run CLI |
 | `bun run mcp` | Start MCP server |
+| `bun test` | Run test suite (policy, crypto, schema tests) |
 
 ## Package structure
 
@@ -74,10 +77,12 @@ packages/db      → Drizzle schema + client (depends on core)
 packages/auth    → Better Auth config (depends on db)
 packages/env     → t3-env validation (no internal deps)
 packages/broker  → execution engine (no internal deps)
-packages/cli     → CLI tool (no internal deps)
+packages/cli     → CLI tool library (no internal deps)
 packages/mcp     → MCP server (depends on @modelcontextprotocol/sdk)
+packages/sdk     → TypeScript SDK (@abadge/sdk, depends on zod)
 
 apps/api         → Hono worker (depends on core, db, auth)
+apps/cli         → Distributable CLI binary (bun build --compile)
 apps/web         → Next.js dashboard (depends on core, auth, env)
 ```
 
@@ -122,9 +127,59 @@ Uses [Biome](https://biomejs.dev/) 2.x:
 
 ## Testing
 
-No test framework configured yet. Current testing approach:
+Tests use `bun test` (Bun's built-in test runner). Run all tests:
 
-* `bun run typecheck` — type safety across all packages
-* `bun run lint` — code quality
-* API e2e — curl against running dev server
-* Browser e2e — Playwright against running dev + web servers
+```bash
+bun test
+```
+
+Test files:
+
+| File | Covers |
+|------|--------|
+| `apps/api/src/lib/policy.test.ts` | Policy rule evaluation (delivery mode, environment, sensitivity, destination, TTL) |
+| `apps/api/src/lib/crypto.test.ts` | AES-256-GCM encrypt/decrypt round-trips |
+| `packages/core/src/schemas.test.ts` | Zod schema validation (credentials, agents, permissions, policies, connectors, auto-grants, agent groups) |
+
+Additional verification:
+
+* `bun run typecheck` -- type safety across all packages
+* `bun run lint` -- code quality
+* API e2e -- curl against running dev server
+* Browser e2e -- Playwright against running dev + web servers
+
+## SDK
+
+The `@abadge/sdk` package (`packages/sdk/`) provides a typed TypeScript client for the abadge API.
+
+```bash
+# Build the SDK
+cd packages/sdk
+bun run build
+```
+
+Usage:
+
+```typescript
+import { AbadgeClient } from "@abadge/sdk";
+
+const client = new AbadgeClient({
+  apiUrl: "http://localhost:8787",
+  token: "abd_your_api_key",
+});
+
+const { credentials } = await client.listCredentials();
+```
+
+The SDK exposes methods for all API operations: credentials, agents, permissions, sessions, policies, approvals, connectors, and audit log queries. Error handling uses typed error classes (`UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `ApprovalRequiredError`).
+
+## CLI binary
+
+The `apps/cli/` directory builds a standalone CLI binary using Bun's compile feature:
+
+```bash
+cd apps/cli
+bun run build    # produces dist/abadge
+```
+
+The compiled binary requires no runtime dependencies and can be distributed directly.

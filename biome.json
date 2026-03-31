@@ -63,7 +63,7 @@
       }
     },
     {
-      "includes": ["packages/cli/**"],
+      "includes": ["packages/cli/**", "apps/cli/**"],
       "linter": {
         "rules": {
           "style": {

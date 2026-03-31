@@ -22,6 +22,9 @@ const publicColumns = {
   sensitivity: credentials.sensitivity,
   allowedDeliveryModes: credentials.allowedDeliveryModes,
   allowedDestinations: credentials.allowedDestinations,
+  sourceType: credentials.sourceType,
+  connectorId: credentials.connectorId,
+  externalRef: credentials.externalRef,
   createdBy: credentials.createdBy,
   updatedBy: credentials.updatedBy,
   createdAt: credentials.createdAt,
@@ -60,6 +63,9 @@ export const credentialRoutes = new Hono<Env>()
         sensitivity: true,
         allowedDeliveryModes: true,
         allowedDestinations: true,
+        sourceType: true,
+        connectorId: true,
+        externalRef: true,
         createdBy: true,
         updatedBy: true,
         createdAt: true,
@@ -77,7 +83,13 @@ export const credentialRoutes = new Hono<Env>()
     const db = c.get("db");
     const body = c.req.valid("json");
 
-    const { ciphertext, iv } = await encrypt(body.value, c.env.ENCRYPTION_KEY);
+    let encryptedValue = "";
+    let iv = "";
+    if (body.value) {
+      const encrypted = await encrypt(body.value, c.env.ENCRYPTION_KEY);
+      encryptedValue = encrypted.ciphertext;
+      iv = encrypted.iv;
+    }
 
     const rows = await db
       .insert(credentials)
@@ -85,7 +97,7 @@ export const credentialRoutes = new Hono<Env>()
         userId,
         name: body.name,
         type: body.type,
-        encryptedValue: ciphertext,
+        encryptedValue,
         iv,
         metadata: body.metadata ?? null,
         ownerScope: body.ownerScope ?? null,
@@ -97,6 +109,9 @@ export const credentialRoutes = new Hono<Env>()
         sensitivity: body.sensitivity ?? null,
         allowedDeliveryModes: body.allowedDeliveryModes ?? null,
         allowedDestinations: body.allowedDestinations ?? null,
+        sourceType: body.sourceType ?? "native",
+        connectorId: body.connectorId ?? null,
+        externalRef: body.externalRef ?? null,
         createdBy: userId,
         updatedBy: userId,
       })
@@ -145,6 +160,9 @@ export const credentialRoutes = new Hono<Env>()
       updates.encryptedValue = ciphertext;
       updates.iv = iv;
     }
+    if (body.sourceType !== undefined) updates.sourceType = body.sourceType;
+    if (body.connectorId !== undefined) updates.connectorId = body.connectorId ?? null;
+    if (body.externalRef !== undefined) updates.externalRef = body.externalRef ?? null;
 
     await db.update(credentials).set(updates).where(eq(credentials.id, id));
 

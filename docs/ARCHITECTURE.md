@@ -49,7 +49,10 @@ A user-owned encrypted secret entry with structured metadata.
 * **Security**: sensitivity (low/medium/high/critical), allowed delivery modes, allowed destinations
 * **Context**: environment (dev/staging/prod), service, provider, project, tags
 * **Secret material**: AES-256-GCM encrypted value + IV (never stored plaintext)
-* **Ownership**: ownerScope (user/org/system)
+* **Ownership**: ownerScope (user/org/system), orgId (for team-scoped credentials)
+* **External source**: sourceType (native/external), connectorId, externalRef (name, path, version)
+
+Credentials with `sourceType: "external"` store a reference to a secret in an external vault (Doppler, HashiCorp Vault, Infisical) rather than an encrypted value. The value is fetched from the connector at access time.
 
 ### Agent
 
@@ -79,7 +82,28 @@ A short-lived, scoped token that replaces static API keys for runtime access. Se
 
 ### Connector
 
-A configuration for fetching secrets from external vaults (1Password, AWS Secrets Manager) through the same policy and audit model.
+A configuration for fetching secrets from external vaults through the same policy and audit model. Two connector categories exist:
+
+* **Client-side connectors** (via broker): native, 1Password, AWS Secrets Manager, Bitwarden, GCloud Secret Manager
+* **HTTP connectors** (server-side, run in the API worker): Doppler, HashiCorp Vault, Infisical
+
+HTTP connectors make outbound requests from the API worker. Connector configs are encrypted at rest.
+
+### Auto-grant
+
+A rule that automatically grants an agent permission to access any credential matching specified criteria. Matching criteria (conjunctive -- all non-null fields must match):
+
+* `matchEnvironment` -- credential environment
+* `matchTags` -- credential must have all specified tags
+* `matchType` -- credential type
+* `matchService` -- credential service
+* `matchSensitivity` -- credential sensitivity level
+
+Auto-grants can attach a policy and constrain delivery modes, same as manual permission grants.
+
+### Agent group
+
+A named collection of agents owned by a user. Groups organize agents for management purposes. Membership is tracked in a join table with cascade deletes.
 
 ### Delivery modes
 
@@ -105,8 +129,14 @@ erDiagram
   USER ||--o{ AGENT : registers
   USER ||--o{ POLICY : defines
   USER ||--o{ CONNECTOR : configures
+  USER ||--o{ AUTO_GRANT : defines
+  USER ||--o{ AGENT_GROUP : owns
   AGENT ||--o{ PERMISSION : has
+  AGENT ||--o{ AUTO_GRANT : receives
+  AGENT ||--o{ AGENT_GROUP_MEMBER : belongs_to
+  AGENT_GROUP ||--o{ AGENT_GROUP_MEMBER : contains
   CREDENTIAL ||--o{ PERMISSION : grants
+  CREDENTIAL }o--o| CONNECTOR : sourced_from
   POLICY ||--o{ PERMISSION : constrains
   CREDENTIAL ||--o{ POLICY : scoped_to
   AGENT ||--o{ BROKER_SESSION : creates
@@ -123,6 +153,10 @@ erDiagram
     string iv
     string sensitivity
     string environment
+    string source_type
+    string connector_id
+    jsonb external_ref
+    string org_id
     jsonb allowed_delivery_modes
     jsonb tags
   }
@@ -149,6 +183,29 @@ erDiagram
     uuid credential_id
     jsonb rules
     boolean enabled
+  }
+
+  AUTO_GRANT {
+    string id
+    string agent_id
+    string user_id
+    string match_environment
+    jsonb match_tags
+    string match_type
+    string match_service
+    string match_sensitivity
+  }
+
+  AGENT_GROUP {
+    string id
+    string user_id
+    string name
+    string description
+  }
+
+  AGENT_GROUP_MEMBER {
+    string group_id
+    string agent_id
   }
 
   APPROVAL {
@@ -216,6 +273,8 @@ flowchart TB
 * decryption only occurs when deliveryMode is "reveal" AND authorization passes
 * agents can only access credentials owned by the same user who registered them
 * the LLM never receives raw secrets through the MCP server by default
+* HTTP connectors (Doppler, HashiCorp Vault, Infisical) make outbound requests from the API worker -- connector credentials are encrypted at rest and never leave the server
+* org-scoped credentials are accessible to org members; org admin/owner role is required for management operations
 
 ## Main request paths
 
@@ -325,14 +384,16 @@ A secret value is only returned when ALL conditions are true:
 ```text
 apps/
   api/        Hono API worker (control plane)
+  cli/        Distributable CLI binary (bun build --compile)
   web/        Next.js dashboard
 packages/
   auth/       Better Auth setup
   broker/     local execution engine
-  cli/        CLI tool
+  cli/        CLI tool (library)
   config/     shared tsconfig
   core/       shared types, schemas, constants
   db/         schema and database client
   env/        environment validation
   mcp/        MCP server for AI agents
+  sdk/        TypeScript SDK (@abadge/sdk)
 ```

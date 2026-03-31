@@ -3,7 +3,8 @@ import { and, eq } from "@abadge/db";
 import { connectors } from "@abadge/db/schema";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { encrypt } from "../lib/crypto";
+import { createHttpConnector, isHttpConnectorType } from "../lib/connectors";
+import { decrypt, encrypt } from "../lib/crypto";
 import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -134,7 +135,6 @@ export const connectorRoutes = new Hono<Env>()
 
     const connector = await db.query.connectors.findFirst({
       where: and(eq(connectors.id, id), eq(connectors.userId, userId)),
-      columns: { type: true },
     });
 
     if (!connector) {
@@ -145,6 +145,32 @@ export const connectorRoutes = new Hono<Env>()
       return c.json({ success: true });
     }
 
+    // HTTP connectors can be tested server-side
+    if (isHttpConnectorType(connector.type)) {
+      if (!connector.encryptedConfig || !connector.configIv) {
+        return c.json({ success: false, error: "Connector has no config" });
+      }
+
+      const httpConnector = createHttpConnector(connector.type);
+      if (!httpConnector) {
+        return c.json({ success: false, error: "Unknown HTTP connector type" });
+      }
+
+      try {
+        const configJson = await decrypt(
+          connector.encryptedConfig,
+          connector.configIv,
+          c.env.ENCRYPTION_KEY,
+        );
+        const config = JSON.parse(configJson) as Record<string, unknown>;
+        return c.json(await httpConnector.testConnection(config));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Test failed";
+        return c.json({ success: false, error: msg });
+      }
+    }
+
+    // Client-side connectors (1Password, AWS, etc.) require local broker
     return c.json({
       success: false,
       error: "Connector testing requires local broker",

@@ -6,41 +6,77 @@ import {
   environments,
   ownerScopes,
   sensitivities,
+  sourceTypes,
 } from "./constants";
 
 // --- Credentials ---
 
-export const CreateCredentialSchema = z.object({
-  name: z.string().min(1).max(128),
-  type: z.enum(credentialTypes),
-  value: z.string().min(1).max(65536),
-  metadata: z.record(z.string()).optional(),
-  ownerScope: z.enum(ownerScopes).optional(),
-  environment: z.enum(environments).optional(),
-  service: z.string().max(128).optional(),
-  provider: z.string().max(128).optional(),
-  project: z.string().max(128).optional(),
-  tags: z.array(z.string().max(64)).max(20).optional(),
-  sensitivity: z.enum(sensitivities).optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
-  allowedDestinations: z.array(z.string().max(256)).max(50).optional(),
+const externalRefSchema = z.object({
+  name: z.string().optional(),
+  path: z.string().optional(),
+  version: z.string().optional(),
 });
 
-export const UpdateCredentialSchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  type: z.enum(credentialTypes).optional(),
-  value: z.string().min(1).max(65536).optional(),
-  metadata: z.record(z.string()).optional(),
-  ownerScope: z.enum(ownerScopes).optional(),
-  environment: z.enum(environments).nullable().optional(),
-  service: z.string().max(128).nullable().optional(),
-  provider: z.string().max(128).nullable().optional(),
-  project: z.string().max(128).nullable().optional(),
-  tags: z.array(z.string().max(64)).max(20).nullable().optional(),
-  sensitivity: z.enum(sensitivities).optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
-  allowedDestinations: z.array(z.string().max(256)).max(50).nullable().optional(),
-});
+/** External source type requires a non-empty connectorId */
+function requiresConnectorForExternal(data: {
+  sourceType?: string;
+  connectorId?: string | null;
+}): boolean {
+  return data.sourceType !== "external" || !!data.connectorId;
+}
+
+const connectorRequiredRefinement = {
+  message: "connectorId is required when sourceType is 'external'",
+  path: ["connectorId"] as (string | number)[],
+};
+
+export const CreateCredentialSchema = z
+  .object({
+    name: z.string().min(1).max(128),
+    type: z.enum(credentialTypes),
+    value: z.string().min(1).max(65536).optional(),
+    metadata: z.record(z.string()).optional(),
+    ownerScope: z.enum(ownerScopes).optional(),
+    orgId: z.string().optional(),
+    environment: z.enum(environments).optional(),
+    service: z.string().max(128).optional(),
+    provider: z.string().max(128).optional(),
+    project: z.string().max(128).optional(),
+    tags: z.array(z.string().max(64)).max(20).optional(),
+    sensitivity: z.enum(sensitivities).optional(),
+    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
+    allowedDestinations: z.array(z.string().max(256)).max(50).optional(),
+    sourceType: z.enum(sourceTypes).default("native"),
+    connectorId: z.string().optional(),
+    externalRef: externalRefSchema.optional(),
+  })
+  .refine(requiresConnectorForExternal, connectorRequiredRefinement)
+  .refine((data) => data.sourceType !== "native" || data.value !== undefined, {
+    message: "value is required when sourceType is 'native'",
+    path: ["value"],
+  });
+
+export const UpdateCredentialSchema = z
+  .object({
+    name: z.string().min(1).max(128).optional(),
+    type: z.enum(credentialTypes).optional(),
+    value: z.string().min(1).max(65536).optional(),
+    metadata: z.record(z.string()).optional(),
+    ownerScope: z.enum(ownerScopes).optional(),
+    orgId: z.string().nullable().optional(),
+    environment: z.enum(environments).nullable().optional(),
+    service: z.string().max(128).nullable().optional(),
+    provider: z.string().max(128).nullable().optional(),
+    project: z.string().max(128).nullable().optional(),
+    tags: z.array(z.string().max(64)).max(20).nullable().optional(),
+    sensitivity: z.enum(sensitivities).optional(),
+    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
+    allowedDestinations: z.array(z.string().max(256)).max(50).nullable().optional(),
+    sourceType: z.enum(sourceTypes).optional(),
+    connectorId: z.string().nullable().optional(),
+    externalRef: externalRefSchema.nullable().optional(),
+  })
+  .refine(requiresConnectorForExternal, connectorRequiredRefinement);
 
 // --- Agents ---
 
@@ -151,6 +187,47 @@ export const UpdateConnectorSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+// --- Auto-grants ---
+
+export const CreateAutoGrantSchema = z.object({
+  agentId: z.string().min(1),
+  matchEnvironment: z.enum(environments).optional(),
+  matchTags: z.array(z.string().max(64)).max(20).optional(),
+  matchType: z.enum(credentialTypes).optional(),
+  matchService: z.string().max(128).optional(),
+  matchSensitivity: z.enum(sensitivities).optional(),
+  policyId: z.string().uuid().optional(),
+  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
+  expiresAt: z.coerce.date().optional(),
+});
+
+export const UpdateAutoGrantSchema = z.object({
+  matchEnvironment: z.enum(environments).nullable().optional(),
+  matchTags: z.array(z.string().max(64)).max(20).nullable().optional(),
+  matchType: z.enum(credentialTypes).nullable().optional(),
+  matchService: z.string().max(128).nullable().optional(),
+  matchSensitivity: z.enum(sensitivities).nullable().optional(),
+  policyId: z.string().uuid().nullable().optional(),
+  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
+  expiresAt: z.coerce.date().nullable().optional(),
+});
+
+// --- Agent Groups ---
+
+export const CreateAgentGroupSchema = z.object({
+  name: z.string().min(1).max(128),
+  description: z.string().max(512).optional(),
+});
+
+export const UpdateAgentGroupSchema = z.object({
+  name: z.string().min(1).max(128).optional(),
+  description: z.string().max(512).nullable().optional(),
+});
+
+export const AddGroupMemberSchema = z.object({
+  agentId: z.string().min(1),
+});
+
 // --- Inferred types ---
 
 export type CreateCredentialInput = z.infer<typeof CreateCredentialSchema>;
@@ -167,3 +244,8 @@ export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionSchema>;
 export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
 export type CreateConnectorInput = z.infer<typeof CreateConnectorSchema>;
 export type UpdateConnectorInput = z.infer<typeof UpdateConnectorSchema>;
+export type CreateAutoGrantInput = z.infer<typeof CreateAutoGrantSchema>;
+export type UpdateAutoGrantInput = z.infer<typeof UpdateAutoGrantSchema>;
+export type CreateAgentGroupInput = z.infer<typeof CreateAgentGroupSchema>;
+export type UpdateAgentGroupInput = z.infer<typeof UpdateAgentGroupSchema>;
+export type AddGroupMemberInput = z.infer<typeof AddGroupMemberSchema>;
