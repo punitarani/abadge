@@ -27,7 +27,7 @@ Required variables:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/abadge` |
+| `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/postgres` |
 | `BETTER_AUTH_URL` | API base URL | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |

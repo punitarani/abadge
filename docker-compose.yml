@@ -6,11 +6,11 @@ services:
     environment:
       POSTGRES_USER: abadge
       POSTGRES_PASSWORD: abadge
-      POSTGRES_DB: abadge
+      POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U abadge"]
+      test: ["CMD-SHELL", "pg_isready -U abadge -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 5

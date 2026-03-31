@@ -10,8 +10,8 @@
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
-      "id": "REPLACE_WITH_HYPERDRIVE_CONFIG_ID",
-      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
+      "id": "3ea93d0186d94581b5b66f4e670216bb",
+      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/postgres"
     }
   ]
 }
