@@ -44,6 +44,10 @@ export const credentials = pgTable(
     allowedDestinations: jsonb("allowed_destinations").$type<string[]>(),
     createdBy: text("created_by"),
     updatedBy: text("updated_by"),
+    orgId: text("org_id"),
   },
-  (t) => [index("idx_credentials_user_id").on(t.userId)],
+  (t) => [
+    index("idx_credentials_user_id").on(t.userId),
+    index("idx_credentials_org_id").on(t.orgId),
+  ],
 );

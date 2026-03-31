@@ -18,6 +18,7 @@ export interface Credential {
   type: CredentialType;
   metadata: Record<string, string> | null;
   ownerScope: OwnerScope;
+  orgId: string | null;
   environment: Environment | null;
   service: string | null;
   provider: string | null;
