@@ -17,8 +17,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "better-auth": "latest",
-    "@better-auth/api-key": "latest",
+    "better-auth": "1.5.6",
+    "@better-auth/api-key": "1.5.6",
+    "@better-auth/core": "1.5.6",
     "@abadge/db": "workspace:*"
   },
   "devDependencies": {

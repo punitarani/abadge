@@ -3,8 +3,10 @@ import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
 
 export function createBetterAuthClient(baseURL: string) {
-  return createAuthClient({
+  const options = {
     baseURL,
     plugins: [organizationClient(), apiKeyClient()],
-  });
+  } as Parameters<typeof createAuthClient>[0];
+
+  return createAuthClient(options);
 }
