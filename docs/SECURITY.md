@@ -33,7 +33,7 @@ Generate a key: `openssl rand -base64 32`
 * SHA-256 hashed before storage
 * Only the hash + visible prefix stored in DB
 * Full key shown once to user, never retrievable again
-* Prefix: `abd_`
+* Prefix: `abg_`
 
 ### Broker session tokens
 
@@ -76,7 +76,7 @@ Every access attempt is logged immutably with:
 * Agent identity and principal type
 * Credential identity
 * Requested delivery mode
-* Actual outcome (allowed, denied, pending_approval, expired)
+* Actual outcome (allowed, denied, pending\_approval, expired)
 * Destination, environment, purpose
 * Session ID (if session-based auth)
 * IP address and timestamp
@@ -88,7 +88,7 @@ Audit records have no foreign key constraints — they persist after credential 
 
 Policies are sets of rules attached to credentials or permission grants:
 
-* **delivery_mode**: restrict allowed modes
+* **delivery\_mode**: restrict allowed modes
 * **environment**: restrict to specific environments
 * **sensitivity**: require approval above a threshold
 * **destination**: allow/block specific destinations

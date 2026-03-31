@@ -144,7 +144,7 @@ await client.accessCredential({
   {
     name: "API",
     body: `curl -X POST https://api.abadge.io/v1/credentials/access \\
-  -H "Authorization: Bearer abd_..." \\
+  -H "Authorization: Bearer abg_..." \\
   -H "Content-Type: application/json" \\
   -d '{
     "credentialName": "github-token",

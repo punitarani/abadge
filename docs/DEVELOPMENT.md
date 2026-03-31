@@ -189,7 +189,7 @@ import { AbadgeClient } from "@abadge/sdk";
 
 const client = new AbadgeClient({
   apiUrl: "http://localhost:8787",
-  token: "abd_your_api_key",
+  token: "abg_your_api_key",
 });
 
 const { credentials } = await client.listCredentials();

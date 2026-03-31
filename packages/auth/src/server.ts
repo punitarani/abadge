@@ -19,7 +19,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       creatorRole: "owner",
     }),
     apiKey({
-      defaultPrefix: "abd_",
+      defaultPrefix: "abg_",
       enableMetadata: true,
       rateLimit: {
         enabled: true,

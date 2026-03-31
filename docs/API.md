@@ -25,13 +25,13 @@ All `/v1/*` management routes require a valid session cookie.
 Agent-facing routes accept a Bearer token in the `Authorization` header:
 
 ```
-Authorization: Bearer abd_...   (API key)
+Authorization: Bearer abg_...   (API key)
 Authorization: Bearer abs_...   (broker session token)
 ```
 
 Session tokens are tried first (by `abs_` prefix), then API keys.
 
----
+***
 
 ## Credentials
 
@@ -64,18 +64,18 @@ POST /v1/credentials
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string (1-128) | yes | Display name |
-| `type` | enum | yes | api_key, login, token, json_blob, oauth_client, service_account_json, cookie_session, pii, other |
+| `type` | enum | yes | api\_key, login, token, json\_blob, oauth\_client, service\_account\_json, cookie\_session, pii, other |
 | `value` | string (1-65536) | conditional | Secret value (encrypted at rest). Required when sourceType is "native". |
-| `metadata` | Record<string, string> | no | Arbitrary key-value pairs |
+| `metadata` | Record\<string, string> | no | Arbitrary key-value pairs |
 | `ownerScope` | enum | no | user, org, system (default: user) |
 | `environment` | enum | no | dev, staging, prod |
 | `service` | string (max 128) | no | e.g., "github", "aws" |
 | `provider` | string (max 128) | no | e.g., "cloud", "saas" |
 | `project` | string (max 128) | no | Project identifier |
-| `tags` | string[] (max 20) | no | Searchable tags |
+| `tags` | string\[] (max 20) | no | Searchable tags |
 | `sensitivity` | enum | no | low, medium, high, critical (default: medium) |
-| `allowedDeliveryModes` | DeliveryMode[] | no | Restrict how this credential can be consumed |
-| `allowedDestinations` | string[] (max 50) | no | Restrict where this credential can be sent |
+| `allowedDeliveryModes` | DeliveryMode\[] | no | Restrict how this credential can be consumed |
+| `allowedDestinations` | string\[] (max 50) | no | Restrict where this credential can be sent |
 | `sourceType` | enum | no | native (default) or external |
 | `connectorId` | string | conditional | Required when sourceType is "external" |
 | `externalRef` | ExternalRef | no | Reference to secret in external vault (see below) |
@@ -107,7 +107,7 @@ Same fields as create, all optional. If `value` is provided, it is re-encrypted.
 DELETE /v1/credentials/:id
 ```
 
----
+***
 
 ## Agents
 
@@ -130,7 +130,7 @@ POST /v1/agents
 | `name` | string (1-64) | yes |
 | `description` | string (max 256) | no |
 
-Response: `{ agent: { id, name, prefix }, apiKey: "abd_..." }` (201)
+Response: `{ agent: { id, name, prefix }, apiKey: "abg_..." }` (201)
 
 The API key is shown **once**. Only the hash is stored.
 
@@ -152,7 +152,7 @@ PATCH /v1/agents/:id
 DELETE /v1/agents/:id
 ```
 
----
+***
 
 ## Permissions
 
@@ -175,7 +175,7 @@ POST /v1/permissions/grant
 | `agentId` | string | yes |
 | `credentialId` | uuid | yes |
 | `policyId` | uuid | no |
-| `allowedDeliveryModes` | DeliveryMode[] | no |
+| `allowedDeliveryModes` | DeliveryMode\[] | no |
 | `expiresAt` | ISO date | no |
 
 ### Revoke permission
@@ -189,7 +189,7 @@ POST /v1/permissions/revoke
 | `agentId` | string | yes |
 | `credentialId` | uuid | yes |
 
----
+***
 
 ## Policies
 
@@ -217,7 +217,7 @@ POST /v1/policies
 |-------|------|----------|
 | `name` | string (1-128) | yes |
 | `credentialId` | uuid | no (global if omitted) |
-| `rules` | PolicyRule[] | yes |
+| `rules` | PolicyRule\[] | yes |
 
 **PolicyRule types:**
 
@@ -247,7 +247,7 @@ PUT /v1/policies/:id
 | Field | Type |
 |-------|------|
 | `name` | string |
-| `rules` | PolicyRule[] |
+| `rules` | PolicyRule\[] |
 | `enabled` | boolean |
 
 ### Delete policy
@@ -256,7 +256,7 @@ PUT /v1/policies/:id
 DELETE /v1/policies/:id
 ```
 
----
+***
 
 ## Approvals
 
@@ -294,7 +294,7 @@ POST /v1/approvals/:id/deny
 |-------|------|
 | `reason` | string (max 512, optional) |
 
----
+***
 
 ## Connectors
 
@@ -321,8 +321,8 @@ POST /v1/connectors
 | Field | Type | Required |
 |-------|------|----------|
 | `name` | string (1-128) | yes |
-| `type` | enum | yes (native, onepassword, aws_secrets_manager, bitwarden, infisical, doppler, gcloud_secret_manager, hashicorp_vault) |
-| `config` | Record<string, string> | no (encrypted at rest) |
+| `type` | enum | yes (native, onepassword, aws\_secrets\_manager, bitwarden, infisical, doppler, gcloud\_secret\_manager, hashicorp\_vault) |
+| `config` | Record\<string, string> | no (encrypted at rest) |
 
 ### Update connector
 
@@ -344,7 +344,7 @@ POST /v1/connectors/:id/test
 
 Response: `{ success: boolean, error?: string }`
 
----
+***
 
 ## Auto-Grants
 
@@ -376,12 +376,12 @@ POST /v1/auto-grants
 |-------|------|----------|-------------|
 | `agentId` | string | yes | Agent to grant access to |
 | `matchEnvironment` | enum | no | Match credentials in this environment (dev, staging, prod) |
-| `matchTags` | string[] (max 20) | no | Match credentials with ALL of these tags |
+| `matchTags` | string\[] (max 20) | no | Match credentials with ALL of these tags |
 | `matchType` | enum | no | Match credentials of this type |
 | `matchService` | string (max 128) | no | Match credentials for this service |
 | `matchSensitivity` | enum | no | Match credentials at this sensitivity level |
 | `policyId` | uuid | no | Attach this policy to auto-granted permissions |
-| `allowedDeliveryModes` | DeliveryMode[] | no | Restrict delivery modes for auto-granted permissions |
+| `allowedDeliveryModes` | DeliveryMode\[] | no | Restrict delivery modes for auto-granted permissions |
 | `expiresAt` | ISO date | no | Expiration for auto-granted permissions |
 
 Matching is conjunctive: a credential must match ALL non-null criteria. For `matchTags`, the credential must have all specified tags (subset check).
@@ -402,7 +402,7 @@ Same fields as create (except `agentId`), all optional. Set a field to `null` to
 DELETE /v1/auto-grants/:id
 ```
 
----
+***
 
 ## Agent Groups
 
@@ -476,7 +476,7 @@ Returns 409 if the agent is already a member.
 DELETE /v1/agent-groups/:id/members/:agentId
 ```
 
----
+***
 
 ## Broker Sessions
 
@@ -491,8 +491,8 @@ POST /v1/sessions
 | Field | Type | Required |
 |-------|------|----------|
 | `agentId` | string | yes |
-| `scopes` | string[] | no (credential IDs to restrict access) |
-| `allowedDeliveryModes` | DeliveryMode[] | no |
+| `scopes` | string\[] | no (credential IDs to restrict access) |
+| `allowedDeliveryModes` | DeliveryMode\[] | no |
 | `ttlSeconds` | number (1-86400) | yes |
 
 Response: `{ sessionId, token: "abs_...", expiresAt }` (201)
@@ -517,7 +517,7 @@ GET /v1/sessions/:id
 DELETE /v1/sessions/:id
 ```
 
----
+***
 
 ## Credential Access (Agent-facing)
 
@@ -541,6 +541,7 @@ POST /v1/credentials/access
 **Responses:**
 
 Success (reveal mode):
+
 ```json
 {
   "credential": { "name": "...", "type": "...", "metadata": {} },
@@ -551,6 +552,7 @@ Success (reveal mode):
 ```
 
 Success (non-reveal mode — value not included):
+
 ```json
 {
   "credential": { "name": "...", "type": "...", "metadata": {} },
@@ -560,6 +562,7 @@ Success (non-reveal mode — value not included):
 ```
 
 Approval required (202):
+
 ```json
 {
   "error": "Approval required",
@@ -569,12 +572,13 @@ Approval required (202):
 ```
 
 Denied (403):
+
 ```json
 { "error": "Access denied", "code": "ACCESS_DENIED" }
 { "error": "Delivery mode not allowed", "code": "DELIVERY_MODE_NOT_ALLOWED" }
 ```
 
----
+***
 
 ## Audit Log
 
@@ -590,7 +594,7 @@ GET /v1/audit?limit=50&offset=0
 |-------------|------|-------------|
 | `limit` | number (max 200) | Results per page |
 | `offset` | number | Pagination offset |
-| `outcome` | enum | allowed, denied, pending_approval, expired |
+| `outcome` | enum | allowed, denied, pending\_approval, expired |
 | `deliveryMode` | DeliveryMode | Filter by delivery mode |
 | `principalType` | enum | human, app, agent, workload |
 | `environment` | enum | dev, staging, prod |
@@ -598,7 +602,7 @@ GET /v1/audit?limit=50&offset=0
 | `startDate` | ISO date | Start of date range |
 | `endDate` | ISO date | End of date range |
 
----
+***
 
 ## Delivery Modes
 
@@ -610,7 +614,7 @@ GET /v1/audit?limit=50&offset=0
 | `browser_fill` | Fill browser form fields | No (metadata only) |
 | `operation_only` | Server-side operation only | No |
 
----
+***
 
 ## Error Codes
 
@@ -632,7 +636,7 @@ GET /v1/audit?limit=50&offset=0
 | `SESSION_EXPIRED` | 401 | Broker session has expired |
 | `SESSION_REVOKED` | 401 | Broker session was revoked |
 
----
+***
 
 ## Health Check
 
