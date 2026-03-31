@@ -9,7 +9,14 @@ import type {
   OwnerScope,
   PrincipalType,
   Sensitivity,
+  SourceType,
 } from "./constants";
+
+export interface ExternalRef {
+  name?: string;
+  path?: string;
+  version?: string;
+}
 
 export interface Credential {
   id: string;
@@ -18,6 +25,7 @@ export interface Credential {
   type: CredentialType;
   metadata: Record<string, string> | null;
   ownerScope: OwnerScope;
+  orgId: string | null;
   environment: Environment | null;
   service: string | null;
   provider: string | null;
@@ -26,6 +34,9 @@ export interface Credential {
   sensitivity: Sensitivity;
   allowedDeliveryModes: DeliveryMode[] | null;
   allowedDestinations: string[] | null;
+  sourceType: SourceType;
+  connectorId: string | null;
+  externalRef: ExternalRef | null;
   createdBy: string;
   updatedBy: string;
   createdAt: Date;

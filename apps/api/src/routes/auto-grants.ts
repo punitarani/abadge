@@ -1,6 +1,6 @@
 import { CreateAutoGrantSchema, UpdateAutoGrantSchema } from "@abadge/core";
 import { and, eq } from "@abadge/db";
-import { apikey, autoGrants } from "@abadge/db/schema";
+import { apikey, autoGrants, policies } from "@abadge/db/schema";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth";
@@ -42,6 +42,16 @@ export const autoGrantRoutes = new Hono<Env>()
       return c.json({ error: "Agent not found" }, 404);
     }
 
+    // Verify policy belongs to user if provided
+    if (body.policyId) {
+      const policy = await db.query.policies.findFirst({
+        where: and(eq(policies.id, body.policyId), eq(policies.userId, userId)),
+      });
+      if (!policy) {
+        return c.json({ error: "Policy not found" }, 404);
+      }
+    }
+
     const rows = await db
       .insert(autoGrants)
       .values({
@@ -77,6 +87,16 @@ export const autoGrantRoutes = new Hono<Env>()
 
     if (!existing) {
       return c.json({ error: "Auto-grant not found" }, 404);
+    }
+
+    // Verify policy belongs to user if being updated
+    if (body.policyId) {
+      const policy = await db.query.policies.findFirst({
+        where: and(eq(policies.id, body.policyId), eq(policies.userId, userId)),
+      });
+      if (!policy) {
+        return c.json({ error: "Policy not found" }, 404);
+      }
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };

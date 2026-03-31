@@ -17,7 +17,17 @@ export class HashiCorpVaultHttpConnector implements HttpConnector {
       throw new Error("HashiCorp Vault connector requires ref.path or ref.name");
     }
 
-    const url = `${addr}/v1/${mount}/data/${secretPath}`;
+    // Sanitize path: reject traversal attempts and encode each segment
+    if (secretPath.includes("..")) {
+      throw new Error("Vault: path traversal not allowed");
+    }
+    const sanitizedPath = secretPath
+      .split("/")
+      .filter(Boolean)
+      .map((seg) => encodeURIComponent(seg))
+      .join("/");
+
+    const url = `${addr}/v1/${mount}/data/${sanitizedPath}`;
     const headers: Record<string, string> = { "X-Vault-Token": token };
     if (namespace) {
       headers["X-Vault-Namespace"] = namespace;

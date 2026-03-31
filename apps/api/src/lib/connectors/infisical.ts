@@ -54,7 +54,10 @@ export class InfisicalHttpConnector implements HttpConnector {
       "",
     );
 
-    const res = await fetch(`${siteUrl}/api/v1/auth/token-auth/renew`, {
+    // Use /api/v2/organizations — works across all Infisical auth methods
+    // (service tokens, universal auth, token auth). The token-auth renew
+    // endpoint only works for one specific auth type.
+    const res = await fetch(`${siteUrl}/api/v2/organizations`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 

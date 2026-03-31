@@ -5,11 +5,16 @@ import {
   accessLog,
   agentCredentialPermissions,
   approvals,
+  autoGrants,
+  connectors,
   credentials,
   policies,
 } from "@abadge/db/schema";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { matchesAutoGrant } from "../lib/auto-grant";
+import type { ExternalRef } from "../lib/connectors";
+import { createHttpConnector } from "../lib/connectors";
 import { decrypt } from "../lib/crypto";
 import {
   evaluatePolicy,
@@ -76,13 +81,56 @@ export const accessRoutes = new Hono<AgentEnv>()
       return c.json({ error: "Credential not found" }, 404);
     }
 
-    // Check permission
-    const permission = await db.query.agentCredentialPermissions.findFirst({
+    // Check explicit permission
+    let permission = await db.query.agentCredentialPermissions.findFirst({
       where: and(
         eq(agentCredentialPermissions.agentId, agentId),
         eq(agentCredentialPermissions.credentialId, credential.id),
       ),
     });
+
+    // Fall back to auto-grants if no explicit permission exists
+    if (!permission) {
+      const grants = await db
+        .select()
+        .from(autoGrants)
+        .where(and(eq(autoGrants.agentId, agentId), eq(autoGrants.userId, agentUserId)));
+
+      const now = new Date();
+      const matchingGrant = grants.find(
+        (g) =>
+          (!g.expiresAt || g.expiresAt > now) &&
+          matchesAutoGrant(
+            {
+              environment: credential.environment,
+              tags: credential.tags as string[] | null,
+              type: credential.type,
+              service: credential.service,
+              sensitivity: credential.sensitivity,
+            },
+            {
+              matchEnvironment: g.matchEnvironment,
+              matchTags: g.matchTags,
+              matchType: g.matchType,
+              matchService: g.matchService,
+              matchSensitivity: g.matchSensitivity,
+            },
+          ),
+      );
+
+      if (matchingGrant) {
+        // Synthesize an ephemeral permission from the auto-grant
+        permission = {
+          agentId,
+          credentialId: credential.id,
+          policyId: matchingGrant.policyId,
+          allowedDeliveryModes: matchingGrant.allowedDeliveryModes,
+          expiresAt: matchingGrant.expiresAt,
+          grantedAt: matchingGrant.createdAt,
+          grantedBy: agentUserId,
+        };
+      }
+    }
 
     if (!permission) {
       await db.insert(accessLog).values({
@@ -248,11 +296,55 @@ export const accessRoutes = new Hono<AgentEnv>()
       deliveryMode === "reveal" || deliveryMode === "env_inject" || deliveryMode === "file_mount";
 
     if (valueNeeded) {
-      const decryptedValue = await decrypt(
-        credential.encryptedValue,
-        credential.iv,
-        c.env.ENCRYPTION_KEY,
-      );
+      let secretValue: string;
+
+      if (credential.sourceType === "external") {
+        // Fetch from external connector instead of decrypting
+        if (!credential.connectorId) {
+          return c.json(
+            { error: "External credential has no connector", code: "CONNECTOR_ERROR" },
+            500,
+          );
+        }
+
+        const connector = await db.query.connectors.findFirst({
+          where: eq(connectors.id, credential.connectorId),
+        });
+
+        if (!connector || !connector.encryptedConfig || !connector.configIv) {
+          return c.json(
+            { error: "Connector not found or not configured", code: "CONNECTOR_NOT_FOUND" },
+            500,
+          );
+        }
+
+        const httpConnector = createHttpConnector(connector.type);
+        if (!httpConnector) {
+          return c.json(
+            { error: "Connector type does not support server-side fetch", code: "CONNECTOR_ERROR" },
+            500,
+          );
+        }
+
+        const configJson = await decrypt(
+          connector.encryptedConfig,
+          connector.configIv,
+          c.env.ENCRYPTION_KEY,
+        );
+        const config = JSON.parse(configJson) as Record<string, unknown>;
+        const ref = (credential.externalRef as ExternalRef) ?? {};
+
+        try {
+          const fetched = await httpConnector.fetchSecret(ref, config);
+          secretValue = fetched.value;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Connector fetch failed";
+          return c.json({ error: msg, code: "CONNECTOR_ERROR" }, 502);
+        }
+      } else {
+        // Native credential: decrypt from stored ciphertext
+        secretValue = await decrypt(credential.encryptedValue, credential.iv, c.env.ENCRYPTION_KEY);
+      }
 
       return c.json({
         credential: {
@@ -261,7 +353,7 @@ export const accessRoutes = new Hono<AgentEnv>()
           metadata: credential.metadata,
         },
         deliveryMode,
-        value: decryptedValue,
+        value: secretValue,
         approved: true,
       });
     }

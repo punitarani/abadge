@@ -20,28 +20,7 @@
       "idx": 2,
       "version": "7",
       "when": 1775020800000,
-      "tag": "0002_connector_credentials",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1775107200000,
-      "tag": "0003_auto_grants",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1775193600000,
-      "tag": "0004_agent_groups",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1775280000000,
-      "tag": "0005_org_credentials",
+      "tag": "0002_v2_features",
       "breakpoints": true
     }
   ]

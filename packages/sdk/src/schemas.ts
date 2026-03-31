@@ -6,41 +6,70 @@ import {
   environments,
   ownerScopes,
   sensitivities,
+  sourceTypes,
 } from "./constants";
 
 // --- Credentials ---
 
-export const CreateCredentialSchema = z.object({
-  name: z.string().min(1).max(128),
-  type: z.enum(credentialTypes),
-  value: z.string().min(1).max(65536),
-  metadata: z.record(z.string()).optional(),
-  ownerScope: z.enum(ownerScopes).optional(),
-  environment: z.enum(environments).optional(),
-  service: z.string().max(128).optional(),
-  provider: z.string().max(128).optional(),
-  project: z.string().max(128).optional(),
-  tags: z.array(z.string().max(64)).max(20).optional(),
-  sensitivity: z.enum(sensitivities).optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
-  allowedDestinations: z.array(z.string().max(256)).max(50).optional(),
+const externalRefSchema = z.object({
+  name: z.string().optional(),
+  path: z.string().optional(),
+  version: z.string().optional(),
 });
 
-export const UpdateCredentialSchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  type: z.enum(credentialTypes).optional(),
-  value: z.string().min(1).max(65536).optional(),
-  metadata: z.record(z.string()).optional(),
-  ownerScope: z.enum(ownerScopes).optional(),
-  environment: z.enum(environments).nullable().optional(),
-  service: z.string().max(128).nullable().optional(),
-  provider: z.string().max(128).nullable().optional(),
-  project: z.string().max(128).nullable().optional(),
-  tags: z.array(z.string().max(64)).max(20).nullable().optional(),
-  sensitivity: z.enum(sensitivities).optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
-  allowedDestinations: z.array(z.string().max(256)).max(50).nullable().optional(),
-});
+export const CreateCredentialSchema = z
+  .object({
+    name: z.string().min(1).max(128),
+    type: z.enum(credentialTypes),
+    value: z.string().min(1).max(65536).optional(),
+    metadata: z.record(z.string()).optional(),
+    ownerScope: z.enum(ownerScopes).optional(),
+    orgId: z.string().optional(),
+    environment: z.enum(environments).optional(),
+    service: z.string().max(128).optional(),
+    provider: z.string().max(128).optional(),
+    project: z.string().max(128).optional(),
+    tags: z.array(z.string().max(64)).max(20).optional(),
+    sensitivity: z.enum(sensitivities).optional(),
+    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
+    allowedDestinations: z.array(z.string().max(256)).max(50).optional(),
+    sourceType: z.enum(sourceTypes).default("native"),
+    connectorId: z.string().optional(),
+    externalRef: externalRefSchema.optional(),
+  })
+  .refine((data) => data.sourceType !== "external" || !!data.connectorId, {
+    message: "connectorId is required when sourceType is 'external'",
+    path: ["connectorId"],
+  })
+  .refine((data) => data.sourceType !== "native" || data.value !== undefined, {
+    message: "value is required when sourceType is 'native'",
+    path: ["value"],
+  });
+
+export const UpdateCredentialSchema = z
+  .object({
+    name: z.string().min(1).max(128).optional(),
+    type: z.enum(credentialTypes).optional(),
+    value: z.string().min(1).max(65536).optional(),
+    metadata: z.record(z.string()).optional(),
+    ownerScope: z.enum(ownerScopes).optional(),
+    orgId: z.string().nullable().optional(),
+    environment: z.enum(environments).nullable().optional(),
+    service: z.string().max(128).nullable().optional(),
+    provider: z.string().max(128).nullable().optional(),
+    project: z.string().max(128).nullable().optional(),
+    tags: z.array(z.string().max(64)).max(20).nullable().optional(),
+    sensitivity: z.enum(sensitivities).optional(),
+    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
+    allowedDestinations: z.array(z.string().max(256)).max(50).nullable().optional(),
+    sourceType: z.enum(sourceTypes).optional(),
+    connectorId: z.string().nullable().optional(),
+    externalRef: externalRefSchema.nullable().optional(),
+  })
+  .refine((data) => data.sourceType !== "external" || !!data.connectorId, {
+    message: "connectorId is required when sourceType is 'external'",
+    path: ["connectorId"],
+  });
 
 // --- Agents ---
 
