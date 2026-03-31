@@ -44,7 +44,7 @@ export async function runCommand(args: string[]): Promise<void> {
   try {
     const result = await client.post<AccessResult>("/v1/credentials/access", {
       credentialName: secretName,
-      deliveryMode: "reveal",
+      deliveryMode: "env_inject",
     });
     if (!result.value) {
       throw new Error("No secret value returned — delivery mode may not be 'reveal'");

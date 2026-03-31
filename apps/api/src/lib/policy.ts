@@ -1,13 +1,15 @@
-import { type DeliveryMode, deliveryModes, type Sensitivity, sensitivities } from "@abadge/core";
+import { deliveryModes, type Sensitivity, sensitivities } from "@abadge/core";
 
+/** Matches PolicyRuleSchema field names from packages/core/src/schemas.ts */
 export interface PolicyRule {
   type: "delivery_mode" | "environment" | "sensitivity" | "destination" | "ttl";
-  allowedModes?: string[];
-  allowedEnvironments?: string[];
-  requiresApprovalAbove?: string;
-  allowedDestinations?: string[];
+  deliveryModes?: string[];
+  environments?: string[];
+  sensitivity?: string;
+  requiresApproval?: boolean;
+  destinations?: string[];
   blockedDestinations?: string[];
-  maxTtlSeconds?: number;
+  ttlSeconds?: number;
 }
 
 export interface PolicyInput {
@@ -72,21 +74,21 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
   for (const rule of rules) {
     switch (rule.type) {
       case "delivery_mode": {
-        if (rule.allowedModes) {
-          effectiveModes = intersect(effectiveModes, rule.allowedModes);
+        if (rule.deliveryModes) {
+          effectiveModes = intersect(effectiveModes, rule.deliveryModes);
         }
         break;
       }
 
       case "environment": {
         if (
-          rule.allowedEnvironments &&
+          rule.environments &&
           request.environment != null &&
-          !rule.allowedEnvironments.includes(request.environment)
+          !rule.environments.includes(request.environment)
         ) {
           return {
             allowed: false,
-            reason: `environment "${request.environment}" not allowed by policy`,
+            reason: "environment not allowed by policy",
             requiresApproval: false,
             effectiveDeliveryModes: [],
           };
@@ -96,9 +98,10 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
 
       case "sensitivity": {
         if (
-          rule.requiresApprovalAbove &&
+          rule.requiresApproval &&
+          rule.sensitivity &&
           sensitivities.includes(request.sensitivity as Sensitivity) &&
-          compareSensitivity(request.sensitivity, rule.requiresApprovalAbove) >= 0
+          compareSensitivity(request.sensitivity, rule.sensitivity) >= 0
         ) {
           requiresApproval = true;
         }
@@ -110,15 +113,15 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
           if (rule.blockedDestinations?.includes(request.destination)) {
             return {
               allowed: false,
-              reason: `destination "${request.destination}" is blocked by policy`,
+              reason: "destination is blocked by policy",
               requiresApproval: false,
               effectiveDeliveryModes: [],
             };
           }
-          if (rule.allowedDestinations && !rule.allowedDestinations.includes(request.destination)) {
+          if (rule.destinations && !rule.destinations.includes(request.destination)) {
             return {
               allowed: false,
-              reason: `destination "${request.destination}" not in allowed list`,
+              reason: "destination not in allowed list",
               requiresApproval: false,
               effectiveDeliveryModes: [],
             };
@@ -129,13 +132,13 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
 
       case "ttl": {
         if (
-          rule.maxTtlSeconds != null &&
+          rule.ttlSeconds != null &&
           request.sessionTtlSeconds != null &&
-          request.sessionTtlSeconds > rule.maxTtlSeconds
+          request.sessionTtlSeconds > rule.ttlSeconds
         ) {
           return {
             allowed: false,
-            reason: `session TTL ${request.sessionTtlSeconds}s exceeds policy max ${rule.maxTtlSeconds}s`,
+            reason: `session TTL ${request.sessionTtlSeconds}s exceeds policy max ${rule.ttlSeconds}s`,
             requiresApproval: false,
             effectiveDeliveryModes: [],
           };
@@ -155,7 +158,7 @@ export function evaluatePolicy(policies: PolicyInput[], request: AccessRequest):
   if (!effectiveModes.includes(request.deliveryMode)) {
     return {
       allowed: false,
-      reason: `delivery mode "${request.deliveryMode}" not permitted after policy evaluation`,
+      reason: "delivery mode not permitted after policy evaluation",
       requiresApproval: false,
       effectiveDeliveryModes: effectiveModes,
     };

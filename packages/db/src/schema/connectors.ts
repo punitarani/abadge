@@ -1,16 +1,6 @@
+import { connectorTypes } from "@abadge/core";
 import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-
-export const connectorTypeEnum = [
-  "native",
-  "onepassword",
-  "aws_secrets_manager",
-  "bitwarden",
-  "infisical",
-  "doppler",
-  "gcloud_secret_manager",
-  "hashicorp_vault",
-] as const;
 
 export const connectors = pgTable(
   "connectors",
@@ -20,7 +10,7 @@ export const connectors = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    type: text("type", { enum: connectorTypeEnum }).notNull(),
+    type: text("type", { enum: connectorTypes }).notNull(),
     encryptedConfig: text("encrypted_config"),
     configIv: text("config_iv"),
     enabled: boolean("enabled").default(true),

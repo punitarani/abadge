@@ -54,7 +54,7 @@ Request to use a credential with a specific delivery mode. Does NOT return the s
 
 Input: `{ credentialName, deliveryMode, purpose }`
 
-Delivery modes: `env_inject`, `file_mount_tmpfs`, `operation_only`
+Delivery modes: `env_inject`, `file_mount`, `operation_only`
 
 ### `run_with_secret`
 

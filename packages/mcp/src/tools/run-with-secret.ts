@@ -22,7 +22,8 @@ export const toolInputSchema = z.object({
 const MAX_OUTPUT_BYTES = 4096;
 
 interface AccessResponse {
-  credential?: { name: string; type: string; value: string };
+  value?: string;
+  credential?: { name: string; type: string };
   error?: string;
 }
 
@@ -65,17 +66,18 @@ export async function handler(
   // Fetch the secret server-side
   const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
+    deliveryMode: "env_inject",
     purpose: input.purpose ?? `Run command: ${input.command}`,
   });
 
-  if (!res.ok || !res.data.credential?.value) {
+  if (!res.ok || !res.data.value) {
     return JSON.stringify({
       error: res.data.error ?? "Failed to access credential",
     });
   }
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
-  const childEnv = { ...globalThis.process?.env, [envVarName]: res.data.credential.value };
+  const childEnv = { ...globalThis.process?.env, [envVarName]: res.data.value };
 
   const result = await runCommand(input.command, input.args ?? [], childEnv);
 

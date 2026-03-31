@@ -34,10 +34,10 @@ export async function mountCommand(args: string[]): Promise<void> {
   try {
     const result = await client.post<AccessResult>("/v1/credentials/access", {
       credentialName: secretName,
-      deliveryMode: "reveal",
+      deliveryMode: "file_mount",
     });
     if (!result.value) {
-      throw new Error("No secret value returned — delivery mode may not be 'reveal'");
+      throw new Error("No secret value returned");
     }
     secretValue = result.value;
   } catch (err) {

@@ -13,7 +13,7 @@ export async function mountSecret(params: {
   purpose?: string;
 }): Promise<MountResult> {
   const { client, secretName, purpose } = params;
-  const deliveryMode = params.deliveryMode ?? "file_mount_tmpfs";
+  const deliveryMode = params.deliveryMode ?? "file_mount";
 
   const result = await client.accessSecret({
     credentialName: secretName,

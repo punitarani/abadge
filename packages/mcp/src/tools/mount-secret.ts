@@ -1,4 +1,5 @@
-import { mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -17,7 +18,8 @@ export const toolInputSchema = z.object({
 });
 
 interface AccessResponse {
-  credential?: { name: string; type: string; value: string };
+  value?: string;
+  credential?: { name: string; type: string };
   error?: string;
 }
 
@@ -27,25 +29,25 @@ export async function handler(
 ): Promise<string> {
   const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
+    deliveryMode: "file_mount",
     purpose: input.purpose ?? "Mount as temporary file",
   });
 
-  if (!res.ok || !res.data.credential?.value) {
+  if (!res.ok || !res.data.value) {
     return JSON.stringify({ error: res.data.error ?? "Failed to access credential" });
   }
 
-  const filePath = input.path ?? join(mkdtempSync(join(tmpdir(), "abadge-")), input.credentialName);
+  const suffix = randomBytes(8).toString("hex");
+  const dir = join(tmpdir(), `abadge-${suffix}`);
+  await mkdir(dir, { mode: 0o700 });
+  const filePath = input.path ?? join(dir, input.credentialName);
 
-  writeFileSync(filePath, res.data.credential.value, { mode: 0o600 });
+  await writeFile(filePath, res.data.value, { mode: 0o600 });
 
   // Schedule cleanup after 5 minutes
   setTimeout(
     () => {
-      try {
-        unlinkSync(filePath);
-      } catch {
-        // File may already be removed
-      }
+      void unlink(filePath).catch(() => {});
     },
     5 * 60 * 1000,
   );

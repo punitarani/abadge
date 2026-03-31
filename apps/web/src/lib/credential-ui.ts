@@ -15,7 +15,7 @@ export const typeLabels: Record<string, string> = {
 export const deliveryModeLabels: Record<string, string> = {
   reveal: "Reveal",
   env_inject: "Env Inject",
-  file_mount_tmpfs: "File Mount (tmpfs)",
+  file_mount: "File Mount",
   browser_fill: "Browser Fill",
   operation_only: "Operation Only",
 };

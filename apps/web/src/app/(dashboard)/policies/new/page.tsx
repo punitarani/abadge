@@ -35,23 +35,25 @@ const ruleTypeLabels: Record<RuleType, string> = {
 
 interface RuleForm {
   type: RuleType;
-  allowedModes: string[];
-  allowedEnvironments: string[];
-  requiresApprovalAbove: string;
-  allowedDestinations: string;
+  deliveryModes: string[];
+  environments: string[];
+  sensitivity: string;
+  requiresApproval: boolean;
+  destinations: string;
   blockedDestinations: string;
-  maxTtlSeconds: string;
+  ttlSeconds: string;
 }
 
 function emptyRule(): RuleForm {
   return {
     type: "delivery_mode",
-    allowedModes: [],
-    allowedEnvironments: [],
-    requiresApprovalAbove: "",
-    allowedDestinations: "",
+    deliveryModes: [],
+    environments: [],
+    sensitivity: "",
+    requiresApproval: false,
+    destinations: "",
     blockedDestinations: "",
-    maxTtlSeconds: "",
+    ttlSeconds: "",
   };
 }
 
@@ -59,24 +61,25 @@ function buildRulePayload(rule: RuleForm): Record<string, unknown> {
   const base: Record<string, unknown> = { type: rule.type };
   switch (rule.type) {
     case "delivery_mode":
-      base.allowedModes = rule.allowedModes;
+      base.deliveryModes = rule.deliveryModes;
       break;
     case "environment":
-      base.allowedEnvironments = rule.allowedEnvironments;
+      base.environments = rule.environments;
       break;
     case "sensitivity":
-      if (rule.requiresApprovalAbove) base.requiresApprovalAbove = rule.requiresApprovalAbove;
+      if (rule.sensitivity) base.sensitivity = rule.sensitivity;
+      if (rule.requiresApproval) base.requiresApproval = true;
       break;
     case "destination":
-      if (rule.allowedDestinations.trim()) {
-        base.allowedDestinations = rule.allowedDestinations.split(",").map((s) => s.trim());
+      if (rule.destinations.trim()) {
+        base.destinations = rule.destinations.split(",").map((s) => s.trim());
       }
       if (rule.blockedDestinations.trim()) {
         base.blockedDestinations = rule.blockedDestinations.split(",").map((s) => s.trim());
       }
       break;
   }
-  if (rule.maxTtlSeconds) base.maxTtlSeconds = Number(rule.maxTtlSeconds);
+  if (rule.ttlSeconds) base.ttlSeconds = Number(rule.ttlSeconds);
   return base;
 }
 
@@ -109,7 +112,7 @@ export default function NewPolicyPage(): React.ReactElement {
 
   function toggleCheckbox(
     index: number,
-    field: "allowedModes" | "allowedEnvironments",
+    field: "deliveryModes" | "environments",
     value: string,
   ): void {
     setRules((prev) =>
@@ -259,8 +262,8 @@ export default function NewPolicyPage(): React.ReactElement {
                         <label key={mode} className="flex items-center gap-1.5 text-sm">
                           <input
                             type="checkbox"
-                            checked={rule.allowedModes.includes(mode)}
-                            onChange={() => toggleCheckbox(index, "allowedModes", mode)}
+                            checked={rule.deliveryModes.includes(mode)}
+                            onChange={() => toggleCheckbox(index, "deliveryModes", mode)}
                             className="rounded border-input"
                           />
                           {deliveryModeLabels[mode] ?? mode}
@@ -278,8 +281,8 @@ export default function NewPolicyPage(): React.ReactElement {
                         <label key={env} className="flex items-center gap-1.5 text-sm">
                           <input
                             type="checkbox"
-                            checked={rule.allowedEnvironments.includes(env)}
-                            onChange={() => toggleCheckbox(index, "allowedEnvironments", env)}
+                            checked={rule.environments.includes(env)}
+                            onChange={() => toggleCheckbox(index, "environments", env)}
                             className="rounded border-input"
                           />
                           {env}
@@ -290,23 +293,34 @@ export default function NewPolicyPage(): React.ReactElement {
                 )}
 
                 {rule.type === "sensitivity" && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor={`rule-sensitivity-${index}`}>Requires approval above</Label>
-                    <Select
-                      value={rule.requiresApprovalAbove}
-                      onValueChange={(v) => updateRule(index, { requiresApprovalAbove: v })}
-                    >
-                      <SelectTrigger id={`rule-sensitivity-${index}`}>
-                        <SelectValue placeholder="Select threshold..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sensitivities.map((level) => (
-                          <SelectItem key={level} value={level}>
-                            {level}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`rule-sensitivity-${index}`}>Sensitivity threshold</Label>
+                      <Select
+                        value={rule.sensitivity}
+                        onValueChange={(v) => updateRule(index, { sensitivity: v })}
+                      >
+                        <SelectTrigger id={`rule-sensitivity-${index}`}>
+                          <SelectValue placeholder="Select threshold..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sensitivities.map((level) => (
+                            <SelectItem key={level} value={level}>
+                              {level}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={rule.requiresApproval}
+                        onChange={(e) => updateRule(index, { requiresApproval: e.target.checked })}
+                        className="rounded border-input"
+                      />
+                      Require approval at or above this threshold
+                    </label>
                   </div>
                 )}
 
@@ -319,8 +333,8 @@ export default function NewPolicyPage(): React.ReactElement {
                       <Input
                         id={`rule-allowed-dest-${index}`}
                         placeholder="api.example.com, cdn.example.com"
-                        value={rule.allowedDestinations}
-                        onChange={(e) => updateRule(index, { allowedDestinations: e.target.value })}
+                        value={rule.destinations}
+                        onChange={(e) => updateRule(index, { destinations: e.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -343,8 +357,8 @@ export default function NewPolicyPage(): React.ReactElement {
                     id={`rule-ttl-${index}`}
                     type="number"
                     placeholder="3600"
-                    value={rule.maxTtlSeconds}
-                    onChange={(e) => updateRule(index, { maxTtlSeconds: e.target.value })}
+                    value={rule.ttlSeconds}
+                    onChange={(e) => updateRule(index, { ttlSeconds: e.target.value })}
                   />
                 </div>
               </div>

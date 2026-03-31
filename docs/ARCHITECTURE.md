@@ -86,10 +86,10 @@ A configuration for fetching secrets from external vaults (1Password, AWS Secret
 | Mode | Behavior |
 |------|----------|
 | `reveal` | Return decrypted plaintext in API response |
-| `env_inject` | CLI injects secret as environment variable in subprocess |
-| `file_mount_tmpfs` | CLI writes secret to temp file (mode 0600), auto-cleaned |
-| `browser_fill` | Future: browser extension fills form fields |
-| `operation_only` | Future: credential used server-side without returning to client |
+| `env_inject` | API returns value; CLI/broker injects as environment variable in subprocess |
+| `file_mount` | API returns value; CLI/broker writes to temp file (mode 0600), auto-cleaned |
+| `browser_fill` | Metadata only; broker fills browser form fields |
+| `operation_only` | Metadata only; credential used server-side without returning value |
 
 Default is NOT reveal. Plaintext exposure requires explicit opt-in.
 

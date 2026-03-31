@@ -206,7 +206,7 @@ POST /v1/policies
 
 ```jsonc
 // Restrict delivery modes
-{ "type": "delivery_mode", "deliveryModes": ["env_inject", "file_mount_tmpfs"] }
+{ "type": "delivery_mode", "deliveryModes": ["env_inject", "file_mount"] }
 
 // Restrict environments
 { "type": "environment", "environments": ["prod"] }
@@ -215,7 +215,7 @@ POST /v1/policies
 { "type": "sensitivity", "requiresApproval": true, "sensitivity": "high" }
 
 // Restrict destinations
-{ "type": "destination", "allowedDestinations": ["*.internal.com"], "blockedDestinations": ["*.public.com"] }
+{ "type": "destination", "destinations": ["*.internal.com"], "blockedDestinations": ["*.public.com"] }
 
 // Limit session TTL
 { "type": "ttl", "maxTtlSeconds": 3600 }
@@ -456,9 +456,9 @@ GET /v1/audit?limit=50&offset=0
 | Mode | Description | Value returned? |
 |------|-------------|-----------------|
 | `reveal` | Return decrypted plaintext | Yes |
-| `env_inject` | Inject into subprocess environment | No (broker handles) |
-| `file_mount_tmpfs` | Write to temp file (0600) | No (broker handles) |
-| `browser_fill` | Fill browser form fields | No (broker handles) |
+| `env_inject` | Inject into subprocess environment | Yes (broker injects) |
+| `file_mount` | Write to temp file (0600 perms) | Yes (broker writes) |
+| `browser_fill` | Fill browser form fields | No (metadata only) |
 | `operation_only` | Server-side operation only | No |
 
 ---

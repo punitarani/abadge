@@ -84,7 +84,7 @@ Grant an agent access to a credential.
 
 ```bash
 abadge grant create --agent <agent-id> --credential <credential-id>
-abadge grant create --agent <id> --credential <id> --delivery-modes env_inject,file_mount_tmpfs
+abadge grant create --agent <id> --credential <id> --delivery-modes env_inject,file_mount
 ```
 
 ### `abadge grant list`

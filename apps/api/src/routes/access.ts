@@ -1,6 +1,6 @@
 import type { DeliveryMode } from "@abadge/core";
 import { AgentAccessRequestSchema } from "@abadge/core";
-import { and, eq } from "@abadge/db";
+import { and, eq, gt } from "@abadge/db";
 import {
   accessLog,
   agentCredentialPermissions,
@@ -44,7 +44,7 @@ export const accessRoutes = new Hono<AgentEnv>()
     const agentId = agent.id as string;
     const agentUserId = agent.referenceId as string;
     const agentName = (agent.name as string) ?? "unknown";
-    const deliveryMode = body.deliveryMode ?? "reveal";
+    const deliveryMode = body.deliveryMode ?? "env_inject";
     const ipAddress = c.req.header("cf-connecting-ip");
 
     const auditBase = {
@@ -57,6 +57,7 @@ export const accessRoutes = new Hono<AgentEnv>()
       deliveryMode,
       destination: body.destination,
       environment: body.environment,
+      sessionId: c.get("sessionId") ?? null,
     };
 
     // Find the credential — always scoped to the agent's owner
@@ -107,12 +108,16 @@ export const accessRoutes = new Hono<AgentEnv>()
     }
 
     // Evaluate attached policy if present
+    let policyEvaluated = false;
+
     if (permission.policyId) {
       const policy = await db.query.policies.findFirst({
         where: and(eq(policies.id, permission.policyId), eq(policies.enabled, true)),
       });
 
       if (policy) {
+        policyEvaluated = true;
+
         const policyInput: PolicyInput = {
           rules: (policy.rules as unknown as PolicyRule[]) ?? [],
           enabled: policy.enabled ?? true,
@@ -141,36 +146,50 @@ export const accessRoutes = new Hono<AgentEnv>()
         }
 
         if (result.requiresApproval) {
-          const rows = await db
-            .insert(approvals)
-            .values({
-              id: crypto.randomUUID(),
-              agentId,
-              credentialId: credential.id,
-              requesterId: agentUserId,
-              deliveryMode,
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            })
-            .returning();
-
-          const approval = rows[0];
-          await db.insert(accessLog).values({
-            ...auditBase,
-            credentialId: credential.id,
-            credentialName: credential.name,
-            action: "denied",
-            outcome: "pending_approval",
-            approvalId: approval?.id,
+          // Check for an existing approved approval before creating a new one
+          const existingApproval = await db.query.approvals.findFirst({
+            where: and(
+              eq(approvals.agentId, agentId),
+              eq(approvals.credentialId, credential.id),
+              eq(approvals.deliveryMode, deliveryMode),
+              eq(approvals.status, "approved"),
+              gt(approvals.expiresAt, new Date()),
+            ),
           });
 
-          return c.json(
-            {
-              error: "Approval required",
-              code: "PENDING_APPROVAL",
+          if (!existingApproval) {
+            const rows = await db
+              .insert(approvals)
+              .values({
+                id: crypto.randomUUID(),
+                agentId,
+                credentialId: credential.id,
+                requesterId: agentUserId,
+                deliveryMode,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+              })
+              .returning();
+
+            const approval = rows[0];
+            await db.insert(accessLog).values({
+              ...auditBase,
+              credentialId: credential.id,
+              credentialName: credential.name,
+              action: "denied",
+              outcome: "pending_approval",
               approvalId: approval?.id,
-            },
-            202,
-          );
+            });
+
+            return c.json(
+              {
+                error: "Approval required",
+                code: "PENDING_APPROVAL",
+                approvalId: approval?.id,
+              },
+              202,
+            );
+          }
+          // Existing approved approval found — fall through to grant access
         }
 
         // Policy passed but delivery mode may be restricted by effective modes
@@ -190,22 +209,27 @@ export const accessRoutes = new Hono<AgentEnv>()
       }
     }
 
-    // Check delivery mode is allowed
-    if (
-      !isDeliveryModeAllowed(
-        deliveryMode,
-        credential.allowedDeliveryModes as DeliveryMode[] | null,
-        permission.allowedDeliveryModes as DeliveryMode[] | null,
-      )
-    ) {
-      await db.insert(accessLog).values({
-        ...auditBase,
-        credentialId: credential.id,
-        credentialName: credential.name,
-        action: "denied",
-        outcome: "denied",
-      });
-      return c.json({ error: "Delivery mode not allowed", code: "DELIVERY_MODE_NOT_ALLOWED" }, 403);
+    // When no policy was evaluated, check delivery mode allow-lists directly
+    if (!policyEvaluated) {
+      if (
+        !isDeliveryModeAllowed(
+          deliveryMode,
+          credential.allowedDeliveryModes as DeliveryMode[] | null,
+          permission.allowedDeliveryModes as DeliveryMode[] | null,
+        )
+      ) {
+        await db.insert(accessLog).values({
+          ...auditBase,
+          credentialId: credential.id,
+          credentialName: credential.name,
+          action: "denied",
+          outcome: "denied",
+        });
+        return c.json(
+          { error: "Delivery mode not allowed", code: "DELIVERY_MODE_NOT_ALLOWED" },
+          403,
+        );
+      }
     }
 
     // Log successful access
@@ -217,8 +241,13 @@ export const accessRoutes = new Hono<AgentEnv>()
       outcome: "allowed",
     });
 
-    // For "reveal" mode, decrypt and return the value
-    if (deliveryMode === "reveal") {
+    // Modes that require the decrypted value: reveal (direct), env_inject and
+    // file_mount (broker needs the value to inject into subprocess/file).
+    // browser_fill and operation_only never return the secret.
+    const valueNeeded =
+      deliveryMode === "reveal" || deliveryMode === "env_inject" || deliveryMode === "file_mount";
+
+    if (valueNeeded) {
       const decryptedValue = await decrypt(
         credential.encryptedValue,
         credential.iv,
@@ -237,7 +266,7 @@ export const accessRoutes = new Hono<AgentEnv>()
       });
     }
 
-    // For non-reveal modes, return metadata only — broker handles injection
+    // For browser_fill and operation_only, return metadata only
     return c.json({
       credential: {
         name: credential.name,

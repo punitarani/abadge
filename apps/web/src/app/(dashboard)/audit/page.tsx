@@ -70,7 +70,7 @@ function deliveryModeLabel(mode: string): string {
       return "Reveal";
     case "env_inject":
       return "Env Inject";
-    case "file_mount_tmpfs":
+    case "file_mount":
       return "File Mount";
     case "browser_fill":
       return "Browser Fill";
@@ -220,7 +220,7 @@ export default function AuditPage(): React.JSX.Element {
               <SelectItem value="all">All</SelectItem>
               <SelectItem value="reveal">Reveal</SelectItem>
               <SelectItem value="env_inject">Env Inject</SelectItem>
-              <SelectItem value="file_mount_tmpfs">File Mount</SelectItem>
+              <SelectItem value="file_mount">File Mount</SelectItem>
               <SelectItem value="browser_fill">Browser Fill</SelectItem>
               <SelectItem value="operation_only">Operation Only</SelectItem>
             </SelectContent>

@@ -24,6 +24,8 @@ export async function handler(
   // Verify access without exposing the secret
   const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
+    deliveryMode: "browser_fill",
+    destination: input.targetUrl,
     purpose: `Browser login fill for ${input.targetUrl}`,
   });
 

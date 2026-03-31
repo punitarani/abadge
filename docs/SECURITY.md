@@ -55,12 +55,12 @@ All checks are evaluated before any decryption occurs.
 
 ## Delivery mode enforcement
 
-| Mode | Value returned to client? | Typical use |
+| Mode | Value returned to caller? | Typical use |
 |------|--------------------------|-------------|
 | `reveal` | Yes (plaintext in response) | Direct API consumers, explicit opt-in |
-| `env_inject` | No (broker injects into subprocess) | CI/CD, development |
-| `file_mount_tmpfs` | No (broker writes temp file) | TLS certs, service accounts |
-| `browser_fill` | No (broker fills form) | Browser automation |
+| `env_inject` | Yes (broker injects into subprocess env) | CI/CD, development |
+| `file_mount` | Yes (broker writes temp file with 0600 perms) | TLS certs, service accounts |
+| `browser_fill` | No (broker fills form via metadata) | Browser automation |
 | `operation_only` | No (server-side use only) | API calls on behalf of agent |
 
 Default is **not reveal**. Credentials can restrict which modes are allowed.

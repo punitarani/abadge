@@ -7,7 +7,7 @@ export const toolName = "request_secret_use";
 export const toolDescription =
   "Request to use a credential with a specific delivery mode. Does NOT return the secret value.";
 
-const deliveryModes = ["env_inject", "file_mount_tmpfs", "operation_only"] as const;
+const deliveryModes = ["env_inject", "file_mount", "operation_only"] as const;
 
 export const toolInputSchema = z.object({
   credentialName: z.string().describe("Name of the credential to access"),
@@ -26,6 +26,7 @@ export async function handler(
 ): Promise<string> {
   const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
     credentialName: input.credentialName,
+    deliveryMode: input.deliveryMode,
     purpose: input.purpose,
   });
 

@@ -101,14 +101,14 @@ export interface ApiErrorResponse {
 }
 
 export interface PolicyRule {
-  type: string;
+  type: "delivery_mode" | "environment" | "sensitivity" | "destination" | "ttl";
   deliveryModes?: DeliveryMode[];
   environments?: Environment[];
   sensitivity?: Sensitivity;
   requiresApproval?: boolean;
   ttlSeconds?: number;
   destinations?: string[];
-  timeWindows?: string[];
+  blockedDestinations?: string[];
 }
 
 export interface Policy {

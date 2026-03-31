@@ -71,7 +71,7 @@ export const AgentAccessRequestSchema = z
     credentialName: z.string().min(1).max(128).optional(),
     credentialId: z.string().uuid().optional(),
     purpose: z.string().max(512).optional(),
-    deliveryMode: z.enum(deliveryModes).default("reveal"),
+    deliveryMode: z.enum(deliveryModes).default("env_inject"),
     destination: z.string().max(256).optional(),
     environment: z.enum(environments).optional(),
     sessionId: z.string().uuid().optional(),
@@ -82,15 +82,23 @@ export const AgentAccessRequestSchema = z
 
 // --- Policies ---
 
+export const policyRuleTypes = [
+  "delivery_mode",
+  "environment",
+  "sensitivity",
+  "destination",
+  "ttl",
+] as const;
+
 export const PolicyRuleSchema = z.object({
-  type: z.string().min(1).max(64),
+  type: z.enum(policyRuleTypes),
   deliveryModes: z.array(z.enum(deliveryModes)).optional(),
   environments: z.array(z.enum(environments)).optional(),
   sensitivity: z.enum(sensitivities).optional(),
   requiresApproval: z.boolean().optional(),
   ttlSeconds: z.number().int().positive().optional(),
   destinations: z.array(z.string().max(256)).optional(),
-  timeWindows: z.array(z.string().max(64)).optional(),
+  blockedDestinations: z.array(z.string().max(256)).optional(),
 });
 
 export const CreatePolicySchema = z.object({

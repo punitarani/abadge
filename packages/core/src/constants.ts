@@ -17,7 +17,7 @@ export type AccessAction = (typeof accessActions)[number];
 export const deliveryModes = [
   "reveal",
   "env_inject",
-  "file_mount_tmpfs",
+  "file_mount",
   "browser_fill",
   "operation_only",
 ] as const;

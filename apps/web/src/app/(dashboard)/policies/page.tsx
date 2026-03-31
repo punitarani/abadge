@@ -17,12 +17,13 @@ import { formatRelativeTime } from "@/lib/utils";
 
 interface PolicyRule {
   type: string;
-  allowedModes?: string[];
-  allowedEnvironments?: string[];
-  requiresApprovalAbove?: string;
-  allowedDestinations?: string[];
+  deliveryModes?: string[];
+  environments?: string[];
+  sensitivity?: string;
+  requiresApproval?: boolean;
+  destinations?: string[];
   blockedDestinations?: string[];
-  maxTtlSeconds?: number;
+  ttlSeconds?: number;
 }
 
 interface PolicyEntry {
