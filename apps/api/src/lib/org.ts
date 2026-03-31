@@ -1,4 +1,4 @@
-import { type Database, eq, and, member } from "@abadge/db";
+import { and, type Database, eq, member } from "@abadge/db";
 
 /** Get all organization IDs a user belongs to */
 export async function getUserOrgIds(db: Database, userId: string): Promise<string[]> {
@@ -10,11 +10,7 @@ export async function getUserOrgIds(db: Database, userId: string): Promise<strin
 }
 
 /** Check if a user is an admin or owner of an organization */
-export async function isOrgAdmin(
-  db: Database,
-  userId: string,
-  orgId: string,
-): Promise<boolean> {
+export async function isOrgAdmin(db: Database, userId: string, orgId: string): Promise<boolean> {
   const rows = await db
     .select({ role: member.role })
     .from(member)

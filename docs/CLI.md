@@ -5,12 +5,24 @@ The `abadge` CLI is the primary developer interface for the credential firewall.
 ## Installation
 
 ```bash
-# From the monorepo
+# From the monorepo (development)
 bun run cli -- --help
 
 # Or directly
 bun packages/cli/bin/abadge.ts --help
 ```
+
+### Standalone binary
+
+The CLI can be compiled into a standalone binary using Bun's `--compile` flag. No Bun or Node.js runtime is required on the target machine.
+
+```bash
+cd apps/cli
+bun run build    # outputs dist/abadge
+./dist/abadge --help
+```
+
+The binary is self-contained and suitable for distribution to CI environments or developer machines without a JavaScript runtime.
 
 ## Configuration
 
