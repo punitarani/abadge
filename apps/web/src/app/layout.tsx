@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "abadge",
-  description: "One password for agents. Store secrets, grant access, audit everything.",
+  description:
+    "Credential control plane for AI agents. Store or connect credentials, grant least-privilege access, and audit every attempt.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

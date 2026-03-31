@@ -1,46 +1,63 @@
 # abadge
 
-**One password for agents.**
+**Credential control plane for AI agents.**
 
-abadge is a lightweight credential vault for the agentic era. Users store secrets once, grant explicit per-agent access, and get a full audit trail for every read.
+abadge lets teams store native encrypted credentials or connect existing secret systems, grant
+agents explicit access only when needed, enforce policy and approval checks at runtime, and audit
+every access attempt across the dashboard, API, CLI, SDK, and MCP server.
 
 ## What it does
 
-* Stores credentials as encrypted named entries
+* Stores native credentials as encrypted entries
+* References external secrets through connectors
 * Registers agents with unique API keys
 * Grants access per credential, per agent
-* Serves secrets to authorized agents at runtime
-* Records every allowed and denied access
-* Provides a web dashboard for credentials, agents, permissions, and audit history
-* Supports organizations for multi-tenant access control
+* Evaluates policy and approval requirements at request time
+* Issues short-lived broker sessions for runtime access
+* Records allowed, denied, and pending approval access events
+* Exposes the same control plane through the dashboard, API, CLI, SDK, and MCP
 
 ## Why it exists
 
-Agents need credentials. Users need control.
+Agents need credentials. Operators need control.
 
 abadge sits between them:
 
-* users keep ownership of secrets
-* agents only read what they were explicitly granted
-* every access is visible and attributable
+* users keep ownership of credentials
+* agents only use what they were explicitly granted
+* policy and approval rules are enforced before use
+* every access attempt is visible and attributable
+
+## Product wedge
+
+For v1, abadge should be understood as:
+
+* **Access** -- explicit grants, policy checks, approvals, sessions, and audit
+* **Connect** -- native encrypted storage plus external secret references
+* **Interfaces** -- REST API, dashboard, CLI, SDK, and MCP tools
+
+It is not positioned as a generic human password manager.
 
 ## Product scope
 
 ### Included in v1
 
-* Credential CRUD
-* Agent registry (via Better Auth API key plugin)
-* Per-credential allowlists
+* Native credential CRUD
+* Agent registry
+* Per-credential grants
+* Policies and approvals
+* Connector support
+* Short-lived broker sessions
 * Immutable access log
 * Web dashboard
-* Agent-facing REST API
+* REST API
+* CLI, SDK, and MCP surfaces
 * Organization support
-* OpenAPI documentation
 
 ### Not included in v1
 
-* Secret rotation policies
-* External integrations
+* End-to-end zero-knowledge encryption
+* Background workflows
 * OAuth for agents
 * Webhooks
 * Browser extension
@@ -53,17 +70,20 @@ Each credential is a named entry with:
 * `value` — encrypted opaque string
 * `metadata` — optional JSON annotations
 
-Agents authenticate with a static API key issued once at registration. The key is hashed and stored by Better Auth's API key plugin. Every read is checked against a per-credential ACL.
+Agents authenticate with a static API key issued once at registration or with a short-lived broker
+session token. Keys and session tokens are hashed before storage. Every access request is checked
+against explicit grants, attached policy, delivery-mode constraints, and approval state before any
+decryption occurs.
 
 ## How it works
 
-1. A user signs in to the dashboard.
-2. The user stores credentials encrypted at rest.
+1. A user signs in to the dashboard or CLI.
+2. The user stores a native credential or configures an external reference.
 3. The user registers one or more agents.
-4. The user grants Agent X access to Credential Y.
-5. The agent calls the API with its bearer token.
-6. abadge verifies agent identity, ownership, and permission.
-7. If allowed, abadge decrypts the credential and returns it.
+4. The user grants Agent X access to Credential Y and optionally attaches policy.
+5. The agent calls the API with an API key or session token.
+6. abadge verifies agent identity, ownership, grant, delivery mode, policy, and approval status.
+7. If allowed, abadge resolves the secret only for the requested delivery mode.
 8. abadge records the access attempt in the audit log.
 
 ## Architecture
@@ -73,9 +93,8 @@ Agents authenticate with a static API key issued once at registration. The key i
 * **Database:** Postgres (PlanetScale in production, Docker locally)
 * **Connection layer:** Cloudflare Hyperdrive
 * **ORM:** Drizzle
-* **Auth:** Better Auth (organization, API key, OpenAPI plugins)
+* **Auth:** Better Auth
 * **Validation:** Zod
-* **Env:** t3-env for type-safe environment variables
 * **Monorepo:** Turborepo + Bun
 * **Formatting/Linting:** Biome
 
@@ -95,9 +114,11 @@ packages/
 
 ## Security principles
 
-* AES-256-GCM encryption at rest
-* API keys shown once, hashed by Better Auth
-* Per-credential access control
+* AES-256-GCM encryption at rest for credential values and connector configs
+* API keys and session tokens shown once, then stored only as hashes
+* Explicit agent-to-credential access control
+* Policy and approval checks before decryption
+* Non-reveal delivery modes by default
 * Append-only audit logging
 * Session auth for dashboard users
 * Bearer auth for agents
@@ -160,4 +181,5 @@ to exist in Doppler.
 
 ## Status
 
-This repo is the implementation of the abadge MVP: a minimal, edge-deployed secret vault built for user-controlled agent access. All core flows are tested end-to-end (53/53 tests passing).
+This repo is the implementation of the abadge MVP: a small, edge-deployed credential control plane
+built for user-controlled agent access.

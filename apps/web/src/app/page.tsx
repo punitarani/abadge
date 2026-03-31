@@ -1,4 +1,4 @@
-import { CheckCircle2 } from "lucide-react";
+import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
 import Link from "next/link";
@@ -21,49 +21,80 @@ const landingCondensed = IBM_Plex_Sans_Condensed({
   variable: "--font-landing-condensed",
 });
 
-const principles = [
+const operatingPrinciples = [
   {
-    title: "Store once",
-    description: "Store encrypted credentials with metadata, environment, and sensitivity.",
+    title: "Store or connect",
+    description: "Use native encrypted credentials or reference existing secret systems.",
   },
   {
     title: "Grant explicitly",
-    description: "Give each agent access only to the credentials it should use.",
+    description: "Decide which agent can use which credential and through which delivery modes.",
   },
   {
-    title: "Use safely",
-    description: "Inject secrets at runtime, require approval when needed, and log every attempt.",
+    title: "Use with control",
+    description: "Enforce policy, approval, session scope, and audit before access happens.",
   },
 ];
 
-const overviewItems = [
+const researchSignals = [
   {
-    label: "01.ACCESS_MODE",
-    title: "Per-agent access",
+    value: "40%",
+    title: "Enterprise apps moving to agents",
     description:
-      "No shared master key. No broad vault access. Each agent gets explicit permission per credential.",
+      "Gartner said on August 26, 2025 that 40% of enterprise applications will include task-specific AI agents by the end of 2026, up from less than 5% in 2025.",
+    source: "Gartner",
+    href: "https://www.gartner.com/en/newsroom/press-releases/2025-08-26-gartner-predicts-40-percent-of-enterprise-apps-will-feature-task-specific-ai-agents-by-2026-up-from-less-than-5-percent-in-2025",
   },
   {
-    label: "02.POSTURE",
-    title: "Non-reveal by default",
+    value: "85%",
+    title: "Agents already in production",
     description:
-      "Use delivery modes that avoid plaintext by default. Reveal is supported, but it is the exception.",
+      "Cloud Security Alliance reported on March 24, 2026 that 85% of organizations already use AI agents in production environments.",
+    source: "Cloud Security Alliance",
+    href: "https://cloudsecurityalliance.org/press-releases/2026/03/24/more-than-two-thirds-of-organizations-cannot-clearly-distinguish-ai-agent-from-human-actions",
   },
   {
-    label: "03.FLOW_CONTROL",
-    title: "Approval flows",
-    description: "Require human approval for sensitive access before a secret can be used.",
+    value: "74%",
+    title: "Over-privileged access is common",
+    description:
+      "The same CSA research said 74% of organizations believe agents often receive more access than necessary.",
+    source: "Cloud Security Alliance",
+    href: "https://cloudsecurityalliance.org/press-releases/2026/03/24/more-than-two-thirds-of-organizations-cannot-clearly-distinguish-ai-agent-from-human-actions",
   },
   {
-    label: "04.AUDITABILITY",
-    title: "Full audit trail",
-    description: "See allowed, denied, pending approval, and expired access attempts in one place.",
+    value: "OWASP",
+    title: "Secret handling is an application risk",
+    description:
+      "OWASP highlights sensitive information disclosure and insecure tool or plugin design as top risks for LLM applications.",
+    source: "OWASP Top 10 for LLM Applications",
+    href: "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+  },
+];
+
+const productTracks = [
+  {
+    label: "01.ACCESS",
+    title: "Control credential use at request time",
+    description:
+      "Per-agent grants, policy checks, approval workflows, short-lived broker sessions, delivery-mode enforcement, and audit on every attempt.",
+  },
+  {
+    label: "02.CONNECT",
+    title: "Store native credentials or reference existing systems",
+    description:
+      "Use encrypted native storage when needed, or connect secret sources without giving up one policy and audit model.",
+  },
+  {
+    label: "03.INTERFACES",
+    title: "Meet developers where they already work",
+    description:
+      "One control plane across dashboard, REST API, TypeScript SDK, CLI, and MCP instead of separate access paths.",
   },
 ];
 
 const heroBlocks = [
   {
-    comment: "# store a credential",
+    comment: "# store a native credential",
     lines: [
       "$ abadge secret create \\",
       "  --name github-token \\",
@@ -73,11 +104,16 @@ const heroBlocks = [
     ],
   },
   {
-    comment: "# grant one agent access",
-    lines: ["$ abadge grant create \\", "  --agent agent-01 \\", "  --credential <credential-id>"],
+    comment: "# grant one agent explicit access",
+    lines: [
+      "$ abadge grant create \\",
+      "  --agent agent-01 \\",
+      "  --credential <credential-id> \\",
+      "  --delivery-modes env_inject,file_mount",
+    ],
   },
   {
-    comment: "# use it at runtime",
+    comment: "# use it without handing over the vault",
     lines: [
       "$ abadge run \\",
       "  --secret github-token \\",
@@ -87,17 +123,76 @@ const heroBlocks = [
   },
 ];
 
+const interfaceExamples = [
+  {
+    name: "CLI",
+    body: `abadge run \\
+  --secret github-token \\
+  --env-var GITHUB_TOKEN \\
+  -- npm run deploy`,
+  },
+  {
+    name: "SDK",
+    body: `const client = new AbadgeClient({ apiUrl, token });
+
+await client.accessCredential({
+  credentialName: "github-token",
+  deliveryMode: "env_inject",
+  purpose: "deploy release",
+});`,
+  },
+  {
+    name: "API",
+    body: `curl -X POST https://api.abadge.io/v1/credentials/access \\
+  -H "Authorization: Bearer abd_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "credentialName": "github-token",
+    "deliveryMode": "reveal",
+    "purpose": "deploy release"
+  }'`,
+  },
+  {
+    name: "MCP",
+    body: `{
+  "tool": "run_with_secret",
+  "input": {
+    "credentialName": "github-token",
+    "command": "npm",
+    "args": ["run", "deploy"],
+    "envVarName": "GITHUB_TOKEN"
+  }
+}`,
+  },
+];
+
 const securityChecks = [
-  "Encrypted at rest",
-  "Hashed keys & sessions",
-  "Approval workflows",
-  "Delivery mode restrictions",
-  "Immutable audit log",
+  "Encrypted credentials and connector configs",
+  "Hashed agent keys and session tokens",
+  "Approval-aware policy evaluation",
+  "Non-reveal delivery modes by default",
+  "Immutable audit trail for every attempt",
+];
+
+const externalSignals = [
+  {
+    label: "1Password Secure Agentic Autofill",
+    href: "https://developer.1password.com/docs/agentic-autofill/",
+  },
+  {
+    label: "1Password Unified Access",
+    href: "https://1password.com/press/2026/mar/1password-unified-access",
+  },
+  {
+    label: "Model Context Protocol authorization",
+    href: "https://modelcontextprotocol.io/specification/draft/basic/authorization",
+  },
 ];
 
 export const metadata: Metadata = {
-  title: "abadge | Password manager for the agentic era",
-  description: "Store credentials once. Grant agents explicit access. Audit every access attempt.",
+  title: "abadge | Credential control plane for AI agents",
+  description:
+    "Store or connect credentials, grant agents least-privilege access just in time, require approval for sensitive actions, and audit every attempt.",
 };
 
 export default function HomePage() {
@@ -111,22 +206,22 @@ export default function HomePage() {
           <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
           <nav className="hidden items-center gap-6 md:flex">
             <a
-              href="#overview"
+              href="#why-now"
               className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
             >
-              Docs
+              Why now
+            </a>
+            <a
+              href="#scope"
+              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
+            >
+              Scope
             </a>
             <a
               href="#interfaces"
               className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
             >
-              CLI
-            </a>
-            <a
-              href="#interfaces"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-            >
-              API
+              Interfaces
             </a>
             <a
               href="#security"
@@ -146,22 +241,20 @@ export default function HomePage() {
       </header>
 
       <main>
-        <section className="grid min-h-[31.25rem] border-b border-black lg:grid-cols-2">
+        <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           <div className="flex flex-col justify-center border-black bg-white p-6 lg:border-r lg:p-12">
             <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
               Status: Alpha
             </div>
-            <h1 className="max-w-[34rem] text-[2.65rem] leading-[0.96] font-bold tracking-[-0.06em] md:text-[4.25rem]">
-              Password Manager
+            <h1 className="max-w-[42rem] text-[2.65rem] leading-[0.93] font-bold tracking-[-0.06em] md:text-[4.55rem]">
+              Credential control plane
               <br />
-              for the agentic era
+              for AI agents
             </h1>
-            <p className="mt-4 max-w-md text-sm leading-[1.55] font-medium text-zinc-600 md:text-base">
-              Store credentials once.
-              <br />
-              Grant agents explicit access.
-              <br />
-              Audit every access attempt.
+            <p className="mt-5 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600 md:text-base">
+              Store native credentials or connect existing secret systems. Grant agents scoped
+              access only when needed, require approval for sensitive actions, and keep every
+              attempt attributable across API, CLI, SDK, and MCP workflows.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -172,34 +265,37 @@ export default function HomePage() {
                 Get started
               </Link>
               <a
-                href="#overview"
+                href="#scope"
                 className="border border-black bg-white px-6 py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
               >
-                Read docs
+                See product scope
               </a>
             </div>
 
             <div className="mt-12 flex flex-wrap gap-2">
-              {["CLI", "API", "MCP", "Approvals", "Audit Log"].map((tag) => (
-                <span
-                  key={tag}
-                  className="border border-black bg-zinc-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500"
-                >
-                  {tag}
-                </span>
-              ))}
+              {["Access", "Connect", "SDK", "CLI", "API", "MCP", "Approvals", "Audit"].map(
+                (tag) => (
+                  <span
+                    key={tag}
+                    className="border border-black bg-zinc-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500"
+                  >
+                    {tag}
+                  </span>
+                ),
+              )}
             </div>
 
-            <p className="mt-4 text-[10px] font-medium text-zinc-400">
-              Encrypted at rest. Non-reveal by default. Plaintext only when explicitly requested.
+            <p className="mt-4 max-w-lg text-[10px] font-medium text-zinc-400">
+              Not another shared vault story. The wedge is least-privilege agent access with
+              explicit grants, policy checks, approvals, and audit.
             </p>
           </div>
 
           <div className="flex items-center justify-center bg-zinc-50 p-6 lg:p-12">
-            <div className="w-full max-w-[36rem] border border-black bg-white p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+            <div className="w-full max-w-[38rem] border border-black bg-white p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
               <div className="mb-4 flex items-center justify-between border-b border-zinc-100 pb-2">
                 <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-                  shell — abadge cli
+                  shell -- access flow
                 </span>
                 <div className="flex gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
@@ -235,11 +331,11 @@ export default function HomePage() {
         </section>
 
         <section className="grid border-b border-black md:grid-cols-3">
-          {principles.map((item, index) => (
+          {operatingPrinciples.map((item, index) => (
             <div
               key={item.title}
               className={`bg-white p-6 transition-colors hover:bg-zinc-50 md:p-8 ${
-                index < principles.length - 1
+                index < operatingPrinciples.length - 1
                   ? "border-b border-black md:border-r md:border-b-0"
                   : ""
               }`}
@@ -250,36 +346,103 @@ export default function HomePage() {
           ))}
         </section>
 
-        <section id="overview" className="border-b border-black bg-white p-6 md:p-12">
+        <section id="why-now" className="border-b border-black bg-zinc-50 p-6 md:p-12">
+          <div className="mb-10 flex flex-col gap-4 md:mb-14 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
+                Why now
+              </div>
+              <h2
+                className={`${landingCondensed.variable} max-w-4xl text-[3.2rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.1rem] lg:text-[6rem]`}
+              >
+                Agents are scaling
+                <br />
+                faster than credential control
+              </h2>
+            </div>
+
+            <p className="max-w-md text-sm leading-[1.65] text-zinc-600">
+              The category is forming now: agent adoption is rising, over-privileged access is
+              common, and security guidance is increasingly focused on tool design, attribution, and
+              secret exposure.
+            </p>
+          </div>
+
+          <div className="grid gap-px border border-black bg-black md:grid-cols-2 xl:grid-cols-4">
+            {researchSignals.map((item) => (
+              <div key={item.title} className="flex flex-col bg-white p-6">
+                <div className="text-[2.25rem] leading-none font-bold tracking-[-0.06em] text-[#0047FF]">
+                  {item.value}
+                </div>
+                <h3 className="mt-4 text-sm font-bold uppercase tracking-[0.14em]">{item.title}</h3>
+                <p className="mt-3 flex-1 text-sm leading-[1.6] text-zinc-600">
+                  {item.description}
+                </p>
+                <a
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-5 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 transition-colors hover:text-[#0047FF]"
+                >
+                  {item.source}
+                  <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </a>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            <span>External signals:</span>
+            {externalSignals.map((item) => (
+              <a
+                key={item.label}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 border border-black bg-white px-3 py-1.5 transition-colors hover:border-[#0047FF] hover:text-[#0047FF]"
+              >
+                {item.label}
+                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </a>
+            ))}
+          </div>
+        </section>
+
+        <section id="scope" className="border-b border-black bg-white p-6 md:p-12">
           <div className="mb-10 md:mb-14">
+            <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
+              Product wedge
+            </div>
             <h2
               className={`${landingCondensed.variable} max-w-5xl text-[3.3rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.25rem] lg:text-[6.25rem]`}
             >
-              Credential access control
+              Access first.
               <br />
-              for <span className="text-[#0047FF]">agents</span>
+              Connect second.
+              <br />
+              Interfaces everywhere.
             </h2>
+            <p className="mt-5 max-w-2xl text-sm leading-[1.7] text-zinc-600">
+              Native credential storage is part of the product, but it is not the lead story. The
+              lead story is deciding which agent can use which credential, under what policy, for
+              how long, through which interface, with what audit trail.
+            </p>
           </div>
 
-          <div className="grid border border-black md:grid-cols-2">
-            {overviewItems.map((item, index) => (
-              <div
-                key={item.label}
-                className={`flex min-h-[15rem] flex-col justify-start bg-white p-8 transition-colors hover:bg-zinc-50 md:min-h-[17rem] md:p-12 ${
-                  index % 2 === 0 ? "md:border-r md:border-black" : ""
-                } ${index < 2 ? "border-b border-black" : ""}`}
-              >
+          <div className="grid gap-px border border-black bg-black lg:grid-cols-3">
+            {productTracks.map((item) => (
+              <div key={item.label} className="flex min-h-[18rem] flex-col bg-white p-8 md:p-10">
                 <div
-                  className={`${landingCondensed.variable} mb-8 text-[1.9rem] leading-none font-bold text-[#0047FF] [font-family:var(--font-landing-condensed)] md:text-[2.3rem]`}
+                  className={`${landingCondensed.variable} text-[1.9rem] leading-none font-bold text-[#0047FF] [font-family:var(--font-landing-condensed)] md:text-[2.4rem]`}
                 >
-                  {item.label.split(".")[0]}
+                  {item.label}
                 </div>
                 <h3
-                  className={`${landingCondensed.variable} mb-4 max-w-[24rem] text-[2rem] leading-[0.92] font-bold uppercase tracking-[-0.04em] [font-family:var(--font-landing-condensed)] md:text-[3rem]`}
+                  className={`${landingCondensed.variable} mt-7 max-w-[19rem] text-[2rem] leading-[0.92] font-bold uppercase tracking-[-0.04em] [font-family:var(--font-landing-condensed)] md:text-[3rem]`}
                 >
                   {item.title}
                 </h3>
-                <p className="max-w-[28rem] [font-family:var(--font-landing-mono)] text-sm leading-[1.65] text-zinc-500 md:text-[1.05rem]">
+                <p className="mt-4 max-w-[26rem] [font-family:var(--font-landing-mono)] text-sm leading-[1.7] text-zinc-500 md:text-[1.02rem]">
                   {item.description}
                 </p>
               </div>
@@ -288,89 +451,59 @@ export default function HomePage() {
         </section>
 
         <section id="interfaces" className="border-b border-black bg-zinc-50">
-          <div className="grid lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+          <div className="grid lg:grid-cols-[minmax(0,0.66fr)_minmax(0,1.34fr)]">
             <div className="min-w-0 p-6 lg:p-12">
-              <h2 className="max-w-[16rem] text-[1.7rem] leading-[1] font-bold tracking-[-0.04em] sm:max-w-xs md:text-[2.3rem] lg:max-w-md lg:text-[3rem]">
-                Use it from the CLI, API, or MCP
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
+                Interfaces
+              </div>
+              <h2 className="max-w-md text-[1.85rem] leading-[1] font-bold tracking-[-0.04em] md:text-[2.9rem]">
+                One access model across code, operators, and agent runtimes
               </h2>
-              <p className="mt-4 max-w-[16rem] text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-400 sm:max-w-xs md:max-w-sm">
-                One access model across local tooling, backend workflows, and agent runtimes.
+              <p className="mt-4 max-w-sm text-sm leading-[1.65] text-zinc-600">
+                The dashboard, REST API, TypeScript SDK, CLI, and MCP tools should feel like one
+                product, not separate secret-handling paths.
               </p>
             </div>
 
             <div className="min-w-0 p-6 pt-0 lg:p-12 lg:pt-12">
-              <div className="w-full max-w-full overflow-hidden border border-black bg-white">
-                <div className="flex overflow-x-auto border-b border-black">
-                  <span className="relative shrink-0 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-black md:px-6">
-                    CLI
-                    <span className="absolute inset-x-0 bottom-0 h-px bg-[#0047FF]" />
-                  </span>
-                  <span className="shrink-0 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-zinc-400 md:px-6">
-                    API
-                  </span>
-                  <span className="shrink-0 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-zinc-400 md:px-6">
-                    MCP
-                  </span>
-                </div>
-
-                <div className="bg-zinc-50/50 p-4">
-                  <pre className="max-w-full overflow-x-auto whitespace-pre [font-family:var(--font-landing-mono)] text-[11px] leading-[1.65] md:text-[12px]">
-                    <span className="text-[#0047FF]"># CLI implementation</span>
-                    {"\n"}
-                    <span className="font-bold text-black">
-                      abadge run --secret github-token --env-var GITHUB_TOKEN -- npm run deploy
-                    </span>
-                    {"\n"}
-                    <span className="text-[#0047FF]"># API implementation</span>
-                    {"\n"}
-                    <span className="font-bold text-black">
-                      {`curl -X POST https://api.abadge.io/v1/credentials/access \\
-  -H "Authorization: Bearer abd_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "credentialName": "github-token",
-    "deliveryMode": "reveal",
-    "purpose": "deploy release"
-  }'`}
-                    </span>
-                    {"\n"}
-                    <span className="text-[#0047FF]"># MCP integration</span>
-                    {"\n"}
-                    <span className="font-bold text-black">
-                      {`{
-  "tool": "run_with_secret",
-  "input": {
-    "credentialName": "github-token",
-    "command": "npm",
-    "args": ["run", "deploy"],
-    "envVarName": "GITHUB_TOKEN",
-    "purpose": "deploy release"
-  }
-}`}
-                    </span>
-                  </pre>
-                </div>
+              <div className="grid gap-px border border-black bg-black md:grid-cols-2">
+                {interfaceExamples.map((item) => (
+                  <div key={item.name} className="min-w-0 bg-white p-5">
+                    <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#0047FF]">
+                      {item.name}
+                    </div>
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-words [font-family:var(--font-landing-mono)] text-[11px] leading-[1.7] text-black md:text-[12px]">
+                      {item.body}
+                    </pre>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </section>
 
-        <section id="security" className="grid border-b border-black lg:grid-cols-2">
+        <section
+          id="security"
+          className="grid border-b border-black lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
+        >
           <div className="border-black bg-white p-6 lg:border-r lg:p-12">
+            <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
+              Security model
+            </div>
             <h2 className="max-w-lg text-[2.2rem] leading-[0.96] font-bold tracking-[-0.05em] md:text-[3.5rem]">
-              Built for agents, not browser autofill
+              Let agents work without giving them the whole vault
             </h2>
-            <p className="mt-6 max-w-xl text-sm leading-[1.6] font-medium text-zinc-600">
-              Traditional password managers were built for humans clicking forms. abadge is built
-              for agents running code, calling APIs, using tools, and needing controlled access to
-              credentials at runtime.
+            <p className="mt-6 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600">
+              Traditional secret handling breaks down when agents start taking action. abadge keeps
+              the control plane small: explicit grants, policy-aware access checks, approval flows,
+              delivery-mode restrictions, and audit on every attempt.
             </p>
 
             <div className="mt-8 space-y-3">
               {[
-                "Explicit per-agent grants",
-                "Policy-aware access checks",
-                "Audit on every attempt",
+                "Explicit per-agent grants instead of broad vault access",
+                "Approval required for sensitive access when policy demands it",
+                "MCP tools that avoid raw secret exposure to the model",
               ].map((item) => (
                 <div key={item} className="flex items-center gap-3">
                   <span className="h-1.5 w-1.5 bg-[#0047FF]" />
@@ -381,9 +514,9 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center justify-center bg-zinc-100 p-6 lg:p-12">
-            <div className="w-full max-w-sm border border-black bg-white p-8">
+            <div className="w-full max-w-[34rem] border border-black bg-white p-8">
               <div className="mb-6 text-center text-[9px] font-bold uppercase tracking-[0.4em] text-zinc-400">
-                Security Protocol Overview
+                Guardrails
               </div>
               <div className="space-y-4 border-t border-zinc-100 pt-6">
                 {securityChecks.map((item) => (
@@ -399,14 +532,15 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="border-b border-black bg-zinc-50 px-6 py-16 text-center md:px-12 md:py-24">
+        <section className="border-b border-black bg-white px-6 py-16 text-center md:px-12 md:py-24">
           <h2 className="text-[2.7rem] leading-[0.95] font-bold tracking-[-0.06em] md:text-[4.5rem]">
-            Give agents access.
+            Let AI agents use credentials safely.
             <br />
-            <span className="text-zinc-400">Not your whole vault.</span>
+            <span className="text-zinc-400">Without giving them everything.</span>
           </h2>
-          <p className="mx-auto mt-6 max-w-md text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-            Store credentials once, grant access intentionally, and keep every attempt attributable.
+          <p className="mx-auto mt-6 max-w-2xl text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+            Store or connect credentials, grant access intentionally, and keep every attempt
+            attributable.
           </p>
 
           <div className="mt-10 flex flex-wrap justify-center gap-4">
@@ -417,10 +551,10 @@ export default function HomePage() {
               Start building
             </Link>
             <a
-              href="#interfaces"
+              href="#scope"
               className="border border-black bg-white px-10 py-3 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
             >
-              View API docs
+              Read the scope
             </a>
           </div>
         </section>
@@ -431,23 +565,23 @@ export default function HomePage() {
           <div className="max-w-xs">
             <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
             <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Password manager for the agentic era
+              Credential control plane for AI agents
             </span>
             <span className="[font-family:var(--font-landing-mono)] text-[9px] text-zinc-300">
-              {"SYSTEM_ID: ABADGE_V1.0.4 // © 2024"}
+              {"SYSTEM_ID: ABADGE_V1.0.4 // © 2026"}
             </span>
           </div>
 
           <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest">
             <div className="flex flex-col gap-2">
-              <a href="#overview" className="transition-colors hover:text-[#0047FF]">
-                Docs
+              <a href="#why-now" className="transition-colors hover:text-[#0047FF]">
+                Why now
+              </a>
+              <a href="#scope" className="transition-colors hover:text-[#0047FF]">
+                Scope
               </a>
               <a href="#interfaces" className="transition-colors hover:text-[#0047FF]">
-                CLI
-              </a>
-              <a href="#interfaces" className="transition-colors hover:text-[#0047FF]">
-                API
+                Interfaces
               </a>
               <a href="#security" className="transition-colors hover:text-[#0047FF]">
                 Security

@@ -2,7 +2,11 @@
 
 ## Core principle
 
-Agents should be able to use credentials without defaulting to plaintext exposure.
+Abadge is an access control plane around credentials. Agents should be able to use credentials
+without defaulting to plaintext exposure or broad standing vault access.
+
+Storage exists to support policy evaluation, approvals, delivery-mode enforcement, and audit. It is
+not a claim that v1 is a zero-knowledge vault product.
 
 ## Encryption
 

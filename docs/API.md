@@ -1,5 +1,8 @@
 # API Reference
 
+The REST API is the canonical control plane for abadge. The dashboard, CLI, SDK, and integrations
+all build on these routes.
+
 Base URL: `https://your-api-domain` (local dev: `http://localhost:8787`)
 
 ## Authentication

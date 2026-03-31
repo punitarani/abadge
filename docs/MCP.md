@@ -1,6 +1,7 @@
 # MCP Server
 
-The abadge MCP server exposes credential management tools to AI agents (Claude, Codex, Cursor, etc.) via the Model Context Protocol. Secrets are never returned to the LLM by default.
+The abadge MCP server exposes policy-aware credential tools to AI agents (Claude, Codex, Cursor,
+etc.) via the Model Context Protocol. Secrets are never returned to the LLM by default.
 
 ## Setup
 

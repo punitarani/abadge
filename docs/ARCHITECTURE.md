@@ -2,16 +2,35 @@
 
 ## Overview
 
-abadge is an agent credential firewall and runtime access layer. Users store encrypted secrets, define access policies, register agents, grant scoped permissions, and audit every access attempt. The system defaults to non-reveal delivery — plaintext is the exception, not the product.
+abadge is a credential control plane for AI agents. Users store native encrypted credentials or
+reference external secret systems, define access policies, register agents, grant scoped
+permissions, and audit every access attempt. The system defaults to non-reveal delivery --
+plaintext is the exception, not the product.
+
+For v1, the product wedge is:
+
+* **Access** -- explicit grants, policy checks, approvals, sessions, and audit
+* **Connect** -- native credential storage plus external secret references
+* **Interfaces** -- dashboard, REST API, CLI, SDK, and MCP
+
+Native storage exists to support controlled runtime access. Abadge is not modeled as a general
+human password manager.
 
 ### System parts
 
-* **API** — Hono on Cloudflare Workers. Owns auth, CRUD, policy evaluation, approval workflows, encryption, and audit logging.
-* **Web** — Next.js App Router dashboard. Operator surface for credentials, agents, policies, approvals, and audit.
-* **CLI** — `abadge` command. Developer interface for secret injection, file mounting, and management.
-* **MCP server** — Model Context Protocol server for AI agents. Secrets never returned to the LLM by default.
-* **Broker** — Local execution engine shared by CLI and MCP. Handles subprocess injection, temp file mounts, session management, and external vault connectors.
-* **Database** — Single Postgres instance (PlanetScale via Hyperdrive). Source of truth for all state.
+* **API** -- Hono on Cloudflare Workers. Canonical control plane for auth, CRUD, policy
+  evaluation, approval workflows, encryption, session issuance, and audit logging.
+* **Web** -- Next.js App Router dashboard. Operator surface for credentials, agents, policies,
+  approvals, connectors, and audit.
+* **CLI** -- `abadge` command. Developer/admin interface for runtime secret use and management.
+* **SDK** -- TypeScript client for applications and agent runtimes that integrate directly with the
+  control plane.
+* **MCP server** -- Model Context Protocol server for AI agents. Secrets never returned to the LLM
+  by default.
+* **Broker** -- Local execution engine shared by CLI and MCP. Handles subprocess injection, temp
+  file mounts, session management, and broker-side external vault connectors.
+* **Database** -- Single Postgres instance (PlanetScale via Hyperdrive). Source of truth for all
+  control-plane state.
 
 ## Deployment model
 

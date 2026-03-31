@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `abadge` CLI is the primary developer interface for the credential firewall.
+The `abadge` CLI is the primary developer and operator interface for the credential control plane.
 
 ## Installation
 
