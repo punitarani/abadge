@@ -36,6 +36,13 @@
       "when": 1775193600000,
       "tag": "0004_agent_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775280000000,
+      "tag": "0005_org_credentials",
+      "breakpoints": true
     }
   ]
 }

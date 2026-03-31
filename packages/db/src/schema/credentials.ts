@@ -49,9 +49,11 @@ export const credentials = pgTable(
     externalRef: jsonb("external_ref").$type<ExternalRef>(),
     createdBy: text("created_by"),
     updatedBy: text("updated_by"),
+    orgId: text("org_id"),
   },
   (t) => [
     index("idx_credentials_user_id").on(t.userId),
     index("idx_credentials_connector_id").on(t.connectorId),
+    index("idx_credentials_org_id").on(t.orgId),
   ],
 );
