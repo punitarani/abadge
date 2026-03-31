@@ -36,6 +36,15 @@ Required variables:
 `.env.example` remains the reference for the values you should store in Doppler. If you bypass the
 root scripts and run a package directly, provide the same environment variables manually.
 
+For local Worker-only API development, generate `apps/api/.dev.vars` from Doppler first:
+
+```bash
+bun run dev:vars
+bun run api:dev:worker
+```
+
+The generated file is sourced from `scripts/worker-env-keys.txt` and stays ignored by Git.
+
 ### Database
 
 ```bash
@@ -55,6 +64,7 @@ bun run dev               # Starts API (8787) + Web (3000)
 |---------|-------------|
 | `bun install` | Install dependencies |
 | `bun run dev` | Start all dev servers |
+| `bun run dev:vars` | Generate `apps/api/.dev.vars` from Doppler |
 | `bun run build` | Build all packages |
 | `bun run typecheck` | TypeScript check all packages |
 | `bun run lint` | Biome lint |
@@ -66,6 +76,8 @@ bun run dev               # Starts API (8787) + Web (3000)
 | `bun run db:studio` | Open Drizzle Studio |
 | `bun run db:reset` | Drop schema and re-run migrations |
 | `bun run cli -- --help` | Run CLI |
+| `bun run api:dev:worker` | Run the API in local `wrangler dev --local` mode |
+| `bun run api:clean:worker` | Remove local Wrangler state for the API worker |
 | `bun run mcp` | Start MCP server |
 | `bun test` | Run test suite (policy, crypto, schema tests) |
 

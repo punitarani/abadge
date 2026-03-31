@@ -1,0 +1,7 @@
+## Cloudflare Worker env vars written to apps/api/.dev.vars for local wrangler dev.
+## Keep this in sync with apps/api/src/types.ts and packages/env/src/worker.ts.
+
+DATABASE_URL
+ENCRYPTION_KEY
+BETTER_AUTH_URL
+BETTER_AUTH_SECRET

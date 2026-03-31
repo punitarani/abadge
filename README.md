@@ -136,6 +136,7 @@ bun run dev
 
 ```bash
 bun run dev           # Start all dev servers
+bun run dev:vars      # Generate apps/api/.dev.vars from Doppler
 bun run build         # Build all apps
 bun run lint          # Check for lint errors
 bun run lint:fix      # Auto-fix lint errors
@@ -146,6 +147,8 @@ bun run db:migrate    # Run pending migrations
 bun run db:push       # Push schema directly to database
 bun run db:studio     # Open Drizzle Studio
 bun run db:reset      # Drop schema and re-run migrations
+bun run api:dev:worker  # Run the API in local wrangler mode
+bun run api:clean:worker # Remove local wrangler state
 bun test              # Run the test suite
 bun run docker:up     # Start Docker services
 bun run docker:down   # Stop Docker services
@@ -157,6 +160,10 @@ bun run docker:reset  # Reset Docker volumes and restart
 Repository commands that need application secrets run through Doppler. After installing the CLI,
 run `doppler setup` in the repo root. `.env.example` remains the reference for which values need
 to exist in Doppler.
+
+For local Worker-only API development, `bun run dev:vars` writes `apps/api/.dev.vars` from the
+current Doppler session, and `bun run api:dev:worker` starts `wrangler dev --local` with those
+bindings.
 
 ## Status
 

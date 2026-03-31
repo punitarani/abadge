@@ -5,6 +5,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "doppler run -- turbo dev",
+    "dev:vars": "doppler run -- ./scripts/generate-dev-vars.sh",
     "build": "turbo build",
     "lint": "biome check apps/ packages/",
     "lint:fix": "biome check --write apps/ packages/",
@@ -19,6 +20,8 @@
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v && docker compose up -d",
     "cli": "bun apps/cli/bin/abadge.ts",
+    "api:dev:worker": "bun run dev:vars && cd apps/api && bun run dev -- --local --no-live-reload",
+    "api:clean:worker": "rm -rf apps/api/.wrangler",
     "mcp": "doppler run -- bun packages/mcp/src/index.ts",
     "test": "turbo test"
   },
