@@ -11,7 +11,7 @@ Set environment variables or create `~/.abadge/config.json`:
 
 ```bash
 export ABADGE_API_URL=http://localhost:8787
-export ABADGE_TOKEN=abd_your_api_key
+export ABADGE_TOKEN=abg_your_api_key
 ```
 
 ### Running
@@ -36,7 +36,7 @@ Add to your MCP config (e.g., `claude_desktop_config.json`):
       "args": ["packages/mcp/src/index.ts"],
       "env": {
         "ABADGE_API_URL": "http://localhost:8787",
-        "ABADGE_TOKEN": "abd_your_api_key"
+        "ABADGE_TOKEN": "abg_your_api_key"
       }
     }
   }

@@ -31,7 +31,7 @@ Config is stored at `~/.abadge/config.json`:
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "token": "abd_..."
+  "token": "abg_..."
 }
 ```
 
@@ -118,6 +118,7 @@ abadge run --secret aws-key --env-var AWS_SECRET_ACCESS_KEY -- aws s3 sync . s3:
 ```
 
 How it works:
+
 1. Authenticates with the API
 2. Requests the secret with `deliveryMode: reveal`
 3. Spawns the child process with the secret injected as an env var

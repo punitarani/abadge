@@ -3,10 +3,10 @@
 
 import { AbadgeClient, ApprovalRequiredError } from "@abadge/sdk";
 
-// Agent authenticates with its API key (the abd_... key shown once at registration)
+// Agent authenticates with its API key (the abg_... key shown once at registration)
 const client = new AbadgeClient({
   apiUrl: "http://localhost:8787",
-  token: "abd_...", // agent API key
+  token: "abg_...", // agent API key
 });
 
 try {

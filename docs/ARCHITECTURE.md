@@ -64,7 +64,7 @@ flowchart LR
 A user-owned encrypted secret entry with structured metadata.
 
 * **Identity**: id, user, name
-* **Classification**: type (api_key, login, token, json_blob, oauth_client, service_account_json, cookie_session, pii, other)
+* **Classification**: type (api\_key, login, token, json\_blob, oauth\_client, service\_account\_json, cookie\_session, pii, other)
 * **Security**: sensitivity (low/medium/high/critical), allowed delivery modes, allowed destinations
 * **Context**: environment (dev/staging/prod), service, provider, project, tags
 * **Secret material**: AES-256-GCM encrypted value + IV (never stored plaintext)
@@ -85,7 +85,7 @@ A grant joining one agent to one credential. Can optionally attach a policy and 
 
 A set of rules attached to a credential or grant that governs access. Rule types:
 
-* **delivery_mode** — restrict which delivery modes are allowed
+* **delivery\_mode** — restrict which delivery modes are allowed
 * **environment** — restrict to specific environments
 * **sensitivity** — require approval above a sensitivity threshold
 * **destination** — allow/block specific destinations
@@ -138,7 +138,7 @@ Default is NOT reveal. Plaintext exposure requires explicit opt-in.
 
 ### Access log
 
-Immutable event for every access attempt (allowed, denied, pending_approval, expired). No foreign key constraints — records persist after entity deletion.
+Immutable event for every access attempt (allowed, denied, pending\_approval, expired). No foreign key constraints — records persist after entity deletion.
 
 ## Entity model
 
@@ -359,7 +359,7 @@ sequenceDiagram
 
 ### Agent auth (two methods)
 
-1. **API key** (static) — `abd_` prefix, SHA-256 hashed, shown once at creation
+1. **API key** (static) — `abg_` prefix, SHA-256 hashed, shown once at creation
 2. **Broker session** (short-lived) — `abs_` prefix, SHA-256 hashed, TTL up to 24h, scoped
 
 Agent auth middleware tries session token first (by prefix), then falls back to API key.

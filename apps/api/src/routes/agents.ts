@@ -44,7 +44,7 @@ export const agentRoutes = new Hono<Env>()
       body: {
         name: body.name,
         userId,
-        prefix: "abd_",
+        prefix: "abg_",
         metadata: body.description ? { description: body.description } : undefined,
       },
     });

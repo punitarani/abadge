@@ -13,15 +13,15 @@ export interface AuthEnv {
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createAuth(db: Database, env: AuthEnv): any {
-  // Bun can materialize distinct @better-auth/core type identities for plugin packages.
-  // Cast the plugin list once at the integration boundary to keep the config typed elsewhere.
+  // Better Auth's plugin packages can resolve through distinct @better-auth/core type identities under Bun.
+  // Cast once at the integration boundary so the rest of the auth config stays explicit.
   const plugins = [
     organization({
       allowUserToCreateOrganization: true,
       creatorRole: "owner",
     }),
     apiKey({
-      defaultPrefix: "abd_",
+      defaultPrefix: "abg_",
       enableMetadata: true,
       rateLimit: {
         enabled: true,
