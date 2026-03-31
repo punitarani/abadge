@@ -21,14 +21,13 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Global middleware
 app.use("*", secureHeaders());
-app.use(
-  "*",
+app.use("*", async (c, next) =>
   cors({
-    origin: ["https://abadge.dev", "http://localhost:3000", "http://localhost:3001"],
+    origin: [c.env.APP_URL],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-  }),
+  })(c, next),
 );
 
 // Rate limit auth endpoints more aggressively
@@ -39,6 +38,8 @@ app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
   const auth = createAuth(db, {
+    API_URL: c.env.API_URL,
+    APP_URL: c.env.APP_URL,
     BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
     BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
   });

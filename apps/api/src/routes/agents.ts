@@ -34,6 +34,8 @@ export const agentRoutes = new Hono<Env>()
     const { createAuth } = await import("@abadge/auth");
     const db = c.get("db");
     const auth = createAuth(db, {
+      API_URL: c.env.API_URL,
+      APP_URL: c.env.APP_URL,
       BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
       BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
     });

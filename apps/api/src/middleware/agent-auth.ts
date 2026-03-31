@@ -48,6 +48,8 @@ export const agentAuthMiddleware = createMiddleware<AgentEnv>(async (c, next) =>
 
   // API key path
   const auth = createAuth(db, {
+    API_URL: c.env.API_URL,
+    APP_URL: c.env.APP_URL,
     BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
     BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
   });

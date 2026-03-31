@@ -5,6 +5,8 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI, organization } from "better-auth/plugins";
 
 export interface AuthEnv {
+  API_URL: string;
+  APP_URL: string;
   BETTER_AUTH_URL: string;
   BETTER_AUTH_SECRET: string;
 }
@@ -42,7 +44,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
     },
-    trustedOrigins: ["http://localhost:3000", "http://localhost:3001"],
+    trustedOrigins: [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"],
     plugins,
   });
 }
