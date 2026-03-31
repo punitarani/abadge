@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
 import Link from "next/link";
 
+import { HeroInterfaceTabs } from "@/components";
+
 const landingSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
@@ -92,41 +94,24 @@ const productTracks = [
   },
 ];
 
-const heroBlocks = [
-  {
-    comment: "# store a native credential",
-    lines: [
-      "$ abadge secret create \\",
-      "  --name github-token \\",
-      "  --type api_key \\",
-      "  --value ghp_abc123 \\",
-      "  --environment prod",
-    ],
-  },
-  {
-    comment: "# grant one agent explicit access",
-    lines: [
-      "$ abadge grant create \\",
-      "  --agent agent-01 \\",
-      "  --credential <credential-id> \\",
-      "  --delivery-modes env_inject,file_mount",
-    ],
-  },
-  {
-    comment: "# use it without handing over the vault",
-    lines: [
-      "$ abadge run \\",
-      "  --secret github-token \\",
-      "  --env-var GITHUB_TOKEN \\",
-      "  -- npm run deploy",
-    ],
-  },
-];
-
 const interfaceExamples = [
   {
     name: "CLI",
-    body: `abadge run \\
+    body: `# store a native credential
+$ abadge secret create \\
+  --name github-token \\
+  --type api_key \\
+  --value ghp_abc123 \\
+  --environment prod
+
+# grant one agent explicit access
+$ abadge grant create \\
+  --agent agent-01 \\
+  --credential <credential-id> \\
+  --delivery-modes env_inject,file_mount
+
+# use it without handing over the vault
+$ abadge run \\
   --secret github-token \\
   --env-var GITHUB_TOKEN \\
   -- npm run deploy`,
@@ -202,42 +187,22 @@ export default function HomePage() {
       className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
     >
       <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <div className="flex items-center gap-8">
-          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-          <nav className="hidden items-center gap-6 md:flex">
-            <a
-              href="#why-now"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-            >
-              Why now
-            </a>
-            <a
-              href="#scope"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-            >
-              Scope
-            </a>
-            <a
-              href="#interfaces"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-            >
-              Interfaces
-            </a>
-            <a
-              href="#security"
-              className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-            >
-              Security
-            </a>
-          </nav>
-        </div>
+        <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
 
-        <Link
-          href="/login"
-          className="border border-black bg-black px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
-        >
-          Sign in
-        </Link>
+        <div className="flex items-center gap-3">
+          <a
+            href="https://docs.abadge.io"
+            className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
+          >
+            Docs
+          </a>
+          <Link
+            href="/login"
+            className="border border-black bg-black px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
+          >
+            Sign in
+          </Link>
+        </div>
       </header>
 
       <main>
@@ -292,41 +257,7 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center justify-center bg-zinc-50 p-6 lg:p-12">
-            <div className="w-full max-w-[38rem] border border-black bg-white p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
-              <div className="mb-4 flex items-center justify-between border-b border-zinc-100 pb-2">
-                <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-                  shell -- access flow
-                </span>
-                <div className="flex gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
-                </div>
-              </div>
-
-              <div className="[font-family:var(--font-landing-mono)] text-[11px] leading-[1.35] md:text-[12px]">
-                {heroBlocks.map((block) => (
-                  <div key={block.comment} className="mb-4 last:mb-0">
-                    <div className="mb-1 text-zinc-400">{block.comment}</div>
-                    {block.lines.map((line, index) => (
-                      <div
-                        key={`${block.comment}-${line}`}
-                        className={index === 0 ? "text-black" : "pl-4 text-zinc-600"}
-                      >
-                        {index === 0 ? (
-                          <>
-                            <span className="font-bold text-[#0047FF]">$</span>
-                            <span>{line.slice(1)}</span>
-                          </>
-                        ) : (
-                          line
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <HeroInterfaceTabs examples={interfaceExamples} />
           </div>
         </section>
 
@@ -439,38 +370,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section id="interfaces" className="border-b border-black bg-zinc-50">
-          <div className="grid lg:grid-cols-[minmax(0,0.66fr)_minmax(0,1.34fr)]">
-            <div className="min-w-0 p-6 lg:p-12">
-              <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
-                Interfaces
-              </div>
-              <h2 className="max-w-md text-[1.85rem] leading-[1] font-bold tracking-[-0.04em] md:text-[2.9rem]">
-                One access model across code, operators, and agent runtimes
-              </h2>
-              <p className="mt-4 max-w-sm text-sm leading-[1.65] text-zinc-600">
-                The dashboard, REST API, TypeScript SDK, CLI, and MCP tools should feel like one
-                product, not separate secret-handling paths.
-              </p>
-            </div>
-
-            <div className="min-w-0 p-6 pt-0 lg:p-12 lg:pt-12">
-              <div className="grid gap-px border border-black bg-black md:grid-cols-2">
-                {interfaceExamples.map((item) => (
-                  <div key={item.name} className="min-w-0 bg-white p-5">
-                    <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-[#0047FF]">
-                      {item.name}
-                    </div>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-words [font-family:var(--font-landing-mono)] text-[11px] leading-[1.7] text-black md:text-[12px]">
-                      {item.body}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section
           id="security"
           className="grid border-b border-black lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]"
@@ -521,23 +420,25 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="border-b border-black bg-white px-6 py-16 text-center md:px-12 md:py-24">
-          <h2 className="text-[2.7rem] leading-[0.95] font-bold tracking-[-0.06em] md:text-[4.5rem]">
+        <section className="border-b border-black bg-[#1148F5] px-6 py-20 text-center text-white md:px-12 md:py-28">
+          <h2
+            className={`${landingCondensed.variable} mx-auto max-w-5xl text-[3.4rem] leading-[0.9] font-bold tracking-[-0.05em] [font-family:var(--font-landing-condensed)] md:text-[6.6rem]`}
+          >
             Give agents access.
             <br />
-            <span className="text-zinc-400">Not your entire vault.</span>
+            <span>Not your entire vault.</span>
           </h2>
 
-          <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <div className="mt-12 flex flex-wrap justify-center gap-4 md:mt-14">
             <Link
               href="/register"
-              className="border border-black bg-black px-10 py-3 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
+              className={`${landingCondensed.variable} min-w-[15rem] border border-white bg-white px-10 py-4 text-center text-[1rem] font-bold uppercase tracking-[0.01em] text-[#1148F5] transition-colors hover:bg-[#EAF0FF] [font-family:var(--font-landing-condensed)]`}
             >
               Get started
             </Link>
             <a
               href="https://docs.abadge.io"
-              className="border border-black bg-white px-10 py-3 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
+              className={`${landingCondensed.variable} min-w-[15rem] border border-white bg-transparent px-10 py-4 text-center text-[1rem] font-bold uppercase tracking-[0.01em] text-white transition-colors hover:bg-[#2B5BFF] [font-family:var(--font-landing-condensed)]`}
             >
               Read the Docs
             </a>
@@ -551,9 +452,6 @@ export default function HomePage() {
             <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
             <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
               Credential control plane for AI
-            </span>
-            <span className="[font-family:var(--font-landing-mono)] text-[9px] text-zinc-300">
-              {"SYSTEM_ID: ABADGE_V1.0.4 // © 2026"}
             </span>
           </div>
 
