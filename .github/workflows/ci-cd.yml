@@ -1,0 +1,151 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CI: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - run: bun run format
+      - run: git diff --exit-code
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  build:
+    name: Build Deploy Targets
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - name: Build API worker
+        working-directory: apps/api
+        run: bun run build
+      - name: Build web worker bundle
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.abadge.dev' }}
+        run: bunx opennextjs-cloudflare build
+
+  db-validate:
+    name: Validate Migrations
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: abadge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d abadge"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/abadge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - name: Apply checked-in migrations
+        working-directory: packages/db
+        run: bun run db:migrate
+
+  db-migrate:
+    name: Run Production Migrations
+    runs-on: ubuntu-latest
+    needs: [format, lint, typecheck, build, db-validate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - working-directory: packages/db
+        run: bun run db:migrate
+
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: [db-migrate]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - working-directory: apps/api
+        run: bun run deploy
+
+  deploy-web:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    needs: [deploy-api]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.abadge.dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - name: Build OpenNext bundle
+        working-directory: apps/web
+        run: bunx opennextjs-cloudflare build
+      - name: Deploy OpenNext worker
+        working-directory: apps/web
+        run: bunx opennextjs-cloudflare deploy

@@ -9,6 +9,6 @@
     "binding": "ASSETS"
   },
   "vars": {
-    "API_URL": "https://api.abadge.dev"
+    "NEXT_PUBLIC_API_URL": "https://api.abadge.dev"
   }
 }
