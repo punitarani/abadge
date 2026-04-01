@@ -1,77 +1,44 @@
-import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
-import { type AccessResult, ApiClient } from "../client";
-import { requireConfig } from "../config";
+import { daemonExecEnv } from "../daemon";
 import { error, errorMessage, str } from "../output";
 
 export async function runCommand(args: string[]): Promise<void> {
-  const sepIndex = args.indexOf("--");
-  if (sepIndex === -1) {
-    error("Usage: abadge run --secret <name> [--env-var NAME] -- <command> [args...]");
-    process.exit(1);
-  }
-
-  const cliArgs = args.slice(0, sepIndex);
-  const childArgs = args.slice(sepIndex + 1);
-
-  if (childArgs.length === 0) {
-    error("No command specified after --");
-    process.exit(1);
-  }
+  // Split on -- to get the command to execute
+  const dashIdx = args.indexOf("--");
+  const cliArgs = dashIdx >= 0 ? args.slice(0, dashIdx) : args;
+  const command = dashIdx >= 0 ? args.slice(dashIdx + 1) : [];
 
   const { values } = parseArgs({
     args: cliArgs,
     options: {
-      secret: { type: "string" },
-      "env-var": { type: "string" },
+      item: { type: "string" },
     },
     strict: false,
   });
 
-  const secretName = str(values.secret);
-  if (!secretName) {
-    error("--secret is required.");
+  const itemId = str(values.item);
+  if (!itemId) {
+    error("--item <id> is required.");
     process.exit(1);
   }
 
-  const envVarFlag = str(values["env-var"]);
-  const envVar = envVarFlag ?? secretName.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  if (command.length === 0) {
+    error("No command specified. Usage: abadge run --item <id> -- <command>");
+    process.exit(1);
+  }
 
-  const config = requireConfig();
-  const client = new ApiClient(config);
-
-  let secretValue: string;
   try {
-    const result = await client.post<AccessResult>("/v1/credentials/access", {
-      credentialName: secretName,
-      deliveryMode: "env_inject",
-    });
-    if (!result.value) {
-      throw new Error("No secret value returned — delivery mode may not be 'reveal'");
+    const res = await daemonExecEnv(itemId, command);
+    if (!res.ok) {
+      error(res.error ?? "Failed to run command.");
+      process.exit(1);
     }
-    secretValue = result.value;
+
+    // Daemon handles the subprocess and returns exit code
+    const exitCode = (res.data as { exitCode?: number })?.exitCode ?? 0;
+    process.exit(exitCode);
   } catch (err) {
-    error(errorMessage(err, "Failed to access secret."));
+    error(errorMessage(err, "Failed to communicate with daemon."));
     process.exit(1);
   }
-
-  const cmd = childArgs[0];
-  if (!cmd) {
-    error("No command specified after --");
-    process.exit(1);
-  }
-
-  const child = spawn(cmd, childArgs.slice(1), {
-    stdio: "inherit",
-    env: { ...process.env, [envVar]: secretValue },
-  });
-
-  child.on("error", (err) => {
-    error(`Failed to spawn: ${err.message}`);
-    process.exit(127);
-  });
-
-  child.on("exit", (code) => {
-    process.exit(code ?? 1);
-  });
 }
