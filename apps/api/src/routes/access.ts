@@ -13,6 +13,42 @@ export const accessRoutes = new Hono<PrincipalEnv>();
 
 accessRoutes.use("*", principalAuthMiddleware);
 
+function decodeServerManagedPayload(
+  itemId: string,
+  decrypted: Uint8Array,
+): {
+  v: number;
+  label: string;
+  kind: "opaque";
+  tags: string[];
+  fields: Record<string, unknown>;
+} {
+  const text = new TextDecoder().decode(decrypted);
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object") {
+      return parsed as {
+        v: number;
+        label: string;
+        kind: "opaque";
+        tags: string[];
+        fields: Record<string, unknown>;
+      };
+    }
+  } catch {
+    // Migrated credentials were stored as raw strings, not structured item payloads.
+  }
+
+  return {
+    v: 1,
+    label: `migrated-${itemId.slice(0, 8)}`,
+    kind: "opaque",
+    tags: ["migrated"],
+    fields: { value: text },
+  };
+}
+
 async function checkGrant(
   db: Parameters<typeof logAudit>[0],
   principalId: string,
@@ -176,8 +212,7 @@ accessRoutes.post("/reveal", zValidator("json", RevealAccessSchema), async (c) =
     { ciphertext: item.serverCiphertext, iv: item.serverIv, keyVersion: item.serverKeyVersion },
     c.env.ENCRYPTION_KEY,
   );
-
-  const payload = JSON.parse(new TextDecoder().decode(decrypted));
+  const payload = decodeServerManagedPayload(item.id, decrypted);
 
   await logAudit(db, {
     userId: principalUserId,
@@ -276,6 +311,6 @@ accessRoutes.post("/mount", zValidator("json", MountAccessSchema), async (c) => 
 
   return c.json({
     storageMode: item.storageMode,
-    payload: JSON.parse(new TextDecoder().decode(decrypted)),
+    payload: decodeServerManagedPayload(item.id, decrypted),
   });
 });
