@@ -1,6 +1,7 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
@@ -187,7 +188,10 @@ export default function HomePage() {
       className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
     >
       <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        <Link href="/" className="inline-flex items-center gap-2">
+          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        </Link>
 
         <div className="flex items-center gap-3">
           <a
@@ -449,7 +453,10 @@ export default function HomePage() {
       <footer className="bg-white p-8">
         <div className="mx-auto flex max-w-[96rem] flex-col justify-between gap-12 md:flex-row md:items-start">
           <div className="max-w-xs">
-            <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
+            <div className="mb-1 inline-flex items-center gap-2">
+              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+            </div>
             <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
               Credential control plane for AI
             </span>

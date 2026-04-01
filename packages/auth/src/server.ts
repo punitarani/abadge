@@ -9,6 +9,10 @@ export interface AuthEnv {
   APP_URL: string;
   BETTER_AUTH_URL: string;
   BETTER_AUTH_SECRET: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
@@ -32,6 +36,22 @@ export function createAuth(db: Database, env: AuthEnv): any {
     openAPI(),
   ] as unknown as NonNullable<Parameters<typeof betterAuth>[0]["plugins"]>;
 
+  const socialProviders = {} as NonNullable<Parameters<typeof betterAuth>[0]["socialProviders"]>;
+
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    socialProviders.google = {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    };
+  }
+
+  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
+    socialProviders.github = {
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+    };
+  }
+
   return betterAuth({
     database: drizzleAdapter(db, { provider: "pg" }),
     baseURL: env.BETTER_AUTH_URL,
@@ -44,6 +64,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
     },
+    socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
     trustedOrigins: [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"],
     plugins,
   });
