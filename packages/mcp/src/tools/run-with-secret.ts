@@ -1,16 +1,16 @@
 import { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { z } from "zod";
-import { apiPost } from "../api-client.js";
 import type { McpConfig } from "../config.js";
+import { resolveSecret } from "../resolve-secret.js";
 
 export const toolName = "run_with_secret";
 
 export const toolDescription =
-  "Run a command with a credential injected as an environment variable. The secret is never exposed to the AI model.";
+  "Run a command with a secret injected as an environment variable. The secret is never exposed to the AI model — only stdout/stderr (max 4KB) are returned.";
 
 export const toolInputSchema = z.object({
-  credentialName: z.string().describe("Name of the credential to inject"),
+  itemId: z.string().describe("ID of the item to inject"),
   command: z.string().describe("Command to run"),
   args: z.array(z.string()).optional().describe("Command arguments"),
   envVarName: z
@@ -21,12 +21,6 @@ export const toolInputSchema = z.object({
 });
 
 const MAX_OUTPUT_BYTES = 4096;
-
-interface AccessResponse {
-  value?: string;
-  credential?: { name: string; type: string };
-  error?: string;
-}
 
 function truncate(str: string): string {
   if (str.length <= MAX_OUTPUT_BYTES) return str;
@@ -62,21 +56,15 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  // Fetch the secret server-side
-  const res = await apiPost<AccessResponse>(config, "/v1/credentials/access", {
-    credentialName: input.credentialName,
-    deliveryMode: "env_inject",
-    purpose: input.purpose ?? `Run command: ${input.command}`,
-  });
-
-  if (!res.ok || !res.data.value) {
-    return JSON.stringify({
-      error: res.data.error ?? "Failed to access credential",
-    });
-  }
+  const secret = await resolveSecret(
+    config,
+    input.itemId,
+    "mount_env",
+    input.purpose ?? `Run command: ${input.command}`,
+  );
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
-  const childEnv = { ...globalThis.process?.env, [envVarName]: res.data.value };
+  const childEnv = { ...globalThis.process?.env, [envVarName]: secret };
 
   const result = await runCommand(input.command, input.args ?? [], childEnv);
 
