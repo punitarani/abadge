@@ -54,7 +54,7 @@ export default function RegisterPage() {
       if (result.error) {
         setError(result.error.message);
       } else {
-        router.push("/credentials");
+        router.push("/items");
       }
     } catch {
       setError("An unexpected error occurred");
@@ -70,7 +70,7 @@ export default function RegisterPage() {
     try {
       const currentURL = new URL(window.location.href);
       const result = await authClient.signInWithSocial(provider, {
-        callbackURL: `${currentURL.origin}/credentials`,
+        callbackURL: `${currentURL.origin}/items`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
