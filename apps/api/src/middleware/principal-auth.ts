@@ -1,9 +1,13 @@
 import { verifyApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, eq, isNull, or } from "@abadge/db";
 import { principals } from "@abadge/db/schema";
 import { createMiddleware } from "hono/factory";
 import { getConnectionString, getDb } from "../lib/db";
 import type { PrincipalEnv } from "../types";
+
+function getCandidatePrefixes(token: string): string[] {
+  return [...new Set([token.slice(0, 8), token.slice(0, 6), token.slice(0, 4)].filter(Boolean))];
+}
 
 /**
  * Authenticate a principal via Bearer token (API key).
@@ -16,38 +20,39 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
   }
 
   const token = authHeader.slice(7);
-  const prefix = token.slice(0, 8);
+  const prefixes = getCandidatePrefixes(token);
 
   const db = getDb(getConnectionString(c.env));
 
-  const [principal] = await db
+  const activeCandidates = await db
     .select()
     .from(principals)
     .where(
       and(
-        eq(principals.secretPrefix, prefix),
+        or(...prefixes.map((prefix) => eq(principals.secretPrefix, prefix))),
         eq(principals.enabled, true),
         isNull(principals.revokedAt),
       ),
     )
-    .limit(1);
+    .limit(10);
 
-  if (principal?.secretHash) {
+  for (const principal of activeCandidates) {
+    if (!principal.secretHash) continue;
     const valid = await verifyApiKey(token, principal.secretHash);
-    if (valid) {
-      // Update last used timestamp (fire-and-forget)
-      db.update(principals)
-        .set({ lastUsedAt: new Date() })
-        .where(eq(principals.id, principal.id))
-        .execute();
+    if (!valid) continue;
 
-      c.set("principalId", principal.id);
-      c.set("principalUserId", principal.userId);
-      c.set("principalLocality", principal.locality);
-      c.set("db", db);
-      await next();
-      return;
-    }
+    // Update last used timestamp (fire-and-forget)
+    db.update(principals)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(principals.id, principal.id))
+      .execute();
+
+    c.set("principalId", principal.id);
+    c.set("principalUserId", principal.userId);
+    c.set("principalLocality", principal.locality);
+    c.set("db", db);
+    await next();
+    return;
   }
 
   // Fallback for migrated remote agents that still authenticate via Better Auth API keys.
@@ -77,18 +82,35 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
     return c.json({ error: "Invalid API key" }, 401);
   }
 
-  if (
-    principal &&
-    principal.id === legacyPrincipalId &&
-    (!principal.enabled || principal.revokedAt)
-  ) {
+  const [migratedPrincipal] = await db
+    .select({
+      id: principals.id,
+      userId: principals.userId,
+      locality: principals.locality,
+      enabled: principals.enabled,
+      revokedAt: principals.revokedAt,
+    })
+    .from(principals)
+    .where(eq(principals.id, legacyPrincipalId))
+    .limit(1);
+
+  if (migratedPrincipal && (!migratedPrincipal.enabled || migratedPrincipal.revokedAt)) {
     return c.json({ error: "Invalid API key" }, 401);
   }
 
-  db.update(principals)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(principals.id, legacyPrincipalId))
-    .execute();
+  if (migratedPrincipal) {
+    db.update(principals)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(principals.id, legacyPrincipalId))
+      .execute();
+
+    c.set("principalId", migratedPrincipal.id);
+    c.set("principalUserId", migratedPrincipal.userId);
+    c.set("principalLocality", migratedPrincipal.locality);
+    c.set("db", db);
+    await next();
+    return;
+  }
 
   c.set("principalId", legacyPrincipalId);
   c.set("principalUserId", legacyUserId);

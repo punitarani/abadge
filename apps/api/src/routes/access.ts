@@ -27,7 +27,23 @@ function decodeServerManagedPayload(
 
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object") {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "v" in parsed &&
+      typeof parsed.v === "number" &&
+      "label" in parsed &&
+      typeof parsed.label === "string" &&
+      "kind" in parsed &&
+      parsed.kind === "opaque" &&
+      "tags" in parsed &&
+      Array.isArray(parsed.tags) &&
+      parsed.tags.every((tag: unknown) => typeof tag === "string") &&
+      "fields" in parsed &&
+      parsed.fields &&
+      typeof parsed.fields === "object" &&
+      !Array.isArray(parsed.fields)
+    ) {
       return parsed as {
         v: number;
         label: string;

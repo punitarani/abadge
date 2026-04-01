@@ -77,7 +77,6 @@ ALTER TABLE "items" ADD CONSTRAINT "items_user_id_user_id_fk" FOREIGN KEY ("user
 ALTER TABLE "items" ADD CONSTRAINT "items_vault_id_vaults_id_fk" FOREIGN KEY ("vault_id") REFERENCES "public"."vaults"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grants" ADD CONSTRAINT "grants_principal_id_principals_id_fk" FOREIGN KEY ("principal_id") REFERENCES "public"."principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "grants" ADD CONSTRAINT "grants_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "grants" ADD CONSTRAINT "grants_granted_by_user_id_fk" FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_user_id_idx" ON "audit_log" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_principal_id_idx" ON "audit_log" USING btree ("principal_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_item_id_idx" ON "audit_log" USING btree ("item_id");--> statement-breakpoint
@@ -184,6 +183,7 @@ SELECT
 	p."granted_by",
 	p."granted_at"
 FROM "agent_credential_permissions" p
+INNER JOIN "user" u ON u."id" = p."granted_by"
 ON CONFLICT ("id") DO NOTHING;
 --> statement-breakpoint
 
