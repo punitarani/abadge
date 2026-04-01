@@ -1,13 +1,6 @@
 import type { CliConfig } from "./config";
 
-export interface AccessResult {
-  credential: { name: string; type: string; metadata?: Record<string, string> | null };
-  deliveryMode: string;
-  value?: string;
-  approved: boolean;
-}
-
-/** Minimal API client — inline fetch wrapper so CLI has no dependency on @abadge/broker. */
+/** Minimal API client — inline fetch wrapper. */
 export class ApiClient {
   private baseUrl: string;
   private token: string;
@@ -23,6 +16,10 @@ export class ApiClient {
 
   async post<T = unknown>(path: string, body?: unknown): Promise<T> {
     return this.request("POST", path, body);
+  }
+
+  async delete<T = unknown>(path: string): Promise<T> {
+    return this.request("DELETE", path);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

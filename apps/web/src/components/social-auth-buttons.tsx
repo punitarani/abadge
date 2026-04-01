@@ -1,8 +1,8 @@
 "use client";
 
-import type { SocialProvider } from "@abadge/core";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import type { SocialProvider } from "@/lib/auth-client";
 
 interface SocialAuthButtonsProps {
   providers: SocialProvider[];

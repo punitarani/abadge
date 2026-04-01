@@ -1,74 +1,51 @@
-import type { AccessOutcome, DeliveryMode, Environment, PrincipalType } from "@abadge/core";
-import type { SQL } from "@abadge/db";
-import { and, desc, eq, gte, inArray, lte } from "@abadge/db";
-import { accessLog, credentials } from "@abadge/db/schema";
+import { AuditQuerySchema } from "@abadge/core";
+import { and, desc, eq, lt } from "@abadge/db";
+import { auditLog } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
-export const auditRoutes = new Hono<Env>().use("*", authMiddleware).get("/", async (c) => {
+export const auditRoutes = new Hono<Env>();
+
+auditRoutes.use("*", authMiddleware);
+
+// GET /audit — Query audit log (cursor-based pagination)
+auditRoutes.get("/", zValidator("query", AuditQuerySchema), async (c) => {
   const userId = c.get("userId");
   const db = c.get("db");
-  const limit = Math.min(Number(c.req.query("limit") ?? 50), 200);
-  const offset = Number(c.req.query("offset") ?? 0);
+  const query = c.req.valid("query");
 
-  // Get all credential IDs belonging to this user
-  const userCredentials = await db
-    .select({ id: credentials.id })
-    .from(credentials)
-    .where(eq(credentials.userId, userId));
+  const conditions = [eq(auditLog.userId, userId)];
 
-  const credentialIds = userCredentials.map((row) => row.id);
+  if (query.eventType) conditions.push(eq(auditLog.eventType, query.eventType));
+  if (query.result) conditions.push(eq(auditLog.result, query.result));
+  if (query.principalId) conditions.push(eq(auditLog.principalId, query.principalId));
+  if (query.itemId) conditions.push(eq(auditLog.itemId, query.itemId));
+  if (query.cursor) conditions.push(lt(auditLog.id, Number(query.cursor)));
 
-  if (credentialIds.length === 0) {
-    return c.json({ logs: [], total: 0 });
-  }
-
-  // Build filter conditions
-  const conditions: SQL[] = [inArray(accessLog.credentialId, credentialIds)];
-
-  const deliveryMode = c.req.query("deliveryMode");
-  if (deliveryMode) {
-    conditions.push(eq(accessLog.deliveryMode, deliveryMode as DeliveryMode));
-  }
-
-  const outcome = c.req.query("outcome");
-  if (outcome) {
-    conditions.push(eq(accessLog.outcome, outcome as AccessOutcome));
-  }
-
-  const principalType = c.req.query("principalType");
-  if (principalType) {
-    conditions.push(eq(accessLog.principalType, principalType as PrincipalType));
-  }
-
-  const environment = c.req.query("environment");
-  if (environment) {
-    conditions.push(eq(accessLog.environment, environment as Environment));
-  }
-
-  const agentId = c.req.query("agentId");
-  if (agentId) {
-    conditions.push(eq(accessLog.agentId, agentId));
-  }
-
-  const startDate = c.req.query("startDate");
-  if (startDate) {
-    conditions.push(gte(accessLog.timestamp, new Date(startDate)));
-  }
-
-  const endDate = c.req.query("endDate");
-  if (endDate) {
-    conditions.push(lte(accessLog.timestamp, new Date(endDate)));
-  }
-
-  const logs = await db
+  const result = await db
     .select()
-    .from(accessLog)
+    .from(auditLog)
     .where(and(...conditions))
-    .orderBy(desc(accessLog.timestamp))
-    .limit(limit)
-    .offset(offset);
+    .orderBy(desc(auditLog.id))
+    .limit(query.limit);
 
-  return c.json({ logs });
+  const entries = result.map((e) => ({
+    id: e.id,
+    userId: e.userId,
+    principalId: e.principalId,
+    itemId: e.itemId,
+    eventType: e.eventType,
+    result: e.result,
+    deliveryMode: e.deliveryMode,
+    meta: e.meta,
+    ipAddress: e.ipAddress,
+    occurredAt: e.occurredAt.toISOString(),
+  }));
+
+  const lastEntry = entries[entries.length - 1];
+  const nextCursor = entries.length === query.limit && lastEntry ? String(lastEntry.id) : null;
+
+  return c.json({ entries, nextCursor });
 });

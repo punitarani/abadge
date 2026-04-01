@@ -1,5 +1,4 @@
 import type { Database } from "@abadge/db";
-import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI, organization } from "better-auth/plugins";
@@ -37,21 +36,10 @@ export function getEnabledSocialProviders(env: AuthEnv): SocialProvider[] {
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createAuth(db: Database, env: AuthEnv): any {
-  // Better Auth's plugin packages can resolve through distinct @better-auth/core type identities under Bun.
-  // Cast once at the integration boundary so the rest of the auth config stays explicit.
   const plugins = [
     organization({
       allowUserToCreateOrganization: true,
       creatorRole: "owner",
-    }),
-    apiKey({
-      defaultPrefix: "abg_",
-      enableMetadata: true,
-      rateLimit: {
-        enabled: true,
-        timeWindow: 1000 * 60 * 60,
-        maxRequests: 1000,
-      },
     }),
     openAPI(),
   ] as unknown as NonNullable<Parameters<typeof betterAuth>[0]["plugins"]>;

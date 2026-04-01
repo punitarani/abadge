@@ -1,6 +1,5 @@
 "use client";
 
-import { type SocialProvider, socialProviders } from "@abadge/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -8,6 +7,7 @@ import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { SocialProvider } from "@/lib/auth-client";
 import { authClient } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 
@@ -18,7 +18,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [availableProviders, setAvailableProviders] = useState<SocialProvider[]>([
-    ...socialProviders,
+    "github",
+    "google",
   ]);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
 
@@ -53,7 +54,7 @@ export default function LoginPage() {
       if (result.error) {
         setError(result.error.message);
       } else {
-        router.push("/credentials");
+        router.push("/items");
       }
     } catch {
       setError("An unexpected error occurred");
@@ -69,7 +70,7 @@ export default function LoginPage() {
     try {
       const currentURL = new URL(window.location.href);
       const result = await authClient.signInWithSocial(provider, {
-        callbackURL: `${currentURL.origin}/credentials`,
+        callbackURL: `${currentURL.origin}/items`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 

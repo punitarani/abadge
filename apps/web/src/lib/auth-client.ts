@@ -1,11 +1,14 @@
-import {
-  type SocialAuthProvidersResponse,
-  type SocialProvider,
-  socialProviders,
-} from "@abadge/core";
 import { clientEnv } from "@abadge/env/client";
 
 const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
+
+export type SocialProvider = "github" | "google";
+
+const SOCIAL_PROVIDERS: SocialProvider[] = ["github", "google"];
+
+interface SocialAuthProvidersResponse {
+  providers?: string[];
+}
 
 interface SocialSignInOptions {
   callbackURL: string;
@@ -22,7 +25,7 @@ function parseAvailableProviders(data: unknown): SocialProvider[] {
   }
 
   return providers.filter((provider): provider is SocialProvider =>
-    socialProviders.includes(provider as SocialProvider),
+    SOCIAL_PROVIDERS.includes(provider as SocialProvider),
   );
 }
 
@@ -102,7 +105,7 @@ export const authClient = {
     });
 
     if (!res.ok) {
-      return [...socialProviders];
+      return [...SOCIAL_PROVIDERS];
     }
 
     const data = await res.json().catch(() => null);

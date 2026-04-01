@@ -6,36 +6,33 @@ export interface ApiResponse<T = unknown> {
   data: T;
 }
 
-export async function apiGet<T = unknown>(
+async function request<T>(
   config: McpConfig,
+  method: string,
   path: string,
+  body?: unknown,
 ): Promise<ApiResponse<T>> {
   const url = `${config.apiUrl}${path}`;
   const res = await fetch(url, {
-    method: "GET",
+    method,
     headers: {
-      Authorization: `Bearer ${config.token}`,
+      Authorization: `Bearer ${config.authToken}`,
       "Content-Type": "application/json",
     },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = (await res.json()) as T;
   return { ok: res.ok, status: res.status, data };
 }
 
-export async function apiPost<T = unknown>(
+export function apiGet<T = unknown>(config: McpConfig, path: string): Promise<ApiResponse<T>> {
+  return request<T>(config, "GET", path);
+}
+
+export function apiPost<T = unknown>(
   config: McpConfig,
   path: string,
   body: unknown,
 ): Promise<ApiResponse<T>> {
-  const url = `${config.apiUrl}${path}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json()) as T;
-  return { ok: res.ok, status: res.status, data };
+  return request<T>(config, "POST", path, body);
 }

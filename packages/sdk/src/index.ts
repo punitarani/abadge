@@ -1,34 +1,26 @@
 export type { AbadgeClientConfig } from "./client";
 export { AbadgeClient } from "./client";
-export * from "./constants";
-export * from "./errors";
+export { AbadgeApiError } from "./errors";
 export type {
-  AgentAccessRequestInput,
-  ApprovalDecisionInput,
-  CreateAgentInput,
-  CreateConnectorInput,
-  CreateCredentialInput,
-  CreatePolicyInput,
-  CreateSessionInput,
-  GrantPermissionInput,
-  PolicyRuleInput,
-  RevokePermissionInput,
-  UpdateCredentialInput,
-  UpdatePolicyInput,
-} from "./schemas";
-export {
-  AgentAccessRequestSchema,
-  ApprovalDecisionSchema,
-  CreateAgentSchema,
-  CreateConnectorSchema,
-  CreateCredentialSchema,
-  CreatePolicySchema,
-  CreateSessionSchema,
-  GrantPermissionSchema,
-  PolicyRuleSchema,
-  policyRuleTypes,
-  RevokePermissionSchema,
-  UpdateCredentialSchema,
-  UpdatePolicySchema,
-} from "./schemas";
-export * from "./types";
+  AuditEntry,
+  AuditFilters,
+  BootstrapVaultInput,
+  ChangePasswordInput,
+  CiphertextAccessResponse,
+  CreateGrantInput,
+  CreateItemInput,
+  CreatePrincipalInput,
+  Grant,
+  GrantFilters,
+  Item,
+  KeyDerivationParams,
+  MountAccessResponse,
+  Principal,
+  PrincipalWithKey,
+  ReEncryptedItem,
+  RevealAccessResponse,
+  RotateKeyInput,
+  SetupRecoveryInput,
+  UpdateItemInput,
+  Vault,
+} from "./types";
