@@ -1,301 +1,163 @@
 import { describe, expect, test } from "bun:test";
 import {
-	AgentAccessRequestSchema,
-	CreateCredentialSchema,
-	CreateSessionSchema,
-	GrantPermissionSchema,
-	PolicyRuleSchema,
-} from "./schemas";
-import {
-	ERROR_CODES,
-	accessActions,
-	accessOutcomes,
-	approvalStatuses,
-	connectorTypes,
-	credentialTypes,
-	deliveryModes,
-	environments,
-	ownerScopes,
-	principalTypes,
-	sensitivities,
-	sessionStatuses,
-	socialProviders,
-	sourceTypes,
+  AUDIT_EVENT_TYPES,
+  AUDIT_RESULTS,
+  CAPABILITIES,
+  ITEM_KINDS,
+  PRINCIPAL_KINDS,
+  PRINCIPAL_LOCALITIES,
+  STORAGE_MODES,
+  API_KEY_PREFIX,
+  localityForKind,
 } from "./constants";
+import {
+  CreateGrantSchema,
+  CreateItemSchema,
+  CreatePrincipalSchema,
+  VaultBootstrapSchema,
+} from "./schemas";
 
-/**
- * Tests that all constant arrays and schema validation rules match the
- * expected product invariants. These act as regression guards against
- * accidental removal or mutation of security-critical enums.
- */
-
-describe("deliveryModes", () => {
-	test("includes all expected modes", () => {
-		expect(deliveryModes).toContain("reveal");
-		expect(deliveryModes).toContain("env_inject");
-		expect(deliveryModes).toContain("file_mount");
-		expect(deliveryModes).toContain("browser_fill");
-		expect(deliveryModes).toContain("operation_only");
-	});
-
-	test("default delivery mode is env_inject, not reveal", () => {
-		// The product invariant: default delivery mode is NOT reveal
-		const result = AgentAccessRequestSchema.safeParse({
-			credentialName: "test",
-		});
-		expect(result.success).toBe(true);
-		if (result.success) {
-			expect(result.data.deliveryMode).toBe("env_inject");
-			expect(result.data.deliveryMode).not.toBe("reveal");
-		}
-	});
+describe("ITEM_KINDS", () => {
+  test("includes all expected kinds", () => {
+    const kinds = [...ITEM_KINDS];
+    expect(kinds).toContain("login");
+    expect(kinds).toContain("api_key");
+    expect(kinds).toContain("token");
+    expect(kinds).toContain("json");
+    expect(kinds).toContain("certificate");
+    expect(kinds).toContain("ssh_key");
+    expect(kinds).toContain("opaque");
+    expect(ITEM_KINDS.length).toBe(7);
+  });
 });
 
-describe("credentialTypes", () => {
-	test("includes all expected types", () => {
-		const expected = [
-			"api_key",
-			"login",
-			"token",
-			"json_blob",
-			"pii",
-			"other",
-			"oauth_client",
-			"service_account_json",
-			"cookie_session",
-		];
-		for (const t of expected) {
-			expect(credentialTypes).toContain(t);
-		}
-	});
-
-	test("has exactly the expected count", () => {
-		expect(credentialTypes.length).toBe(9);
-	});
+describe("STORAGE_MODES", () => {
+  test("includes zero_knowledge and server_managed", () => {
+    expect(STORAGE_MODES).toContain("zero_knowledge");
+    expect(STORAGE_MODES).toContain("server_managed");
+    expect(STORAGE_MODES.length).toBe(2);
+  });
 });
 
-describe("accessOutcomes", () => {
-	test("includes all expected outcomes for audit trail", () => {
-		expect(accessOutcomes).toContain("allowed");
-		expect(accessOutcomes).toContain("denied");
-		expect(accessOutcomes).toContain("pending_approval");
-		expect(accessOutcomes).toContain("expired");
-	});
+describe("PRINCIPAL_KINDS", () => {
+  test("includes all expected kinds", () => {
+    expect(PRINCIPAL_KINDS).toContain("device");
+    expect(PRINCIPAL_KINDS).toContain("local_cli");
+    expect(PRINCIPAL_KINDS).toContain("local_mcp");
+    expect(PRINCIPAL_KINDS).toContain("remote_agent");
+    expect(PRINCIPAL_KINDS.length).toBe(4);
+  });
 });
 
-describe("accessActions", () => {
-	test("includes read and denied", () => {
-		expect(accessActions).toContain("read");
-		expect(accessActions).toContain("denied");
-	});
+describe("CAPABILITIES", () => {
+  test("includes all expected capabilities", () => {
+    expect(CAPABILITIES).toContain("read_ciphertext");
+    expect(CAPABILITIES).toContain("reveal_plaintext");
+    expect(CAPABILITIES).toContain("mount_env");
+    expect(CAPABILITIES).toContain("mount_file");
+    expect(CAPABILITIES).toContain("use_without_reveal");
+    expect(CAPABILITIES.length).toBe(5);
+  });
 });
 
-describe("approvalStatuses", () => {
-	test("includes full lifecycle", () => {
-		expect(approvalStatuses).toContain("pending");
-		expect(approvalStatuses).toContain("approved");
-		expect(approvalStatuses).toContain("denied");
-		expect(approvalStatuses).toContain("expired");
-	});
+describe("AUDIT_EVENT_TYPES", () => {
+  test("includes vault events", () => {
+    expect(AUDIT_EVENT_TYPES).toContain("vault.bootstrap");
+    expect(AUDIT_EVENT_TYPES).toContain("vault.unlock");
+    expect(AUDIT_EVENT_TYPES).toContain("vault.password_change");
+    expect(AUDIT_EVENT_TYPES).toContain("vault.key_rotate");
+  });
+
+  test("includes access events", () => {
+    expect(AUDIT_EVENT_TYPES).toContain("access.ciphertext");
+    expect(AUDIT_EVENT_TYPES).toContain("access.reveal");
+    expect(AUDIT_EVENT_TYPES).toContain("access.mount_env");
+    expect(AUDIT_EVENT_TYPES).toContain("access.mount_file");
+  });
 });
 
-describe("principalTypes", () => {
-	test("includes human, app, agent, workload", () => {
-		expect(principalTypes).toContain("human");
-		expect(principalTypes).toContain("app");
-		expect(principalTypes).toContain("agent");
-		expect(principalTypes).toContain("workload");
-	});
+describe("AUDIT_RESULTS", () => {
+  test("includes all outcomes", () => {
+    expect(AUDIT_RESULTS).toContain("allowed");
+    expect(AUDIT_RESULTS).toContain("denied");
+    expect(AUDIT_RESULTS).toContain("expired");
+    expect(AUDIT_RESULTS).toContain("revoked");
+  });
 });
 
-describe("sensitivities", () => {
-	test("ordered low to critical", () => {
-		expect(sensitivities[0]).toBe("low");
-		expect(sensitivities[1]).toBe("medium");
-		expect(sensitivities[2]).toBe("high");
-		expect(sensitivities[3]).toBe("critical");
-	});
+describe("localityForKind", () => {
+  test("device is local", () => expect(localityForKind("device")).toBe("local"));
+  test("local_cli is local", () => expect(localityForKind("local_cli")).toBe("local"));
+  test("local_mcp is local", () => expect(localityForKind("local_mcp")).toBe("local"));
+  test("remote_agent is remote", () => expect(localityForKind("remote_agent")).toBe("remote"));
 });
 
-describe("environments", () => {
-	test("includes dev, staging, prod", () => {
-		expect(environments).toContain("dev");
-		expect(environments).toContain("staging");
-		expect(environments).toContain("prod");
-	});
+describe("API_KEY_PREFIX", () => {
+  test("remote prefix is abg_", () => expect(API_KEY_PREFIX.remote).toBe("abg_"));
+  test("local prefix is abl_", () => expect(API_KEY_PREFIX.local).toBe("abl_"));
 });
 
-describe("sourceTypes", () => {
-	test("includes native and external", () => {
-		expect(sourceTypes).toContain("native");
-		expect(sourceTypes).toContain("external");
-	});
-});
+describe("schema validation", () => {
+  test("VaultBootstrapSchema requires all fields", () => {
+    expect(VaultBootstrapSchema.safeParse({}).success).toBe(false);
+    expect(
+      VaultBootstrapSchema.safeParse({
+        wrappedRootKey: "key",
+        kdfSalt: "salt",
+        kdfParams: {
+          algorithm: "argon2id",
+          memory: 65536,
+          iterations: 3,
+          parallelism: 1,
+          hashLength: 32,
+        },
+      }).success,
+    ).toBe(true);
+  });
 
-describe("connectorTypes", () => {
-	test("includes native and known vault providers", () => {
-		expect(connectorTypes).toContain("native");
-		expect(connectorTypes).toContain("onepassword");
-		expect(connectorTypes).toContain("aws_secrets_manager");
-		expect(connectorTypes).toContain("hashicorp_vault");
-	});
-});
+  test("CreateItemSchema accepts ZK mode", () => {
+    expect(
+      CreateItemSchema.safeParse({
+        storageMode: "zero_knowledge",
+        encryptedItemKey: "key",
+        ciphertext: "ct",
+      }).success,
+    ).toBe(true);
+  });
 
-describe("sessionStatuses", () => {
-	test("includes full lifecycle", () => {
-		expect(sessionStatuses).toContain("active");
-		expect(sessionStatuses).toContain("expired");
-		expect(sessionStatuses).toContain("revoked");
-	});
-});
+  test("CreateItemSchema accepts server_managed mode", () => {
+    expect(
+      CreateItemSchema.safeParse({
+        storageMode: "server_managed",
+        payload: { v: 1, label: "test", kind: "opaque", tags: [], fields: {} },
+      }).success,
+    ).toBe(true);
+  });
 
-describe("socialProviders", () => {
-	test("includes github and google", () => {
-		expect(socialProviders).toContain("github");
-		expect(socialProviders).toContain("google");
-	});
-});
+  test("CreateGrantSchema rejects invalid capability", () => {
+    expect(
+      CreateGrantSchema.safeParse({
+        principalId: "p1",
+        itemId: "i1",
+        capability: "wildcard",
+      }).success,
+    ).toBe(false);
+  });
 
-describe("ownerScopes", () => {
-	test("includes user, org, system", () => {
-		expect(ownerScopes).toContain("user");
-		expect(ownerScopes).toContain("org");
-		expect(ownerScopes).toContain("system");
-	});
-});
+  test("CreateGrantSchema accepts valid capability", () => {
+    expect(
+      CreateGrantSchema.safeParse({
+        principalId: "p1",
+        itemId: "i1",
+        capability: "read_ciphertext",
+      }).success,
+    ).toBe(true);
+  });
 
-describe("ERROR_CODES", () => {
-	test("includes all security-critical error codes", () => {
-		expect(ERROR_CODES.UNAUTHORIZED).toBe("UNAUTHORIZED");
-		expect(ERROR_CODES.ACCESS_DENIED).toBe("ACCESS_DENIED");
-		expect(ERROR_CODES.INVALID_API_KEY).toBe("INVALID_API_KEY");
-		expect(ERROR_CODES.POLICY_VIOLATION).toBe("POLICY_VIOLATION");
-		expect(ERROR_CODES.APPROVAL_REQUIRED).toBe("APPROVAL_REQUIRED");
-		expect(ERROR_CODES.SESSION_EXPIRED).toBe("SESSION_EXPIRED");
-		expect(ERROR_CODES.SESSION_REVOKED).toBe("SESSION_REVOKED");
-		expect(ERROR_CODES.DELIVERY_MODE_NOT_ALLOWED).toBe(
-			"DELIVERY_MODE_NOT_ALLOWED",
-		);
-	});
-
-	test("includes all resource error codes", () => {
-		expect(ERROR_CODES.CREDENTIAL_NOT_FOUND).toBe("CREDENTIAL_NOT_FOUND");
-		expect(ERROR_CODES.AGENT_NOT_FOUND).toBe("AGENT_NOT_FOUND");
-		expect(ERROR_CODES.AGENT_INACTIVE).toBe("AGENT_INACTIVE");
-		expect(ERROR_CODES.PERMISSION_NOT_FOUND).toBe("PERMISSION_NOT_FOUND");
-		expect(ERROR_CODES.PERMISSION_EXISTS).toBe("PERMISSION_EXISTS");
-		expect(ERROR_CODES.CONNECTOR_NOT_FOUND).toBe("CONNECTOR_NOT_FOUND");
-		expect(ERROR_CODES.POLICY_NOT_FOUND).toBe("POLICY_NOT_FOUND");
-		expect(ERROR_CODES.APPROVAL_NOT_FOUND).toBe("APPROVAL_NOT_FOUND");
-		expect(ERROR_CODES.SESSION_NOT_FOUND).toBe("SESSION_NOT_FOUND");
-	});
-});
-
-describe("schema validation invariants", () => {
-	test("CreateCredentialSchema requires value for native sourceType", () => {
-		const result = CreateCredentialSchema.safeParse({
-			name: "cred",
-			type: "api_key",
-			sourceType: "native",
-		});
-		expect(result.success).toBe(false);
-	});
-
-	test("CreateCredentialSchema allows missing value for external sourceType", () => {
-		const result = CreateCredentialSchema.safeParse({
-			name: "cred",
-			type: "api_key",
-			sourceType: "external",
-			connectorId: "conn-1",
-		});
-		expect(result.success).toBe(true);
-	});
-
-	test("CreateCredentialSchema rejects external without connectorId", () => {
-		const result = CreateCredentialSchema.safeParse({
-			name: "cred",
-			type: "api_key",
-			sourceType: "external",
-		});
-		expect(result.success).toBe(false);
-	});
-
-	test("GrantPermissionSchema requires agentId and credentialId", () => {
-		expect(
-			GrantPermissionSchema.safeParse({}).success,
-		).toBe(false);
-		expect(
-			GrantPermissionSchema.safeParse({ agentId: "a1" }).success,
-		).toBe(false);
-		expect(
-			GrantPermissionSchema.safeParse({
-				agentId: "a1",
-				credentialId: "550e8400-e29b-41d4-a716-446655440000",
-			}).success,
-		).toBe(true);
-	});
-
-	test("GrantPermissionSchema rejects non-uuid credentialId", () => {
-		const result = GrantPermissionSchema.safeParse({
-			agentId: "a1",
-			credentialId: "not-a-uuid",
-		});
-		expect(result.success).toBe(false);
-	});
-
-	test("CreateSessionSchema enforces max TTL of 86400 seconds (24 hours)", () => {
-		expect(
-			CreateSessionSchema.safeParse({ agentId: "a1", ttlSeconds: 86400 })
-				.success,
-		).toBe(true);
-		expect(
-			CreateSessionSchema.safeParse({ agentId: "a1", ttlSeconds: 86401 })
-				.success,
-		).toBe(false);
-	});
-
-	test("CreateSessionSchema rejects zero or negative TTL", () => {
-		expect(
-			CreateSessionSchema.safeParse({ agentId: "a1", ttlSeconds: 0 }).success,
-		).toBe(false);
-		expect(
-			CreateSessionSchema.safeParse({ agentId: "a1", ttlSeconds: -1 }).success,
-		).toBe(false);
-	});
-
-	test("PolicyRuleSchema accepts all rule types", () => {
-		const ruleTypes = [
-			"delivery_mode",
-			"environment",
-			"sensitivity",
-			"destination",
-			"ttl",
-		];
-		for (const type of ruleTypes) {
-			expect(PolicyRuleSchema.safeParse({ type }).success).toBe(true);
-		}
-	});
-
-	test("PolicyRuleSchema rejects unknown rule types", () => {
-		expect(
-			PolicyRuleSchema.safeParse({ type: "wildcard" }).success,
-		).toBe(false);
-		expect(
-			PolicyRuleSchema.safeParse({ type: "admin_override" }).success,
-		).toBe(false);
-	});
-
-	test("AgentAccessRequestSchema requires at least one credential identifier", () => {
-		expect(
-			AgentAccessRequestSchema.safeParse({ purpose: "test" }).success,
-		).toBe(false);
-		expect(
-			AgentAccessRequestSchema.safeParse({ credentialName: "my-key" }).success,
-		).toBe(true);
-		expect(
-			AgentAccessRequestSchema.safeParse({
-				credentialId: "550e8400-e29b-41d4-a716-446655440000",
-			}).success,
-		).toBe(true);
-	});
+  test("CreatePrincipalSchema requires name and kind", () => {
+    expect(CreatePrincipalSchema.safeParse({}).success).toBe(false);
+    expect(
+      CreatePrincipalSchema.safeParse({ kind: "remote_agent", name: "my-agent" }).success,
+    ).toBe(true);
+  });
 });
