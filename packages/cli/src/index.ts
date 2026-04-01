@@ -1,35 +1,31 @@
-import { approveCommand } from "./commands/approve";
 import { auditCommand } from "./commands/audit";
-import { connectorCommand } from "./commands/connector";
+import { daemonCommand } from "./commands/daemon";
 import { grantCommand } from "./commands/grant";
+import { itemCommand } from "./commands/item";
 import { loginCommand } from "./commands/login";
 import { mountCommand } from "./commands/mount";
+import { principalCommand } from "./commands/principal";
 import { runCommand } from "./commands/run";
-import { secretCommand } from "./commands/secret";
-import { whoamiCommand } from "./commands/whoami";
+import { vaultCommand } from "./commands/vault";
 
-const VERSION = "0.0.0";
+const VERSION = "0.1.0";
 
-const HELP = `abadge — Agent credential firewall CLI
+const HELP = `abadge — Zero-knowledge credential vault CLI
 
 Commands:
-  login              Authenticate with abadge
-  whoami             Show current identity
-  secret create      Store a new credential
-  secret list        List credentials
-  secret get         Get credential metadata
-  grant create       Grant agent access to a credential
-  grant list         List access grants
-  run                Run a command with a secret injected as env var
-  mount              Mount a secret as a temp file
-  audit              View access audit log
-  approve            Approve or deny a pending access request
-  connector          Manage external vault connectors
+  login                     Authenticate with abadge
+  daemon start|stop|status  Manage local daemon
+  vault unlock|lock|status|change-password  Manage vault encryption
+  item create|list|get|delete  Manage vault items
+  principal register|list|revoke  Manage principals (agents)
+  grant create|list|revoke  Manage access grants
+  run --item <id> -- <cmd>  Run command with secret in env
+  mount --item <id>         Mount secret as temp file
+  audit                     View access audit log
 
 Options:
-  --help, -h         Show this help
-  --version, -v      Show version
-  --json             Output as JSON`;
+  --help, -h    Show this help
+  --version, -v Show version`;
 
 export async function main(argv: string[]): Promise<void> {
   const command = argv[0];
@@ -38,10 +34,14 @@ export async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "login":
       return loginCommand(args);
-    case "whoami":
-      return whoamiCommand(args);
-    case "secret":
-      return secretCommand(args);
+    case "daemon":
+      return daemonCommand(args);
+    case "vault":
+      return vaultCommand(args);
+    case "item":
+      return itemCommand(args);
+    case "principal":
+      return principalCommand(args);
     case "grant":
       return grantCommand(args);
     case "run":
@@ -50,10 +50,6 @@ export async function main(argv: string[]): Promise<void> {
       return mountCommand(args);
     case "audit":
       return auditCommand(args);
-    case "approve":
-      return approveCommand(args);
-    case "connector":
-      return connectorCommand(args);
     case "--help":
     case "-h":
       console.log(HELP);
