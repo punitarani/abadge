@@ -1,88 +1,80 @@
-export const credentialTypes = [
-  "api_key",
-  "login",
-  "token",
-  "json_blob",
-  "pii",
-  "other",
-  "oauth_client",
-  "service_account_json",
-  "cookie_session",
+export const ITEM_KINDS = ["login", "api_key", "token", "json", "certificate", "ssh_key", "opaque"] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];
+
+export const STORAGE_MODES = ["zero_knowledge", "server_managed"] as const;
+export type StorageMode = (typeof STORAGE_MODES)[number];
+
+export const PRINCIPAL_KINDS = ["device", "local_cli", "local_mcp", "remote_agent"] as const;
+export type PrincipalKind = (typeof PRINCIPAL_KINDS)[number];
+
+export const PRINCIPAL_LOCALITIES = ["local", "remote"] as const;
+export type PrincipalLocality = (typeof PRINCIPAL_LOCALITIES)[number];
+
+export const CAPABILITIES = [
+  "read_ciphertext",
+  "reveal_plaintext",
+  "mount_env",
+  "mount_file",
+  "use_without_reveal",
 ] as const;
-export type CredentialType = (typeof credentialTypes)[number];
+export type Capability = (typeof CAPABILITIES)[number];
 
-export const accessActions = ["read", "denied"] as const;
-export type AccessAction = (typeof accessActions)[number];
-
-export const deliveryModes = [
-  "reveal",
-  "env_inject",
-  "file_mount",
-  "browser_fill",
-  "operation_only",
+export const AUDIT_EVENT_TYPES = [
+  "vault.bootstrap",
+  "vault.unlock",
+  "vault.password_change",
+  "vault.key_rotate",
+  "item.create",
+  "item.read",
+  "item.update",
+  "item.delete",
+  "principal.create",
+  "principal.rotate",
+  "principal.revoke",
+  "grant.create",
+  "grant.revoke",
+  "access.ciphertext",
+  "access.reveal",
+  "access.mount_env",
+  "access.mount_file",
 ] as const;
-export type DeliveryMode = (typeof deliveryModes)[number];
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
-export const environments = ["dev", "staging", "prod"] as const;
-export type Environment = (typeof environments)[number];
+export const AUDIT_RESULTS = ["allowed", "denied", "expired", "revoked"] as const;
+export type AuditResult = (typeof AUDIT_RESULTS)[number];
 
-export const ownerScopes = ["user", "org", "system"] as const;
-export type OwnerScope = (typeof ownerScopes)[number];
-
-export const sensitivities = ["low", "medium", "high", "critical"] as const;
-export type Sensitivity = (typeof sensitivities)[number];
-
-export const principalTypes = ["human", "app", "agent", "workload"] as const;
-export type PrincipalType = (typeof principalTypes)[number];
-
-export const accessOutcomes = ["allowed", "denied", "pending_approval", "expired"] as const;
-export type AccessOutcome = (typeof accessOutcomes)[number];
-
-export const approvalStatuses = ["pending", "approved", "denied", "expired"] as const;
-export type ApprovalStatus = (typeof approvalStatuses)[number];
-
-export const sourceTypes = ["native", "external"] as const;
-export type SourceType = (typeof sourceTypes)[number];
-
-export const connectorTypes = [
-  "native",
-  "onepassword",
-  "aws_secrets_manager",
-  "bitwarden",
-  "infisical",
-  "doppler",
-  "gcloud_secret_manager",
-  "hashicorp_vault",
-] as const;
-export type ConnectorType = (typeof connectorTypes)[number];
-
-export const socialProviders = ["github", "google"] as const;
-export type SocialProvider = (typeof socialProviders)[number];
-
-export const sessionStatuses = ["active", "expired", "revoked"] as const;
-export type SessionStatus = (typeof sessionStatuses)[number];
-
-export const ERROR_CODES = {
-  CREDENTIAL_NOT_FOUND: "CREDENTIAL_NOT_FOUND",
-  ACCESS_DENIED: "ACCESS_DENIED",
-  AGENT_NOT_FOUND: "AGENT_NOT_FOUND",
-  AGENT_INACTIVE: "AGENT_INACTIVE",
-  INVALID_API_KEY: "INVALID_API_KEY",
-  PERMISSION_EXISTS: "PERMISSION_EXISTS",
-  PERMISSION_NOT_FOUND: "PERMISSION_NOT_FOUND",
-  UNAUTHORIZED: "UNAUTHORIZED",
-  RATE_LIMITED: "RATE_LIMITED",
-  VALIDATION_ERROR: "VALIDATION_ERROR",
-  POLICY_VIOLATION: "POLICY_VIOLATION",
-  APPROVAL_REQUIRED: "APPROVAL_REQUIRED",
-  APPROVAL_EXPIRED: "APPROVAL_EXPIRED",
-  SESSION_EXPIRED: "SESSION_EXPIRED",
-  SESSION_REVOKED: "SESSION_REVOKED",
-  DELIVERY_MODE_NOT_ALLOWED: "DELIVERY_MODE_NOT_ALLOWED",
-  CONNECTOR_ERROR: "CONNECTOR_ERROR",
-  CONNECTOR_NOT_FOUND: "CONNECTOR_NOT_FOUND",
-  POLICY_NOT_FOUND: "POLICY_NOT_FOUND",
-  APPROVAL_NOT_FOUND: "APPROVAL_NOT_FOUND",
-  SESSION_NOT_FOUND: "SESSION_NOT_FOUND",
+/** API key prefixes by principal locality */
+export const API_KEY_PREFIX = {
+  remote: "abg_",
+  local: "abl_",
 } as const;
-export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
+
+/** Locality derived from principal kind */
+export function localityForKind(kind: PrincipalKind): PrincipalLocality {
+  switch (kind) {
+    case "device":
+    case "local_cli":
+    case "local_mcp":
+      return "local";
+    case "remote_agent":
+      return "remote";
+  }
+}
+
+export type ErrorCode =
+  | "NOT_FOUND"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "RATE_LIMITED"
+  | "VAULT_NOT_FOUND"
+  | "VAULT_ALREADY_EXISTS"
+  | "ITEM_NOT_FOUND"
+  | "PRINCIPAL_NOT_FOUND"
+  | "PRINCIPAL_REVOKED"
+  | "GRANT_NOT_FOUND"
+  | "GRANT_DENIED"
+  | "GRANT_EXPIRED"
+  | "INVALID_CAPABILITY"
+  | "STALE_VERSION"
+  | "VALIDATION_ERROR";

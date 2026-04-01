@@ -14,6 +14,7 @@ export type Bindings = {
   GITHUB_CLIENT_SECRET?: string;
 };
 
+/** Environment for session-authenticated routes (human users). */
 export type Env = {
   Bindings: Bindings;
   Variables: {
@@ -22,11 +23,13 @@ export type Env = {
   };
 };
 
-export type AgentEnv = {
+/** Environment for principal-authenticated routes (agents/devices). */
+export type PrincipalEnv = {
   Bindings: Bindings;
   Variables: {
-    agent: Record<string, unknown>;
+    principalId: string;
+    principalUserId: string;
+    principalLocality: string;
     db: Database;
-    sessionId?: string;
   };
 };

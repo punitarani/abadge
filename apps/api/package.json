@@ -15,6 +15,7 @@
     "@hono/zod-validator": "latest",
     "zod": "^3.24.0",
     "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
     "@abadge/db": "workspace:*",
     "@abadge/auth": "workspace:*"
   },

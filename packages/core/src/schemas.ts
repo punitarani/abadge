@@ -1,257 +1,132 @@
 import { z } from "zod";
 import {
-  connectorTypes,
-  credentialTypes,
-  deliveryModes,
-  environments,
-  ownerScopes,
-  sensitivities,
-  socialProviders,
-  sourceTypes,
+  ITEM_KINDS,
+  STORAGE_MODES,
+  PRINCIPAL_KINDS,
+  CAPABILITIES,
+  AUDIT_EVENT_TYPES,
+  AUDIT_RESULTS,
 } from "./constants";
 
-// --- Credentials ---
+// --- Vault ---
 
-const externalRefSchema = z.object({
-  name: z.string().optional(),
-  path: z.string().optional(),
-  version: z.string().optional(),
+export const VaultBootstrapSchema = z.object({
+  wrappedRootKey: z.string().min(1),
+  kdfSalt: z.string().min(1),
+  kdfParams: z.object({
+    algorithm: z.literal("argon2id"),
+    memory: z.number().int().positive(),
+    iterations: z.number().int().positive(),
+    parallelism: z.number().int().positive(),
+    hashLength: z.number().int().positive(),
+  }),
 });
 
-/** External source type requires a non-empty connectorId */
-function requiresConnectorForExternal(data: {
-  sourceType?: string;
-  connectorId?: string | null;
-}): boolean {
-  return data.sourceType !== "external" || !!data.connectorId;
-}
-
-const connectorRequiredRefinement = {
-  message: "connectorId is required when sourceType is 'external'",
-  path: ["connectorId"] as (string | number)[],
-};
-
-export const CreateCredentialSchema = z
-  .object({
-    name: z.string().min(1).max(128),
-    type: z.enum(credentialTypes),
-    value: z.string().min(1).max(65536).optional(),
-    metadata: z.record(z.string()).optional(),
-    ownerScope: z.enum(ownerScopes).optional(),
-    orgId: z.string().optional(),
-    environment: z.enum(environments).optional(),
-    service: z.string().max(128).optional(),
-    provider: z.string().max(128).optional(),
-    project: z.string().max(128).optional(),
-    tags: z.array(z.string().max(64)).max(20).optional(),
-    sensitivity: z.enum(sensitivities).optional(),
-    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
-    allowedDestinations: z.array(z.string().max(256)).max(50).optional(),
-    sourceType: z.enum(sourceTypes).default("native"),
-    connectorId: z.string().optional(),
-    externalRef: externalRefSchema.optional(),
-  })
-  .refine(requiresConnectorForExternal, connectorRequiredRefinement)
-  .refine((data) => data.sourceType !== "native" || data.value !== undefined, {
-    message: "value is required when sourceType is 'native'",
-    path: ["value"],
-  });
-
-export const UpdateCredentialSchema = z
-  .object({
-    name: z.string().min(1).max(128).optional(),
-    type: z.enum(credentialTypes).optional(),
-    value: z.string().min(1).max(65536).optional(),
-    metadata: z.record(z.string()).optional(),
-    ownerScope: z.enum(ownerScopes).optional(),
-    orgId: z.string().nullable().optional(),
-    environment: z.enum(environments).nullable().optional(),
-    service: z.string().max(128).nullable().optional(),
-    provider: z.string().max(128).nullable().optional(),
-    project: z.string().max(128).nullable().optional(),
-    tags: z.array(z.string().max(64)).max(20).nullable().optional(),
-    sensitivity: z.enum(sensitivities).optional(),
-    allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
-    allowedDestinations: z.array(z.string().max(256)).max(50).nullable().optional(),
-    sourceType: z.enum(sourceTypes).optional(),
-    connectorId: z.string().nullable().optional(),
-    externalRef: externalRefSchema.nullable().optional(),
-  })
-  .refine(requiresConnectorForExternal, connectorRequiredRefinement);
-
-// --- Agents ---
-
-export const CreateAgentSchema = z.object({
-  name: z.string().min(1).max(64),
-  description: z.string().max(256).optional(),
+export const ChangePasswordSchema = z.object({
+  wrappedRootKey: z.string().min(1),
+  kdfSalt: z.string().min(1),
+  kdfParams: z.object({
+    algorithm: z.literal("argon2id"),
+    memory: z.number().int().positive(),
+    iterations: z.number().int().positive(),
+    parallelism: z.number().int().positive(),
+    hashLength: z.number().int().positive(),
+  }),
 });
 
-// --- Permissions ---
-
-export const GrantPermissionSchema = z.object({
-  agentId: z.string().min(1),
-  credentialId: z.string().uuid(),
-  policyId: z.string().uuid().optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
-  expiresAt: z.coerce.date().optional(),
+export const RecoverySetupSchema = z.object({
+  recoveryWrappedRootKey: z.string().min(1),
 });
 
-export const RevokePermissionSchema = z.object({
-  agentId: z.string().min(1),
-  credentialId: z.string().uuid(),
+export const RotateKeySchema = z.object({
+  wrappedRootKey: z.string().min(1),
+  recoveryWrappedRootKey: z.string().optional(),
+  /** Map of item ID to new encrypted_item_key (re-wrapped DEKs) */
+  rekeyedItems: z.record(z.string(), z.string().min(1)),
 });
 
-// --- Agent access ---
+// --- Items ---
 
-export const AgentAccessRequestSchema = z
-  .object({
-    credentialName: z.string().min(1).max(128).optional(),
-    credentialId: z.string().uuid().optional(),
-    purpose: z.string().max(512).optional(),
-    deliveryMode: z.enum(deliveryModes).default("env_inject"),
-    destination: z.string().max(256).optional(),
-    environment: z.enum(environments).optional(),
-    sessionId: z.string().uuid().optional(),
-  })
-  .refine((data) => data.credentialName || data.credentialId, {
-    message: "Either credentialName or credentialId is required",
-  });
+export const CreateItemSchema = z.discriminatedUnion("storageMode", [
+  z.object({
+    storageMode: z.literal("zero_knowledge"),
+    encryptedItemKey: z.string().min(1),
+    ciphertext: z.string().min(1),
+  }),
+  z.object({
+    storageMode: z.literal("server_managed"),
+    /** Plaintext payload — server will encrypt */
+    payload: z.object({
+      v: z.number().int(),
+      label: z.string().min(1),
+      kind: z.enum(ITEM_KINDS),
+      tags: z.array(z.string()).default([]),
+      notes: z.string().optional(),
+      fields: z.record(z.string(), z.unknown()),
+    }),
+  }),
+]);
 
-// --- Policies ---
+export const UpdateItemSchema = z.discriminatedUnion("storageMode", [
+  z.object({
+    storageMode: z.literal("zero_knowledge"),
+    encryptedItemKey: z.string().min(1),
+    ciphertext: z.string().min(1),
+    contentVersion: z.number().int().positive(),
+  }),
+  z.object({
+    storageMode: z.literal("server_managed"),
+    payload: z.object({
+      v: z.number().int(),
+      label: z.string().min(1),
+      kind: z.enum(ITEM_KINDS),
+      tags: z.array(z.string()).default([]),
+      notes: z.string().optional(),
+      fields: z.record(z.string(), z.unknown()),
+    }),
+    contentVersion: z.number().int().positive(),
+  }),
+]);
 
-export const policyRuleTypes = [
-  "delivery_mode",
-  "environment",
-  "sensitivity",
-  "destination",
-  "ttl",
-] as const;
+// --- Principals ---
 
-export const PolicyRuleSchema = z.object({
-  type: z.enum(policyRuleTypes),
-  deliveryModes: z.array(z.enum(deliveryModes)).optional(),
-  environments: z.array(z.enum(environments)).optional(),
-  sensitivity: z.enum(sensitivities).optional(),
-  requiresApproval: z.boolean().optional(),
-  ttlSeconds: z.number().int().positive().optional(),
-  destinations: z.array(z.string().max(256)).optional(),
-  blockedDestinations: z.array(z.string().max(256)).optional(),
+export const CreatePrincipalSchema = z.object({
+  kind: z.enum(PRINCIPAL_KINDS),
+  name: z.string().min(1).max(255),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
-export const CreatePolicySchema = z.object({
-  name: z.string().min(1).max(128),
-  credentialId: z.string().uuid().optional(),
-  rules: z.array(PolicyRuleSchema).min(1),
+// --- Grants ---
+
+export const CreateGrantSchema = z.object({
+  principalId: z.string().min(1),
+  itemId: z.string().min(1),
+  capability: z.enum(CAPABILITIES),
+  expiresAt: z.string().datetime().optional(),
 });
 
-export const UpdatePolicySchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  credentialId: z.string().uuid().nullable().optional(),
-  rules: z.array(PolicyRuleSchema).min(1).optional(),
-  enabled: z.boolean().optional(),
+// --- Access ---
+
+export const CiphertextAccessSchema = z.object({
+  itemId: z.string().min(1),
 });
 
-// --- Approvals ---
-
-export const CreateApprovalSchema = z.object({
-  credentialId: z.string().uuid(),
-  agentId: z.string().min(1),
-  deliveryMode: z.enum(deliveryModes),
-  reason: z.string().max(512).optional(),
-  expiresAt: z.coerce.date(),
+export const RevealAccessSchema = z.object({
+  itemId: z.string().min(1),
 });
 
-export const ApprovalDecisionSchema = z.object({
-  reason: z.string().max(512).optional(),
+export const MountAccessSchema = z.object({
+  itemId: z.string().min(1),
+  mountType: z.enum(["env", "file"]),
 });
 
-// --- Sessions ---
+// --- Audit ---
 
-export const CreateSessionSchema = z.object({
-  agentId: z.string().min(1),
-  scopes: z.array(z.string().max(128)).optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).optional(),
-  ttlSeconds: z.number().int().positive().max(86400),
+export const AuditQuerySchema = z.object({
+  eventType: z.enum(AUDIT_EVENT_TYPES).optional(),
+  result: z.enum(AUDIT_RESULTS).optional(),
+  principalId: z.string().optional(),
+  itemId: z.string().optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
-
-// --- Connectors ---
-
-export const CreateConnectorSchema = z.object({
-  name: z.string().min(1).max(128),
-  type: z.enum(connectorTypes),
-  config: z.record(z.string()).optional(),
-});
-
-export const UpdateConnectorSchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  config: z.record(z.string()).optional(),
-  enabled: z.boolean().optional(),
-});
-
-// --- Auto-grants ---
-
-export const CreateAutoGrantSchema = z.object({
-  agentId: z.string().min(1),
-  matchEnvironment: z.enum(environments).optional(),
-  matchTags: z.array(z.string().max(64)).max(20).optional(),
-  matchType: z.enum(credentialTypes).optional(),
-  matchService: z.string().max(128).optional(),
-  matchSensitivity: z.enum(sensitivities).optional(),
-  policyId: z.string().uuid().optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).optional(),
-  expiresAt: z.coerce.date().optional(),
-});
-
-export const UpdateAutoGrantSchema = z.object({
-  matchEnvironment: z.enum(environments).nullable().optional(),
-  matchTags: z.array(z.string().max(64)).max(20).nullable().optional(),
-  matchType: z.enum(credentialTypes).nullable().optional(),
-  matchService: z.string().max(128).nullable().optional(),
-  matchSensitivity: z.enum(sensitivities).nullable().optional(),
-  policyId: z.string().uuid().nullable().optional(),
-  allowedDeliveryModes: z.array(z.enum(deliveryModes)).min(1).nullable().optional(),
-  expiresAt: z.coerce.date().nullable().optional(),
-});
-
-// --- Agent Groups ---
-
-export const CreateAgentGroupSchema = z.object({
-  name: z.string().min(1).max(128),
-  description: z.string().max(512).optional(),
-});
-
-export const UpdateAgentGroupSchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  description: z.string().max(512).nullable().optional(),
-});
-
-export const AddGroupMemberSchema = z.object({
-  agentId: z.string().min(1),
-});
-
-export const SocialAuthProvidersResponseSchema = z.object({
-  providers: z.array(z.enum(socialProviders)),
-});
-
-// --- Inferred types ---
-
-export type CreateCredentialInput = z.infer<typeof CreateCredentialSchema>;
-export type UpdateCredentialInput = z.infer<typeof UpdateCredentialSchema>;
-export type CreateAgentInput = z.infer<typeof CreateAgentSchema>;
-export type GrantPermissionInput = z.infer<typeof GrantPermissionSchema>;
-export type RevokePermissionInput = z.infer<typeof RevokePermissionSchema>;
-export type AgentAccessRequestInput = z.infer<typeof AgentAccessRequestSchema>;
-export type CreatePolicyInput = z.infer<typeof CreatePolicySchema>;
-export type UpdatePolicyInput = z.infer<typeof UpdatePolicySchema>;
-export type PolicyRuleInput = z.infer<typeof PolicyRuleSchema>;
-export type CreateApprovalInput = z.infer<typeof CreateApprovalSchema>;
-export type ApprovalDecisionInput = z.infer<typeof ApprovalDecisionSchema>;
-export type CreateSessionInput = z.infer<typeof CreateSessionSchema>;
-export type CreateConnectorInput = z.infer<typeof CreateConnectorSchema>;
-export type UpdateConnectorInput = z.infer<typeof UpdateConnectorSchema>;
-export type CreateAutoGrantInput = z.infer<typeof CreateAutoGrantSchema>;
-export type UpdateAutoGrantInput = z.infer<typeof UpdateAutoGrantSchema>;
-export type CreateAgentGroupInput = z.infer<typeof CreateAgentGroupSchema>;
-export type UpdateAgentGroupInput = z.infer<typeof UpdateAgentGroupSchema>;
-export type AddGroupMemberInput = z.infer<typeof AddGroupMemberSchema>;
-export type SocialAuthProvidersResponse = z.infer<typeof SocialAuthProvidersResponseSchema>;
