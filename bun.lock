@@ -131,6 +131,17 @@
         "typescript": "^5.7.0",
       },
     },
+    "packages/daemon": {
+      "name": "@abadge/daemon",
+      "version": "0.0.0",
+      "dependencies": {
+        "@abadge/crypto": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.11",
+        "typescript": "^5.7.0",
+      },
+    },
     "packages/db": {
       "name": "@abadge/db",
       "version": "0.0.0",
@@ -202,6 +213,8 @@
     "@abadge/core": ["@abadge/core@workspace:packages/core"],
 
     "@abadge/crypto": ["@abadge/crypto@workspace:packages/crypto"],
+
+    "@abadge/daemon": ["@abadge/daemon@workspace:packages/daemon"],
 
     "@abadge/db": ["@abadge/db@workspace:packages/db"],
 

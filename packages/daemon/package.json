@@ -1,0 +1,19 @@
+{
+  "name": "@abadge/daemon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abadge/crypto": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.11",
+    "typescript": "^5.7.0"
+  }
+}
