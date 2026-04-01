@@ -15,6 +15,10 @@ export interface AuthEnv {
   GITHUB_CLIENT_SECRET?: string;
 }
 
+export function getTrustedOrigins(env: Pick<AuthEnv, "API_URL" | "APP_URL">): string[] {
+  return [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"];
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createAuth(db: Database, env: AuthEnv): any {
   // Better Auth's plugin packages can resolve through distinct @better-auth/core type identities under Bun.
@@ -65,7 +69,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       updateAge: 60 * 60 * 24,
     },
     socialProviders: Object.keys(socialProviders).length > 0 ? socialProviders : undefined,
-    trustedOrigins: [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"],
+    trustedOrigins: getTrustedOrigins(env),
     plugins,
   });
 }

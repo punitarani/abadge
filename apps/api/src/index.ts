@@ -1,4 +1,4 @@
-import { createAuth } from "@abadge/auth";
+import { createAuth, getTrustedOrigins } from "@abadge/auth";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -23,8 +23,8 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use("*", secureHeaders());
 app.use("*", async (c, next) =>
   cors({
-    origin: [c.env.APP_URL],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    origin: getTrustedOrigins(c.env),
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })(c, next),
