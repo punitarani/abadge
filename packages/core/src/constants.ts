@@ -56,6 +56,9 @@ export const connectorTypes = [
 ] as const;
 export type ConnectorType = (typeof connectorTypes)[number];
 
+export const socialProviders = ["github", "google"] as const;
+export type SocialProvider = (typeof socialProviders)[number];
+
 export const sessionStatuses = ["active", "expired", "revoked"] as const;
 export type SessionStatus = (typeof sessionStatuses)[number];
 

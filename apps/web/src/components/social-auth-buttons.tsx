@@ -1,11 +1,11 @@
 "use client";
 
+import type { SocialProvider } from "@abadge/core";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
-type SocialProvider = "github" | "google";
-
 interface SocialAuthButtonsProps {
+  providers: SocialProvider[];
   loadingProvider: SocialProvider | null;
   onProviderClick: (provider: SocialProvider) => void;
 }
@@ -41,19 +41,25 @@ function GitHubIcon() {
   );
 }
 
-export function SocialAuthButtons({ loadingProvider, onProviderClick }: SocialAuthButtonsProps) {
-  const buttons: Array<{ provider: SocialProvider; label: string; icon: ReactNode }> = [
-    {
-      provider: "github",
+export function SocialAuthButtons({
+  providers,
+  loadingProvider,
+  onProviderClick,
+}: SocialAuthButtonsProps) {
+  const buttons: Record<SocialProvider, { label: string; icon: ReactNode }> = {
+    github: {
       label: "GitHub",
       icon: <GitHubIcon />,
     },
-    {
-      provider: "google",
+    google: {
       label: "Google",
       icon: <GoogleIcon />,
     },
-  ];
+  };
+
+  if (providers.length === 0) {
+    return null;
+  }
 
   return (
     <div className="space-y-4">
@@ -64,7 +70,7 @@ export function SocialAuthButtons({ loadingProvider, onProviderClick }: SocialAu
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {buttons.map(({ provider, label, icon }) => (
+        {providers.map((provider) => (
           <Button
             key={provider}
             type="button"
@@ -73,8 +79,10 @@ export function SocialAuthButtons({ loadingProvider, onProviderClick }: SocialAu
             disabled={loadingProvider !== null}
             onClick={() => onProviderClick(provider)}
           >
-            {icon}
-            {loadingProvider === provider ? `Connecting ${label}...` : label}
+            {buttons[provider].icon}
+            {loadingProvider === provider
+              ? `Connecting ${buttons[provider].label}...`
+              : buttons[provider].label}
           </Button>
         ))}
       </div>

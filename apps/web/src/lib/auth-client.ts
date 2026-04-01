@@ -1,7 +1,23 @@
+import {
+  type SocialAuthProvidersResponse,
+  type SocialProvider,
+  socialProviders,
+} from "@abadge/core";
 import { clientEnv } from "@abadge/env/client";
 
 const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
-type SocialProvider = "github" | "google";
+
+function parseAvailableProviders(data: unknown): SocialProvider[] {
+  const providers = (data as SocialAuthProvidersResponse | null)?.providers;
+
+  if (!Array.isArray(providers)) {
+    return [];
+  }
+
+  return providers.filter((provider): provider is SocialProvider =>
+    socialProviders.includes(provider as SocialProvider),
+  );
+}
 
 export const authClient = {
   async signIn(email: string, password: string) {
@@ -54,17 +70,35 @@ export const authClient = {
       .catch(() => ({}) as { url?: string; message?: string; error?: { message?: string } });
 
     if (!res.ok || typeof data.url !== "string") {
+      const rawMessage = data.error?.message ?? data.message;
+      const fallbackMessage =
+        rawMessage === "Provider not found"
+          ? `${provider === "google" ? "Google" : "GitHub"} sign-in is not configured on this server`
+          : `Could not start ${provider === "google" ? "Google" : "GitHub"} sign-in`;
+
       return {
         error: {
           message:
-            data.error?.message ??
-            data.message ??
-            `Could not start ${provider === "google" ? "Google" : "GitHub"} sign-in`,
+            rawMessage === "Provider not found" ? fallbackMessage : (rawMessage ?? fallbackMessage),
         },
       };
     }
 
     return { error: null, url: data.url };
+  },
+
+  async getAvailableSocialProviders(): Promise<SocialProvider[]> {
+    const res = await fetch(`${API_URL}/v1/auth/providers`, {
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      return [...socialProviders];
+    }
+
+    const data = await res.json().catch(() => null);
+    const providers = parseAvailableProviders(data);
+    return providers.length > 0 ? providers : [];
   },
 
   async signOut() {

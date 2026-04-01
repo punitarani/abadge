@@ -4,6 +4,8 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI, organization } from "better-auth/plugins";
 
+type SocialProvider = "github" | "google";
+
 export interface AuthEnv {
   API_URL: string;
   APP_URL: string;
@@ -17,6 +19,20 @@ export interface AuthEnv {
 
 export function getTrustedOrigins(env: Pick<AuthEnv, "API_URL" | "APP_URL">): string[] {
   return [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"];
+}
+
+export function getEnabledSocialProviders(env: AuthEnv): SocialProvider[] {
+  const providers: SocialProvider[] = [];
+
+  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
+    providers.push("github");
+  }
+
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    providers.push("google");
+  }
+
+  return providers;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
@@ -42,14 +58,16 @@ export function createAuth(db: Database, env: AuthEnv): any {
 
   const socialProviders = {} as NonNullable<Parameters<typeof betterAuth>[0]["socialProviders"]>;
 
-  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+  const enabledProviders = getEnabledSocialProviders(env);
+
+  if (enabledProviders.includes("google") && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
     socialProviders.google = {
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
     };
   }
 
-  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
+  if (enabledProviders.includes("github") && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
     socialProviders.github = {
       clientId: env.GITHUB_CLIENT_ID,
       clientSecret: env.GITHUB_CLIENT_SECRET,

@@ -176,8 +176,8 @@ bun run docker:reset  # Reset Docker volumes and restart
 ### Environment variables
 
 Repository commands that need application secrets run through Doppler. After installing the CLI,
-run `doppler setup` in the repo root. `.env.example` remains the reference for which values need
-to exist in Doppler.
+run `doppler setup` in the repo root. Doppler is the source of truth for local development;
+`bun run dev` regenerates `apps/api/.dev.vars` for the Worker from the active Doppler config.
 
 ## Status
 

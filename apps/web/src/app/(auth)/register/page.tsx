@@ -1,8 +1,9 @@
 "use client";
 
+import { type SocialProvider, socialProviders } from "@abadge/core";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,24 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<"github" | "google" | null>(null);
+  const [availableProviders, setAvailableProviders] = useState<SocialProvider[]>([
+    ...socialProviders,
+  ]);
+  const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void authClient.getAvailableSocialProviders().then((providers) => {
+      if (!cancelled) {
+        setAvailableProviders(providers);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +55,7 @@ export default function RegisterPage() {
     }
   }
 
-  async function handleSocialSignIn(provider: "github" | "google") {
+  async function handleSocialSignIn(provider: SocialProvider) {
     setError("");
     setSocialLoading(provider);
 
@@ -111,7 +129,11 @@ export default function RegisterPage() {
           </Button>
         </form>
 
-        <SocialAuthButtons loadingProvider={socialLoading} onProviderClick={handleSocialSignIn} />
+        <SocialAuthButtons
+          providers={availableProviders}
+          loadingProvider={socialLoading}
+          onProviderClick={handleSocialSignIn}
+        />
 
         <p className="text-center text-sm text-muted-foreground">
           Already have an account?{" "}

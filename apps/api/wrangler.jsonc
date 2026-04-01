@@ -18,7 +18,14 @@
     "BETTER_AUTH_URL": "https://api.abadge.io"
   },
   "secrets": {
-    "required": ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"]
+    "required": [
+      "ENCRYPTION_KEY",
+      "BETTER_AUTH_SECRET",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET"
+    ]
   },
   "placement": {
     "mode": "smart"
@@ -27,7 +34,7 @@
     {
       "binding": "HYPERDRIVE",
       "id": "3ea93d0186d94581b5b66f4e670216bb",
-      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/postgres"
+      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
     }
   ]
 }

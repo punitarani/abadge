@@ -16,9 +16,15 @@ POST /api/auth/sign-up/email   { name, email, password }
 POST /api/auth/sign-in/email   { email, password }
 GET  /api/auth/get-session
 POST /api/auth/sign-out
+GET  /v1/auth/providers
 ```
 
 All `/v1/*` management routes require a valid session cookie.
+
+`GET /v1/auth/providers` is the exception: it is public and returns the configured social login
+providers so the dashboard can avoid rendering unavailable login options.
+
+Response: `{ providers: ("github" | "google")[] }`
 
 ### Agent auth
 

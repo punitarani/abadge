@@ -6,6 +6,7 @@ import {
   environments,
   ownerScopes,
   sensitivities,
+  socialProviders,
   sourceTypes,
 } from "./constants";
 
@@ -228,6 +229,10 @@ export const AddGroupMemberSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const SocialAuthProvidersResponseSchema = z.object({
+  providers: z.array(z.enum(socialProviders)),
+});
+
 // --- Inferred types ---
 
 export type CreateCredentialInput = z.infer<typeof CreateCredentialSchema>;
@@ -249,3 +254,4 @@ export type UpdateAutoGrantInput = z.infer<typeof UpdateAutoGrantSchema>;
 export type CreateAgentGroupInput = z.infer<typeof CreateAgentGroupSchema>;
 export type UpdateAgentGroupInput = z.infer<typeof UpdateAgentGroupSchema>;
 export type AddGroupMemberInput = z.infer<typeof AddGroupMemberSchema>;
+export type SocialAuthProvidersResponse = z.infer<typeof SocialAuthProvidersResponseSchema>;

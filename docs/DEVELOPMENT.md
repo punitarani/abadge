@@ -28,13 +28,21 @@ Required variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/postgres` |
+| `API_URL` | Public API origin used by Worker auth/CORS | `http://localhost:8787` |
+| `APP_URL` | Public web origin used by Worker auth/CORS | `http://localhost:3000` |
 | `BETTER_AUTH_URL` | API base URL | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID | `your-google-oauth-client-id` |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | `your-google-oauth-client-secret` |
+| `GITHUB_CLIENT_ID` | GitHub OAuth client ID | `your-github-oauth-client-id` |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | `your-github-oauth-client-secret` |
 | `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
 | `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
 
-`.env.example` remains the reference for the values you should store in Doppler. If you bypass the
-root scripts and run a package directly, provide the same environment variables manually.
+Doppler is the source of truth for local development. `bun run dev` now regenerates
+`apps/api/.dev.vars` from the active Doppler config before starting `wrangler dev`, so the API
+worker sees the same OAuth and auth settings as the rest of the repo. Do not rely on a local
+`.env` file for app runtime.
 
 ### Database
 
