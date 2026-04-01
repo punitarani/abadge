@@ -6,37 +6,38 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretDisplay } from "@/components/ui/secret-display";
 import { Textarea } from "@/components/ui/textarea";
 import { extractApiError } from "@/lib/api-client";
 
-export default function NewAgentPage() {
+export default function NewPrincipalPage(): React.ReactElement {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [kind, setKind] = useState("agent");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${apiUrl}/v1/agents`, {
+      const res = await fetch(`${apiUrl}/v1/principals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name, description: description || undefined }),
+        body: JSON.stringify({ name, kind, description: description || undefined }),
       });
       if (res.ok) {
         const data = await res.json();
         setApiKey(data.apiKey);
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(extractApiError(data, "Failed to register agent"));
+        setError(extractApiError(data, "Failed to register principal"));
       }
     } catch {
       setError("An unexpected error occurred");
@@ -45,42 +46,20 @@ export default function NewAgentPage() {
     }
   }
 
-  async function handleCopy() {
-    if (apiKey) {
-      await navigator.clipboard.writeText(apiKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }
-
   if (apiKey) {
     return (
       <div className="max-w-lg space-y-6">
         <div>
-          <h1 className="text-lg font-semibold">Agent registered</h1>
+          <h1 className="text-lg font-semibold">Principal registered</h1>
           <p className="text-sm text-muted-foreground">
             Copy the API key below. It will not be shown again.
           </p>
         </div>
 
         <div className="border border-border rounded-lg p-5 space-y-4">
-          <div className="bg-neutral-50 border border-border rounded-md p-3 flex items-start justify-between gap-3">
-            <code className="text-sm font-mono break-all flex-1">{apiKey}</code>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopy}
-              aria-label={copied ? "Copied to clipboard" : "Copy API key"}
-            >
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
+          <SecretDisplay value={apiKey} />
 
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            This key will not be shown again. Store it securely.
-          </div>
-
-          <Button onClick={() => router.push("/agents")} className="w-full" size="sm">
+          <Button onClick={() => router.push("/principals")} className="w-full" size="sm">
             Done
           </Button>
         </div>
@@ -91,9 +70,9 @@ export default function NewAgentPage() {
   return (
     <div className="max-w-lg space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">Register agent</h1>
+        <h1 className="text-lg font-semibold">Register principal</h1>
         <p className="text-sm text-muted-foreground">
-          Create a new agent identity and get an API key
+          Create a new agent or service identity and get an API key
         </p>
       </div>
 
@@ -105,9 +84,9 @@ export default function NewAgentPage() {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="agent-name">Agent name</Label>
+            <Label htmlFor="principal-name">Name</Label>
             <Input
-              id="agent-name"
+              id="principal-name"
               placeholder="e.g., Claude Code, Cursor, CI Pipeline"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -116,10 +95,27 @@ export default function NewAgentPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="agent-desc">Description (optional)</Label>
+            <Label>Kind</Label>
+            <div className="flex gap-3">
+              {["agent", "app", "workload"].map((k) => (
+                <label key={k} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="radio"
+                    name="kind"
+                    value={k}
+                    checked={kind === k}
+                    onChange={() => setKind(k)}
+                  />
+                  {k.charAt(0).toUpperCase() + k.slice(1)}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="principal-desc">Description (optional)</Label>
             <Textarea
-              id="agent-desc"
-              placeholder="What this agent does..."
+              id="principal-desc"
+              placeholder="What this principal does..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={256}
@@ -130,12 +126,12 @@ export default function NewAgentPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => router.push("/agents")}
+              onClick={() => router.push("/principals")}
             >
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={loading}>
-              {loading ? "Registering..." : "Register agent"}
+              {loading ? "Registering..." : "Register principal"}
             </Button>
           </div>
         </form>
