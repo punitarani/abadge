@@ -7,30 +7,41 @@ reference external secret systems, define access policies, register agents, gran
 permissions, and audit every access attempt. The system defaults to non-reveal delivery --
 plaintext is the exception, not the product.
 
-For v1, the product wedge is:
-
-* **Access** -- explicit grants, policy checks, approvals, sessions, and audit
-* **Connect** -- native credential storage plus external secret references
-* **Interfaces** -- dashboard, REST API, CLI, SDK, and MCP
-
-Native storage exists to support controlled runtime access. Abadge is not modeled as a general
-human password manager.
-
-### System parts
+## System parts
 
 * **API** -- Hono on Cloudflare Workers. Canonical control plane for auth, CRUD, policy
   evaluation, approval workflows, encryption, session issuance, and audit logging.
-* **Web** -- Next.js App Router dashboard. Operator surface for credentials, agents, policies,
-  approvals, connectors, and audit.
+* **Web** -- Next.js App Router dashboard via OpenNext. Operator surface for credentials, agents,
+  policies, approvals, connectors, and audit.
 * **CLI** -- `abadge` command. Developer/admin interface for runtime secret use and management.
-* **SDK** -- TypeScript client for applications and agent runtimes that integrate directly with the
-  control plane.
+* **SDK** -- TypeScript client (`@abadge/sdk`). Typed API client for applications and agent runtimes.
 * **MCP server** -- Model Context Protocol server for AI agents. Secrets never returned to the LLM
   by default.
 * **Broker** -- Local execution engine shared by CLI and MCP. Handles subprocess injection, temp
   file mounts, session management, and broker-side external vault connectors.
 * **Database** -- Single Postgres instance (PlanetScale via Hyperdrive). Source of truth for all
   control-plane state.
+
+## Package structure
+
+```text
+apps/
+  api/        Hono API worker (control plane)
+  cli/        Distributable CLI binary (bun build --compile)
+  web/        Next.js dashboard
+packages/
+  auth/       Better Auth setup (server + client)
+  broker/     local execution engine (env inject, file mount, sessions, connectors)
+  cli/        CLI tool library (commands, config, output)
+  config/     shared tsconfig
+  core/       shared types, zod schemas, constants, error shapes
+  db/         Drizzle schema + database client
+  env/        environment variable validation (server, client, worker)
+  mcp/        MCP server for AI agents
+  sdk/        TypeScript SDK (@abadge/sdk)
+```
+
+Build order: `config -> core -> env -> db -> auth -> api/web` (Turborepo handles this).
 
 ## Deployment model
 
@@ -46,99 +57,82 @@ flowchart LR
   Broker --> ExtVault[External Vaults]
 ```
 
-## Design goals
-
-* minimal system surface area
-* explicit user control over agent access
-* delivery modes that avoid plaintext exposure by default
-* policy-driven access with approval workflows
-* single durable state store
-* edge-friendly request latency
-* complete audit trail on every access attempt
-* no background infrastructure
-
 ## Core concepts
 
 ### Credential
 
 A user-owned encrypted secret entry with structured metadata.
 
-* **Identity**: id, user, name
+* **Identity**: uuid id, user\_id, name (unique per user)
 * **Classification**: type (api\_key, login, token, json\_blob, oauth\_client, service\_account\_json, cookie\_session, pii, other)
 * **Security**: sensitivity (low/medium/high/critical), allowed delivery modes, allowed destinations
 * **Context**: environment (dev/staging/prod), service, provider, project, tags
 * **Secret material**: AES-256-GCM encrypted value + IV (never stored plaintext)
-* **Ownership**: ownerScope (user/org/system), orgId (for team-scoped credentials)
+* **Ownership**: ownerScope (user/org/system), orgId
 * **External source**: sourceType (native/external), connectorId, externalRef (name, path, version)
 
-Credentials with `sourceType: "external"` store a reference to a secret in an external vault (Doppler, HashiCorp Vault, Infisical) rather than an encrypted value. The value is fetched from the connector at access time.
+Credentials with `sourceType: "external"` store a reference to a secret in an external vault rather than an encrypted value. The value is fetched from the connector at access time.
 
 ### Agent
 
-A user-registered consumer of secrets, identified by a hashed API key with visible prefix.
+A user-registered consumer of secrets, implemented as a Better Auth API key with prefix `abg_`. The key is SHA-256 hashed before storage. Only the hash and a visible prefix are persisted.
 
 ### Permission
 
-A grant joining one agent to one credential. Can optionally attach a policy and constrain delivery modes with an expiration.
-
-### Policy
-
-A set of rules attached to a credential or grant that governs access. Rule types:
-
-* **delivery\_mode** — restrict which delivery modes are allowed
-* **environment** — restrict to specific environments
-* **sensitivity** — require approval above a sensitivity threshold
-* **destination** — allow/block specific destinations
-* **ttl** — limit session duration
-
-### Approval
-
-A pending access request created when a policy requires human approval. Approvals have a 24-hour TTL and can be approved or denied by the credential owner.
-
-### Broker session
-
-A short-lived, scoped token that replaces static API keys for runtime access. Sessions have a TTL (max 24h), optional credential scopes, and delivery mode constraints.
-
-### Connector
-
-A configuration for fetching secrets from external vaults through the same policy and audit model. Two connector categories exist:
-
-* **Client-side connectors** (via broker): native, 1Password, AWS Secrets Manager, Bitwarden, GCloud Secret Manager
-* **HTTP connectors** (server-side, run in the API worker): Doppler, HashiCorp Vault, Infisical
-
-HTTP connectors make outbound requests from the API worker. Connector configs are encrypted at rest.
+An explicit grant joining one agent to one credential. Can attach a policy and constrain delivery modes with an expiration. Stored in `agent_credential_permissions` with a composite primary key.
 
 ### Auto-grant
 
-A rule that automatically grants an agent permission to access any credential matching specified criteria. Matching criteria (conjunctive -- all non-null fields must match):
+A rule that automatically grants an agent permission to access any credential matching specified criteria. Matching is conjunctive (all non-null criteria must match). Evaluated at access time as a fallback when no explicit permission exists.
 
-* `matchEnvironment` -- credential environment
-* `matchTags` -- credential must have all specified tags
-* `matchType` -- credential type
-* `matchService` -- credential service
-* `matchSensitivity` -- credential sensitivity level
+### Policy
 
-Auto-grants can attach a policy and constrain delivery modes, same as manual permission grants.
+A set of rules attached to a credential or grant that governs access:
+
+* **delivery\_mode** -- restrict which delivery modes are allowed
+* **environment** -- restrict to specific environments
+* **sensitivity** -- require approval above a threshold
+* **destination** -- allow/block specific destinations
+* **ttl** -- limit session duration
+
+Policy evaluation is a pure function with no side effects.
+
+### Approval
+
+A pending access request created when a policy requires human approval. Approvals have a 24-hour TTL. Only the credential owner can approve or deny.
+
+### Broker session
+
+A short-lived, scoped token (prefix `abs_`) that replaces static API keys for runtime access. Sessions have a TTL (max 24h), optional credential scopes, and delivery mode constraints. Revocable.
+
+### Connector
+
+A configuration for fetching secrets from external vaults. Two categories:
+
+* **Client-side connectors** (via broker): native, 1Password, AWS Secrets Manager, Bitwarden, GCloud Secret Manager
+* **HTTP connectors** (server-side): Doppler, HashiCorp Vault, Infisical
+
+Connector configs are encrypted at rest with AES-256-GCM.
 
 ### Agent group
 
-A named collection of agents owned by a user. Groups organize agents for management purposes. Membership is tracked in a join table with cascade deletes.
+A named collection of agents owned by a user. Groups organize agents for management. Membership cascades on group deletion.
 
 ### Delivery modes
 
-| Mode | Behavior |
-|------|----------|
-| `reveal` | Return decrypted plaintext in API response |
-| `env_inject` | API returns value; CLI/broker injects as environment variable in subprocess |
-| `file_mount` | API returns value; CLI/broker writes to temp file (mode 0600), auto-cleaned |
-| `browser_fill` | Metadata only; broker fills browser form fields |
-| `operation_only` | Metadata only; credential used server-side without returning value |
+| Mode | Behavior | Value returned? |
+|------|----------|-----------------|
+| `reveal` | Return decrypted plaintext in API response | Yes |
+| `env_inject` | API returns value; broker injects as env var in subprocess | Yes |
+| `file_mount` | API returns value; broker writes to temp file (mode 0600) | Yes |
+| `browser_fill` | Metadata only; broker fills browser form fields | No |
+| `operation_only` | Metadata only; credential used server-side only | No |
 
 Default is NOT reveal. Plaintext exposure requires explicit opt-in.
 
 ### Access log
 
-Immutable event for every access attempt (allowed, denied, pending\_approval, expired). No foreign key constraints — records persist after entity deletion.
+Immutable event for every access attempt (allowed, denied, pending\_approval, expired). No foreign key constraints -- records persist after entity deletion. Includes agent identity, credential identity, delivery mode, outcome, destination, environment, purpose, session ID, IP address, and timestamp.
 
 ## Entity model
 
@@ -164,8 +158,8 @@ erDiagram
   CREDENTIAL ||--o{ APPROVAL : requires
 
   CREDENTIAL {
-    uuid id
-    string user_id
+    uuid id PK
+    string user_id FK
     string name
     string type
     string encrypted_value
@@ -173,7 +167,7 @@ erDiagram
     string sensitivity
     string environment
     string source_type
-    string connector_id
+    string connector_id FK
     jsonb external_ref
     string org_id
     jsonb allowed_delivery_modes
@@ -181,33 +175,35 @@ erDiagram
   }
 
   AGENT {
-    string id
+    string id PK
     string name
     string key_hash
     string prefix
     boolean enabled
+    string reference_id FK
   }
 
   PERMISSION {
-    string agent_id
-    uuid credential_id
-    string policy_id
+    string agent_id PK_FK
+    uuid credential_id PK_FK
+    string policy_id FK
     jsonb allowed_delivery_modes
     timestamp expires_at
   }
 
   POLICY {
-    string id
+    string id PK
+    string user_id FK
     string name
-    uuid credential_id
+    uuid credential_id FK
     jsonb rules
     boolean enabled
   }
 
   AUTO_GRANT {
-    string id
-    string agent_id
-    string user_id
+    string id PK
+    string agent_id FK
+    string user_id FK
     string match_environment
     jsonb match_tags
     string match_type
@@ -216,33 +212,36 @@ erDiagram
   }
 
   AGENT_GROUP {
-    string id
-    string user_id
+    string id PK
+    string user_id FK
     string name
     string description
   }
 
-  AGENT_GROUP_MEMBER {
-    string group_id
-    string agent_id
-  }
-
   APPROVAL {
-    string id
+    string id PK
+    string requester_id FK
+    string approver_id
+    string credential_id FK
+    string agent_id FK
     string status
     string delivery_mode
     timestamp expires_at
   }
 
   BROKER_SESSION {
-    string id
+    string id PK
     string token_hash
+    string agent_id FK
+    string user_id FK
     jsonb scopes
     timestamp expires_at
   }
 
   ACCESS_LOG {
-    int id
+    serial id PK
+    string agent_id
+    uuid credential_id
     string outcome
     string delivery_mode
     string principal_type
@@ -285,15 +284,14 @@ flowchart TB
 
 ### Boundary rules
 
-* the database never stores plaintext credentials or API keys
-* the encryption key lives only in Worker Secrets, never in the database
-* the web app does not decide authorization for agent reads
-* the API is the only place where credential decryption happens
-* decryption only occurs when deliveryMode is "reveal" AND authorization passes
-* agents can only access credentials owned by the same user who registered them
-* the LLM never receives raw secrets through the MCP server by default
-* HTTP connectors (Doppler, HashiCorp Vault, Infisical) make outbound requests from the API worker -- connector credentials are encrypted at rest and never leave the server
-* org-scoped credentials are accessible to org members; org admin/owner role is required for management operations
+* The database never stores plaintext credentials or API keys
+* The encryption key lives only in Worker Secrets, never in the database
+* The web app does not decide authorization for agent reads
+* The API is the only place where credential decryption happens
+* Decryption occurs only for value-returning delivery modes AND after authorization passes
+* Agents can only access credentials owned by the same user who registered them
+* The LLM never receives raw secrets through the MCP server by default
+* HTTP connectors make outbound requests from the API worker -- connector credentials are encrypted at rest and never leave the server
 
 ## Main request paths
 
@@ -309,8 +307,8 @@ sequenceDiagram
   Agent->>API: Bearer token + credential + deliveryMode + purpose
   API->>DB: Resolve agent (hash lookup)
   API->>DB: Resolve credential (scoped to agent's user)
-  API->>DB: Check permission (+ expiry)
-  API->>DB: Load attached policies
+  API->>DB: Check explicit permission or auto-grant (+ expiry)
+  API->>DB: Load attached policy (if any)
 
   alt policy requires approval
     API->>DB: Create approval record
@@ -319,12 +317,12 @@ sequenceDiagram
   else delivery mode denied
     API->>DB: Log denied
     API-->>Agent: 403
-  else reveal mode
-    API->>Crypto: Decrypt
+  else value-returning mode (reveal/env_inject/file_mount)
+    API->>Crypto: Decrypt (or fetch from connector)
     Crypto-->>API: Plaintext
     API->>DB: Log allowed
     API-->>Agent: Credential value
-  else non-reveal mode
+  else non-value mode (browser_fill/operation_only)
     API->>DB: Log allowed
     API-->>Agent: Credential metadata (no value)
   end
@@ -353,66 +351,34 @@ sequenceDiagram
 
 ### Dashboard user auth
 
-* Better Auth with email/password
-* Session-based (7-day expiry)
+* Better Auth with email/password and optional social login (Google, GitHub)
+* Session-based
 * Used for all `/v1/*` management routes
 
 ### Agent auth (two methods)
 
-1. **API key** (static) — `abg_` prefix, SHA-256 hashed, shown once at creation
-2. **Broker session** (short-lived) — `abs_` prefix, SHA-256 hashed, TTL up to 24h, scoped
+1. **API key** (static) -- `abg_` prefix, SHA-256 hashed, shown once at creation
+2. **Broker session** (short-lived) -- `abs_` prefix, SHA-256 hashed, TTL up to 24h, scoped
 
 Agent auth middleware tries session token first (by prefix), then falls back to API key.
 
 ### Authorization model
 
-* no wildcard grants
-* no cross-user access
-* explicit permission per agent-credential pair
-* policy evaluation on every access
-* delivery mode enforcement on every access
-* permission expiration checked on every access
+* No wildcard grants
+* No cross-user access
+* Explicit permission per agent-credential pair (or matching auto-grant)
+* Policy evaluation on every access
+* Delivery mode enforcement on every access
+* Permission expiration checked on every access
 
-## Security model
-
-### Controls
-
-* AES-256-GCM encryption at rest
-* Worker-secret encryption key (never in DB or code)
-* SHA-256 hashed API keys and session tokens
-* Per-credential ACLs with policy attachment
-* Delivery mode enforcement (default non-reveal)
-* Approval workflows for sensitive access
-* Immutable audit log (no FK constraints)
-* Secure headers and rate limiting
-* Parameterized database access via Drizzle ORM
-
-### Security invariant
+## Security invariant
 
 A secret value is only returned when ALL conditions are true:
 
 1. The agent presented a valid, active API key or non-expired session token
 2. The credential exists and belongs to the agent's owner
-3. An explicit permission grant exists and has not expired
-4. All attached policies allow the requested delivery mode
-5. No policy requires approval (or approval was granted)
-6. The requested delivery mode is "reveal"
-
-## Monorepo structure
-
-```text
-apps/
-  api/        Hono API worker (control plane)
-  cli/        Distributable CLI binary (bun build --compile)
-  web/        Next.js dashboard
-packages/
-  auth/       Better Auth setup
-  broker/     local execution engine
-  cli/        CLI tool (library)
-  config/     shared tsconfig
-  core/       shared types, schemas, constants
-  db/         schema and database client
-  env/        environment validation
-  mcp/        MCP server for AI agents
-  sdk/        TypeScript SDK (@abadge/sdk)
-```
+3. An explicit permission grant or matching auto-grant exists and has not expired
+4. All attached policies allow the requested action
+5. No policy requires approval (or approval was granted and not expired)
+6. The requested delivery mode is value-returning (reveal, env\_inject, or file\_mount)
+7. The delivery mode is permitted by credential, permission, and policy constraints

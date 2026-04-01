@@ -17,7 +17,7 @@ bun install
 
 ### Environment
 
-Root commands that need application secrets now run through Doppler. Configure the repo once:
+Root commands that need application secrets run through Doppler. Configure the repo once:
 
 ```bash
 doppler setup
@@ -30,27 +30,27 @@ Required variables:
 | `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/postgres` |
 | `API_URL` | Public API origin used by Worker auth/CORS | `http://localhost:8787` |
 | `APP_URL` | Public web origin used by Worker auth/CORS | `http://localhost:3000` |
-| `BETTER_AUTH_URL` | API base URL | `http://localhost:8787` |
+| `BETTER_AUTH_URL` | API base URL for Better Auth | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
 | `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
 
 Optional social login variables:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID | `your-google-oauth-client-id` |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | `your-google-oauth-client-secret` |
-| `GITHUB_CLIENT_ID` | GitHub OAuth client ID | `your-github-oauth-client-id` |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | `your-github-oauth-client-secret` |
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GITHUB_CLIENT_ID` | GitHub OAuth client ID |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret |
 
 Set both variables for a provider to enable that login option. Omit them entirely to keep
 email/password auth only.
 
-Doppler is the source of truth for local development. `bun run dev` now regenerates
+Doppler is the source of truth for local development. `bun run dev` regenerates
 `apps/api/.dev.vars` from the active Doppler config before starting `wrangler dev`, so the API
-worker sees the same OAuth and auth settings as the rest of the repo. Do not rely on a local
-`.env` file for app runtime.
+worker sees the same settings as the rest of the repo. Do not rely on a local `.env` file for
+app runtime.
 
 ### Database
 
@@ -80,7 +80,7 @@ To run only the API worker with Wrangler (after generating `.dev.vars`):
 bun run api:dev:worker
 ```
 
-Clear Wrangler’s local state if local dev gets stuck:
+Clear Wrangler's local state if local dev gets stuck:
 
 ```bash
 bun run api:clean:worker
@@ -97,7 +97,7 @@ bun run api:clean:worker
 | `bun run lint` | Biome lint |
 | `bun run lint:fix` | Biome lint with auto-fix |
 | `bun run format` | Biome format |
-| `bun run dev:vars` | Generate `apps/api/.dev.vars` from Doppler (for Wrangler) |
+| `bun run dev:vars` | Generate `apps/api/.dev.vars` from Doppler |
 | `bun run api:dev:worker` | Generate `.dev.vars` then `wrangler dev` for API only |
 | `bun run api:clean:worker` | Remove `apps/api/.wrangler` cache |
 | `bun run db:generate` | Generate migration from schema changes |
@@ -107,26 +107,26 @@ bun run api:clean:worker
 | `bun run db:reset` | Drop schema and re-run migrations |
 | `bun run cli -- --help` | Run CLI |
 | `bun run mcp` | Start MCP server |
-| `bun test` | Run test suite (policy, crypto, schema tests) |
+| `bun test` | Run test suite |
 
 ## Package structure
 
 ```
-packages/core    → shared types, schemas, constants (no runtime deps)
-packages/db      → Drizzle schema + client (depends on core)
-packages/auth    → Better Auth config (depends on db)
-packages/env     → t3-env validation (no internal deps)
-packages/broker  → execution engine (no internal deps)
-packages/cli     → CLI tool library (no internal deps)
-packages/mcp     → MCP server (depends on @modelcontextprotocol/sdk)
-packages/sdk     → TypeScript SDK (@abadge/sdk, depends on zod)
+packages/core    -> shared types, schemas, constants (no runtime deps)
+packages/db      -> Drizzle schema + client (depends on core)
+packages/auth    -> Better Auth config (depends on db)
+packages/env     -> t3-env validation (no internal deps)
+packages/broker  -> execution engine (env inject, file mount, sessions, connectors)
+packages/cli     -> CLI tool library (commands, config, output)
+packages/mcp     -> MCP server (depends on @modelcontextprotocol/sdk)
+packages/sdk     -> TypeScript SDK (@abadge/sdk, depends on zod)
 
-apps/api         → Hono worker (depends on core, db, auth)
-apps/cli         → Distributable CLI binary (bun build --compile)
-apps/web         → Next.js dashboard (depends on core, auth, env)
+apps/api         -> Hono worker (depends on core, db, auth)
+apps/cli         -> Distributable CLI binary (bun build --compile)
+apps/web         -> Next.js dashboard (depends on core, auth, env)
 ```
 
-Build order: `config → core → env → db → auth → api/web` (Turborepo handles this).
+Build order: `config -> core -> env -> db -> auth -> api/web` (Turborepo handles this).
 
 ## Adding a new API route
 
@@ -167,7 +167,7 @@ Uses [Biome](https://biomejs.dev/) 2.x:
 
 ## Testing
 
-Tests use `bun test` (Bun's built-in test runner). Run all tests:
+Tests use `bun test` (Bun's built-in test runner):
 
 ```bash
 bun test
@@ -193,7 +193,6 @@ Additional verification:
 The `@abadge/sdk` package (`packages/sdk/`) provides a typed TypeScript client for the abadge API.
 
 ```bash
-# Build the SDK
 cd packages/sdk
 bun run build
 ```

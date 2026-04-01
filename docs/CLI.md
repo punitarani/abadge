@@ -22,8 +22,6 @@ bun run build    # outputs dist/abadge
 ./dist/abadge --help
 ```
 
-The binary is self-contained and suitable for distribution to CI environments or developer machines without a JavaScript runtime.
-
 ## Configuration
 
 Config is stored at `~/.abadge/config.json`:
@@ -73,7 +71,7 @@ abadge secret create \
 
 ### `abadge secret list`
 
-List all credentials (metadata only).
+List all credentials (metadata only, never values).
 
 ```bash
 abadge secret list
@@ -107,7 +105,7 @@ List permission grants for a credential.
 abadge grant list --credential <credential-id>
 ```
 
-### `abadge run` (the killer command)
+### `abadge run`
 
 Run a command with a secret injected as an environment variable. The secret is never written to disk or printed to stdout.
 
