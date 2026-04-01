@@ -18,14 +18,7 @@
     "BETTER_AUTH_URL": "https://api.abadge.io"
   },
   "secrets": {
-    "required": [
-      "ENCRYPTION_KEY",
-      "BETTER_AUTH_SECRET",
-      "GOOGLE_CLIENT_ID",
-      "GOOGLE_CLIENT_SECRET",
-      "GITHUB_CLIENT_ID",
-      "GITHUB_CLIENT_SECRET"
-    ]
+    "required": ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"]
   },
   "placement": {
     "mode": "smart"

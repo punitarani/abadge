@@ -32,12 +32,20 @@ Required variables:
 | `APP_URL` | Public web origin used by Worker auth/CORS | `http://localhost:3000` |
 | `BETTER_AUTH_URL` | API base URL | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
+| `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
+| `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
+
+Optional social login variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | `your-google-oauth-client-id` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | `your-google-oauth-client-secret` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth client ID | `your-github-oauth-client-id` |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | `your-github-oauth-client-secret` |
-| `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
-| `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
+
+Set both variables for a provider to enable that login option. Omit them entirely to keep
+email/password auth only.
 
 Doppler is the source of truth for local development. `bun run dev` now regenerates
 `apps/api/.dev.vars` from the active Doppler config before starting `wrangler dev`, so the API

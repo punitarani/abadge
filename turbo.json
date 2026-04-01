@@ -19,6 +19,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["NEXT_PUBLIC_API_URL"],
       "outputs": [".next/**", ".open-next/**", "dist/**"]
     },
     "dev": {

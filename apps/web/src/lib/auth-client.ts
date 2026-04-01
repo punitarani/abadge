@@ -7,6 +7,13 @@ import { clientEnv } from "@abadge/env/client";
 
 const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
 
+interface SocialSignInOptions {
+  callbackURL: string;
+  errorCallbackURL?: string;
+  newUserCallbackURL?: string;
+  requestSignUp?: boolean;
+}
+
 function parseAvailableProviders(data: unknown): SocialProvider[] {
   const providers = (data as SocialAuthProvidersResponse | null)?.providers;
 
@@ -52,15 +59,17 @@ export const authClient = {
     return { error: null };
   },
 
-  async signInWithSocial(provider: SocialProvider, callbackURL: string) {
+  async signInWithSocial(provider: SocialProvider, options: SocialSignInOptions) {
     const res = await fetch(`${API_URL}/api/auth/sign-in/social`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
         provider,
-        callbackURL,
-        errorCallbackURL: callbackURL,
+        callbackURL: options.callbackURL,
+        errorCallbackURL: options.errorCallbackURL,
+        newUserCallbackURL: options.newUserCallbackURL,
+        requestSignUp: options.requestSignUp,
         disableRedirect: true,
       }),
     });
