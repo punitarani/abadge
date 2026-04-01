@@ -5,8 +5,29 @@
     {
       "idx": 0,
       "version": "7",
+      "when": 1774848206768,
+      "tag": "0000_daffy_magneto",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774934400000,
+      "tag": "0001_v2_credential_firewall",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775020800000,
+      "tag": "0002_v2_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
       "when": 1775058237909,
-      "tag": "0000_rich_thena",
+      "tag": "0003_zk_vault_rewrite",
       "breakpoints": true
     }
   ]
