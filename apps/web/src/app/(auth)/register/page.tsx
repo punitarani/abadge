@@ -2,7 +2,7 @@
 
 import { type SocialProvider, socialProviders } from "@abadge/core";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import { getAuthErrorMessage } from "@/lib/auth-error-message";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,11 +38,11 @@ export default function RegisterPage() {
   }, []);
 
   useEffect(() => {
-    const authError = getAuthErrorMessage(searchParams);
+    const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));
     if (authError) {
       setError(authError);
     }
-  }, [searchParams]);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
