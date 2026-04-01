@@ -15,6 +15,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
     "@abadge/auth": "workspace:*",
     "@abadge/env": "workspace:*",
     "tailwindcss": "^4.0.0",

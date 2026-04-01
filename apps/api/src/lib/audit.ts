@@ -1,6 +1,6 @@
+import type { AuditEventType, AuditResult } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { auditLog } from "@abadge/db/schema";
-import type { AuditEventType, AuditResult } from "@abadge/core";
 
 export async function logAudit(
   db: Database,

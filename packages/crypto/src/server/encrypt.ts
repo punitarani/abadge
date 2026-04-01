@@ -1,4 +1,4 @@
-import { toBase64, fromBase64 } from "../shared/encoding.js";
+import { fromBase64, toBase64 } from "../shared/encoding.js";
 import type { ServerEncryptedItem } from "../shared/types.js";
 
 const ALGORITHM = "AES-GCM";
@@ -6,7 +6,10 @@ const IV_LENGTH = 12;
 
 async function importKey(base64Key: string): Promise<CryptoKey> {
   const raw = fromBase64(base64Key);
-  return crypto.subtle.importKey("raw", raw, { name: ALGORITHM }, false, ["encrypt", "decrypt"]);
+  return crypto.subtle.importKey("raw", raw.buffer as ArrayBuffer, { name: ALGORITHM }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 /**
@@ -20,7 +23,11 @@ export async function serverEncrypt(
 ): Promise<ServerEncryptedItem> {
   const key = await importKey(base64Key);
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  const encrypted = await crypto.subtle.encrypt({ name: ALGORITHM, iv }, key, plaintext);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: ALGORITHM, iv: iv.buffer as ArrayBuffer },
+    key,
+    plaintext.buffer as ArrayBuffer,
+  );
 
   return {
     ciphertext: toBase64(new Uint8Array(encrypted)),
@@ -40,6 +47,10 @@ export async function serverDecrypt(
   const ciphertext = fromBase64(item.ciphertext);
   const iv = fromBase64(item.iv);
 
-  const decrypted = await crypto.subtle.decrypt({ name: ALGORITHM, iv }, key, ciphertext);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: ALGORITHM, iv: iv.buffer as ArrayBuffer },
+    key,
+    ciphertext.buffer as ArrayBuffer,
+  );
   return new Uint8Array(decrypted);
 }

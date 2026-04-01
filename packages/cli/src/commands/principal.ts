@@ -40,10 +40,13 @@ async function principalRegister(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const result = await client.post<{ agent: { id: string; name: string }; apiKey: string }>("/v1/principals", {
-      name,
-      description: str(values.description),
-    });
+    const result = await client.post<{ agent: { id: string; name: string }; apiKey: string }>(
+      "/v1/principals",
+      {
+        name,
+        description: str(values.description),
+      },
+    );
 
     if (values.json) {
       json(result);
@@ -65,9 +68,10 @@ async function principalList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const principals = await client.get<{ id: string; name: string; enabled: boolean; createdAt: string }[]>(
-      "/v1/principals",
-    );
+    const principals =
+      await client.get<{ id: string; name: string; enabled: boolean; createdAt: string }[]>(
+        "/v1/principals",
+      );
 
     if (values.json) {
       json(principals);

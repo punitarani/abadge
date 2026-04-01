@@ -1,11 +1,11 @@
 import type {
-  ItemKind,
-  StorageMode,
-  PrincipalKind,
-  PrincipalLocality,
-  Capability,
   AuditEventType,
   AuditResult,
+  Capability,
+  ItemKind,
+  PrincipalKind,
+  PrincipalLocality,
+  StorageMode,
 } from "./constants";
 
 /** Vault metadata (no plaintext key material). */

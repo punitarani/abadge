@@ -119,11 +119,7 @@ export default function ItemsPage(): React.ReactElement {
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/items/${item.id}`}>View</Link>
                       </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(item.id)}
-                      >
+                      <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
                         Delete
                       </Button>
                     </div>

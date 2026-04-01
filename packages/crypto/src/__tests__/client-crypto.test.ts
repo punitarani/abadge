@@ -1,22 +1,22 @@
-import { describe, test, expect } from "bun:test";
-import { deriveKEK } from "../client/kdf.js";
+import { describe, expect, test } from "bun:test";
 import {
-  generateRootKey,
-  wrapRootKey,
-  unwrapRootKey,
-  generateRecoveryKey,
-  recoverRootKey,
-  zeroKey,
-} from "../client/keys.js";
-import {
-  encryptItem,
   decryptItem,
+  deserializeItemPayload,
+  encryptItem,
   rekeyItem,
   serializeItemPayload,
-  deserializeItemPayload,
 } from "../client/items.js";
-import type { KDFParams } from "../shared/types.js";
+import { deriveKEK } from "../client/kdf.js";
+import {
+  generateRecoveryKey,
+  generateRootKey,
+  recoverRootKey,
+  unwrapRootKey,
+  wrapRootKey,
+  zeroKey,
+} from "../client/keys.js";
 import { generateSalt, toBase64 } from "../shared/encoding.js";
+import type { KDFParams } from "../shared/types.js";
 
 // Use fast KDF params for tests
 const TEST_KDF_PARAMS: KDFParams = {

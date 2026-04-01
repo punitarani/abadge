@@ -1,7 +1,8 @@
 "use client";
 
+import { zeroKey } from "@abadge/crypto";
 import { clientEnv } from "@abadge/env/client";
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   bootstrapVault as bootstrapVaultCrypto,
   unlockVault as unlockVaultCrypto,
@@ -9,7 +10,7 @@ import {
 
 interface VaultContextValue {
   isUnlocked: boolean;
-  rootKey: CryptoKey | null;
+  rootKey: Uint8Array | null;
   /** null = unknown, true = exists, false = needs bootstrap */
   vaultExists: boolean | null;
   unlockVault: (masterPassword: string) => Promise<void>;
@@ -21,7 +22,7 @@ interface VaultContextValue {
 const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [rootKey, setRootKey] = useState<CryptoKey | null>(null);
+  const [rootKey, setRootKey] = useState<Uint8Array | null>(null);
   const [vaultExists, setVaultExists] = useState<boolean | null>(null);
 
   const unlockVault = useCallback(async (masterPassword: string): Promise<void> => {
@@ -30,8 +31,11 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
   }, []);
 
   const lockVault = useCallback((): void => {
+    if (rootKey) {
+      zeroKey(rootKey);
+    }
     setRootKey(null);
-  }, []);
+  }, [rootKey]);
 
   const bootstrapVault = useCallback(
     async (masterPassword: string): Promise<{ recoveryKey: string }> => {

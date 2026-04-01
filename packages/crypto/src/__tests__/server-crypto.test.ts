@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import { serverEncrypt, serverDecrypt } from "../server/encrypt.js";
+import { describe, expect, test } from "bun:test";
+import { serverDecrypt, serverEncrypt } from "../server/encrypt.js";
 import { toBase64 } from "../shared/encoding.js";
 
 // Generate a test server key (32 bytes, base64url)

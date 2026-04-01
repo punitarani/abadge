@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
-import { VaultProvider, useVault } from "@/lib/vault-context";
+import { useVault, VaultProvider } from "@/lib/vault-context";
 
 const navSections = [
   {
@@ -317,6 +317,8 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
 
 export default function DashboardLayout({
   children,
-}: { children: React.ReactNode }): React.ReactElement {
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   return <AuthenticatedDashboard>{children}</AuthenticatedDashboard>;
 }

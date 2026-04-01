@@ -38,20 +38,17 @@ export default function CreateItemPage(): React.ReactElement {
           setCreating(false);
           return;
         }
-        const encrypted = await encryptItemForVault(value, rootKey);
+        const payload = { v: 1, label: name, kind: "opaque" as const, tags: [], fields: { value } };
+        const encrypted = encryptItemForVault(payload, rootKey);
         body = {
-          name,
-          storageMode: "zk",
+          storageMode: "zero_knowledge",
           encryptedItemKey: encrypted.encryptedItemKey,
           ciphertext: encrypted.ciphertext,
-          itemIv: encrypted.itemIv,
-          keyIv: encrypted.keyIv,
         };
       } else {
         body = {
-          name,
-          storageMode: "managed",
-          value,
+          storageMode: "server_managed",
+          payload: { v: 1, label: name, kind: "opaque", tags: [], fields: { value } },
         };
       }
 
@@ -147,12 +144,7 @@ export default function CreateItemPage(): React.ReactElement {
             <Button type="submit" size="sm" disabled={creating}>
               {creating ? "Creating..." : "Create"}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/items")}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => router.push("/items")}>
               Cancel
             </Button>
           </div>

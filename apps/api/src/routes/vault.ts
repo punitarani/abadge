@@ -1,10 +1,15 @@
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import {
+  ChangePasswordSchema,
+  RecoverySetupSchema,
+  RotateKeySchema,
+  VaultBootstrapSchema,
+} from "@abadge/core";
 import { eq } from "@abadge/db";
-import { vaults, items } from "@abadge/db/schema";
-import { VaultBootstrapSchema, ChangePasswordSchema, RecoverySetupSchema, RotateKeySchema } from "@abadge/core";
-import { authMiddleware } from "../middleware/auth";
+import { items, vaults } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
 import { logAudit } from "../lib/audit";
+import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
 export const vaultRoutes = new Hono<Env>();
@@ -18,7 +23,11 @@ vaultRoutes.put("/bootstrap", zValidator("json", VaultBootstrapSchema), async (c
   const body = c.req.valid("json");
 
   // Check if vault already exists
-  const [existing] = await db.select({ id: vaults.id }).from(vaults).where(eq(vaults.userId, userId)).limit(1);
+  const [existing] = await db
+    .select({ id: vaults.id })
+    .from(vaults)
+    .where(eq(vaults.userId, userId))
+    .limit(1);
   if (existing) {
     return c.json({ error: "Vault already exists" }, 409);
   }
@@ -65,7 +74,11 @@ vaultRoutes.post("/change-password", zValidator("json", ChangePasswordSchema), a
   const db = c.get("db");
   const body = c.req.valid("json");
 
-  const [vault] = await db.select({ id: vaults.id }).from(vaults).where(eq(vaults.userId, userId)).limit(1);
+  const [vault] = await db
+    .select({ id: vaults.id })
+    .from(vaults)
+    .where(eq(vaults.userId, userId))
+    .limit(1);
   if (!vault) {
     return c.json({ error: "Vault not found" }, 404);
   }

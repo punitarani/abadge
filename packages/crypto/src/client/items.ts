@@ -1,5 +1,5 @@
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
-import { toBase64, fromBase64, randomBytes } from "../shared/encoding.js";
+import { fromBase64, randomBytes, toBase64 } from "../shared/encoding.js";
 import type { EncryptedItem } from "../shared/types.js";
 
 const NONCE_LEN = 24; // XChaCha20-Poly1305 nonce size
@@ -12,10 +12,7 @@ const NONCE_LEN = 24; // XChaCha20-Poly1305 nonce size
  * 3. Wrap DEK with root key (XChaCha20-Poly1305)
  * 4. Return both as base64url strings (nonce prepended to each)
  */
-export function encryptItem(
-  plaintext: Uint8Array,
-  rootKey: Uint8Array,
-): EncryptedItem {
+export function encryptItem(plaintext: Uint8Array, rootKey: Uint8Array): EncryptedItem {
   // Generate per-item DEK
   const dek = randomBytes(32);
 
@@ -47,10 +44,7 @@ export function encryptItem(
 /**
  * Decrypt an item by unwrapping its DEK with the root key, then decrypting the payload.
  */
-export function decryptItem(
-  item: EncryptedItem,
-  rootKey: Uint8Array,
-): Uint8Array {
+export function decryptItem(item: EncryptedItem, rootKey: Uint8Array): Uint8Array {
   // Unwrap DEK
   const keyCombined = fromBase64(item.encryptedItemKey);
   const keyNonce = keyCombined.slice(0, NONCE_LEN);

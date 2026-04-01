@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { generateApiKey, hashApiKey, verifyApiKey } from "../shared/api-keys.js";
 
 describe("API keys", () => {

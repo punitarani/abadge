@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { decryptItemFromVault, type EncryptedItem } from "@/lib/crypto-client";
+import { decryptItemFromVault } from "@/lib/crypto-client";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 
@@ -57,14 +57,8 @@ export default function ItemDetailPage(): React.ReactElement {
       setRevealing(true);
       setError("");
       try {
-        const encrypted: EncryptedItem = {
-          encryptedItemKey: item.encryptedItemKey,
-          ciphertext: item.ciphertext,
-          itemIv: item.itemIv,
-          keyIv: item.keyIv,
-        };
-        const plaintext = await decryptItemFromVault(encrypted, rootKey);
-        setRevealedValue(plaintext);
+        const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, rootKey);
+        setRevealedValue(JSON.stringify(plaintext, null, 2));
       } catch {
         setError("Failed to decrypt item");
       } finally {

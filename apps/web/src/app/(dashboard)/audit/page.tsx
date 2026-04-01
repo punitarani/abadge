@@ -105,7 +105,7 @@ export default function AuditPage(): React.ReactElement {
     const newStack = [...cursorStack];
     newStack.pop();
     setCursorStack(newStack);
-    const prevCursor = newStack.length > 0 ? newStack[newStack.length - 1] : null;
+    const prevCursor = newStack.length > 0 ? (newStack[newStack.length - 1] ?? null) : null;
     fetchLogs(prevCursor);
   }
 

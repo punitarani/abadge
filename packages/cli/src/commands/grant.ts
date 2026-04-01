@@ -67,9 +67,15 @@ async function grantList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const grants = await client.get<
-      { agentId: string; credentialId: string; allowedDeliveryModes: string[]; grantedAt: string }[]
-    >("/v1/grants");
+    const grants =
+      await client.get<
+        {
+          agentId: string;
+          credentialId: string;
+          allowedDeliveryModes: string[];
+          grantedAt: string;
+        }[]
+      >("/v1/grants");
 
     if (values.json) {
       json(grants);

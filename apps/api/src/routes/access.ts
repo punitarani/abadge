@@ -1,12 +1,12 @@
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { eq, and, isNull } from "@abadge/db";
-import { grants, items } from "@abadge/db/schema";
-import type { capabilityEnum } from "@abadge/db/schema";
-import { CiphertextAccessSchema, RevealAccessSchema, MountAccessSchema } from "@abadge/core";
+import { CiphertextAccessSchema, MountAccessSchema, RevealAccessSchema } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
-import { principalAuthMiddleware } from "../middleware/principal-auth";
+import { and, eq, isNull } from "@abadge/db";
+import type { capabilityEnum } from "@abadge/db/schema";
+import { grants, items } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
 import { logAudit } from "../lib/audit";
+import { principalAuthMiddleware } from "../middleware/principal-auth";
 import type { PrincipalEnv } from "../types";
 
 export const accessRoutes = new Hono<PrincipalEnv>();
@@ -67,22 +67,46 @@ accessRoutes.post("/ciphertext", zValidator("json", CiphertextAccessSchema), asy
     .limit(1);
 
   if (!item) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.ciphertext", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.ciphertext",
+      result: "denied",
+    });
     return c.json({ error: "Item not found" }, 404);
   }
 
   if (item.storageMode !== "zero_knowledge") {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.ciphertext", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.ciphertext",
+      result: "denied",
+    });
     return c.json({ error: "Item is not zero-knowledge" }, 400);
   }
 
   const hasGrant = await checkGrant(db, principalId, itemId, "read_ciphertext");
   if (!hasGrant) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.ciphertext", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.ciphertext",
+      result: "denied",
+    });
     return c.json({ error: "No valid grant" }, 403);
   }
 
-  await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.ciphertext", result: "allowed" });
+  await logAudit(db, {
+    userId: principalUserId,
+    principalId,
+    itemId,
+    eventType: "access.ciphertext",
+    result: "allowed",
+  });
 
   return c.json({
     encryptedItemKey: item.encryptedItemKey,
@@ -105,18 +129,36 @@ accessRoutes.post("/reveal", zValidator("json", RevealAccessSchema), async (c) =
     .limit(1);
 
   if (!item) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.reveal", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.reveal",
+      result: "denied",
+    });
     return c.json({ error: "Item not found" }, 404);
   }
 
   if (item.storageMode !== "server_managed") {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.reveal", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.reveal",
+      result: "denied",
+    });
     return c.json({ error: "Cannot reveal zero-knowledge items via API" }, 400);
   }
 
   const hasGrant = await checkGrant(db, principalId, itemId, "reveal_plaintext");
   if (!hasGrant) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: "access.reveal", result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: "access.reveal",
+      result: "denied",
+    });
     return c.json({ error: "No valid grant" }, 403);
   }
 
@@ -152,7 +194,13 @@ accessRoutes.post("/mount", zValidator("json", MountAccessSchema), async (c) => 
   const { itemId, mountType } = c.req.valid("json");
 
   if (locality !== "local") {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: `access.mount_${mountType}` as const, result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: `access.mount_${mountType}` as const,
+      result: "denied",
+    });
     return c.json({ error: "Remote principals cannot mount" }, 403);
   }
 
@@ -163,14 +211,26 @@ accessRoutes.post("/mount", zValidator("json", MountAccessSchema), async (c) => 
     .limit(1);
 
   if (!item) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: `access.mount_${mountType}` as const, result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: `access.mount_${mountType}` as const,
+      result: "denied",
+    });
     return c.json({ error: "Item not found" }, 404);
   }
 
   const capability = mountType === "env" ? "mount_env" : "mount_file";
   const hasGrant = await checkGrant(db, principalId, itemId, capability);
   if (!hasGrant) {
-    await logAudit(db, { userId: principalUserId, principalId, itemId, eventType: `access.mount_${mountType}` as const, result: "denied" });
+    await logAudit(db, {
+      userId: principalUserId,
+      principalId,
+      itemId,
+      eventType: `access.mount_${mountType}` as const,
+      result: "denied",
+    });
     return c.json({ error: "No valid grant" }, 403);
   }
 

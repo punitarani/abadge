@@ -1,11 +1,11 @@
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { eq, and, isNull } from "@abadge/db";
-import { items, vaults } from "@abadge/db/schema";
 import { CreateItemSchema, UpdateItemSchema } from "@abadge/core";
 import { serverEncrypt } from "@abadge/crypto/server";
-import { authMiddleware } from "../middleware/auth";
+import { and, eq, isNull } from "@abadge/db";
+import { items, vaults } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
 import { logAudit } from "../lib/audit";
+import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
 export const itemRoutes = new Hono<Env>();
@@ -20,7 +20,11 @@ itemRoutes.post("/", zValidator("json", CreateItemSchema), async (c) => {
   const id = crypto.randomUUID();
 
   if (body.storageMode === "zero_knowledge") {
-    const [vault] = await db.select({ id: vaults.id }).from(vaults).where(eq(vaults.userId, userId)).limit(1);
+    const [vault] = await db
+      .select({ id: vaults.id })
+      .from(vaults)
+      .where(eq(vaults.userId, userId))
+      .limit(1);
     if (!vault) {
       return c.json({ error: "Vault not bootstrapped" }, 400);
     }

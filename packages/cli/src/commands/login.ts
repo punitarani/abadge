@@ -6,7 +6,7 @@ export async function loginCommand(args: string[]): Promise<void> {
   const existing = loadConfig();
   const apiUrl = args.includes("--api-url")
     ? args[args.indexOf("--api-url") + 1]
-    : existing?.apiUrl ?? "https://api.abadge.dev";
+    : (existing?.apiUrl ?? "https://api.abadge.dev");
 
   if (!apiUrl) {
     error("Missing --api-url value.");

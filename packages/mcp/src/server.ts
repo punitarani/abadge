@@ -36,11 +36,8 @@ const tools = [listItems, requestAccess, runWithSecret, mountSecret, getAudit] a
 
 function registerTools(server: McpServer, config: McpConfig): void {
   for (const tool of tools) {
-    server.tool(
-      tool.toolName,
-      tool.toolDescription,
-      shape(tool.toolInputSchema),
-      (input) => safeCall(tool.handler, input, config),
+    server.tool(tool.toolName, tool.toolDescription, shape(tool.toolInputSchema), (input) =>
+      safeCall(tool.handler, input, config),
     );
   }
 }

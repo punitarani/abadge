@@ -1,10 +1,10 @@
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { eq, and, or } from "@abadge/db";
-import { grants, principals, items } from "@abadge/db/schema";
 import { CreateGrantSchema } from "@abadge/core";
-import { authMiddleware } from "../middleware/auth";
+import { and, eq, or } from "@abadge/db";
+import { grants, items, principals } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
 import { logAudit } from "../lib/audit";
+import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
 export const grantRoutes = new Hono<Env>();
@@ -83,7 +83,7 @@ grantRoutes.get("/", async (c) => {
   const principalIds = userPrincipals.map((p) => p.id);
   if (principalIds.length === 0) return c.json([]);
 
-  let result;
+  let result: (typeof grants.$inferSelect)[];
   if (principalId) {
     if (!principalIds.includes(principalId)) return c.json([]);
     result = await db.select().from(grants).where(eq(grants.principalId, principalId));

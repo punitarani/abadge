@@ -22,7 +22,10 @@ interface ListResponse {
   error?: string;
 }
 
-export async function handler(_input: z.infer<typeof toolInputSchema>, config: McpConfig): Promise<string> {
+export async function handler(
+  _input: z.infer<typeof toolInputSchema>,
+  config: McpConfig,
+): Promise<string> {
   const res = await apiGet<ListResponse>(config, "/v1/items");
 
   if (!res.ok) {

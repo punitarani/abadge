@@ -152,10 +152,7 @@ export class AbadgeClient {
     });
 
     if (!res.ok) {
-      throw await AbadgeApiError.fromResponse(
-        res,
-        `API ${method} ${path} failed (${res.status})`,
-      );
+      throw await AbadgeApiError.fromResponse(res, `API ${method} ${path} failed (${res.status})`);
     }
 
     const text = await res.text();

@@ -57,7 +57,10 @@ export async function daemonVaultStatus(): Promise<DaemonResponse> {
   return call("vault.status");
 }
 
-export async function daemonChangePassword(oldPassword: string, newPassword: string): Promise<DaemonResponse> {
+export async function daemonChangePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<DaemonResponse> {
   return call("vault.changePassword", { oldPassword, newPassword });
 }
 

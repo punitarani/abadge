@@ -1,6 +1,6 @@
-import { eq, and, isNull } from "@abadge/db";
-import { principals } from "@abadge/db/schema";
 import { verifyApiKey } from "@abadge/crypto/shared";
+import { and, eq, isNull } from "@abadge/db";
+import { principals } from "@abadge/db/schema";
 import { createMiddleware } from "hono/factory";
 import { getConnectionString, getDb } from "../lib/db";
 import type { PrincipalEnv } from "../types";
@@ -23,7 +23,13 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
   const [principal] = await db
     .select()
     .from(principals)
-    .where(and(eq(principals.secretPrefix, prefix), eq(principals.enabled, true), isNull(principals.revokedAt)))
+    .where(
+      and(
+        eq(principals.secretPrefix, prefix),
+        eq(principals.enabled, true),
+        isNull(principals.revokedAt),
+      ),
+    )
     .limit(1);
 
   if (!principal || !principal.secretHash) {
@@ -36,7 +42,10 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
   }
 
   // Update last used timestamp (fire-and-forget)
-  db.update(principals).set({ lastUsedAt: new Date() }).where(eq(principals.id, principal.id)).execute();
+  db.update(principals)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(principals.id, principal.id))
+    .execute();
 
   c.set("principalId", principal.id);
   c.set("principalUserId", principal.userId);

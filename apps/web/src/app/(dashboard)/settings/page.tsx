@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
-import { unlockVault, bootstrapVault } from "@/lib/crypto-client";
+import { bootstrapVault, unlockVault } from "@/lib/crypto-client";
 
 export default function SettingsPage(): React.ReactElement {
   const [currentPassword, setCurrentPassword] = useState("");

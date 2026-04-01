@@ -1,4 +1,12 @@
-export const ITEM_KINDS = ["login", "api_key", "token", "json", "certificate", "ssh_key", "opaque"] as const;
+export const ITEM_KINDS = [
+  "login",
+  "api_key",
+  "token",
+  "json",
+  "certificate",
+  "ssh_key",
+  "opaque",
+] as const;
 export type ItemKind = (typeof ITEM_KINDS)[number];
 
 export const STORAGE_MODES = ["zero_knowledge", "server_managed"] as const;

@@ -1,11 +1,11 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
-  toBase64,
-  fromBase64,
-  toBase32,
-  fromBase32,
-  generateSalt,
   formatRecoveryKey,
+  fromBase32,
+  fromBase64,
+  generateSalt,
+  toBase32,
+  toBase64,
 } from "../shared/encoding.js";
 
 describe("base64url", () => {

@@ -38,7 +38,10 @@ export async function handler(
   }
 
   if (res.status === 202) {
-    return JSON.stringify({ status: "pending_approval", message: "Access request pending approval." });
+    return JSON.stringify({
+      status: "pending_approval",
+      message: "Access request pending approval.",
+    });
   }
 
   if (!res.data.granted) {

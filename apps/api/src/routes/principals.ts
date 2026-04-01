@@ -1,11 +1,11 @@
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { eq, and, isNull } from "@abadge/db";
-import { principals } from "@abadge/db/schema";
-import { CreatePrincipalSchema, localityForKind, API_KEY_PREFIX } from "@abadge/core";
+import { API_KEY_PREFIX, CreatePrincipalSchema, localityForKind } from "@abadge/core";
 import { generateApiKey } from "@abadge/crypto/shared";
-import { authMiddleware } from "../middleware/auth";
+import { and, eq, isNull } from "@abadge/db";
+import { principals } from "@abadge/db/schema";
+import { zValidator } from "@hono/zod-validator";
+import { Hono } from "hono";
 import { logAudit } from "../lib/audit";
+import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types";
 
 export const principalRoutes = new Hono<Env>();
@@ -127,7 +127,10 @@ principalRoutes.post("/:id/rotate", async (c) => {
   const prefix = API_KEY_PREFIX[p.locality as "local" | "remote"];
   const { key, hash, prefix: keyPrefix } = await generateApiKey(prefix);
 
-  await db.update(principals).set({ secretHash: hash, secretPrefix: keyPrefix }).where(eq(principals.id, id));
+  await db
+    .update(principals)
+    .set({ secretHash: hash, secretPrefix: keyPrefix })
+    .where(eq(principals.id, id));
 
   await logAudit(db, { userId, principalId: id, eventType: "principal.rotate", result: "allowed" });
 

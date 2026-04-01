@@ -70,9 +70,17 @@ async function itemList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const items = await client.get<
-      { id: string; name: string; type: string; sourceType: string; createdAt: string; updatedAt: string }[]
-    >("/v1/items");
+    const items =
+      await client.get<
+        {
+          id: string;
+          name: string;
+          type: string;
+          sourceType: string;
+          createdAt: string;
+          updatedAt: string;
+        }[]
+      >("/v1/items");
 
     if (values.json) {
       json(items);

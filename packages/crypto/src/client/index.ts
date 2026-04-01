@@ -1,18 +1,16 @@
-export { deriveKEK } from "./kdf.js";
-
 export {
-  generateRootKey,
-  wrapRootKey,
-  unwrapRootKey,
-  generateRecoveryKey,
-  recoverRootKey,
-  zeroKey,
-} from "./keys.js";
-
-export {
-  encryptItem,
   decryptItem,
+  deserializeItemPayload,
+  encryptItem,
   rekeyItem,
   serializeItemPayload,
-  deserializeItemPayload,
 } from "./items.js";
+export { deriveKEK } from "./kdf.js";
+export {
+  generateRecoveryKey,
+  generateRootKey,
+  recoverRootKey,
+  unwrapRootKey,
+  wrapRootKey,
+  zeroKey,
+} from "./keys.js";

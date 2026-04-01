@@ -1,4 +1,4 @@
-import { toBase64, randomBytes } from "./encoding.js";
+import { randomBytes, toBase64 } from "./encoding.js";
 import type { GeneratedApiKey } from "./types.js";
 
 /**

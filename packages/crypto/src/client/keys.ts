@@ -1,6 +1,13 @@
 import { xchacha20poly1305 } from "@noble/ciphers/chacha";
 import { randomBytes as nobleRandom } from "@noble/ciphers/webcrypto";
-import { toBase64, fromBase64, fromBase32, toBase32, formatRecoveryKey, randomBytes } from "../shared/encoding.js";
+import {
+  formatRecoveryKey,
+  fromBase32,
+  fromBase64,
+  randomBytes,
+  toBase32,
+  toBase64,
+} from "../shared/encoding.js";
 import type { WrappedKey } from "../shared/types.js";
 
 const NONCE_LEN = 24; // XChaCha20-Poly1305 nonce size
@@ -43,9 +50,10 @@ export function unwrapRootKey(wrapped: WrappedKey, kek: Uint8Array): Uint8Array 
  * Generate a recovery key and wrap the root key with it.
  * Returns the formatted recovery key (show once) and the wrapped root key.
  */
-export function generateRecoveryKey(
-  rootKey: Uint8Array,
-): { recoveryKey: string; wrappedRootKey: WrappedKey } {
+export function generateRecoveryKey(rootKey: Uint8Array): {
+  recoveryKey: string;
+  wrappedRootKey: WrappedKey;
+} {
   const recoveryBytes = randomBytes(32);
   const wrappedRootKey = wrapRootKey(rootKey, recoveryBytes);
   const recoveryKey = formatRecoveryKey(toBase32(recoveryBytes));
@@ -55,10 +63,7 @@ export function generateRecoveryKey(
 /**
  * Recover a root key using a recovery key string (base32 with dashes).
  */
-export function recoverRootKey(
-  recoveryKey: string,
-  wrappedRootKey: WrappedKey,
-): Uint8Array {
+export function recoverRootKey(recoveryKey: string, wrappedRootKey: WrappedKey): Uint8Array {
   const recoveryBytes = fromBase32(recoveryKey);
   return unwrapRootKey(wrappedRootKey, recoveryBytes);
 }

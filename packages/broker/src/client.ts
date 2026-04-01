@@ -128,7 +128,9 @@ export class DaemonClient {
         resolve: resolve as (value: unknown) => void,
         reject,
       });
-      this.socket!.write(JSON.stringify(request) + "\n");
+      if (this.socket) {
+        this.socket.write(JSON.stringify(request) + "\n");
+      }
     });
   }
 

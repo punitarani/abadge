@@ -9,16 +9,17 @@ export async function auditCommand(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const entries = await client.get<
-      {
-        id: number;
-        agentName: string;
-        credentialName: string;
-        outcome: string;
-        deliveryMode: string | null;
-        timestamp: string;
-      }[]
-    >("/v1/audit");
+    const entries =
+      await client.get<
+        {
+          id: number;
+          agentName: string;
+          credentialName: string;
+          outcome: string;
+          deliveryMode: string | null;
+          timestamp: string;
+        }[]
+      >("/v1/audit");
 
     if (values.json) {
       json(entries);

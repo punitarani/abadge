@@ -1,166 +1,46 @@
 /**
  * Client-side crypto for ZK vault operations.
- * Uses Web Crypto API with PBKDF2 (placeholder for Argon2id when @abadge/crypto ships).
+ * Uses @abadge/crypto (XChaCha20-Poly1305 + Argon2id).
  */
 
+import type { ItemPayload } from "@abadge/core";
+import type { EncryptedItem, KDFParams, WrappedKey } from "@abadge/crypto";
+import {
+  DEFAULT_KDF_PARAMS,
+  decryptItem,
+  deriveKEK,
+  deserializeItemPayload,
+  encryptItem,
+  generateRecoveryKey as generateRecoveryKeyRaw,
+  generateRootKey,
+  generateSalt,
+  serializeItemPayload,
+  toBase64,
+  unwrapRootKey,
+  wrapRootKey,
+  zeroKey,
+} from "@abadge/crypto";
 import { clientEnv } from "@abadge/env/client";
 
 const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
 
-function toBase64(buf: Uint8Array): string {
-  let binary = "";
-  for (const byte of buf) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function fromBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const buf = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    buf[i] = binary.charCodeAt(i);
-  }
-  return buf;
-}
-
-function randomBytes(n: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(n));
-}
-
-// PBKDF2 placeholder — swap for Argon2id when @abadge/crypto ships
-async function deriveKEK(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, [
-    "deriveKey",
-  ]);
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 600_000, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["wrapKey", "unwrapKey"],
-  );
-}
-
-async function generateRootKey(): Promise<CryptoKey> {
-  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-}
-
-async function wrapRootKey(
-  rootKey: CryptoKey,
-  kek: CryptoKey,
-): Promise<{ wrappedKey: string; iv: string }> {
-  const iv = randomBytes(12);
-  const wrapped = await crypto.subtle.wrapKey("raw", rootKey, kek, { name: "AES-GCM", iv });
-  return { wrappedKey: toBase64(new Uint8Array(wrapped)), iv: toBase64(iv) };
-}
-
-async function unwrapRootKey(wrappedKey: string, iv: string, kek: CryptoKey): Promise<CryptoKey> {
-  return crypto.subtle.unwrapKey(
-    "raw",
-    fromBase64(wrappedKey),
-    kek,
-    { name: "AES-GCM", iv: fromBase64(iv) },
-    { name: "AES-GCM", length: 256 },
-    true,
-    ["encrypt", "decrypt"],
-  );
-}
-
-export interface EncryptedItem {
-  encryptedItemKey: string;
-  ciphertext: string;
-  itemIv: string;
-  keyIv: string;
-}
-
-export async function encryptItemForVault(
-  payload: string,
-  rootKey: CryptoKey,
-): Promise<EncryptedItem> {
-  const itemKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, [
-    "encrypt",
-    "decrypt",
-  ]);
-
-  const itemIvBytes = randomBytes(12);
-  const enc = new TextEncoder();
-  const ciphertextBuf = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: itemIvBytes },
-    itemKey,
-    enc.encode(payload),
-  );
-
-  const keyIvBytes = randomBytes(12);
-  const wrappedItemKey = await crypto.subtle.wrapKey("raw", itemKey, rootKey, {
-    name: "AES-GCM",
-    iv: keyIvBytes,
-  });
-
-  return {
-    encryptedItemKey: toBase64(new Uint8Array(wrappedItemKey)),
-    ciphertext: toBase64(new Uint8Array(ciphertextBuf)),
-    itemIv: toBase64(itemIvBytes),
-    keyIv: toBase64(keyIvBytes),
-  };
-}
-
-export async function decryptItemFromVault(
-  encrypted: EncryptedItem,
-  rootKey: CryptoKey,
-): Promise<string> {
-  const itemKey = await crypto.subtle.unwrapKey(
-    "raw",
-    fromBase64(encrypted.encryptedItemKey),
-    rootKey,
-    { name: "AES-GCM", iv: fromBase64(encrypted.keyIv) },
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"],
-  );
-
-  const plainBuf = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: fromBase64(encrypted.itemIv) },
-    itemKey,
-    fromBase64(encrypted.ciphertext),
-  );
-
-  return new TextDecoder().decode(plainBuf);
-}
-
-function formatRecoveryKey(bytes: Uint8Array): string {
-  return toBase64(bytes).replace(/=+$/, "");
-}
-
-export interface VaultState {
-  wrappedRootKey: string;
-  rootKeyIv: string;
-  salt: string;
-}
-
 export async function bootstrapVault(
   masterPassword: string,
-): Promise<{ rootKey: CryptoKey; recoveryKey: string }> {
-  const salt = randomBytes(32);
-  const kek = await deriveKEK(masterPassword, salt);
-  const rootKey = await generateRootKey();
-  const { wrappedKey, iv } = await wrapRootKey(rootKey, kek);
-
-  const recoveryBytes = randomBytes(32);
-  const recoveryKek = await deriveKEK(formatRecoveryKey(recoveryBytes), salt);
-  const recovery = await wrapRootKey(rootKey, recoveryKek);
+): Promise<{ rootKey: Uint8Array; recoveryKey: string }> {
+  const salt = generateSalt();
+  const kek = deriveKEK(masterPassword, salt, DEFAULT_KDF_PARAMS);
+  const rootKey = generateRootKey();
+  const wrapped = wrapRootKey(rootKey, kek);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
 
   const res = await fetch(`${API_URL}/v1/vault/bootstrap`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({
-      wrappedRootKey: wrappedKey,
-      rootKeyIv: iv,
-      salt: toBase64(salt),
-      recoveryWrappedKey: recovery.wrappedKey,
-      recoveryKeyIv: recovery.iv,
+      wrappedRootKey: wrapped.wrapped,
+      kdfSalt: toBase64(salt),
+      kdfParams: DEFAULT_KDF_PARAMS,
     }),
   });
 
@@ -169,10 +49,19 @@ export async function bootstrapVault(
     throw new Error((data as { error?: string }).error ?? "Bootstrap failed");
   }
 
-  return { rootKey, recoveryKey: formatRecoveryKey(recoveryBytes) };
+  // Set up recovery key
+  await fetch(`${API_URL}/v1/vault/recovery/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ recoveryWrappedRootKey: recoveryWrapped.wrapped }),
+  });
+
+  zeroKey(kek);
+  return { rootKey, recoveryKey };
 }
 
-export async function unlockVault(masterPassword: string): Promise<CryptoKey> {
+export async function unlockVault(masterPassword: string): Promise<Uint8Array> {
   const res = await fetch(`${API_URL}/v1/vault`, {
     credentials: "include",
   });
@@ -184,13 +73,44 @@ export async function unlockVault(masterPassword: string): Promise<CryptoKey> {
     throw new Error("Failed to fetch vault");
   }
 
-  const vault = (await res.json()) as VaultState;
-  const salt = fromBase64(vault.salt);
-  const kek = await deriveKEK(masterPassword, salt);
+  const vault = (await res.json()) as {
+    wrappedRootKey: string;
+    kdfSalt: string;
+    kdfParams: KDFParams;
+  };
+
+  const salt = Uint8Array.from(atob(vault.kdfSalt.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+    c.charCodeAt(0),
+  );
+  const kek = deriveKEK(masterPassword, salt, vault.kdfParams);
 
   try {
-    return await unwrapRootKey(vault.wrappedRootKey, vault.rootKeyIv, kek);
+    const rootKey = unwrapRootKey({ wrapped: vault.wrappedRootKey }, kek);
+    zeroKey(kek);
+    return rootKey;
   } catch {
+    zeroKey(kek);
     throw new Error("Incorrect master password");
   }
+}
+
+export function encryptItemForVault(
+  payload: ItemPayload,
+  rootKey: Uint8Array,
+): { encryptedItemKey: string; ciphertext: string } {
+  const plaintext = serializeItemPayload(payload as unknown as Record<string, unknown>);
+  const encrypted = encryptItem(plaintext, rootKey);
+  return {
+    encryptedItemKey: encrypted.encryptedItemKey,
+    ciphertext: encrypted.ciphertext,
+  };
+}
+
+export function decryptItemFromVault(
+  encryptedItemKey: string,
+  ciphertext: string,
+  rootKey: Uint8Array,
+): ItemPayload {
+  const decrypted = decryptItem({ encryptedItemKey, ciphertext }, rootKey);
+  return deserializeItemPayload(decrypted) as unknown as ItemPayload;
 }
