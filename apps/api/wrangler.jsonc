@@ -27,7 +27,7 @@
     {
       "binding": "HYPERDRIVE",
       "id": "3ea93d0186d94581b5b66f4e670216bb",
-      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/postgres"
+      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
     }
   ]
 }

@@ -1,1 +1,1 @@
-export { type AuthEnv, createAuth } from "./server";
+export { type AuthEnv, createAuth, getEnabledSocialProviders, getTrustedOrigins } from "./server";

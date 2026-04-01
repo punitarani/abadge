@@ -1,8 +1,25 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "ABADGE_API_URL",
+    "ABADGE_TOKEN",
+    "API_URL",
+    "APP_URL",
+    "BETTER_AUTH_SECRET",
+    "BETTER_AUTH_URL",
+    "DATABASE_URL",
+    "ENCRYPTION_KEY",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "NEXT_PUBLIC_API_URL",
+    "SKIP_ENV_VALIDATION"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["NEXT_PUBLIC_API_URL"],
       "outputs": [".next/**", ".open-next/**", "dist/**"]
     },
     "dev": {

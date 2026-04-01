@@ -1,4 +1,4 @@
-import { createAuth } from "@abadge/auth";
+import { createAuth, getTrustedOrigins } from "@abadge/auth";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -9,6 +9,7 @@ import { agentGroupRoutes } from "./routes/agent-groups";
 import { agentRoutes } from "./routes/agents";
 import { approvalRoutes } from "./routes/approvals";
 import { auditRoutes } from "./routes/audit";
+import { authRoutes } from "./routes/auth";
 import { autoGrantRoutes } from "./routes/auto-grants";
 import { connectorRoutes } from "./routes/connectors";
 import { credentialRoutes } from "./routes/credentials";
@@ -23,8 +24,8 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use("*", secureHeaders());
 app.use("*", async (c, next) =>
   cors({
-    origin: [c.env.APP_URL],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    origin: getTrustedOrigins(c.env),
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })(c, next),
@@ -42,6 +43,10 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     APP_URL: c.env.APP_URL,
     BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
     BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
+    GOOGLE_CLIENT_ID: c.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: c.env.GOOGLE_CLIENT_SECRET,
+    GITHUB_CLIENT_ID: c.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: c.env.GITHUB_CLIENT_SECRET,
   });
   return auth.handler(c.req.raw);
 });
@@ -50,6 +55,7 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 app.route("/v1/credentials", credentialRoutes);
 app.route("/v1/agents", agentRoutes);
 app.route("/v1/agent-groups", agentGroupRoutes);
+app.route("/v1/auth", authRoutes);
 app.route("/v1/permissions", permissionRoutes);
 app.route("/v1/audit", auditRoutes);
 app.route("/v1/policies", policyRoutes);
@@ -66,6 +72,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 export type CredentialRoutesType = typeof credentialRoutes;
 export type AgentRoutesType = typeof agentRoutes;
 export type AgentGroupRoutesType = typeof agentGroupRoutes;
+export type AuthRoutesType = typeof authRoutes;
 export type PermissionRoutesType = typeof permissionRoutes;
 export type AuditRoutesType = typeof auditRoutes;
 export type AccessRoutesType = typeof accessRoutes;

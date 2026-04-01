@@ -1,6 +1,7 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
@@ -29,12 +30,14 @@ const operatingPrinciples = [
     description: "Use native encrypted credentials or reference existing secret systems.",
   },
   {
-    title: "Grant explicitly",
-    description: "Decide which agent can use which credential and through which delivery modes.",
+    title: "Grant per agent",
+    description:
+      "Decide which agent can use which credential, through which delivery mode, and for how long.",
   },
   {
-    title: "Use with control",
-    description: "Enforce policy, approval, session scope, and audit before access happens.",
+    title: "Enforce before access",
+    description:
+      "Evaluate policy, require approval, scope the session, and log the outcome before the credential is delivered.",
   },
 ];
 
@@ -65,9 +68,9 @@ const researchSignals = [
   },
   {
     value: "OWASP",
-    title: "Secret handling is an application risk",
+    title: "Credential mishandling is already a top LLM risk",
     description:
-      "OWASP highlights sensitive information disclosure and insecure tool or plugin design as top risks for LLM applications.",
+      "OWASP flags sensitive information disclosure and insecure tool design as leading risks for LLM-powered applications.",
     source: "OWASP Top 10 for LLM Applications",
     href: "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
   },
@@ -88,9 +91,9 @@ const productTracks = [
   },
   {
     label: "03.INTERFACES",
-    title: "Meet developers where they already work",
+    title: "Meet agents and developers where they already work",
     description:
-      "One control plane across dashboard, REST API, TypeScript SDK, CLI, and MCP instead of separate access paths.",
+      "One control plane across dashboard, REST API, TypeScript SDK, CLI, and MCP, not separate access paths with separate policies.",
   },
 ];
 
@@ -153,17 +156,12 @@ await client.accessCredential({
 
 const securityChecks = [
   "Encrypted credentials and connector configs",
-  "Hashed agent keys and session tokens",
   "Approval-aware policy evaluation",
   "Non-reveal delivery modes by default",
   "Immutable audit trail for every attempt",
 ];
 
 const externalSignals = [
-  {
-    label: "Bitwarden Agent Access SDK",
-    href: "https://bitwarden.com/blog/introducing-agent-access-sdk/",
-  },
   {
     label: "1Password Secure Agentic Autofill",
     href: "https://developer.1password.com/docs/agentic-autofill/",
@@ -172,12 +170,16 @@ const externalSignals = [
     label: "1Password Unified Access",
     href: "https://1password.com/press/2026/mar/1password-unified-access",
   },
+  {
+    label: "Bitwarden Agent Access SDK",
+    href: "https://bitwarden.com/blog/introducing-agent-access-sdk/",
+  },
 ];
 
 export const metadata: Metadata = {
-  title: "abadge | Credential control plane for AI agents",
+  title: "abadge | The credential control plane for AI agents",
   description:
-    "Store or connect credentials, grant agents least-privilege access just in time, require approval for sensitive actions, and audit every attempt.",
+    "Store or connect credentials, grant agents scoped access at request time, require approval for sensitive actions, and audit every attempt.",
 };
 
 export default function HomePage() {
@@ -187,7 +189,10 @@ export default function HomePage() {
       className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
     >
       <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        <Link href="/" className="inline-flex items-center gap-2">
+          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        </Link>
 
         <div className="flex items-center gap-3">
           <a
@@ -212,14 +217,14 @@ export default function HomePage() {
               Status: Alpha
             </div>
             <h1 className="max-w-[42rem] text-[2.65rem] leading-[0.93] font-bold tracking-[-0.06em] md:text-[4.55rem]">
-              Credential controls
+              The credential control plane
               <br />
               for AI agents
             </h1>
             <p className="mt-5 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600 md:text-base">
               Store native credentials or connect existing secret systems. Grant agents scoped
-              access only when needed, require approval for sensitive actions, and keep every
-              attempt attributable across API, CLI, SDK, and MCP workflows.
+              access at request time, require approval for sensitive actions, and keep every attempt
+              auditable across API, CLI, SDK, and MCP.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -251,8 +256,8 @@ export default function HomePage() {
             </div>
 
             <p className="mt-4 max-w-lg text-[10px] font-medium text-zinc-400">
-              Not another shared vault story. The wedge is least-privilege agent access with
-              explicit grants, policy checks, approvals, and audit.
+              Not another shared vault. Abadge is scoped, least-privilege agent access with explicit
+              grants, policy checks, approvals, and a full audit trail.
             </p>
           </div>
 
@@ -286,9 +291,9 @@ export default function HomePage() {
               <h2
                 className={`${landingCondensed.variable} max-w-4xl text-[2rem] leading-[1] font-bold uppercase tracking-[-0.04em] [font-family:var(--font-landing-condensed)] md:text-[3rem] lg:text-[3.75rem]`}
               >
-                Agents are scaling faster
+                Agents are taking action.
                 <br />
-                than your passwords
+                Credential access hasn&apos;t caught up.
               </h2>
             </div>
           </div>
@@ -316,15 +321,15 @@ export default function HomePage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 items-center">
-            <span className="self-center">External signals:</span>
+          <div className="mt-8 flex flex-col items-start gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 md:flex-row md:flex-wrap md:items-center md:gap-3">
+            <span className="self-center md:self-center">External signals:</span>
             {externalSignals.map((item) => (
               <a
                 key={item.label}
                 href={item.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 border border-black bg-white px-3 py-1.5 transition-colors hover:border-[#0047FF] hover:text-[#0047FF]"
+                className="inline-flex w-full items-center gap-1 border border-black bg-white px-3 py-1.5 transition-colors hover:border-[#0047FF] hover:text-[#0047FF] md:w-auto"
               >
                 {item.label}
                 <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -341,11 +346,9 @@ export default function HomePage() {
             <h2
               className={`${landingCondensed.variable} max-w-7xl text-[3.3rem] leading-[0.88] font-bold uppercase tracking-[-0.06em] [font-family:var(--font-landing-condensed)] md:text-[5.25rem] lg:text-[6.25rem]`}
             >
-              Access first.
+              One control plane.
               <br />
-              Connect second.
-              <br />
-              Interfaces everywhere.
+              Three surfaces.
             </h2>
           </div>
 
@@ -382,8 +385,8 @@ export default function HomePage() {
               Let agents work without giving them the whole vault
             </h2>
             <p className="mt-6 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600">
-              Traditional secret handling breaks down when agents start taking action. abadge keeps
-              the control plane small: explicit grants, policy-aware access checks, approval flows,
+              Traditional secret management assumes a human on the other side. abadge keeps the
+              control plane tight: explicit grants, policy-aware access, approval flows,
               delivery-mode restrictions, and audit on every attempt.
             </p>
 
@@ -447,33 +450,34 @@ export default function HomePage() {
       </main>
 
       <footer className="bg-white p-8">
-        <div className="mx-auto flex max-w-[96rem] flex-col justify-between gap-12 md:flex-row md:items-start">
-          <div className="max-w-xs">
-            <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
-            <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Credential control plane for AI
+        <div className="mx-auto flex max-w-[96rem] flex-col gap-8 md:flex-row md:items-start md:justify-between">
+          <div className="order-2 max-w-xs md:order-1">
+            <div className="mb-1 inline-flex items-center gap-2">
+              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+            </div>
+            <span className="mb-4 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
+              Credential control plane for AI agents
             </span>
           </div>
 
-          <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest">
-            <div className="flex flex-col gap-2">
-              <a
-                href="https://github.com/punitarani/abadge"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-[#0047FF]"
-              >
-                GitHub
-              </a>
-              <a
-                href="https://docs.abadge.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-[#0047FF]"
-              >
-                Docs
-              </a>
-            </div>
+          <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
+            <a
+              href="https://github.com/punitarani/abadge"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-[#0047FF]"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://docs.abadge.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-[#0047FF]"
+            >
+              Docs
+            </a>
           </div>
         </div>
       </footer>

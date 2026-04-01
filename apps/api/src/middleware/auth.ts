@@ -10,6 +10,10 @@ export const authMiddleware = createMiddleware<Env>(async (c, next) => {
     APP_URL: c.env.APP_URL,
     BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
     BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
+    GOOGLE_CLIENT_ID: c.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: c.env.GOOGLE_CLIENT_SECRET,
+    GITHUB_CLIENT_ID: c.env.GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET: c.env.GITHUB_CLIENT_SECRET,
   });
 
   const session = await auth.api.getSession({
