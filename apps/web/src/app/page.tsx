@@ -1,6 +1,7 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
@@ -169,6 +170,10 @@ const externalSignals = [
     label: "1Password Unified Access",
     href: "https://1password.com/press/2026/mar/1password-unified-access",
   },
+  {
+    label: "Bitwarden Agent Access SDK",
+    href: "https://bitwarden.com/blog/introducing-agent-access-sdk/",
+  },
 ];
 
 export const metadata: Metadata = {
@@ -184,7 +189,10 @@ export default function HomePage() {
       className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
     >
       <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        <Link href="/" className="inline-flex items-center gap-2">
+          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+        </Link>
 
         <div className="flex items-center gap-3">
           <a
@@ -313,15 +321,15 @@ export default function HomePage() {
             ))}
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 items-center">
-            <span className="self-center">External signals:</span>
+          <div className="mt-8 flex flex-col items-start gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500 md:flex-row md:flex-wrap md:items-center md:gap-3">
+            <span className="self-center md:self-center">External signals:</span>
             {externalSignals.map((item) => (
               <a
                 key={item.label}
                 href={item.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 border border-black bg-white px-3 py-1.5 transition-colors hover:border-[#0047FF] hover:text-[#0047FF]"
+                className="inline-flex w-full items-center gap-1 border border-black bg-white px-3 py-1.5 transition-colors hover:border-[#0047FF] hover:text-[#0047FF] md:w-auto"
               >
                 {item.label}
                 <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -442,33 +450,34 @@ export default function HomePage() {
       </main>
 
       <footer className="bg-white p-8">
-        <div className="mx-auto flex max-w-[96rem] flex-col justify-between gap-12 md:flex-row md:items-start">
-          <div className="max-w-xs">
-            <span className="mb-1 block text-xl font-bold tracking-[-0.04em]">abadge</span>
-            <span className="mb-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
+        <div className="mx-auto flex max-w-[96rem] flex-col gap-8 md:flex-row md:items-start md:justify-between">
+          <div className="order-2 max-w-xs md:order-1">
+            <div className="mb-1 inline-flex items-center gap-2">
+              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
+            </div>
+            <span className="mb-4 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
               Credential control plane for AI agents
             </span>
           </div>
 
-          <div className="flex gap-12 text-[10px] font-bold uppercase tracking-widest">
-            <div className="flex flex-col gap-2">
-              <a
-                href="https://github.com/punitarani/abadge"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-[#0047FF]"
-              >
-                GitHub
-              </a>
-              <a
-                href="https://docs.abadge.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="transition-colors hover:text-[#0047FF]"
-              >
-                Docs
-              </a>
-            </div>
+          <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
+            <a
+              href="https://github.com/punitarani/abadge"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-[#0047FF]"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://docs.abadge.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-[#0047FF]"
+            >
+              Docs
+            </a>
           </div>
         </div>
       </footer>
