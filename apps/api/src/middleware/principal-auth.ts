@@ -77,7 +77,11 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
     return c.json({ error: "Invalid API key" }, 401);
   }
 
-  if (principal && principal.id === legacyPrincipalId && (!principal.enabled || principal.revokedAt)) {
+  if (
+    principal &&
+    principal.id === legacyPrincipalId &&
+    (!principal.enabled || principal.revokedAt)
+  ) {
     return c.json({ error: "Invalid API key" }, 401);
   }
 
