@@ -1,13 +1,17 @@
-export { AbadgeClient } from "./client";
-export type { Connector, ConnectorConfig, FetchedSecret, SecretReference } from "./connectors";
-export { createConnector } from "./connectors";
-export { runWithSecret } from "./env-inject";
-export { mountSecret } from "./file-mount";
-export { createAndStoreSession, revokeSession } from "./session";
+export { DaemonClient } from "./client";
+export { runWithEnv } from "./env-inject";
+export { cleanupMount, mountSecret } from "./file-mount";
 export type {
-  BrokerConfig,
-  ConnectorType,
+  DaemonConfig,
+  DecryptResult,
+  EncryptResult,
+  ExecEnvResult,
+  ExecMountResult,
+  JsonRpcError,
+  JsonRpcRequest,
+  JsonRpcResponse,
   MountResult,
   RunResult,
-  SecretAccessResult,
+  VaultStatus,
 } from "./types";
+export { DEFAULT_SOCKET_PATH } from "./types";

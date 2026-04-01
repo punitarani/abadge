@@ -1,48 +1,24 @@
-import type { ErrorCode } from "./constants";
-
-export class AbadgeError extends Error {
-  public readonly code: string;
+export class AbadgeApiError extends Error {
   public readonly statusCode: number;
+  public readonly code: string;
 
-  constructor(code: string, message: string, statusCode: number) {
+  constructor(statusCode: number, code: string, message: string) {
     super(message);
-    this.name = "AbadgeError";
-    this.code = code;
+    this.name = "AbadgeApiError";
     this.statusCode = statusCode;
+    this.code = code;
   }
-}
 
-export class NotFoundError extends AbadgeError {
-  constructor(code: ErrorCode, message: string) {
-    super(code, message, 404);
-    this.name = "NotFoundError";
-  }
-}
-
-export class UnauthorizedError extends AbadgeError {
-  constructor(code: ErrorCode, message: string) {
-    super(code, message, 401);
-    this.name = "UnauthorizedError";
-  }
-}
-
-export class ForbiddenError extends AbadgeError {
-  constructor(code: ErrorCode, message: string) {
-    super(code, message, 403);
-    this.name = "ForbiddenError";
-  }
-}
-
-export class PolicyViolationError extends AbadgeError {
-  constructor(message: string) {
-    super("POLICY_VIOLATION", message, 403);
-    this.name = "PolicyViolationError";
-  }
-}
-
-export class ApprovalRequiredError extends AbadgeError {
-  constructor(message: string) {
-    super("APPROVAL_REQUIRED", message, 202);
-    this.name = "ApprovalRequiredError";
+  static async fromResponse(res: Response, fallback: string): Promise<AbadgeApiError> {
+    let code = "UNKNOWN";
+    let message = fallback;
+    try {
+      const body = (await res.json()) as { error?: string; code?: string };
+      code = body.code ?? code;
+      message = body.error ?? message;
+    } catch {
+      // Non-JSON response body
+    }
+    return new AbadgeApiError(res.status, code, message);
   }
 }

@@ -1,170 +1,167 @@
-import type {
-  AccessAction,
-  AccessOutcome,
-  ApprovalStatus,
-  ConnectorType,
-  CredentialType,
-  DeliveryMode,
-  Environment,
-  OwnerScope,
-  PrincipalType,
-  Sensitivity,
-  SourceType,
-} from "./constants";
-
-export interface ExternalRef {
-  name?: string;
-  path?: string;
-  version?: string;
-}
-
-export interface Credential {
+/** Vault metadata returned from GET /v1/vault */
+export interface Vault {
   id: string;
   userId: string;
+  initialized: boolean;
+  recoveryEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for PUT /v1/vault/bootstrap */
+export interface BootstrapVaultInput {
+  encryptedMasterKey: string;
+  masterKeyNonce: string;
+  masterKeySalt: string;
+  keyDerivationParams: KeyDerivationParams;
+}
+
+export interface KeyDerivationParams {
+  algorithm: string;
+  iterations?: number;
+  memory?: number;
+  parallelism?: number;
+}
+
+/** Input for POST /v1/vault/change-password */
+export interface ChangePasswordInput {
+  currentEncryptedMasterKey: string;
+  newEncryptedMasterKey: string;
+  newMasterKeyNonce: string;
+  newMasterKeySalt: string;
+  newKeyDerivationParams: KeyDerivationParams;
+}
+
+/** Input for POST /v1/vault/rotate-key */
+export interface RotateKeyInput {
+  newEncryptedMasterKey: string;
+  newMasterKeyNonce: string;
+  reEncryptedItems: ReEncryptedItem[];
+}
+
+export interface ReEncryptedItem {
+  itemId: string;
+  encryptedItemKey: string;
+  ciphertext: string;
+}
+
+/** Input for POST /v1/vault/recovery/setup */
+export interface SetupRecoveryInput {
+  recoveryBlob: string;
+}
+
+/** Vault item (metadata only, no plaintext) */
+export interface Item {
+  id: string;
+  vaultId: string;
   name: string;
-  type: CredentialType;
+  kind: string;
+  encryptedItemKey: string;
+  ciphertext: string;
   metadata: Record<string, string> | null;
-  ownerScope: OwnerScope;
-  orgId: string | null;
-  environment: Environment | null;
-  service: string | null;
-  provider: string | null;
-  project: string | null;
-  tags: string[] | null;
-  sensitivity: Sensitivity;
-  allowedDeliveryModes: DeliveryMode[] | null;
-  allowedDestinations: string[] | null;
-  sourceType: SourceType;
-  connectorId: string | null;
-  externalRef: ExternalRef | null;
-  createdBy: string;
-  updatedBy: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface Agent {
-  id: string;
-  name: string | null;
-  prefix: string | null;
-  start: string | null;
-  enabled: boolean | null;
-  lastRequest: Date | null;
-  metadata: string | null;
-  createdAt: Date;
-}
-
-export interface Permission {
-  agentId: string;
-  credentialId: string;
-  policyId: string | null;
-  allowedDeliveryModes: DeliveryMode[] | null;
-  expiresAt: Date | null;
-  grantedAt: Date;
-  grantedBy: string;
-}
-
-export interface AccessLogEntry {
-  id: number;
-  agentId: string;
-  credentialId: string;
-  credentialName: string;
-  agentName: string;
-  /** @deprecated use outcome */
-  action: AccessAction;
-  outcome: AccessOutcome;
-  principalType: PrincipalType;
-  requestedAction: string | null;
-  deliveryMode: DeliveryMode | null;
-  destination: string | null;
-  approvalId: string | null;
-  sessionId: string | null;
-  environment: Environment | null;
-  connectorUsed: string | null;
-  purpose: string | null;
-  ipAddress: string | null;
-  timestamp: Date;
-}
-
-export interface PolicyRule {
-  type: "delivery_mode" | "environment" | "sensitivity" | "destination" | "ttl";
-  deliveryModes?: DeliveryMode[];
-  environments?: Environment[];
-  sensitivity?: Sensitivity;
-  requiresApproval?: boolean;
-  ttlSeconds?: number;
-  destinations?: string[];
-  blockedDestinations?: string[];
-}
-
-export interface Policy {
-  id: string;
+/** Input for POST /v1/items */
+export interface CreateItemInput {
   name: string;
-  credentialId: string | null;
-  userId: string;
-  rules: PolicyRule[];
-  enabled: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  kind: string;
+  encryptedItemKey: string;
+  ciphertext: string;
+  metadata?: Record<string, string>;
 }
 
-export interface Approval {
-  id: string;
-  requesterId: string;
-  approverId: string | null;
-  credentialId: string;
-  agentId: string;
-  status: ApprovalStatus;
-  deliveryMode: DeliveryMode;
-  reason: string | null;
-  decidedAt: Date | null;
-  expiresAt: Date;
-  createdAt: Date;
+/** Input for PUT /v1/items/:id */
+export interface UpdateItemInput {
+  name?: string;
+  kind?: string;
+  encryptedItemKey?: string;
+  ciphertext?: string;
+  metadata?: Record<string, string> | null;
 }
 
-export interface BrokerSession {
+/** Principal (agent/service identity with API key) */
+export interface Principal {
   id: string;
-  agentId: string;
-  userId: string;
-  scopes: string[];
-  allowedDeliveryModes: DeliveryMode[];
-  expiresAt: Date;
-  revokedAt: Date | null;
-  createdAt: Date;
-}
-
-export interface Connector {
-  id: string;
-  userId: string;
+  vaultId: string;
   name: string;
-  type: ConnectorType;
+  prefix: string;
   enabled: boolean;
-  lastSync: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
+  lastUsedAt: string | null;
+  createdAt: string;
 }
 
-export interface CredentialAccessResponse {
-  credential: {
-    name: string;
-    type: CredentialType;
-    metadata: Record<string, string> | null;
-  };
-  deliveryMode: DeliveryMode;
-  value?: string;
-  approved: boolean;
+/** Input for POST /v1/principals */
+export interface CreatePrincipalInput {
+  name: string;
 }
 
-export interface AgentRegistrationResponse {
-  agent: {
-    id: string;
-    name: string | null;
-    prefix: string | null;
-  };
+/** Response from creating or rotating a principal */
+export interface PrincipalWithKey {
+  principal: Principal;
   apiKey: string;
 }
 
-export interface ApiErrorResponse {
-  error: string;
-  code?: string;
+/** Grant (permission linking principal to item) */
+export interface Grant {
+  id: string;
+  principalId: string;
+  itemId: string;
+  permissions: string[];
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** Input for POST /v1/grants */
+export interface CreateGrantInput {
+  principalId: string;
+  itemId: string;
+  permissions: string[];
+  expiresAt?: string;
+}
+
+/** Filters for GET /v1/grants */
+export interface GrantFilters {
+  principalId?: string;
+  itemId?: string;
+}
+
+/** Response from POST /v1/access/ciphertext */
+export interface CiphertextAccessResponse {
+  encryptedItemKey: string;
+  ciphertext: string;
+}
+
+/** Response from POST /v1/access/reveal */
+export interface RevealAccessResponse {
+  value: string;
+}
+
+/** Response from POST /v1/access/mount */
+export interface MountAccessResponse {
+  path: string;
+  ttlSeconds: number;
+}
+
+/** Audit log entry */
+export interface AuditEntry {
+  id: string;
+  vaultId: string;
+  principalId: string | null;
+  action: string;
+  itemId: string | null;
+  outcome: string;
+  metadata: Record<string, unknown> | null;
+  ipAddress: string | null;
+  timestamp: string;
+}
+
+/** Filters for GET /v1/audit */
+export interface AuditFilters {
+  principalId?: string;
+  itemId?: string;
+  action?: string;
+  limit?: number;
+  offset?: number;
 }

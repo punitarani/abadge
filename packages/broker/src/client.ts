@@ -1,168 +1,167 @@
-import type { BrokerConfig, SecretAccessResult } from "./types";
+import { createConnection, type Socket } from "node:net";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
+import type {
+  DaemonConfig,
+  DecryptResult,
+  EncryptResult,
+  ExecEnvResult,
+  ExecMountResult,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  VaultStatus,
+} from "./types";
+import { DEFAULT_SOCKET_PATH } from "./types";
 
-export class AbadgeClient {
-  private readonly apiUrl: string;
-  private readonly headers: Record<string, string>;
+function resolveSocketPath(socketPath: string): string {
+  if (socketPath.startsWith("~")) {
+    return resolve(homedir(), socketPath.slice(2));
+  }
+  return resolve(socketPath);
+}
 
-  constructor(config: BrokerConfig) {
-    this.apiUrl = config.apiUrl.replace(/\/$/, "");
-    this.headers = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.token}`,
-    };
+export class DaemonClient {
+  private socket: Socket | null = null;
+  private nextId = 1;
+  private readonly socketPath: string;
+  private pending = new Map<
+    number,
+    { resolve: (value: unknown) => void; reject: (reason: Error) => void }
+  >();
+  private buffer = "";
+
+  constructor(config?: DaemonConfig) {
+    this.socketPath = resolveSocketPath(config?.socketPath ?? DEFAULT_SOCKET_PATH);
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.apiUrl}${path}`, {
-      method,
-      headers: this.headers,
-      body: body ? JSON.stringify(body) : undefined,
+  async connect(): Promise<void> {
+    if (this.socket) return;
+
+    return new Promise<void>((resolve, reject) => {
+      const socket = createConnection(this.socketPath);
+
+      socket.on("connect", () => {
+        this.socket = socket;
+        resolve();
+      });
+
+      socket.on("error", (err) => {
+        if (!this.socket) {
+          reject(new Error(`Failed to connect to daemon at ${this.socketPath}: ${err.message}`));
+          return;
+        }
+        this.rejectAllPending(err);
+      });
+
+      socket.on("data", (data) => {
+        this.buffer += data.toString();
+        this.processBuffer();
+      });
+
+      socket.on("close", () => {
+        this.socket = null;
+        this.rejectAllPending(new Error("Connection closed"));
+      });
     });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`API ${method} ${path} failed (${res.status}): ${text}`);
+  }
+
+  close(): void {
+    if (this.socket) {
+      this.socket.destroy();
+      this.socket = null;
     }
-    return res.json() as Promise<T>;
+    this.rejectAllPending(new Error("Connection closed"));
   }
 
-  // Auth
-
-  async login(email: string, password: string): Promise<{ token: string }> {
-    return this.request("POST", "/api/auth/sign-in/email", { email, password });
+  async vaultUnlock(masterPassword: string): Promise<void> {
+    await this.call<void>("vault.unlock", { masterPassword });
   }
 
-  async whoami(): Promise<{ user: { id: string; name: string; email: string } }> {
-    return this.request("GET", "/api/auth/get-session");
+  async vaultLock(): Promise<void> {
+    await this.call<void>("vault.lock");
   }
 
-  // Secrets
-
-  async listSecrets(): Promise<{
-    credentials: Array<{
-      id: string;
-      name: string;
-      type: string;
-      environment?: string;
-      sensitivity?: string;
-    }>;
-  }> {
-    return this.request("GET", "/v1/credentials");
+  async vaultStatus(): Promise<VaultStatus> {
+    return this.call<VaultStatus>("vault.status");
   }
 
-  async getSecretMetadata(idOrName: string): Promise<{
-    credential: {
-      id: string;
-      name: string;
-      type: string;
-      metadata?: Record<string, string> | null;
+  async encrypt(plaintext: string, kind: string): Promise<EncryptResult> {
+    return this.call<EncryptResult>("vault.encrypt", { plaintext, kind });
+  }
+
+  async decrypt(encryptedItemKey: string, ciphertext: string): Promise<DecryptResult> {
+    return this.call<DecryptResult>("vault.decrypt", { encryptedItemKey, ciphertext });
+  }
+
+  async execEnv(
+    secretValue: string,
+    envVar: string,
+    command: string,
+    args: string[],
+  ): Promise<ExecEnvResult> {
+    return this.call<ExecEnvResult>("exec.env", { secretValue, envVar, command, args });
+  }
+
+  async execMount(secretValue: string, path?: string, mode?: number): Promise<ExecMountResult> {
+    return this.call<ExecMountResult>("exec.mount", { secretValue, path, mode });
+  }
+
+  async execCleanup(path: string): Promise<void> {
+    await this.call<void>("exec.cleanup", { path });
+  }
+
+  private async call<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+    if (!this.socket) {
+      throw new Error("Not connected to daemon. Call connect() first.");
+    }
+
+    const id = this.nextId++;
+    const request: JsonRpcRequest = {
+      jsonrpc: "2.0",
+      id,
+      method,
+      ...(params ? { params } : {}),
     };
-  }> {
-    return this.request("GET", `/v1/credentials/${encodeURIComponent(idOrName)}`);
-  }
 
-  async accessSecret(params: {
-    credentialId?: string;
-    credentialName?: string;
-    deliveryMode: string;
-    purpose?: string;
-    destination?: string;
-  }): Promise<SecretAccessResult> {
-    return this.request("POST", "/v1/credentials/access", params);
-  }
-
-  // Grants
-
-  async listGrants(credentialId: string): Promise<{
-    permissions: Array<{
-      agentId: string;
-      credentialId: string;
-      grantedAt: string;
-      grantedBy: string;
-    }>;
-  }> {
-    return this.request("GET", `/v1/permissions/credential/${encodeURIComponent(credentialId)}`);
-  }
-
-  async createGrant(params: {
-    agentId: string;
-    credentialId: string;
-    policyId?: string;
-    allowedDeliveryModes?: string[];
-  }): Promise<void> {
-    await this.request("POST", "/v1/permissions/grant", params);
-  }
-
-  // Sessions
-
-  async createSession(params: {
-    agentId: string;
-    scopes?: string[];
-    allowedDeliveryModes?: string[];
-    ttlSeconds: number;
-  }): Promise<{ sessionId: string; token: string; expiresAt: string }> {
-    return this.request("POST", "/v1/sessions", params);
-  }
-
-  async revokeSession(sessionId: string): Promise<void> {
-    await this.request("DELETE", `/v1/sessions/${encodeURIComponent(sessionId)}`);
-  }
-
-  // Approvals
-
-  async listApprovals(status?: string): Promise<{
-    approvals: Array<{
-      id: string;
-      status: string;
-      credentialId: string;
-      agentId: string;
-      requestedAt: string;
-    }>;
-  }> {
-    const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    return this.request("GET", `/v1/approvals${query}`);
-  }
-
-  async approveRequest(approvalId: string, reason?: string): Promise<void> {
-    await this.request("POST", `/v1/approvals/${encodeURIComponent(approvalId)}/approve`, {
-      reason,
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
+      this.socket!.write(JSON.stringify(request) + "\n");
     });
   }
 
-  async denyRequest(approvalId: string, reason?: string): Promise<void> {
-    await this.request("POST", `/v1/approvals/${encodeURIComponent(approvalId)}/deny`, { reason });
+  private rejectAllPending(error: Error): void {
+    for (const [, pending] of this.pending) {
+      pending.reject(error);
+    }
+    this.pending.clear();
   }
 
-  // Audit
+  private processBuffer(): void {
+    const lines = this.buffer.split("\n");
+    // Keep the last incomplete line in the buffer
+    this.buffer = lines.pop() ?? "";
 
-  async getAuditLog(params?: { limit?: number; offset?: number }): Promise<{
-    logs: Array<{
-      id: number;
-      agentId: string;
-      credentialId: string;
-      action: string;
-      timestamp: string;
-    }>;
-  }> {
-    const searchParams = new URLSearchParams();
-    if (params?.limit != null) searchParams.set("limit", String(params.limit));
-    if (params?.offset != null) searchParams.set("offset", String(params.offset));
-    const query = searchParams.toString();
-    return this.request("GET", `/v1/audit${query ? `?${query}` : ""}`);
-  }
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const response = JSON.parse(line) as JsonRpcResponse;
+        const pending = this.pending.get(response.id);
+        if (!pending) continue;
+        this.pending.delete(response.id);
 
-  // Connectors
-
-  async listConnectors(): Promise<{
-    connectors: Array<{ id: string; name: string; type: string }>;
-  }> {
-    return this.request("GET", "/v1/connectors");
-  }
-
-  async createConnector(params: {
-    name: string;
-    type: string;
-    config?: Record<string, string>;
-  }): Promise<void> {
-    await this.request("POST", "/v1/connectors", params);
+        if (response.error) {
+          pending.reject(
+            new Error(`Daemon error (${response.error.code}): ${response.error.message}`),
+          );
+        } else {
+          pending.resolve(response.result);
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
   }
 }
