@@ -5,6 +5,7 @@ import type { Bindings } from "./types";
 let lastAgentCreateInput: unknown;
 let lastPermissionCreateInput: unknown;
 let lastAuditInput: unknown;
+let callerHeaders = new Headers();
 
 const fakeCaller = {
   agents: {
@@ -79,6 +80,10 @@ const fakeCaller = {
 
 mock.module("@abadge/trpc/server", () => ({
   createServerCaller: () => fakeCaller,
+  createServerCallerContext: () => ({
+    caller: fakeCaller,
+    resHeaders: callerHeaders,
+  }),
   handleTrpcRequest: () => new Response("mock trpc"),
 }));
 
@@ -95,6 +100,7 @@ beforeEach(() => {
   lastAgentCreateInput = undefined;
   lastPermissionCreateInput = undefined;
   lastAuditInput = undefined;
+  callerHeaders = new Headers();
 
   fakeCaller.permissions.create = async (input: unknown) => {
     lastPermissionCreateInput = input;
@@ -196,6 +202,15 @@ describe("api app", () => {
       limit: 10,
     });
     expect(body).toEqual({ entries: [], nextCursor: null });
+  });
+
+  test("REST bridge forwards response headers from the server caller context", async () => {
+    callerHeaders.set("x-abadge-test", "forwarded");
+
+    const response = await app.request("http://localhost/v1/agents", undefined, testEnv);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-abadge-test")).toBe("forwarded");
   });
 
   test("POST /v1/permissions returns renamed error messages", async () => {

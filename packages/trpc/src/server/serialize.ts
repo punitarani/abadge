@@ -1,12 +1,5 @@
-import type {
-  Agent,
-  AuditEntry,
-  AuditEventType,
-  ItemDetail,
-  ItemSummary,
-  Permission,
-  Vault,
-} from "@abadge/core";
+import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Vault } from "@abadge/core";
+import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
 import type { auditLog, grants, items, principals, vaults } from "@abadge/db/schema";
 
 type VaultRow = typeof vaults.$inferSelect;
@@ -15,7 +8,17 @@ type AgentRow = typeof principals.$inferSelect;
 type PermissionRow = typeof grants.$inferSelect;
 type AuditRow = typeof auditLog.$inferSelect;
 
-const AUDIT_EVENT_TYPE_ALIASES: Record<string, AuditEventType> = {
+export const LEGACY_AUDIT_EVENT_TYPES = [
+  "principal.create",
+  "principal.rotate",
+  "principal.revoke",
+  "grant.create",
+  "grant.revoke",
+] as const;
+
+type LegacyAuditEventType = (typeof LEGACY_AUDIT_EVENT_TYPES)[number];
+
+const AUDIT_EVENT_TYPE_ALIASES: Record<LegacyAuditEventType, AuditEventType> = {
   "principal.create": "agent.create",
   "principal.rotate": "agent.rotate",
   "principal.revoke": "agent.revoke",
@@ -23,12 +26,27 @@ const AUDIT_EVENT_TYPE_ALIASES: Record<string, AuditEventType> = {
   "grant.revoke": "permission.revoke",
 };
 
-export function normalizeAuditEventType(eventType: string): AuditEventType {
-  return (AUDIT_EVENT_TYPE_ALIASES[eventType] ?? eventType) as AuditEventType;
+function isAuditEventType(eventType: string): eventType is AuditEventType {
+  return (AUDIT_EVENT_TYPES as readonly string[]).includes(eventType);
 }
 
-export function getAuditEventTypeFilters(eventType: AuditEventType): string[] {
-  switch (eventType) {
+export function normalizeAuditEventType(eventType: string): AuditEventType {
+  const normalized = AUDIT_EVENT_TYPE_ALIASES[eventType as LegacyAuditEventType] ?? eventType;
+
+  // Surface unexpected DB/event drift instead of serializing invalid public values.
+  if (!isAuditEventType(normalized)) {
+    throw new Error(`Unknown audit event type: ${eventType}`);
+  }
+
+  return normalized;
+}
+
+export function getAuditEventTypeFilters(
+  eventType: AuditEventType | LegacyAuditEventType,
+): string[] {
+  const normalized = normalizeAuditEventType(eventType);
+
+  switch (normalized) {
     case "agent.create":
       return ["agent.create", "principal.create"];
     case "agent.rotate":
@@ -40,7 +58,7 @@ export function getAuditEventTypeFilters(eventType: AuditEventType): string[] {
     case "permission.revoke":
       return ["permission.revoke", "grant.revoke"];
     default:
-      return [eventType];
+      return [normalized];
   }
 }
 

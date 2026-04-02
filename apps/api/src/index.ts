@@ -1,6 +1,7 @@
 import { createAuth, getTrustedOrigins } from "@abadge/auth";
 import { validateWorkerEnv } from "@abadge/env/worker";
-import { createServerCaller, handleTrpcRequest } from "@abadge/trpc/server";
+import type { createServerCaller } from "@abadge/trpc/server";
+import { createServerCallerContext, handleTrpcRequest } from "@abadge/trpc/server";
 import { TRPCError } from "@trpc/server";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
@@ -47,16 +48,33 @@ function toApiError(error: unknown): { status: number; body: ApiErrorBody } {
   };
 }
 
+function mergeResponseHeaders(response: Response, headers: Headers): Response {
+  for (const [name, value] of headers.entries()) {
+    if (name.toLowerCase() === "set-cookie") {
+      response.headers.append(name, value);
+      continue;
+    }
+
+    response.headers.set(name, value);
+  }
+
+  return response;
+}
+
 async function withCallerResult(
   c: ApiContext,
   handler: (caller: ReturnType<typeof createServerCaller>) => Promise<Response>,
 ): Promise<Response> {
+  const { caller, resHeaders } = createServerCallerContext(c.req.raw, c.env);
+
   try {
-    const caller = createServerCaller(c.req.raw, c.env);
-    return await handler(caller);
+    return mergeResponseHeaders(await handler(caller), resHeaders);
   } catch (error) {
     const { status, body } = toApiError(error);
-    return c.json(body, status as 400 | 401 | 403 | 404 | 409 | 429 | 500);
+    return mergeResponseHeaders(
+      c.json(body, status as 400 | 401 | 403 | 404 | 409 | 429 | 500),
+      resHeaders,
+    );
   }
 }
 
