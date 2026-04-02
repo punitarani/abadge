@@ -9,17 +9,7 @@ export async function auditCommand(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const entries =
-      await client.get<
-        {
-          id: number;
-          agentName: string;
-          credentialName: string;
-          outcome: string;
-          deliveryMode: string | null;
-          timestamp: string;
-        }[]
-      >("/v1/audit");
+    const entries = (await client.getAudit()).entries;
 
     if (values.json) {
       json(entries);
@@ -29,11 +19,12 @@ export async function auditCommand(args: string[]): Promise<void> {
     table(
       entries.map((e) => ({
         ID: String(e.id),
-        Principal: e.agentName,
-        Item: e.credentialName,
-        Outcome: e.outcome,
+        Principal: e.principalId ?? "-",
+        Item: e.itemId ?? "-",
+        Event: e.eventType,
+        Outcome: e.result,
         Mode: e.deliveryMode ?? "-",
-        Time: e.timestamp,
+        Time: e.occurredAt,
       })),
     );
   } catch (err) {

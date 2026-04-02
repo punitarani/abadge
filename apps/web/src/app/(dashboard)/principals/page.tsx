@@ -1,10 +1,12 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
+import type { Principal } from "@abadge/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SecretDisplay } from "@/components/ui/secret-display";
 import {
   Table,
   TableBody,
@@ -13,63 +15,74 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
-
-interface Principal {
-  id: string;
-  name: string | null;
-  kind: string;
-  locality: string | null;
-  prefix: string | null;
-  enabled: boolean | null;
-  lastRequest: string | null;
-  createdAt: string;
-}
 
 function PrincipalRow({
   principal,
-  onToggleActive,
-  onDelete,
+  onRotate,
+  onRevoke,
+  mutating,
 }: {
   principal: Principal;
-  onToggleActive: (p: Principal) => void;
-  onDelete: (id: string) => void;
+  onRotate: (principalId: string) => void;
+  onRevoke: (principalId: string) => void;
+  mutating: boolean;
 }): React.ReactElement {
+  const isActive = principal.enabled && principal.revokedAt === null;
+
   return (
     <TableRow>
-      <TableCell className="font-medium">{principal.name ?? "Unnamed"}</TableCell>
+      <TableCell className="font-medium">{principal.name}</TableCell>
       <TableCell>
         <Badge variant="secondary">{principal.kind}</Badge>
       </TableCell>
-      <TableCell className="text-muted-foreground">{principal.locality ?? "\u2014"}</TableCell>
+      <TableCell className="text-muted-foreground">{principal.locality}</TableCell>
       <TableCell>
-        {principal.prefix ? (
+        {principal.secretPrefix ? (
           <code className="text-xs bg-neutral-100 px-1.5 py-0.5 rounded font-mono">
-            {principal.prefix}
+            {principal.secretPrefix}
           </code>
         ) : (
           <span className="text-muted-foreground">{"\u2014"}</span>
         )}
       </TableCell>
       <TableCell>
-        <Badge variant={principal.enabled ? "success" : "destructive"}>
-          {principal.enabled ? "Active" : "Inactive"}
+        <Badge variant={isActive ? "success" : "destructive"}>
+          {isActive ? "Active" : "Revoked"}
         </Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {principal.lastRequest ? formatRelativeTime(principal.lastRequest) : "Never"}
+        {principal.lastUsedAt ? formatRelativeTime(principal.lastUsedAt) : "Never"}
       </TableCell>
       <TableCell className="text-muted-foreground">
         {formatRelativeTime(principal.createdAt)}
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" size="sm" onClick={() => onToggleActive(principal)}>
-            {principal.enabled ? "Disable" : "Enable"}
-          </Button>
-          <Button variant="destructive" size="sm" onClick={() => onDelete(principal.id)}>
-            Delete
-          </Button>
+          {isActive ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={mutating}
+                onClick={() => onRotate(principal.id)}
+              >
+                Rotate key
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={mutating}
+                onClick={() => onRevoke(principal.id)}
+              >
+                Revoke
+              </Button>
+            </>
+          ) : (
+            <span className="text-xs text-muted-foreground">No actions</span>
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -77,44 +90,45 @@ function PrincipalRow({
 }
 
 export default function PrincipalsPage(): React.ReactElement {
-  const [principals, setPrincipals] = useState<Principal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const principalsQuery = useQuery({
+    queryKey: dashboardQueryKeys.principals(),
+    queryFn: () => browserTrpcClient.principals.list.query(),
+  });
+  const rotatePrincipal = useMutation({
+    mutationFn: ({ principalId }: { principalId: string }) =>
+      browserTrpcClient.principals.rotate.mutate({ principalId }),
+    onSuccess: async (result) => {
+      setRotatedSecret(result.secret);
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.principals(),
+      });
+    },
+  });
+  const revokePrincipal = useMutation({
+    mutationFn: ({ principalId }: { principalId: string }) =>
+      browserTrpcClient.principals.revoke.mutate({ principalId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.principals(),
+      });
+    },
+  });
 
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
+  const principals = principalsQuery.data?.principals ?? [];
+  const loading = principalsQuery.isPending;
 
-  const fetchPrincipals = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiUrl}/v1/principals`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setPrincipals(Array.isArray(data) ? data : []);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchPrincipals();
-  }, [fetchPrincipals]);
-
-  async function handleToggleActive(principal: Principal): Promise<void> {
-    await fetch(`${apiUrl}/v1/principals/${principal.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ enabled: !principal.enabled }),
-    });
-    fetchPrincipals();
+  async function handleRotate(principalId: string): Promise<void> {
+    await rotatePrincipal.mutateAsync({ principalId });
   }
 
-  async function handleDelete(id: string): Promise<void> {
-    if (!confirm("Delete this principal? All grants will be revoked.")) return;
-    await fetch(`${apiUrl}/v1/principals/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    fetchPrincipals();
+  async function handleRevoke(principalId: string): Promise<void> {
+    if (!confirm("Revoke this principal? Existing grants will no longer work.")) {
+      return;
+    }
+
+    await revokePrincipal.mutateAsync({ principalId });
   }
 
   return (
@@ -131,6 +145,21 @@ export default function PrincipalsPage(): React.ReactElement {
         </Button>
       </div>
 
+      {rotatedSecret ? (
+        <div className="border border-border rounded-lg p-5 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold">Rotated API key</h2>
+            <p className="text-sm text-muted-foreground">
+              Save this key now. It will not be shown again.
+            </p>
+          </div>
+          <SecretDisplay value={rotatedSecret} />
+          <Button variant="outline" size="sm" onClick={() => setRotatedSecret(null)}>
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
+
       <div className="border border-border rounded-lg">
         <Table>
           <TableHeader>
@@ -146,7 +175,13 @@ export default function PrincipalsPage(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {principalsQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-red-700">
+                  {getClientErrorMessage(principalsQuery.error, "Failed to load principals")}
+                </TableCell>
+              </TableRow>
+            ) : loading ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                   Loading...
@@ -166,12 +201,13 @@ export default function PrincipalsPage(): React.ReactElement {
                 </TableCell>
               </TableRow>
             ) : (
-              principals.map((p) => (
+              principals.map((p: Principal) => (
                 <PrincipalRow
                   key={p.id}
                   principal={p}
-                  onToggleActive={handleToggleActive}
-                  onDelete={handleDelete}
+                  onRotate={handleRotate}
+                  onRevoke={handleRevoke}
+                  mutating={rotatePrincipal.isPending || revokePrincipal.isPending}
                 />
               ))
             )}

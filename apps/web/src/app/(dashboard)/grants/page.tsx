@@ -1,7 +1,15 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
-import { useCallback, useEffect, useState } from "react";
+import {
+  CAPABILITIES,
+  type Capability,
+  type Grant,
+  type ItemSummary,
+  type Principal,
+} from "@abadge/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryStates } from "nuqs";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,104 +27,97 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { grantFilterParsers } from "@/lib/query-state";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
-interface Grant {
-  principalId: string;
-  itemId: string;
-  grantedAt: string;
-  grantedBy: string;
-  principalName: string | null;
-  principalEnabled: boolean | null;
-  itemName: string | null;
-}
-
-interface PrincipalEntry {
-  id: string;
-  name: string | null;
-  enabled: boolean | null;
-}
-
-interface ItemEntry {
-  id: string;
-  name: string;
-}
-
-async function readJsonArrayIfOk(res: Response): Promise<unknown[]> {
-  if (!res.ok) return [];
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
-}
+const CAPABILITY_LABELS: Record<Capability, string> = {
+  read_ciphertext: "Read ciphertext",
+  reveal_plaintext: "Reveal plaintext",
+  mount_env: "Mount as env var",
+  mount_file: "Mount as file",
+  use_without_reveal: "Use without reveal",
+};
 
 export default function GrantsPage(): React.ReactElement {
-  const [grants, setGrants] = useState<Grant[]>([]);
-  const [principals, setPrincipals] = useState<PrincipalEntry[]>([]);
-  const [items, setItems] = useState<ItemEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [granting, setGranting] = useState(false);
-
+  const queryClient = useQueryClient();
   const [selectedPrincipal, setSelectedPrincipal] = useState("");
   const [selectedItem, setSelectedItem] = useState("");
-  const [filterPrincipal, setFilterPrincipal] = useState("all");
-  const [filterItem, setFilterItem] = useState("all");
+  const [selectedCapability, setSelectedCapability] = useState<Capability>("mount_env");
+  const [{ principal: filterPrincipal, item: filterItem }, setGrantFilters] =
+    useQueryStates(grantFilterParsers);
+  const [error, setError] = useState("");
 
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
-
-  const fetchData = useCallback(async () => {
-    try {
-      const [grantsRes, principalsRes, itemsRes] = await Promise.all([
-        fetch(`${apiUrl}/v1/grants`, { credentials: "include" }),
-        fetch(`${apiUrl}/v1/principals`, { credentials: "include" }),
-        fetch(`${apiUrl}/v1/items`, { credentials: "include" }),
-      ]);
-
-      const [grantsData, principalsData, itemsData] = await Promise.all([
-        readJsonArrayIfOk(grantsRes),
-        readJsonArrayIfOk(principalsRes),
-        readJsonArrayIfOk(itemsRes),
-      ]);
-      setGrants(grantsData as Grant[]);
-      setPrincipals(principalsData as PrincipalEntry[]);
-      setItems(itemsData as ItemEntry[]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  async function handleGrant(): Promise<void> {
-    if (!selectedPrincipal || !selectedItem) return;
-    setGranting(true);
-    try {
-      await fetch(`${apiUrl}/v1/grants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ principalId: selectedPrincipal, itemId: selectedItem }),
-      });
+  const grantsQuery = useQuery({
+    queryKey: dashboardQueryKeys.grants(),
+    queryFn: () => browserTrpcClient.grants.list.query({}),
+  });
+  const principalsQuery = useQuery({
+    queryKey: dashboardQueryKeys.principals(),
+    queryFn: () => browserTrpcClient.principals.list.query(),
+  });
+  const itemsQuery = useQuery({
+    queryKey: dashboardQueryKeys.items(),
+    queryFn: () => browserTrpcClient.items.list.query(),
+  });
+  const createGrant = useMutation({
+    mutationFn: (input: { principalId: string; itemId: string; capability: Capability }) =>
+      browserTrpcClient.grants.create.mutate(input),
+    onSuccess: async () => {
       setSelectedPrincipal("");
       setSelectedItem("");
-      fetchData();
-    } finally {
-      setGranting(false);
+      setError("");
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.grants(),
+      });
+    },
+  });
+  const revokeGrant = useMutation({
+    mutationFn: ({ grantId }: { grantId: string }) =>
+      browserTrpcClient.grants.revoke.mutate({ grantId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.grants(),
+      });
+    },
+  });
+
+  const grants = grantsQuery.data?.grants ?? [];
+  const principals = principalsQuery.data?.principals ?? [];
+  const items = itemsQuery.data?.items ?? [];
+  const loading = grantsQuery.isPending || principalsQuery.isPending || itemsQuery.isPending;
+
+  const principalNames = useMemo<Map<string, string>>(
+    () => new Map(principals.map((principal: Principal) => [principal.id, principal.name])),
+    [principals],
+  );
+
+  async function handleGrant(): Promise<void> {
+    if (!selectedPrincipal || !selectedItem) {
+      return;
+    }
+
+    try {
+      await createGrant.mutateAsync({
+        principalId: selectedPrincipal,
+        itemId: selectedItem,
+        capability: selectedCapability,
+      });
+    } catch (mutationError) {
+      setError(getClientErrorMessage(mutationError, "Failed to create grant"));
     }
   }
 
-  async function handleRevoke(principalId: string, itemId: string): Promise<void> {
-    if (!confirm("Revoke this grant?")) return;
-    await fetch(`${apiUrl}/v1/grants`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ principalId, itemId }),
-    });
-    fetchData();
+  async function handleRevoke(grantId: string): Promise<void> {
+    if (!confirm("Revoke this grant?")) {
+      return;
+    }
+
+    await revokeGrant.mutateAsync({ grantId });
   }
 
-  const filtered = grants.filter((g) => {
+  const filtered = grants.filter((g: Grant) => {
     if (filterPrincipal !== "all" && g.principalId !== filterPrincipal) return false;
     if (filterItem !== "all" && g.itemId !== filterItem) return false;
     return true;
@@ -134,6 +135,11 @@ export default function GrantsPage(): React.ReactElement {
       {/* Create grant */}
       <div className="border border-border rounded-lg p-5 space-y-3">
         <div className="text-sm font-semibold">Create grant</div>
+        {error ? (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
         <div className="flex gap-3 items-end">
           <div className="flex-1 space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Principal</label>
@@ -143,10 +149,10 @@ export default function GrantsPage(): React.ReactElement {
               </SelectTrigger>
               <SelectContent>
                 {principals
-                  .filter((p) => p.enabled)
-                  .map((p) => (
+                  .filter((p: Principal) => p.enabled && p.revokedAt === null)
+                  .map((p: Principal) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name ?? "Unnamed"}
+                      {p.name}
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -159,9 +165,27 @@ export default function GrantsPage(): React.ReactElement {
                 <SelectValue placeholder="Select item..." />
               </SelectTrigger>
               <SelectContent>
-                {items.map((i) => (
+                {items.map((i: ItemSummary) => (
                   <SelectItem key={i.id} value={i.id}>
-                    {i.name}
+                    {i.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Capability</label>
+            <Select
+              value={selectedCapability}
+              onValueChange={(value) => setSelectedCapability(value as Capability)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CAPABILITIES.map((capability) => (
+                  <SelectItem key={capability} value={capability}>
+                    {CAPABILITY_LABELS[capability]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -170,9 +194,9 @@ export default function GrantsPage(): React.ReactElement {
           <Button
             size="sm"
             onClick={handleGrant}
-            disabled={!selectedPrincipal || !selectedItem || granting}
+            disabled={!selectedPrincipal || !selectedItem || createGrant.isPending}
           >
-            {granting ? "Granting..." : "Grant access"}
+            {createGrant.isPending ? "Granting..." : "Grant access"}
           </Button>
         </div>
       </div>
@@ -181,15 +205,18 @@ export default function GrantsPage(): React.ReactElement {
       <div className="flex gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Filter by principal</label>
-          <Select value={filterPrincipal} onValueChange={setFilterPrincipal}>
+          <Select
+            value={filterPrincipal}
+            onValueChange={(value) => void setGrantFilters({ principal: value })}
+          >
             <SelectTrigger className="w-[180px] h-[28px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All principals</SelectItem>
-              {principals.map((p) => (
+              {principals.map((p: Principal) => (
                 <SelectItem key={p.id} value={p.id}>
-                  {p.name ?? "Unnamed"}
+                  {p.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -197,15 +224,18 @@ export default function GrantsPage(): React.ReactElement {
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Filter by item</label>
-          <Select value={filterItem} onValueChange={setFilterItem}>
+          <Select
+            value={filterItem}
+            onValueChange={(value) => void setGrantFilters({ item: value })}
+          >
             <SelectTrigger className="w-[180px] h-[28px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All items</SelectItem>
-              {items.map((i) => (
+              {items.map((i: ItemSummary) => (
                 <SelectItem key={i.id} value={i.id}>
-                  {i.name}
+                  {i.id}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -226,7 +256,16 @@ export default function GrantsPage(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {grantsQuery.error || principalsQuery.error || itemsQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-red-700">
+                  {getClientErrorMessage(
+                    grantsQuery.error ?? principalsQuery.error ?? itemsQuery.error,
+                    "Failed to load grants",
+                  )}
+                </TableCell>
+              </TableRow>
+            ) : loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   Loading...
@@ -242,23 +281,26 @@ export default function GrantsPage(): React.ReactElement {
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((g) => (
-                <TableRow key={`${g.principalId}-${g.itemId}`}>
-                  <TableCell className="font-medium">{g.principalName ?? "Unnamed"}</TableCell>
-                  <TableCell>{g.itemName ?? g.itemId}</TableCell>
+              filtered.map((g: Grant) => (
+                <TableRow key={g.id}>
+                  <TableCell className="font-medium">
+                    {principalNames.get(g.principalId) ?? g.principalId}
+                  </TableCell>
+                  <TableCell>{g.itemId}</TableCell>
                   <TableCell>
-                    <Badge variant={g.principalEnabled ? "success" : "destructive"}>
-                      {g.principalEnabled ? "Active" : "Inactive"}
+                    <Badge variant="secondary">
+                      {CAPABILITY_LABELS[g.capability] ?? g.capability}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(g.grantedAt)}
+                    {formatRelativeTime(g.createdAt)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => handleRevoke(g.principalId, g.itemId)}
+                      disabled={revokeGrant.isPending}
+                      onClick={() => handleRevoke(g.id)}
                     >
                       Revoke
                     </Button>

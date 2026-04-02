@@ -1,12 +1,12 @@
 "use client";
 
 import { zeroKey } from "@abadge/crypto";
-import { clientEnv } from "@abadge/env/client";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import {
   bootstrapVault as bootstrapVaultCrypto,
   unlockVault as unlockVaultCrypto,
 } from "./crypto-client";
+import { browserTrpcClient } from "./trpc-browser";
 
 interface VaultContextValue {
   isUnlocked: boolean;
@@ -49,15 +49,22 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
 
   const checkVaultExists = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch(`${clientEnv.NEXT_PUBLIC_API_URL}/v1/vault`, {
-        credentials: "include",
-      });
-      const exists = res.ok;
-      setVaultExists(exists);
-      return exists;
-    } catch {
-      setVaultExists(false);
-      return false;
+      await browserTrpcClient.vault.get.query();
+      setVaultExists(true);
+      return true;
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "data" in error &&
+        typeof (error as { data?: { httpStatus?: number } }).data?.httpStatus === "number" &&
+        (error as { data?: { httpStatus?: number } }).data?.httpStatus === 404
+      ) {
+        setVaultExists(false);
+        return false;
+      }
+
+      throw error;
     }
   }, []);
 

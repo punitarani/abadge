@@ -1,32 +1,30 @@
 # MCP Server
 
-The abadge MCP server exposes capability-aware credential tools to AI agents (Claude, Codex, Cursor,
-etc.) via the Model Context Protocol. Secrets are never returned to the LLM by default.
+The abadge MCP server exposes item-aware tools to local AI agents without returning raw secrets to
+the model by default.
 
 ## Setup
 
-### Configuration
-
-Set environment variables or create `~/.abadge/config.json`:
+Provide configuration through environment variables or `~/.abadge/config.json`:
 
 ```bash
 export ABADGE_API_URL=http://localhost:8787
-export ABADGE_TOKEN=abl_your_api_key
+export ABADGE_TOKEN=abl_your_local_principal_key
 ```
 
-### Running
+Run it with:
 
 ```bash
-# From monorepo
 bun run mcp
+```
 
-# Directly
+Or directly:
+
+```bash
 bun packages/mcp/src/index.ts
 ```
 
-### Claude Desktop / IDE integration
-
-Add to your MCP config (e.g., `claude_desktop_config.json`):
+## Claude Desktop / IDE example
 
 ```json
 {
@@ -36,94 +34,114 @@ Add to your MCP config (e.g., `claude_desktop_config.json`):
       "args": ["packages/mcp/src/index.ts"],
       "env": {
         "ABADGE_API_URL": "http://localhost:8787",
-        "ABADGE_TOKEN": "abl_your_api_key"
+        "ABADGE_TOKEN": "abl_your_local_principal_key"
       }
     }
   }
 }
 ```
 
-## Tools
+## Tool reference
 
 ### `list_items`
 
-List items the principal has access to. Returns metadata only, never values.
+Lists stored item metadata.
 
-Input: `{}` (no required parameters)
+Input: `{}`
 
-Output: `{ items: [{ id, name, storageMode, createdAt, updatedAt }] }`
+Output:
+
+```json
+{ "items": [{ "id": "...", "storageMode": "zero_knowledge", "createdAt": "...", "updatedAt": "..." }] }
+```
 
 ### `request_access`
 
-Request access to an item with a specific capability. Does NOT return the secret value.
-
-Input:
+Checks whether the caller can use an item through a mount-style capability. For zero-knowledge
+items, the tool also verifies that local daemon decryption is possible.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to access |
-| `capability` | enum | yes | `mount_env` or `mount_file` |
-| `purpose` | string | no | Reason for access |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+| `capability` | `"mount_env" \| "mount_file"` | yes | Requested capability |
+| `purpose` | string | no | Free-form reason |
 
-Output: `{ status, itemId, capability }` or `{ status: "pending_approval" }`
+Successful output:
+
+```json
+{ "status": "granted", "itemId": "...", "capability": "mount_env" }
+```
+
+Failure output:
+
+```json
+{ "status": "denied", "error": "..." }
+```
 
 ### `run_with_secret`
 
-Run a command with a secret injected as an environment variable. The secret is never exposed to
-the AI model -- only the command's stdout/stderr is returned (max 4KB each).
-
-Input:
+Resolves an item and injects it into a subprocess without returning the secret to the model.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to inject |
-| `command` | string | yes | Command to run |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+| `command` | string | yes | Executable to run |
 | `args` | string[] | no | Command arguments |
-| `envVarName` | string | no | Environment variable name |
-| `purpose` | string | no | Reason for access |
+| `envVarName` | string | no | Environment variable name. Defaults to `ABADGE_SECRET` |
+| `purpose` | string | no | Free-form reason |
 
-Output: `{ exitCode, stdout, stderr }`
+Output:
+
+```json
+{ "exitCode": 0, "stdout": "...", "stderr": "..." }
+```
+
+Stdout and stderr are truncated to 4 KB each.
 
 ### `mount_secret`
 
-Mount a secret as a temporary file with restricted permissions. Returns the file path, not the
-content. Auto-cleanup after 5 minutes.
-
-Input:
+Mounts an item into a temporary file and returns the file path only.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to mount |
-| `filename` | string | no | Desired filename |
-| `purpose` | string | no | Reason for access |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+| `filename` | string | no | Output filename inside the temp directory |
+| `purpose` | string | no | Free-form reason |
 
-Output: `{ path, permissions: "0600", message }`
+Output:
+
+```json
+{
+  "path": "/tmp/abadge-.../secret.txt",
+  "permissions": "0600",
+  "message": "Secret mounted. File will be auto-cleaned after 5 minutes."
+}
+```
 
 ### `get_audit`
 
-Get recent audit log entries.
-
-Input:
+Fetches recent audit entries from the control plane.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
+|------|------|----------|-------------|
 | `itemId` | string | no | Filter by item |
-| `limit` | number | no | Max entries to return (1-100) |
+| `limit` | number | no | Maximum entries, `1..100` |
 
-Output: `{ entries: [{ id, itemId, action, capability, outcome, timestamp }] }`
+Output:
+
+```json
+{ "entries": [{ "id": 1, "eventType": "access.mount_env", "result": "allowed" }] }
+```
 
 ## Security model
 
-The MCP server follows the principle that **the LLM is untrusted**:
+The MCP server treats the model as untrusted:
 
-* `run_with_secret` injects into a subprocess -- the LLM sees command output, not the secret
-* `mount_secret` returns a file path -- the LLM can reference the path, not the content
-* `request_access` returns a confirmation -- never the raw value
-* `list_items` returns metadata -- never ciphertext or plaintext
-* There is no tool that returns raw secret values to the LLM
+* `list_items` returns metadata only
+* `request_access` returns status only
+* `run_with_secret` exposes command output, not the secret
+* `mount_secret` exposes a file path, not the secret
+* there is no tool that returns raw secret bytes directly to the model
 
-All access goes through the same API authorization, capability matrix enforcement, and audit
-pipeline as direct API calls. Every tool invocation that touches items is logged in the audit trail.
-
-The MCP server authenticates as a local principal (`abl_` prefix), so it can access zero-knowledge
-items via the local daemon.
+The MCP server authenticates with a local principal token, uses the shared tRPC client for control
+plane access, and delegates zero-knowledge decrypt work to the local daemon.

@@ -1,19 +1,23 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
+import { useTRPC } from "@abadge/trpc/react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { extractApiError } from "@/lib/api-client";
 import { encryptItemForVault } from "@/lib/crypto-client";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { getClientErrorMessage } from "@/lib/trpc-browser";
 import { useVault } from "@/lib/vault-context";
 
 type StorageMode = "zero_knowledge" | "server_managed";
 
 export default function CreateItemPage(): React.ReactElement {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const { rootKey } = useVault();
   const [name, setName] = useState("");
@@ -21,8 +25,16 @@ export default function CreateItemPage(): React.ReactElement {
   const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
+  const createItem = useMutation(
+    trpc.items.create.mutationOptions({
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({
+          queryKey: dashboardQueryKeys.items(),
+        });
+        router.push("/items");
+      },
+    }),
+  );
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -30,7 +42,22 @@ export default function CreateItemPage(): React.ReactElement {
     setError("");
 
     try {
-      let body: Record<string, unknown>;
+      let body:
+        | {
+            storageMode: "zero_knowledge";
+            encryptedItemKey: string;
+            ciphertext: string;
+          }
+        | {
+            storageMode: "server_managed";
+            payload: {
+              v: number;
+              label: string;
+              kind: "opaque";
+              tags: string[];
+              fields: { value: string };
+            };
+          };
 
       if (storageMode === "zero_knowledge") {
         if (!rootKey) {
@@ -52,21 +79,9 @@ export default function CreateItemPage(): React.ReactElement {
         };
       }
 
-      const res = await fetch(`${apiUrl}/v1/items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        router.push("/items");
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(extractApiError(data, "Failed to create item"));
-      }
-    } catch {
-      setError("An unexpected error occurred");
+      await createItem.mutateAsync(body);
+    } catch (mutationError) {
+      setError(getClientErrorMessage(mutationError, "Failed to create item"));
     } finally {
       setCreating(false);
     }

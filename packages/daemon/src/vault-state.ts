@@ -97,21 +97,21 @@ export class VaultState {
     };
   }
 
-  encrypt(plaintext: string, kind: string): EncryptResult {
+  encrypt(payload: unknown): EncryptResult {
     const rootKey = this.requireUnlocked();
-    const payload = serializeItemPayload({ value: plaintext, kind });
-    const result = encryptItem(payload, rootKey);
+    const plaintext = serializeItemPayload(payload);
+    const result = encryptItem(plaintext, rootKey);
     this.resetAutoLock();
     return result;
   }
 
-  decrypt(encryptedItemKey: string, ciphertext: string): string {
+  decrypt(encryptedItemKey: string, ciphertext: string): unknown {
     const rootKey = this.requireUnlocked();
     const item: EncryptedItem = { encryptedItemKey, ciphertext };
     const bytes = decryptItem(item, rootKey);
-    const payload = deserializeItemPayload<{ value?: string }>(bytes);
+    const payload = deserializeItemPayload(bytes);
     this.resetAutoLock();
-    return payload.value ?? "";
+    return payload;
   }
 
   rekey(

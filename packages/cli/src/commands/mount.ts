@@ -1,6 +1,9 @@
 import { parseArgs } from "node:util";
+import { ApiClient } from "../client";
+import { requireConfig } from "../config";
 import { daemonExecMount } from "../daemon";
 import { error, errorMessage, str, success } from "../output";
+import { resolveSecretValue } from "../secret";
 
 export async function mountCommand(args: string[]): Promise<void> {
   const { values } = parseArgs({
@@ -18,7 +21,9 @@ export async function mountCommand(args: string[]): Promise<void> {
   }
 
   try {
-    const res = await daemonExecMount(itemId);
+    const client = new ApiClient(requireConfig());
+    const secretValue = await resolveSecretValue(client, itemId, "file");
+    const res = await daemonExecMount(secretValue);
     if (!res.ok) {
       error(res.error ?? "Failed to mount item.");
       process.exit(1);

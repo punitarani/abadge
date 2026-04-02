@@ -1,20 +1,37 @@
+import { parseArgs } from "node:util";
 import { loadConfig, saveConfig } from "../config";
 import { error, success } from "../output";
 import { prompt } from "../prompt";
 
 export async function loginCommand(args: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args,
+    options: {
+      "api-url": { type: "string" },
+      email: { type: "string" },
+      password: { type: "string" },
+    },
+    strict: false,
+  });
   const existing = loadConfig();
-  const apiUrl = args.includes("--api-url")
-    ? args[args.indexOf("--api-url") + 1]
-    : (existing?.apiUrl ?? "https://api.abadge.dev");
+  const apiUrlValue = values["api-url"];
+  const emailValue = values.email;
+  const passwordValue = values.password;
+  const apiUrl =
+    (typeof apiUrlValue === "string" ? apiUrlValue : undefined) ??
+    existing?.apiUrl ??
+    "https://api.abadge.dev";
 
   if (!apiUrl) {
     error("Missing --api-url value.");
     process.exit(1);
   }
 
-  const email = await prompt("Email: ");
-  const password = await prompt("Password: ", true);
+  const email =
+    (typeof emailValue === "string" ? emailValue : undefined) ?? (await prompt("Email: "));
+  const password =
+    (typeof passwordValue === "string" ? passwordValue : undefined) ??
+    (await prompt("Password: ", true));
 
   if (!email || !password) {
     error("Email and password are required.");

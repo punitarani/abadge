@@ -3,9 +3,9 @@
 ## Prerequisites
 
 * [Bun](https://bun.sh/) 1.3+
-* [Docker](https://docs.docker.com/get-docker/) (for local Postgres)
+* [Docker](https://docs.docker.com/get-docker/) for local Postgres
 * [Doppler CLI](https://docs.doppler.com/docs/install-cli)
-* Node.js 22+ (for MCP typecheck)
+* Node.js 22+ for some local tooling
 
 ## Setup
 
@@ -15,9 +15,9 @@ cd abadge
 bun install
 ```
 
-### Environment
+## Environment
 
-Root commands that need application secrets run through Doppler. Configure the repo once:
+Root commands that need runtime secrets go through Doppler.
 
 ```bash
 doppler setup
@@ -27,62 +27,56 @@ Required variables:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/postgres` |
-| `API_URL` | Public API origin used by Worker auth/CORS | `http://localhost:8787` |
-| `APP_URL` | Public web origin used by Worker auth/CORS | `http://localhost:3000` |
-| `BETTER_AUTH_URL` | API base URL for Better Auth | `http://localhost:8787` |
-| `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
-| `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items (base64) | `openssl rand -base64 32` |
-| `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
+| `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/abadge` |
+| `API_URL` | Public API origin | `http://localhost:8787` |
+| `APP_URL` | Public web origin | `http://localhost:3000` |
+| `BETTER_AUTH_URL` | Better Auth base URL | `http://localhost:8787` |
+| `BETTER_AUTH_SECRET` | Better Auth secret | random string |
+| `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items | `openssl rand -base64 32` |
+| `NEXT_PUBLIC_API_URL` | Browser-visible API origin | `http://localhost:8787` |
 
-Optional social login variables:
+Optional variables:
 
 | Variable | Description |
 |----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `GITHUB_CLIENT_ID` | GitHub OAuth client ID |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret |
+| `GOOGLE_CLIENT_ID` | Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth |
+| `GITHUB_CLIENT_ID` | GitHub OAuth |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth |
 
-Set both variables for a provider to enable that login option. Omit them entirely to keep
-email/password auth only.
+`bun run dev` regenerates `apps/api/.dev.vars` from Doppler before starting local Worker dev.
 
-Doppler is the source of truth for local development. `bun run dev` regenerates
-`apps/api/.dev.vars` from the active Doppler config before starting `wrangler dev`, so the API
-worker sees the same settings as the rest of the repo. Do not rely on a local `.env` file for
-app runtime.
-
-### Database
+## Database
 
 ```bash
-docker compose up -d      # Start Postgres
-bun run db:push           # Apply schema
+docker compose up -d
+bun run db:push
 ```
 
-### Dev servers
+`bun run db:migrate` expects `DATABASE_URL` to be present in the active Doppler config. If you are
+running migrations directly against local Docker Postgres without Doppler, use:
 
 ```bash
-bun run dev               # Starts API (8787) + Web (3000)
+DATABASE_URL=postgresql://abadge:abadge@localhost:5432/abadge \
+  bun --cwd packages/db run db:migrate
 ```
 
-### API worker local files (Wrangler)
-
-`wrangler dev` reads secrets from `apps/api/.dev.vars` (gitignored). To generate that file from
-your Doppler `dev` config:
+## Local development
 
 ```bash
-bun run dev:vars          # Writes apps/api/.dev.vars from Doppler env
+bun run dev
 ```
 
-To run only the API worker with Wrangler (after generating `.dev.vars`):
+This starts:
+
+* API worker on `:8787`
+* web app on `:3000`
+
+Useful worker-only commands:
 
 ```bash
+bun run dev:vars
 bun run api:dev:worker
-```
-
-Clear Wrangler's local state if local dev gets stuck:
-
-```bash
 bun run api:clean:worker
 ```
 
@@ -91,155 +85,86 @@ bun run api:clean:worker
 | Command | Description |
 |---------|-------------|
 | `bun install` | Install dependencies |
-| `bun run dev` | Start all dev servers |
+| `bun run dev` | Start the API worker and web app |
 | `bun run build` | Build all packages |
-| `bun run typecheck` | TypeScript check all packages |
-| `bun run lint` | Biome lint |
-| `bun run lint:fix` | Biome lint with auto-fix |
-| `bun run format` | Biome format |
-| `bun run dev:vars` | Generate `apps/api/.dev.vars` from Doppler |
-| `bun run api:dev:worker` | Generate `.dev.vars` then `wrangler dev` for API only |
-| `bun run api:clean:worker` | Remove `apps/api/.wrangler` cache |
-| `bun run db:generate` | Generate migration from schema changes |
+| `bun run typecheck` | TypeScript check all workspaces |
+| `bun run lint` | Run Biome checks |
+| `bun run lint:fix` | Apply Biome fixes |
+| `bun run format` | Format repo files |
+| `bun run db:push` | Push schema to the database |
+| `bun run db:generate` | Generate migrations |
 | `bun run db:migrate` | Run pending migrations |
-| `bun run db:push` | Push schema to database (no migration) |
 | `bun run db:studio` | Open Drizzle Studio |
-| `bun run db:reset` | Drop schema and re-run migrations |
-| `bun run cli -- --help` | Run CLI |
-| `bun run mcp` | Start MCP server |
-| `bun test` | Run test suite |
+| `bun run db:reset` | Reset the schema locally |
+| `bun run cli -- --help` | Run the CLI |
+| `bun run mcp` | Start the MCP server |
+| `bun test` | Run tests |
 
 ## Package structure
 
+```text
+packages/core    -> Effect Schema contracts, constants, tagged errors
+packages/crypto  -> encryption and API-key helpers
+packages/db      -> Drizzle schema and DB client
+packages/auth    -> Better Auth setup
+packages/env     -> environment validation
+packages/trpc    -> app router, clients, context, error mapping
+packages/daemon  -> local vault daemon and JSON-RPC client
+packages/broker  -> execution helpers for local secret use
+packages/cli     -> CLI command implementations
+packages/mcp     -> MCP server and tools
+packages/sdk     -> public TypeScript client built on tRPC
+
+apps/api         -> Hono worker shell + mounted tRPC transport
+apps/web         -> Next.js dashboard
 ```
-packages/core    -> shared types, schemas, constants (no runtime deps)
-packages/crypto  -> server-side encryption, API key generation, encoding
-packages/db      -> Drizzle schema + client (depends on core)
-packages/auth    -> Better Auth config (depends on db)
-packages/env     -> t3-env validation (no internal deps)
-packages/broker  -> execution engine (env inject, file mount, daemon IPC)
-packages/cli     -> CLI tool library (commands, config, output)
-packages/mcp     -> MCP server (depends on @modelcontextprotocol/sdk)
-packages/sdk     -> TypeScript SDK (@abadge/sdk, depends on zod)
 
-apps/api         -> Hono worker (depends on core, crypto, db, auth)
-apps/cli         -> Distributable CLI binary (bun build --compile)
-apps/web         -> Next.js dashboard (depends on core, auth, env)
-```
+## Adding a new control-plane procedure
 
-Build order: `config -> core -> env -> crypto -> db -> auth -> api/web` (Turborepo handles this).
+1. add or update Effect Schema contracts in `packages/core/src/schemas.ts`
+2. add DB schema changes in `packages/db/src/schema/` if needed
+3. implement the Effect program in the appropriate router under `packages/trpc/src/server/routers/`
+4. expose the procedure from `packages/trpc/src/server/router.ts`
+5. update consumers in web, SDK, CLI, MCP, or daemon helpers through the shared tRPC client
+6. update `docs/API.md`
 
-## Adding a new API route
-
-1. Add Zod schema to `packages/core/src/schemas.ts`
-2. Add DB table (if needed) to `packages/db/src/schema/`, export from `index.ts`
-3. Create route file in `apps/api/src/routes/`
-4. Register in `apps/api/src/index.ts`
-5. Update `docs/API.md`
+Do not add a parallel REST route.
 
 ## Adding a new CLI command
 
-1. Create command file in `packages/cli/src/commands/`
-2. Register in `packages/cli/src/index.ts`
-3. Update `docs/CLI.md`
+1. add a command in `packages/cli/src/commands/`
+2. register it in `packages/cli/src/index.ts`
+3. update `docs/CLI.md`
 
 ## Adding a new MCP tool
 
-1. Create tool file in `packages/mcp/src/tools/`
-2. Register in `packages/mcp/src/server.ts`
-3. Update `docs/MCP.md`
+1. add the tool in `packages/mcp/src/tools/`
+2. register it in `packages/mcp/src/server.ts`
+3. update `docs/MCP.md`
 
-## Database migrations
+## Testing and verification
 
-Schema changes go in `packages/db/src/schema/`. For production:
-
-```bash
-bun run db:generate    # Creates migration SQL in packages/db/migrations/
-bun run db:push        # For dev: push directly without migration
-```
-
-## Linting and formatting
-
-Uses [Biome](https://biomejs.dev/) 2.x:
-
-* 2-space indent, 100-char line width, double quotes
-* `process.env` banned outside `packages/env` (use `@abadge/env` instead)
-* `noNonNullAssertion: error`, `noExplicitAny: warn`
-
-## Testing
-
-Tests use `bun test` (Bun's built-in test runner):
+Primary verification targets:
 
 ```bash
+bun run typecheck
+bun run lint
 bun test
 ```
 
-Test files:
+The repo currently relies on:
 
-| File | Covers |
-|------|--------|
-| `packages/crypto/src/__tests__/server-crypto.test.ts` | AES-256-GCM server encrypt/decrypt round-trips |
-| `packages/crypto/src/__tests__/client-crypto.test.ts` | Client-side XChaCha20-Poly1305 encryption (ZK mode) |
-| `packages/crypto/src/__tests__/api-keys.test.ts` | API key generation, hashing, verification |
-| `packages/crypto/src/__tests__/encoding.test.ts` | Base64 encoding/decoding, random bytes |
-| `packages/core/src/constants.test.ts` | Core constants and type validation |
-| `packages/auth/src/server.test.ts` | Better Auth server configuration |
+* Effect Schema decode/encode tests in `packages/core`
+* crypto tests in `packages/crypto`
+* Better Auth tests in `packages/auth`
+* tRPC and consumer smoke coverage in the workspace test suite
 
-Additional verification:
+## Working conventions
 
-* `bun run typecheck` -- type safety across all packages
-* `bun run lint` -- code quality
-* API e2e -- curl against running dev server
-* Browser e2e -- Playwright against running dev + web servers
+Keep these repo-level rules in mind:
 
-## SDK
-
-The `@abadge/sdk` package (`packages/sdk/`) provides a typed TypeScript client for the abadge API.
-
-```bash
-cd packages/sdk
-bun run build
-```
-
-Usage:
-
-```typescript
-import { AbadgeClient } from "@abadge/sdk";
-
-const client = new AbadgeClient({
-  apiUrl: "http://localhost:8787",
-  token: "abg_your_api_key",
-});
-
-// Vault
-const vault = await client.getVault();
-
-// Items
-const { items } = await client.listItems();
-const item = await client.createItem({ storageMode: "server_managed", payload: { ... } });
-
-// Principals
-const { principals } = await client.listPrincipals();
-
-// Grants
-await client.createGrant({ principalId: "...", itemId: "...", capability: "reveal_plaintext" });
-
-// Access
-const { payload } = await client.accessReveal("item-id");
-
-// Audit
-const { entries } = await client.getAudit({ limit: 50 });
-```
-
-The SDK exposes methods for all API operations: vault management, items, principals, grants, access (ciphertext, reveal, mount), and audit log queries. Error handling uses `AbadgeApiError`.
-
-## CLI binary
-
-The `apps/cli/` directory builds a standalone CLI binary using Bun's compile feature:
-
-```bash
-cd apps/cli
-bun run build    # produces dist/abadge
-```
-
-The compiled binary requires no runtime dependencies and can be distributed directly.
+* `packages/core` is contract-first and Effect-first
+* `packages/trpc` is the only application transport
+* use Drizzle instead of raw SQL unless the exception is justified inline
+* keep decrypt paths behind explicit authorization checks
+* update docs when behavior changes

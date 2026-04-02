@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { CAPABILITIES, type Capability } from "@abadge/core";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { error, errorMessage, json, str, success, table } from "../output";
@@ -33,10 +34,15 @@ async function grantCreate(args: string[]): Promise<void> {
 
   const principalId = str(values["principal-id"]);
   const itemId = str(values["item-id"]);
-  const capability = str(values.capability) ?? "env_inject";
+  const capability = (str(values.capability) ?? "mount_env") as Capability;
 
   if (!principalId || !itemId) {
     error("--principal-id and --item-id are required.");
+    process.exit(1);
+  }
+
+  if (!CAPABILITIES.includes(capability)) {
+    error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
     process.exit(1);
   }
 
@@ -44,10 +50,10 @@ async function grantCreate(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const result = await client.post("/v1/grants", {
-      agentId: principalId,
-      credentialId: itemId,
-      allowedDeliveryModes: [capability],
+    const result = await client.createGrant({
+      principalId,
+      itemId,
+      capability,
     });
 
     if (values.json) {
@@ -67,15 +73,7 @@ async function grantList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const grants =
-      await client.get<
-        {
-          agentId: string;
-          credentialId: string;
-          allowedDeliveryModes: string[];
-          grantedAt: string;
-        }[]
-      >("/v1/grants");
+    const grants = (await client.listGrants()).grants;
 
     if (values.json) {
       json(grants);
@@ -84,10 +82,11 @@ async function grantList(args: string[]): Promise<void> {
 
     table(
       grants.map((g) => ({
-        Principal: g.agentId,
-        Item: g.credentialId,
-        Modes: (g.allowedDeliveryModes ?? []).join(", "),
-        Granted: g.grantedAt,
+        ID: g.id,
+        Principal: g.principalId,
+        Item: g.itemId,
+        Capability: g.capability,
+        Granted: g.createdAt,
       })),
     );
   } catch (err) {
@@ -107,7 +106,7 @@ async function grantRevoke(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    await client.delete(`/v1/grants/${id}`);
+    await client.revokeGrant(id);
     success(`Grant ${id} revoked.`);
   } catch (err) {
     error(errorMessage(err, "Failed to revoke grant."));

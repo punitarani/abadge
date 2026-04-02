@@ -1,3 +1,4 @@
+import type { Vault } from "@abadge/core";
 import type { KDFParams } from "@abadge/crypto";
 
 /** Daemon configuration. */
@@ -15,12 +16,8 @@ export interface DaemonConfig {
 }
 
 /** Vault metadata fetched from the API. */
-export interface VaultMeta {
-  id: string;
-  wrappedRootKey: string;
-  kdfSalt: string;
+export interface VaultMeta extends Pick<Vault, "id" | "wrappedRootKey" | "kdfSalt" | "keyVersion"> {
   kdfParams: KDFParams;
-  keyVersion: number;
 }
 
 /** JSON-RPC 2.0 request. */
@@ -61,6 +58,11 @@ export interface VaultStatus {
 export interface EncryptResult {
   encryptedItemKey: string;
   ciphertext: string;
+}
+
+/** Result of item.decrypt. */
+export interface DecryptResult {
+  payload: unknown;
 }
 
 /** Result of exec.mount. */

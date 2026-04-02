@@ -94,7 +94,7 @@ Abadge should feel like infrastructure, not a special dashboard-only workflow.
 
 Current implementation:
 
-* REST API as the canonical control plane
+* tRPC as the canonical control plane
 * dashboard for operator workflows
 * CLI for developer and admin workflows
 * TypeScript SDK for programmatic integrations

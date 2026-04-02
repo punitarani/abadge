@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Either, Schema } from "effect";
 import {
   API_KEY_PREFIX,
   AUDIT_EVENT_TYPES,
@@ -15,6 +16,14 @@ import {
   CreatePrincipalSchema,
   VaultBootstrapSchema,
 } from "./schemas";
+
+function isValid(schema: unknown, value: unknown): boolean {
+  return Either.isRight(
+    Schema.decodeUnknownEither(schema as Schema.Schema<unknown, unknown, never>)(value, {
+      onExcessProperty: "error",
+    }),
+  );
+}
 
 describe("ITEM_KINDS", () => {
   test("includes all expected kinds", () => {
@@ -98,9 +107,9 @@ describe("API_KEY_PREFIX", () => {
 
 describe("schema validation", () => {
   test("VaultBootstrapSchema requires all fields", () => {
-    expect(VaultBootstrapSchema.safeParse({}).success).toBe(false);
+    expect(isValid(VaultBootstrapSchema, {})).toBe(false);
     expect(
-      VaultBootstrapSchema.safeParse({
+      isValid(VaultBootstrapSchema, {
         wrappedRootKey: "key",
         kdfSalt: "salt",
         kdfParams: {
@@ -110,53 +119,51 @@ describe("schema validation", () => {
           parallelism: 1,
           hashLength: 32,
         },
-      }).success,
+      }),
     ).toBe(true);
   });
 
   test("CreateItemSchema accepts ZK mode", () => {
     expect(
-      CreateItemSchema.safeParse({
+      isValid(CreateItemSchema, {
         storageMode: "zero_knowledge",
         encryptedItemKey: "key",
         ciphertext: "ct",
-      }).success,
+      }),
     ).toBe(true);
   });
 
   test("CreateItemSchema accepts server_managed mode", () => {
     expect(
-      CreateItemSchema.safeParse({
+      isValid(CreateItemSchema, {
         storageMode: "server_managed",
         payload: { v: 1, label: "test", kind: "opaque", tags: [], fields: {} },
-      }).success,
+      }),
     ).toBe(true);
   });
 
   test("CreateGrantSchema rejects invalid capability", () => {
     expect(
-      CreateGrantSchema.safeParse({
+      isValid(CreateGrantSchema, {
         principalId: "p1",
         itemId: "i1",
         capability: "wildcard",
-      }).success,
+      }),
     ).toBe(false);
   });
 
   test("CreateGrantSchema accepts valid capability", () => {
     expect(
-      CreateGrantSchema.safeParse({
+      isValid(CreateGrantSchema, {
         principalId: "p1",
         itemId: "i1",
         capability: "read_ciphertext",
-      }).success,
+      }),
     ).toBe(true);
   });
 
   test("CreatePrincipalSchema requires name and kind", () => {
-    expect(CreatePrincipalSchema.safeParse({}).success).toBe(false);
-    expect(
-      CreatePrincipalSchema.safeParse({ kind: "remote_agent", name: "my-agent" }).success,
-    ).toBe(true);
+    expect(isValid(CreatePrincipalSchema, {})).toBe(false);
+    expect(isValid(CreatePrincipalSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
   });
 });

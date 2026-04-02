@@ -13,6 +13,10 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@abadge/core": "workspace:*",
+    "@abadge/trpc": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.7.0"
   }

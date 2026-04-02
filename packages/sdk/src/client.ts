@@ -1,24 +1,29 @@
+import { createNodeTrpcClient } from "@abadge/trpc/client";
 import { AbadgeApiError } from "./errors";
 import type {
-  AuditEntry,
   AuditFilters,
+  AuditListResult,
   BootstrapVaultInput,
   ChangePasswordInput,
   CiphertextAccessResponse,
   CreateGrantInput,
   CreateItemInput,
   CreatePrincipalInput,
-  Grant,
   GrantFilters,
-  Item,
+  GrantListResult,
+  GrantResult,
+  ItemListResult,
+  ItemResult,
   MountAccessResponse,
-  Principal,
+  PrincipalListResult,
+  PrincipalRotateResult,
   PrincipalWithKey,
   RevealAccessResponse,
   RotateKeyInput,
   SetupRecoveryInput,
+  SuccessResult,
   UpdateItemInput,
-  Vault,
+  VaultResult,
 } from "./types";
 
 export interface AbadgeClientConfig {
@@ -27,148 +32,151 @@ export interface AbadgeClientConfig {
 }
 
 export class AbadgeClient {
-  private readonly apiUrl: string;
-  private readonly token: string;
+  private readonly client;
 
   constructor(config: AbadgeClientConfig) {
-    this.apiUrl = config.apiUrl.replace(/\/$/, "");
-    this.token = config.token;
+    this.client = createNodeTrpcClient({
+      baseUrl: config.apiUrl,
+      token: config.token,
+    });
   }
 
   // --- Vault ---
 
-  async bootstrapVault(data: BootstrapVaultInput): Promise<{ vault: Vault }> {
-    return this.request("PUT", "/v1/vault/bootstrap", data);
+  async bootstrapVault(data: BootstrapVaultInput): Promise<{ id: string }> {
+    return this.call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
   }
 
-  async getVault(): Promise<{ vault: Vault }> {
-    return this.request("GET", "/v1/vault");
+  async getVault(): Promise<VaultResult> {
+    return this.call(() => this.client.vault.get.query(), "Failed to fetch vault");
   }
 
-  async changePassword(data: ChangePasswordInput): Promise<{ success: boolean }> {
-    return this.request("POST", "/v1/vault/change-password", data);
+  async changePassword(data: ChangePasswordInput): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.vault.changePassword.mutate(data),
+      "Failed to change password",
+    );
   }
 
-  async rotateKey(data: RotateKeyInput): Promise<{ success: boolean }> {
-    return this.request("POST", "/v1/vault/rotate-key", data);
+  async rotateKey(data: RotateKeyInput): Promise<{ ok: boolean; keyVersion: number }> {
+    return this.call(() => this.client.vault.rotateKey.mutate(data), "Failed to rotate key");
   }
 
-  async setupRecovery(data: SetupRecoveryInput): Promise<{ success: boolean }> {
-    return this.request("POST", "/v1/vault/recovery/setup", data);
+  async setupRecovery(data: SetupRecoveryInput): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.vault.setupRecovery.mutate(data),
+      "Failed to set up recovery",
+    );
   }
 
   // --- Items ---
 
-  async createItem(data: CreateItemInput): Promise<{ item: Item }> {
-    return this.request("POST", "/v1/items", data);
+  async createItem(data: CreateItemInput): Promise<{ id: string }> {
+    return this.call(() => this.client.items.create.mutate(data), "Failed to create item");
   }
 
-  async listItems(): Promise<{ items: Item[] }> {
-    return this.request("GET", "/v1/items");
+  async listItems(): Promise<ItemListResult> {
+    return this.call(() => this.client.items.list.query(), "Failed to list items");
   }
 
-  async getItem(id: string): Promise<{ item: Item }> {
-    return this.request("GET", `/v1/items/${encodeURIComponent(id)}`);
+  async getItem(id: string): Promise<ItemResult> {
+    return this.call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
   }
 
-  async updateItem(id: string, data: UpdateItemInput): Promise<{ item: Item }> {
-    return this.request("PUT", `/v1/items/${encodeURIComponent(id)}`, data);
+  async updateItem(
+    id: string,
+    data: UpdateItemInput,
+  ): Promise<{ ok: boolean; contentVersion: number }> {
+    return this.call(
+      () => this.client.items.update.mutate({ itemId: id, data }),
+      "Failed to update item",
+    );
   }
 
-  async deleteItem(id: string): Promise<{ success: boolean }> {
-    return this.request("DELETE", `/v1/items/${encodeURIComponent(id)}`);
+  async deleteItem(id: string): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.items.delete.mutate({ itemId: id }),
+      "Failed to delete item",
+    );
   }
 
   // --- Principals ---
 
   async createPrincipal(data: CreatePrincipalInput): Promise<PrincipalWithKey> {
-    return this.request("POST", "/v1/principals", data);
+    return this.call(
+      () => this.client.principals.create.mutate(data),
+      "Failed to create principal",
+    );
   }
 
-  async listPrincipals(): Promise<{ principals: Principal[] }> {
-    return this.request("GET", "/v1/principals");
+  async listPrincipals(): Promise<PrincipalListResult> {
+    return this.call(() => this.client.principals.list.query(), "Failed to list principals");
   }
 
-  async rotatePrincipal(id: string): Promise<PrincipalWithKey> {
-    return this.request("POST", `/v1/principals/${encodeURIComponent(id)}/rotate`);
+  async rotatePrincipal(id: string): Promise<PrincipalRotateResult> {
+    return this.call(
+      () => this.client.principals.rotate.mutate({ principalId: id }),
+      "Failed to rotate principal",
+    );
   }
 
-  async revokePrincipal(id: string): Promise<{ success: boolean }> {
-    return this.request("POST", `/v1/principals/${encodeURIComponent(id)}/revoke`);
+  async revokePrincipal(id: string): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.principals.revoke.mutate({ principalId: id }),
+      "Failed to revoke principal",
+    );
   }
 
   // --- Grants ---
 
-  async createGrant(data: CreateGrantInput): Promise<{ grant: Grant }> {
-    return this.request("POST", "/v1/grants", data);
+  async createGrant(data: CreateGrantInput): Promise<GrantResult> {
+    return this.call(() => this.client.grants.create.mutate(data), "Failed to create grant");
   }
 
-  async listGrants(filters?: GrantFilters): Promise<{ grants: Grant[] }> {
-    const query = filters ? buildQuery({ ...filters }) : "";
-    return this.request("GET", `/v1/grants${query}`);
+  async listGrants(filters: GrantFilters = {}): Promise<GrantListResult> {
+    return this.call(() => this.client.grants.list.query(filters), "Failed to list grants");
   }
 
-  async revokeGrant(id: string): Promise<{ success: boolean }> {
-    return this.request("DELETE", `/v1/grants/${encodeURIComponent(id)}`);
+  async revokeGrant(id: string): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.grants.revoke.mutate({ grantId: id }),
+      "Failed to revoke grant",
+    );
   }
 
   // --- Access ---
 
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return this.request("POST", "/v1/access/ciphertext", { itemId });
+    return this.call(
+      () => this.client.access.ciphertext.mutate({ itemId }),
+      "Failed to access ciphertext",
+    );
   }
 
   async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return this.request("POST", "/v1/access/reveal", { itemId });
+    return this.call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
   }
 
-  async accessMount(itemId: string, mountType: string): Promise<MountAccessResponse> {
-    return this.request("POST", "/v1/access/mount", { itemId, mountType });
+  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
+    return this.call(
+      () => this.client.access.mount.mutate({ itemId, mountType }),
+      "Failed to access mount payload",
+    );
   }
 
   // --- Audit ---
 
-  async getAudit(filters?: AuditFilters): Promise<{ entries: AuditEntry[]; total: number }> {
-    const query = filters ? buildQuery({ ...filters }) : "";
-    return this.request("GET", `/v1/audit${query}`);
+  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
+    return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
   }
 
   // --- Internal ---
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      Accept: "application/json",
-    };
-
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
-    }
-
-    const res = await fetch(`${this.apiUrl}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-
-    if (!res.ok) {
-      throw await AbadgeApiError.fromResponse(res, `API ${method} ${path} failed (${res.status})`);
-    }
-
-    const text = await res.text();
-    if (!text) return undefined as T;
-    return JSON.parse(text) as T;
-  }
-}
-
-function buildQuery(params?: Record<string, string | number | undefined>): string {
-  if (!params) return "";
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value != null) {
-      searchParams.set(key, String(value));
+  private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      throw AbadgeApiError.fromUnknown(error, fallback);
     }
   }
-  const str = searchParams.toString();
-  return str ? `?${str}` : "";
 }

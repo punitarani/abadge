@@ -1,6 +1,7 @@
 import { connect } from "node:net";
 import { defaultSocketPath } from "./paths";
 import type {
+  DecryptResult,
   EncryptResult,
   EnvExecResult,
   JsonRpcRequest,
@@ -90,15 +91,13 @@ export class DaemonClient {
   }
 
   /** Encrypt a plaintext value. */
-  async encrypt(plaintext: string, kind?: string): Promise<EncryptResult> {
-    return (await this.send("item.encrypt", { plaintext, kind })) as EncryptResult;
+  async encrypt(payload: unknown): Promise<EncryptResult> {
+    return (await this.send("item.encrypt", { payload })) as EncryptResult;
   }
 
   /** Decrypt an encrypted item. */
-  async decrypt(encryptedItemKey: string, ciphertext: string): Promise<{ value: string }> {
-    return (await this.send("item.decrypt", { encryptedItemKey, ciphertext })) as {
-      value: string;
-    };
+  async decrypt(encryptedItemKey: string, ciphertext: string): Promise<DecryptResult> {
+    return (await this.send("item.decrypt", { encryptedItemKey, ciphertext })) as DecryptResult;
   }
 
   /** Re-wrap item DEKs with a new root key. */

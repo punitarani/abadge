@@ -2,6 +2,7 @@ export { DaemonClient } from "./client";
 export { isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
 export type {
   DaemonConfig,
+  DecryptResult,
   EncryptResult,
   EnvExecResult,
   JsonRpcRequest,

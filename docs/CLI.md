@@ -1,30 +1,28 @@
 # CLI Reference
 
-The `abadge` CLI is the primary developer and operator interface for the credential control plane.
+The `abadge` CLI is the local operator interface for the control plane and the vault daemon.
 
 ## Installation
 
 ```bash
-# From the monorepo (development)
+# Development
 bun run cli -- --help
 
-# Or directly
+# Direct entrypoint
 bun packages/cli/bin/abadge.ts --help
 ```
 
 ### Standalone binary
 
-The CLI can be compiled into a standalone binary using Bun's `--compile` flag. No Bun or Node.js runtime is required on the target machine.
-
 ```bash
-cd apps/cli
-bun run build    # outputs dist/abadge
+mkdir -p dist
+bun build --compile packages/cli/bin/abadge.ts --outfile dist/abadge
 ./dist/abadge --help
 ```
 
 ## Configuration
 
-Config is stored at `~/.abadge/config.json`:
+Config lives at `~/.abadge/config.json`:
 
 ```json
 {
@@ -33,33 +31,57 @@ Config is stored at `~/.abadge/config.json`:
 }
 ```
 
-Created automatically by `abadge login`.
-
-The local vault daemon communicates via Unix socket at `~/.abadge/vaultd.sock`.
+The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ## Commands
 
 ### `abadge login`
 
-Authenticate and store credentials.
+Interactive email/password login. Stores `apiUrl` and the returned Better Auth session token in the
+local config.
 
 ```bash
 abadge login --api-url http://localhost:8787
-# Prompts for email and password
+abadge login --api-url http://localhost:8787 --email user@example.com --password password123
+```
+
+### `abadge daemon start`
+
+Starts the local daemon process if it is not already running. The CLI spawns the current `abadge`
+entrypoint in an internal daemon-serve mode, so the same command works in development and in a
+compiled binary.
+
+```bash
+abadge daemon start
+```
+
+### `abadge daemon status`
+
+Prints daemon runtime state.
+
+```bash
+abadge daemon status
+```
+
+### `abadge daemon stop`
+
+Stops the local daemon process and removes the live socket.
+
+```bash
+abadge daemon stop
 ```
 
 ### `abadge vault unlock`
 
-Unlock the local vault daemon with your master password.
+Prompts for the master password and unlocks the local vault in daemon memory.
 
 ```bash
 abadge vault unlock
-# Prompts for master password
 ```
 
 ### `abadge vault lock`
 
-Lock the vault daemon (clears root key from memory).
+Clears the unlocked vault state from the daemon.
 
 ```bash
 abadge vault lock
@@ -67,7 +89,7 @@ abadge vault lock
 
 ### `abadge vault status`
 
-Check vault daemon status (initialized, locked, item count).
+Prints whether the daemon currently has an unlocked vault.
 
 ```bash
 abadge vault status
@@ -75,7 +97,8 @@ abadge vault status
 
 ### `abadge vault change-password`
 
-Change the vault master password.
+Prompts for the current password and the replacement password, then updates the wrapped vault key
+through the daemon and control plane.
 
 ```bash
 abadge vault change-password
@@ -83,20 +106,22 @@ abadge vault change-password
 
 ### `abadge item create`
 
-Store a new item in the vault.
+Interactive item creation. The current CLI path encrypts locally through the daemon and creates a
+zero-knowledge item.
 
 ```bash
-abadge item create \
-  --label github-token \
-  --kind api_key \
-  --value ghp_abc123
+abadge item create
 ```
 
-For zero-knowledge items, the CLI encrypts client-side via the daemon before sending to the API. For server-managed items, the value is sent to the API for server-side encryption.
+Prompts:
+
+* label
+* item kind
+* secret value
 
 ### `abadge item list`
 
-List all items (metadata only, never values).
+Lists item metadata only.
 
 ```bash
 abadge item list
@@ -105,35 +130,43 @@ abadge item list --json
 
 ### `abadge item get <id>`
 
-Get item metadata.
+Fetches one item. For zero-knowledge items, the CLI attempts local daemon decryption and prints the
+decrypted payload when available.
 
 ```bash
 abadge item get <item-id>
-abadge item get <item-id> --json
 ```
 
 ### `abadge item delete <id>`
 
-Soft delete an item.
+Soft-deletes an item. Use `-f` or `--force` to skip confirmation.
 
 ```bash
 abadge item delete <item-id>
+abadge item delete <item-id> --force
 ```
 
 ### `abadge principal register`
 
-Register a new principal (device, CLI, MCP server, or remote agent).
+Creates a new principal and prints the one-time secret.
 
 ```bash
-abadge principal register --kind local_cli --name "dev laptop"
-abadge principal register --kind remote_agent --name "ci-bot"
+abadge principal register --name "dev laptop" --kind local_cli
+abadge principal register --name "ci bot" --kind remote_agent --description "deploy runner"
 ```
 
-The API key is shown **once** and never retrievable again.
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `--name, -n` | Principal display name |
+| `--kind, -k` | Principal kind |
+| `--description, -d` | Optional metadata description |
+| `--json` | Print raw JSON |
 
 ### `abadge principal list`
 
-List registered principals.
+Lists registered principals.
 
 ```bash
 abadge principal list
@@ -142,7 +175,7 @@ abadge principal list --json
 
 ### `abadge principal revoke <id>`
 
-Revoke a principal's access.
+Revokes a principal.
 
 ```bash
 abadge principal revoke <principal-id>
@@ -150,25 +183,34 @@ abadge principal revoke <principal-id>
 
 ### `abadge grant create`
 
-Grant a principal a capability on an item.
+Creates an explicit grant. The default capability is `mount_env`.
 
 ```bash
-abadge grant create --principal <id> --item <id> --capability reveal_plaintext
-abadge grant create --principal <id> --item <id> --capability mount_env
+abadge grant create --principal-id <principal-id> --item-id <item-id>
+abadge grant create --principal-id <principal-id> --item-id <item-id> --capability reveal_plaintext
 ```
+
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `--principal-id` | Target principal |
+| `--item-id` | Target item |
+| `--capability` | Capability to grant |
+| `--json` | Print raw JSON |
 
 ### `abadge grant list`
 
-List grants.
+Lists grants.
 
 ```bash
-abadge grant list --item <item-id>
-abadge grant list --principal <principal-id>
+abadge grant list
+abadge grant list --json
 ```
 
 ### `abadge grant revoke <id>`
 
-Revoke a grant.
+Revokes a grant.
 
 ```bash
 abadge grant revoke <grant-id>
@@ -176,56 +218,36 @@ abadge grant revoke <grant-id>
 
 ### `abadge run`
 
-Run a command with a secret injected as an environment variable. The secret is never written to disk or printed to stdout.
+Resolves a secret value, injects it into a subprocess through the daemon, and exits with the child
+process exit code.
 
 ```bash
 abadge run --item <item-id> -- npm run deploy
-abadge run --item <item-id> --env-var GITHUB_TOKEN -- npm run deploy
 ```
 
-How it works:
+Notes:
 
-1. Authenticates with the API or daemon
-2. For ZK items: daemon decrypts locally
-3. For server-managed items: requests via access API
-4. Spawns the child process with the secret injected as an env var
-5. Forwards the child's exit code
-6. Secret never touches disk or stdout
+* the injected environment variable name is currently fixed to `ABADGE_SECRET`
+* zero-knowledge items are decrypted locally through the daemon
+* server-managed items are fetched through the access router first
 
 ### `abadge mount`
 
-Mount a secret as a temporary file with restricted permissions (0600).
+Resolves a secret and asks the daemon to mount it as a temporary file.
 
 ```bash
-abadge mount --item <item-id> --path /tmp/cert.pem
+abadge mount --item <item-id>
 ```
 
-The file is deleted when you press Enter or Ctrl+C.
+The daemon chooses the file path and the CLI prints it.
 
 ### `abadge audit`
 
-View the access audit log.
+Fetches the recent audit log.
 
 ```bash
 abadge audit
-abadge audit --limit 50
 abadge audit --json
-```
-
-### `abadge daemon start`
-
-Start the local vault daemon.
-
-```bash
-abadge daemon start
-```
-
-### `abadge daemon stop`
-
-Stop the local vault daemon.
-
-```bash
-abadge daemon stop
 ```
 
 ## Global options
@@ -234,4 +256,4 @@ abadge daemon stop
 |------|-------------|
 | `--help, -h` | Show help |
 | `--version, -v` | Show version |
-| `--json` | Machine-readable JSON output |
+| `--json` | Print machine-readable output on commands that support it |

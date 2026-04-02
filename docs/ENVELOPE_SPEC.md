@@ -189,7 +189,7 @@ sequenceDiagram
   Note over User: Derive new KEK from new password + new salt
   Note over User: Wrap root key with new KEK
 
-  User->>API: POST /v1/vault/change-password<br/>{wrappedRootKey, kdfSalt, kdfParams}
+  User->>API: trpc.vault.changePassword<br/>{wrappedRootKey, kdfSalt, kdfParams}
   API->>API: Replace vault record
   Note over API: key_version unchanged<br/>Root key unchanged
   API-->>User: {ok: true}
@@ -217,7 +217,7 @@ sequenceDiagram
   Note over User: Wrap new root key with KEK
   Note over User: Wrap new root key with recovery key
 
-  User->>API: POST /v1/vault/rotate-key<br/>{wrappedRootKey, recoveryWrappedRootKey,<br/>rekeyedItems: {itemId → newEncryptedItemKey}}
+  User->>API: trpc.vault.rotateKey<br/>{wrappedRootKey, recoveryWrappedRootKey,<br/>rekeyedItems: {itemId → newEncryptedItemKey}}
   API->>DB: BEGIN transaction
   API->>DB: Update vault (new wrapped keys, key_version++)
   API->>DB: Update each item (new encrypted_item_key)

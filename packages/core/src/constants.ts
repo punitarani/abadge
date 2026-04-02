@@ -70,6 +70,7 @@ export function localityForKind(kind: PrincipalKind): PrincipalLocality {
 }
 
 export type ErrorCode =
+  | "BAD_REQUEST"
   | "NOT_FOUND"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
