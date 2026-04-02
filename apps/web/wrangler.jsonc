@@ -15,17 +15,5 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  },
-  "secrets": {
-    "required": [
-      "NEXT_PUBLIC_API_URL",
-      "NEXT_PUBLIC_APP_URL",
-      "NEXT_PUBLIC_BETTER_AUTH_URL",
-      "NEXT_PUBLIC_ENCRYPTION_KEY",
-      "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
-      "NEXT_PUBLIC_GOOGLE_CLIENT_SECRET",
-      "NEXT_PUBLIC_GITHUB_CLIENT_ID",
-      "NEXT_PUBLIC_GITHUB_CLIENT_SECRET"
-    ]
   }
 }

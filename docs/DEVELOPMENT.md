@@ -33,7 +33,8 @@ Required variables:
 | `BETTER_AUTH_URL` | API base URL for Better Auth | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items (base64) | `openssl rand -base64 32` |
-| `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
+| `NEXT_PUBLIC_API_URL` | API URL for browser (optional when `ABADGE_API_URL` is set) | `http://localhost:8787` |
+| `NEXT_PUBLIC_APP_URL` | App URL for browser (optional when `ABADGE_APP_URL` is set) | `http://localhost:3000` |
 
 Optional social login variables:
 
@@ -46,6 +47,10 @@ Optional social login variables:
 
 Set both variables for a provider to enable that login option. Omit them entirely to keep
 email/password auth only.
+
+For web builds, `ABADGE_API_URL` and `ABADGE_APP_URL` are accepted as inputs and mapped to
+`NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_APP_URL` during the Next/OpenNext build. This keeps the
+public URLs out of Cloudflare Worker secret requirements for the web app.
 
 Doppler is the source of truth for local development. `bun run dev` regenerates
 `apps/api/.dev.vars` from the active Doppler config before starting `wrangler dev`, so the API
