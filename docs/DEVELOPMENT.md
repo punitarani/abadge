@@ -32,7 +32,7 @@ Required variables:
 | `APP_URL` | Public web origin used by Worker auth/CORS | `http://localhost:3000` |
 | `BETTER_AUTH_URL` | API base URL for Better Auth | `http://localhost:8787` |
 | `BETTER_AUTH_SECRET` | Auth signing secret | Any random string |
-| `ENCRYPTION_KEY` | AES-256-GCM key (base64) | `openssl rand -base64 32` |
+| `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items (base64) | `openssl rand -base64 32` |
 | `NEXT_PUBLIC_API_URL` | API URL for browser | `http://localhost:8787` |
 
 Optional social login variables:
@@ -113,20 +113,21 @@ bun run api:clean:worker
 
 ```
 packages/core    -> shared types, schemas, constants (no runtime deps)
+packages/crypto  -> server-side encryption, API key generation, encoding
 packages/db      -> Drizzle schema + client (depends on core)
 packages/auth    -> Better Auth config (depends on db)
 packages/env     -> t3-env validation (no internal deps)
-packages/broker  -> execution engine (env inject, file mount, sessions, connectors)
+packages/broker  -> execution engine (env inject, file mount, daemon IPC)
 packages/cli     -> CLI tool library (commands, config, output)
 packages/mcp     -> MCP server (depends on @modelcontextprotocol/sdk)
 packages/sdk     -> TypeScript SDK (@abadge/sdk, depends on zod)
 
-apps/api         -> Hono worker (depends on core, db, auth)
+apps/api         -> Hono worker (depends on core, crypto, db, auth)
 apps/cli         -> Distributable CLI binary (bun build --compile)
 apps/web         -> Next.js dashboard (depends on core, auth, env)
 ```
 
-Build order: `config -> core -> env -> db -> auth -> api/web` (Turborepo handles this).
+Build order: `config -> core -> env -> crypto -> db -> auth -> api/web` (Turborepo handles this).
 
 ## Adding a new API route
 
@@ -177,9 +178,12 @@ Test files:
 
 | File | Covers |
 |------|--------|
-| `apps/api/src/lib/policy.test.ts` | Policy rule evaluation (delivery mode, environment, sensitivity, destination, TTL) |
-| `apps/api/src/lib/crypto.test.ts` | AES-256-GCM encrypt/decrypt round-trips |
-| `packages/core/src/schemas.test.ts` | Zod schema validation (credentials, agents, permissions, policies, connectors, auto-grants, agent groups) |
+| `packages/crypto/src/__tests__/server-crypto.test.ts` | AES-256-GCM server encrypt/decrypt round-trips |
+| `packages/crypto/src/__tests__/client-crypto.test.ts` | Client-side XChaCha20-Poly1305 encryption (ZK mode) |
+| `packages/crypto/src/__tests__/api-keys.test.ts` | API key generation, hashing, verification |
+| `packages/crypto/src/__tests__/encoding.test.ts` | Base64 encoding/decoding, random bytes |
+| `packages/core/src/constants.test.ts` | Core constants and type validation |
+| `packages/auth/src/server.test.ts` | Better Auth server configuration |
 
 Additional verification:
 
@@ -207,10 +211,27 @@ const client = new AbadgeClient({
   token: "abg_your_api_key",
 });
 
-const { credentials } = await client.listCredentials();
+// Vault
+const vault = await client.getVault();
+
+// Items
+const { items } = await client.listItems();
+const item = await client.createItem({ storageMode: "server_managed", payload: { ... } });
+
+// Principals
+const { principals } = await client.listPrincipals();
+
+// Grants
+await client.createGrant({ principalId: "...", itemId: "...", capability: "reveal_plaintext" });
+
+// Access
+const { payload } = await client.accessReveal("item-id");
+
+// Audit
+const { entries } = await client.getAudit({ limit: 50 });
 ```
 
-The SDK exposes methods for all API operations: credentials, agents, permissions, sessions, policies, approvals, connectors, and audit log queries. Error handling uses typed error classes (`UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `ApprovalRequiredError`).
+The SDK exposes methods for all API operations: vault management, items, principals, grants, access (ciphertext, reveal, mount), and audit log queries. Error handling uses `AbadgeApiError`.
 
 ## CLI binary
 

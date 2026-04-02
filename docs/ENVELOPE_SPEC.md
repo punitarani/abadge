@@ -11,6 +11,55 @@
 | API key hashing | SHA-256 | WebCrypto | N/A | N/A |
 | ID generation | Random | crypto.getRandomValues | N/A | N/A |
 
+## Key Hierarchy Overview
+
+```mermaid
+flowchart TD
+  subgraph UserInput["User Input (never stored)"]
+    MP["Master Password"]
+    RecKey["Recovery Key<br/>(base32, shown once)"]
+  end
+
+  subgraph KDFLayer["Key Derivation"]
+    SALT["Salt (16 bytes, random)"]
+    KDF["Argon2id<br/>64 MiB memory, 3 iterations"]
+  end
+
+  subgraph KeyLayer["Key Hierarchy"]
+    KEK["KEK (32 bytes)"]
+    RK["Root Key (32 bytes, per vault)"]
+    DEK1["DEK 1 (32 bytes)"]
+    DEK2["DEK 2 (32 bytes)"]
+    DEKn["DEK n (32 bytes)"]
+  end
+
+  subgraph StoredOnServer["Stored on Server"]
+    WRK["wrapped_root_key<br/>(nonce ∥ RK encrypted by KEK)"]
+    RWRK["recovery_wrapped_root_key<br/>(nonce ∥ RK encrypted by RecKey)"]
+    EIK1["encrypted_item_key 1<br/>(nonce ∥ DEK encrypted by RK)"]
+    EIK2["encrypted_item_key 2"]
+    CT1["ciphertext 1<br/>(nonce ∥ payload encrypted by DEK)"]
+    CT2["ciphertext 2"]
+  end
+
+  MP --> KDF
+  SALT --> KDF
+  KDF --> KEK
+  KEK -->|XChaCha20-Poly1305| WRK
+  RecKey -->|XChaCha20-Poly1305| RWRK
+  WRK -.->|unwrap| RK
+  RWRK -.->|unwrap| RK
+  RK -->|wrap| EIK1
+  RK -->|wrap| EIK2
+  EIK1 -.->|unwrap| DEK1
+  EIK2 -.->|unwrap| DEK2
+  DEK1 -->|encrypt| CT1
+  DEK2 -->|encrypt| CT2
+
+  style UserInput fill:#fdd,stroke:#c33
+  style StoredOnServer fill:#e8f4fd,stroke:#2196F3
+```
+
 ## KDF Parameters
 
 Default Argon2id parameters (client-side only):
@@ -126,8 +175,25 @@ The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as 
 2. Client unwraps root key with old KEK
 3. Client derives new KEK from new password + new salt
 4. Client wraps root key with new KEK
-5. Client sends: new wrapped_root_key, new kdf_salt, new kdf_params
-6. Server replaces vault record (same key_version, root key unchanged)
+5. Client sends: new wrapped\_root\_key, new kdf\_salt, new kdf\_params
+6. Server replaces vault record (same key\_version, root key unchanged)
+
+```mermaid
+sequenceDiagram
+  participant User as Client
+  participant API as Server
+
+  Note over User: Derive old KEK from old password
+  Note over User: Unwrap root key with old KEK
+  Note over User: Generate new salt
+  Note over User: Derive new KEK from new password + new salt
+  Note over User: Wrap root key with new KEK
+
+  User->>API: POST /v1/vault/change-password<br/>{wrappedRootKey, kdfSalt, kdfParams}
+  API->>API: Replace vault record
+  Note over API: key_version unchanged<br/>Root key unchanged
+  API-->>User: {ok: true}
+```
 
 ## Root Key Rotation Flow
 
@@ -136,8 +202,29 @@ The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as 
 3. Client re-wraps all DEKs with new root key
 4. Client wraps new root key with current KEK
 5. Client wraps new root key with recovery key
-6. Client sends batch update: vault (new wrapped keys, incremented key_version) + all items (new encrypted_item_key fields)
+6. Client sends batch update: vault (new wrapped keys, incremented key\_version) + all items (new encrypted\_item\_key fields)
 7. Server applies atomically in a transaction
+
+```mermaid
+sequenceDiagram
+  participant User as Client
+  participant API as Server
+  participant DB as Database
+
+  Note over User: Generate new root key
+  Note over User: Unwrap all item DEKs with old root key
+  Note over User: Re-wrap all DEKs with new root key
+  Note over User: Wrap new root key with KEK
+  Note over User: Wrap new root key with recovery key
+
+  User->>API: POST /v1/vault/rotate-key<br/>{wrappedRootKey, recoveryWrappedRootKey,<br/>rekeyedItems: {itemId → newEncryptedItemKey}}
+  API->>DB: BEGIN transaction
+  API->>DB: Update vault (new wrapped keys, key_version++)
+  API->>DB: Update each item (new encrypted_item_key)
+  API->>DB: COMMIT
+  API->>DB: Log vault.key_rotate audit event
+  API-->>User: {ok: true, keyVersion}
+```
 
 ## Version Fields
 

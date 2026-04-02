@@ -57,16 +57,7 @@ export const principalAuthMiddleware = createMiddleware<PrincipalEnv>(async (c, 
 
   // Fallback for migrated remote agents that still authenticate via Better Auth API keys.
   const { createAuth } = await import("@abadge/auth");
-  const auth = createAuth(db, {
-    API_URL: c.env.API_URL,
-    APP_URL: c.env.APP_URL,
-    BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
-    BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
-    GOOGLE_CLIENT_ID: c.env.GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: c.env.GOOGLE_CLIENT_SECRET,
-    GITHUB_CLIENT_ID: c.env.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET: c.env.GITHUB_CLIENT_SECRET,
-  });
+  const auth = createAuth(db, c.env);
 
   const result = await auth.api.verifyApiKey({
     body: { key: token },

@@ -1,5 +1,6 @@
 "use client";
 
+import { PRINCIPAL_KINDS, type PrincipalKind } from "@abadge/core";
 import { clientEnv } from "@abadge/env/client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,10 +11,17 @@ import { SecretDisplay } from "@/components/ui/secret-display";
 import { Textarea } from "@/components/ui/textarea";
 import { extractApiError } from "@/lib/api-client";
 
+const KIND_LABELS: Record<PrincipalKind, string> = {
+  device: "Device",
+  local_cli: "Local CLI",
+  local_mcp: "Local MCP",
+  remote_agent: "Remote Agent",
+};
+
 export default function NewPrincipalPage(): React.ReactElement {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState("agent");
+  const [kind, setKind] = useState<PrincipalKind>("remote_agent");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,11 +38,15 @@ export default function NewPrincipalPage(): React.ReactElement {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name, kind, description: description || undefined }),
+        body: JSON.stringify({
+          name,
+          kind,
+          metadata: description.trim() ? { description: description.trim() } : {},
+        }),
       });
       if (res.ok) {
         const data = await res.json();
-        setApiKey(data.apiKey);
+        setApiKey(data.secret);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(extractApiError(data, "Failed to register principal"));
@@ -96,8 +108,8 @@ export default function NewPrincipalPage(): React.ReactElement {
           </div>
           <div className="space-y-1.5">
             <Label>Kind</Label>
-            <div className="flex gap-3">
-              {["agent", "app", "workload"].map((k) => (
+            <div className="flex flex-wrap gap-3">
+              {PRINCIPAL_KINDS.map((k) => (
                 <label key={k} className="flex items-center gap-1.5 text-sm">
                   <input
                     type="radio"
@@ -106,7 +118,7 @@ export default function NewPrincipalPage(): React.ReactElement {
                     checked={kind === k}
                     onChange={() => setKind(k)}
                   />
-                  {k.charAt(0).toUpperCase() + k.slice(1)}
+                  {KIND_LABELS[k]}
                 </label>
               ))}
             </div>

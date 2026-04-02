@@ -26,6 +26,56 @@ interface Principal {
   createdAt: string;
 }
 
+function PrincipalRow({
+  principal,
+  onToggleActive,
+  onDelete,
+}: {
+  principal: Principal;
+  onToggleActive: (p: Principal) => void;
+  onDelete: (id: string) => void;
+}): React.ReactElement {
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{principal.name ?? "Unnamed"}</TableCell>
+      <TableCell>
+        <Badge variant="secondary">{principal.kind}</Badge>
+      </TableCell>
+      <TableCell className="text-muted-foreground">{principal.locality ?? "\u2014"}</TableCell>
+      <TableCell>
+        {principal.prefix ? (
+          <code className="text-xs bg-neutral-100 px-1.5 py-0.5 rounded font-mono">
+            {principal.prefix}
+          </code>
+        ) : (
+          <span className="text-muted-foreground">{"\u2014"}</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <Badge variant={principal.enabled ? "success" : "destructive"}>
+          {principal.enabled ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {principal.lastRequest ? formatRelativeTime(principal.lastRequest) : "Never"}
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        {formatRelativeTime(principal.createdAt)}
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onToggleActive(principal)}>
+            {principal.enabled ? "Disable" : "Enable"}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => onDelete(principal.id)}>
+            Delete
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function PrincipalsPage(): React.ReactElement {
   const [principals, setPrincipals] = useState<Principal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,43 +167,12 @@ export default function PrincipalsPage(): React.ReactElement {
               </TableRow>
             ) : (
               principals.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name ?? "Unnamed"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{p.kind}</Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{p.locality ?? "\u2014"}</TableCell>
-                  <TableCell>
-                    {p.prefix ? (
-                      <code className="text-xs bg-neutral-100 px-1.5 py-0.5 rounded font-mono">
-                        {p.prefix}
-                      </code>
-                    ) : (
-                      <span className="text-muted-foreground">{"\u2014"}</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={p.enabled ? "success" : "destructive"}>
-                      {p.enabled ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.lastRequest ? formatRelativeTime(p.lastRequest) : "Never"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatRelativeTime(p.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handleToggleActive(p)}>
-                        {p.enabled ? "Disable" : "Enable"}
-                      </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDelete(p.id)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <PrincipalRow
+                  key={p.id}
+                  principal={p}
+                  onToggleActive={handleToggleActive}
+                  onDelete={handleDelete}
+                />
               ))
             )}
           </TableBody>

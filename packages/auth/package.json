@@ -17,10 +17,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "better-auth": "1.5.6",
-    "@better-auth/api-key": "1.5.6",
-    "@better-auth/core": "1.5.6",
     "@abadge/db": "workspace:*"
+  },
+  "peerDependencies": {
+    "@better-auth/api-key": "^1.5.6",
+    "@better-auth/core": "^1.5.6",
+    "better-auth": "^1.5.6",
+    "react": "^19.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

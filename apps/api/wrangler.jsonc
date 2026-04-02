@@ -12,13 +12,18 @@
       "custom_domain": true
     }
   ],
-  "vars": {
-    "API_URL": "https://api.abadge.io",
-    "APP_URL": "https://abadge.io",
-    "BETTER_AUTH_URL": "https://api.abadge.io"
-  },
   "secrets": {
-    "required": ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"]
+    "required": [
+      "API_URL",
+      "APP_URL",
+      "BETTER_AUTH_URL",
+      "BETTER_AUTH_SECRET",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
+      "ENCRYPTION_KEY",
+    ]
   },
   "placement": {
     "mode": "smart"

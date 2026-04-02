@@ -1,12 +1,19 @@
 import { apiKeyClient } from "@better-auth/api-key/client";
-import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
+import { createAuthClient } from "better-auth/react";
 
-export function createBetterAuthClient(baseURL: string) {
-  const options = {
+export type SocialProvider = "github" | "google";
+
+export const SOCIAL_PROVIDERS: readonly SocialProvider[] = ["github", "google"] as const;
+
+// biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type references non-portable internal modules
+export function createBetterAuthClient(baseURL: string): any {
+  return createAuthClient({
     baseURL,
-    plugins: [organizationClient(), apiKeyClient()],
-  } as Parameters<typeof createAuthClient>[0];
-
-  return createAuthClient(options);
+    fetchOptions: {
+      credentials: "include",
+    },
+    // biome-ignore lint/suspicious/noExplicitAny: duplicate @better-auth/core resolutions cause nominal type mismatch
+    plugins: [organizationClient(), apiKeyClient()] as any[],
+  });
 }
