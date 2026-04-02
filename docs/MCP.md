@@ -69,7 +69,7 @@ items, the tool also verifies that local daemon decryption is possible.
 Successful output:
 
 ```json
-{ "status": "allowed", "itemId": "...", "capability": "mount_env" }
+{ "status": "granted", "itemId": "...", "capability": "mount_env" }
 ```
 
 Failure output:
