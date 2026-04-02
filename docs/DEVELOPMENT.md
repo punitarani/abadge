@@ -72,6 +72,9 @@ This starts:
 * API worker on `:8787`
 * web app on `:3000`
 
+In local web development, TanStack Query Devtools are mounted automatically in development mode for
+React Query inspection. They are not rendered in production builds.
+
 Useful worker-only commands:
 
 ```bash

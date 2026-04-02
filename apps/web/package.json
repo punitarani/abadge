@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "latest",
+    "@tanstack/react-query-devtools": "^5.66.0",
     "wrangler": "latest",
     "@cloudflare/workers-types": "latest",
     "@types/node": "^22.0.0",
