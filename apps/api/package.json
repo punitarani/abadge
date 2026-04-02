@@ -11,13 +11,16 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@abadge/trpc": "workspace:*",
+    "@abadge/env": "workspace:*",
     "hono": "^4.7.0",
     "@hono/zod-validator": "latest",
     "zod": "^3.24.0",
     "@abadge/core": "workspace:*",
     "@abadge/crypto": "workspace:*",
     "@abadge/db": "workspace:*",
-    "@abadge/auth": "workspace:*"
+    "@abadge/auth": "workspace:*",
+    "effect": "^3.13.7"
   },
   "devDependencies": {
     "wrangler": "latest",

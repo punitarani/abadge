@@ -1,5 +1,5 @@
 import { auditCommand } from "./commands/audit";
-import { daemonCommand } from "./commands/daemon";
+import { daemonCommand, daemonServeCommand } from "./commands/daemon";
 import { grantCommand } from "./commands/grant";
 import { itemCommand } from "./commands/item";
 import { loginCommand } from "./commands/login";
@@ -50,6 +50,8 @@ export async function main(argv: string[]): Promise<void> {
       return mountCommand(args);
     case "audit":
       return auditCommand(args);
+    case "__daemon-serve":
+      return daemonServeCommand(args);
     case "--help":
     case "-h":
       console.log(HELP);

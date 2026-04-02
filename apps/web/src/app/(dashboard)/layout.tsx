@@ -43,13 +43,11 @@ function VaultGate({ children }: { children: React.ReactNode }): React.ReactElem
 
   useEffect(() => {
     if (vaultExists === null) {
-      checkVaultExists();
+      void checkVaultExists().catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load vault");
+      });
     }
   }, [vaultExists, checkVaultExists]);
-
-  if (isUnlocked) {
-    return <>{children}</>;
-  }
 
   if (vaultExists === null) {
     return (
@@ -59,7 +57,6 @@ function VaultGate({ children }: { children: React.ReactNode }): React.ReactElem
     );
   }
 
-  // Recovery key display after bootstrap
   if (recoveryKey) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -82,6 +79,10 @@ function VaultGate({ children }: { children: React.ReactNode }): React.ReactElem
         </div>
       </div>
     );
+  }
+
+  if (isUnlocked) {
+    return <>{children}</>;
   }
 
   // Bootstrap flow for new users

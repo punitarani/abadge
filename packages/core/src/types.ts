@@ -1,108 +1,87 @@
+import type { Schema } from "effect";
 import type {
-  AuditEventType,
-  AuditResult,
-  Capability,
-  ItemKind,
-  PrincipalKind,
-  PrincipalLocality,
-  StorageMode,
-} from "./constants";
+  AuditEntrySchema,
+  AuditListResultSchema,
+  AuditQuerySchema,
+  ChangePasswordSchema,
+  CiphertextAccessResponseSchema,
+  CiphertextAccessSchema,
+  CreateGrantSchema,
+  CreateItemSchema,
+  CreatePrincipalSchema,
+  GrantListResultSchema,
+  GrantResultSchema,
+  GrantSchema,
+  ItemDetailSchema,
+  ItemListResultSchema,
+  ItemPayloadSchema,
+  ItemResultSchema,
+  ItemSummarySchema,
+  ItemVersionResultSchema,
+  KdfParamsSchema,
+  KeyVersionResultSchema,
+  MountAccessResponseSchema,
+  MountAccessSchema,
+  PrincipalListResultSchema,
+  PrincipalRegistrationSchema,
+  PrincipalResultSchema,
+  PrincipalRotateResultSchema,
+  PrincipalSchema,
+  RecoverySetupSchema,
+  RevealAccessResponseSchema,
+  RevealAccessSchema,
+  RotateKeySchema,
+  SuccessResultSchema,
+  UpdateItemSchema,
+  VaultBootstrapSchema,
+  VaultResultSchema,
+  VaultSchema,
+} from "./schemas";
 
-/** Vault metadata (no plaintext key material). */
-export interface Vault {
-  id: string;
-  userId: string;
-  wrappedRootKey: string;
-  kdfSalt: string;
-  kdfParams: Record<string, unknown>;
-  recoveryWrappedRootKey: string | null;
-  keyVersion: number;
-  createdAt: string;
-  updatedAt: string;
-}
+type TypeOf<S extends Schema.Schema.Any> = Schema.Schema.Type<S>;
 
-/** Item as returned by the API (ciphertext fields, no plaintext). */
-export interface Item {
-  id: string;
-  userId: string;
-  vaultId: string | null;
-  storageMode: StorageMode;
-  /** ZK fields — present when storageMode is zero_knowledge */
-  encryptedItemKey: string | null;
-  ciphertext: string | null;
-  /** Server-managed fields — never returned to client */
-  cryptoVersion: number;
-  contentVersion: number;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-}
+export type KdfParams = TypeOf<typeof KdfParamsSchema>;
 
-/** Item plaintext envelope (decrypted client-side for ZK items). */
-export interface ItemPayload {
-  v: number;
-  label: string;
-  kind: ItemKind;
-  tags: string[];
-  notes?: string;
-  fields: Record<string, unknown>;
-}
+export type VaultBootstrapInput = TypeOf<typeof VaultBootstrapSchema>;
+export type ChangePasswordInput = TypeOf<typeof ChangePasswordSchema>;
+export type RecoverySetupInput = TypeOf<typeof RecoverySetupSchema>;
+export type RotateKeyInput = TypeOf<typeof RotateKeySchema>;
 
-/** Principal (device, CLI, MCP, or remote agent). */
-export interface Principal {
-  id: string;
-  userId: string;
-  kind: PrincipalKind;
-  locality: PrincipalLocality;
-  name: string;
-  secretPrefix: string | null;
-  enabled: boolean;
-  revokedAt: string | null;
-  lastUsedAt: string | null;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-}
+export type ItemPayload = TypeOf<typeof ItemPayloadSchema>;
+export type CreateItemInput = TypeOf<typeof CreateItemSchema>;
+export type UpdateItemInput = TypeOf<typeof UpdateItemSchema>;
+export type ItemSummary = TypeOf<typeof ItemSummarySchema>;
+export type ItemDetail = TypeOf<typeof ItemDetailSchema>;
 
-/** Response when registering a new principal (includes one-time secret). */
-export interface PrincipalRegistration {
-  principal: Principal;
-  /** Full API key — shown once, never stored. */
-  secret: string;
-}
+export type CreatePrincipalInput = TypeOf<typeof CreatePrincipalSchema>;
+export type Principal = TypeOf<typeof PrincipalSchema>;
+export type PrincipalRegistration = TypeOf<typeof PrincipalRegistrationSchema>;
+export type PrincipalRotateResult = TypeOf<typeof PrincipalRotateResultSchema>;
 
-/** Grant linking a principal to an item with a capability. */
-export interface Grant {
-  id: string;
-  principalId: string;
-  itemId: string;
-  capability: Capability;
-  expiresAt: string | null;
-  grantedBy: string;
-  createdAt: string;
-}
+export type CreateGrantInput = TypeOf<typeof CreateGrantSchema>;
+export type Grant = TypeOf<typeof GrantSchema>;
+export type AuditQuery = TypeOf<typeof AuditQuerySchema>;
+export type AuditEntry = TypeOf<typeof AuditEntrySchema>;
 
-/** Audit log entry. */
-export interface AuditEntry {
-  id: number;
-  userId: string;
-  principalId: string | null;
-  itemId: string | null;
-  eventType: AuditEventType;
-  result: AuditResult;
-  deliveryMode: string | null;
-  meta: Record<string, unknown>;
-  ipAddress: string | null;
-  occurredAt: string;
-}
+export type CiphertextAccessInput = TypeOf<typeof CiphertextAccessSchema>;
+export type RevealAccessInput = TypeOf<typeof RevealAccessSchema>;
+export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
 
-/** Response for access/ciphertext endpoint. */
-export interface CiphertextAccessResponse {
-  encryptedItemKey: string;
-  ciphertext: string;
-  cryptoVersion: number;
-}
+export type VaultResult = TypeOf<typeof VaultResultSchema>;
+export type ItemResult = TypeOf<typeof ItemResultSchema>;
+export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
+export type PrincipalResult = TypeOf<typeof PrincipalResultSchema>;
+export type PrincipalListResult = TypeOf<typeof PrincipalListResultSchema>;
+export type GrantResult = TypeOf<typeof GrantResultSchema>;
+export type GrantListResult = TypeOf<typeof GrantListResultSchema>;
+export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
 
-/** Response for access/reveal endpoint. */
-export interface RevealAccessResponse {
-  payload: ItemPayload;
-}
+export type SuccessResult = TypeOf<typeof SuccessResultSchema>;
+export type KeyVersionResult = TypeOf<typeof KeyVersionResultSchema>;
+export type ItemVersionResult = TypeOf<typeof ItemVersionResultSchema>;
+
+export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSchema>;
+export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
+export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
+
+export type Vault = TypeOf<typeof VaultSchema>;

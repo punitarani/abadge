@@ -1,43 +1,51 @@
-import { apiPost } from "./api-client.js";
+import { getApiClient, getApiErrorMessage } from "./api-client.js";
 import type { McpConfig } from "./config.js";
 import { daemonCall } from "./daemon-client.js";
 
-interface AccessResponse {
-  granted: boolean;
-  storageMode?: string;
-  ciphertext?: string;
-  iv?: string;
-  value?: string;
-  error?: string;
+function payloadToSecret(payload: unknown): string {
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    const fields = record.fields;
+    if (
+      fields &&
+      typeof fields === "object" &&
+      typeof (fields as Record<string, unknown>).value === "string"
+    ) {
+      return (fields as Record<string, unknown>).value as string;
+    }
+  }
+
+  return JSON.stringify(payload);
 }
 
 export async function resolveSecret(
   config: McpConfig,
   itemId: string,
   capability: "mount_env" | "mount_file",
-  purpose: string,
+  _purpose: string,
 ): Promise<string> {
-  const res = await apiPost<AccessResponse>(config, `/v1/access/${itemId}`, {
-    capability,
-    purpose,
-  });
+  const client = getApiClient(config);
 
-  if (!res.ok || !res.data.granted) {
-    throw new Error(res.data.error ?? "Access denied");
-  }
-
-  // ZK items: daemon decrypts locally
-  if (res.data.storageMode === "zk" && res.data.ciphertext) {
-    const result = await daemonCall<{ plaintext: string }>("decrypt", {
-      ciphertext: res.data.ciphertext,
-      iv: res.data.iv,
+  try {
+    const result = await client.access.mount.mutate({
+      itemId,
+      mountType: capability === "mount_file" ? "file" : "env",
     });
-    return result.plaintext;
-  }
 
-  if (res.data.value) {
-    return res.data.value;
-  }
+    if (result.storageMode === "zero_knowledge") {
+      const decrypted = await daemonCall<{ payload: unknown }>("item.decrypt", {
+        encryptedItemKey: result.encryptedItemKey,
+        ciphertext: result.ciphertext,
+      });
+      return payloadToSecret(decrypted.payload);
+    }
 
-  throw new Error("No secret value available");
+    return payloadToSecret(result.payload);
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "Access denied"));
+  }
 }

@@ -1,3 +1,5 @@
+import { normalizeTrpcError } from "./trpc";
+
 export class AbadgeApiError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
@@ -20,5 +22,14 @@ export class AbadgeApiError extends Error {
       // Non-JSON response body
     }
     return new AbadgeApiError(res.status, code, message);
+  }
+
+  static fromUnknown(error: unknown, fallback: string): AbadgeApiError {
+    const normalized = normalizeTrpcError(error);
+    return new AbadgeApiError(
+      normalized.httpStatus ?? 500,
+      normalized.appCode ?? normalized.trpcCode ?? "UNKNOWN",
+      normalized.message || fallback,
+    );
   }
 }

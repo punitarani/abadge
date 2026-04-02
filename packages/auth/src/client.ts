@@ -6,7 +6,7 @@ export type SocialProvider = "github" | "google";
 
 export const SOCIAL_PROVIDERS: readonly SocialProvider[] = ["github", "google"] as const;
 
-// biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type references non-portable internal paths
+// biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type references non-portable internal modules
 export function createBetterAuthClient(baseURL: string): any {
   return createAuthClient({
     baseURL,

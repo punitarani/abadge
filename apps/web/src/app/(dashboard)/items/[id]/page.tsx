@@ -1,49 +1,30 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
+import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { decryptItemFromVault } from "@/lib/crypto-client";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
-
-interface ItemDetail {
-  id: string;
-  storageMode: string;
-  encryptedItemKey?: string;
-  ciphertext?: string;
-  cryptoVersion?: number;
-  contentVersion?: number;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export default function ItemDetailPage(): React.ReactElement {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const { rootKey } = useVault();
-
-  const [item, setItem] = useState<ItemDetail | null>(null);
   const [revealedValue, setRevealedValue] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [error, setError] = useState("");
-
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
-
-  const fetchItem = useCallback(async () => {
-    const res = await fetch(`${apiUrl}/v1/items/${id}`, { credentials: "include" });
-    if (res.ok) {
-      const data = await res.json();
-      setItem(data.item ?? data);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    fetchItem();
-  }, [fetchItem]);
+  const itemQuery = useQuery({
+    queryKey: dashboardQueryKeys.item(id),
+    queryFn: () => browserTrpcClient.items.get.query({ itemId: id }),
+    enabled: Boolean(id),
+  });
+  const item = itemQuery.data?.item ?? null;
 
   async function handleReveal(): Promise<void> {
     if (!item || !rootKey) return;
@@ -69,8 +50,20 @@ export default function ItemDetailPage(): React.ReactElement {
     }
   }
 
-  if (!item) {
+  if (itemQuery.isPending) {
     return <div className="text-sm text-muted-foreground">Loading...</div>;
+  }
+
+  if (itemQuery.error) {
+    return (
+      <div className="text-sm text-red-700">
+        {getClientErrorMessage(itemQuery.error, "Failed to load item")}
+      </div>
+    );
+  }
+
+  if (!item) {
+    return <div className="text-sm text-muted-foreground">Item not found.</div>;
   }
 
   return (

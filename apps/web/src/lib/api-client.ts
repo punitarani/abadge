@@ -1,6 +1,6 @@
 import { clientEnv } from "@abadge/env/client";
 
-const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
+const apiBaseUrl = clientEnv.ABADGE_API_URL;
 
 type FetchOptions = {
   method?: string;
@@ -16,7 +16,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     headers.Cookie = options.cookie;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${apiBaseUrl}${path}`, {
     method: options.method ?? "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -61,4 +61,4 @@ export function extractApiError(data: unknown, fallback: string): string {
   return fallback;
 }
 
-export { API_URL, apiFetch };
+export { apiBaseUrl, apiFetch };

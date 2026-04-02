@@ -64,13 +64,13 @@ flowchart TD
   style DENY5 fill:#fdd,stroke:#c33
 ```
 
-## Access Route Mapping
+## Access Procedure Mapping
 
-| Route | Required Capability | Item Mode | Principal Locality |
-|-------|--------------------|-----------|--------------------|
-| `POST /v1/access/ciphertext` | `read_ciphertext` | `zero_knowledge` | local |
-| `POST /v1/access/reveal` | `reveal_plaintext` | `server_managed` | any |
-| `POST /v1/access/mount` | `mount_env` or `mount_file` | any | local |
+| Procedure | Required Capability | Item Mode | Principal Locality |
+|----------|---------------------|-----------|--------------------|
+| `trpc.access.ciphertext` | `read_ciphertext` | `zero_knowledge` | local |
+| `trpc.access.reveal` | `reveal_plaintext` | `server_managed` | any |
+| `trpc.access.mount` | `mount_env` or `mount_file` | any | local |
 
 ## Delivery Flow by Scenario
 

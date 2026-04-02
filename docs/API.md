@@ -1,460 +1,443 @@
 # API Reference
 
-The REST API is the canonical control plane for abadge. The dashboard, CLI, SDK, and integrations
-all build on these routes.
+The canonical control-plane transport is tRPC over HTTP at `/trpc`. The shared transport package
+in `packages/trpc` is the source of truth for:
+
+* router types
+* request context construction
+* tRPC error formatting
+* browser, node, and server callers
+
+Better Auth remains mounted at `/api/auth/*`. Health remains mounted at `/health`.
 
 Base URL: `https://your-api-domain` (local dev: `http://localhost:8787`)
 
+## Transport
+
+Use the shared clients instead of hand-rolling raw HTTP calls:
+
+```ts
+import { createNodeTrpcClient } from "@abadge/trpc/client";
+
+const client = createNodeTrpcClient({
+  baseUrl: "http://localhost:8787",
+  token: process.env.ABADGE_TOKEN!,
+});
+
+const { items } = await client.items.list.query();
+```
+
+Notes:
+
+* browser callers use cookies with `httpBatchLink`
+* node and bun callers use Bearer auth headers
+* timestamps are JSON-safe ISO strings at the boundary
+* there is no REST compatibility shim
+
 ## Authentication
 
-### User sessions
+### Better Auth
 
-Dashboard and management routes use Better Auth session cookies. Authenticate via:
+Better Auth remains on `/api/auth/*`.
 
-```
-POST /api/auth/sign-up/email   { name, email, password }
-POST /api/auth/sign-in/email   { email, password }
-GET  /api/auth/get-session
+Common flows:
+
+```text
+POST /api/auth/sign-up/email
+POST /api/auth/sign-in/email
 POST /api/auth/sign-out
+GET  /api/auth/get-session
 ```
 
-Social login (when configured):
-
-```
-GET /api/auth/sign-in/social   { provider: "github" | "google" }
-```
-
-All `/v1/*` management routes require a valid session cookie unless noted otherwise.
-
-### Social auth providers
-
-```
-GET /v1/auth/providers
-```
-
-Auth: none (public). Returns configured social login providers so the dashboard can render
-available login options.
-
-Response: `{ providers: ("github" | "google")[] }`
+Dashboard callers use Better Auth cookies. Session-backed tRPC procedures also accept a raw Better
+Auth session token in `Authorization: Bearer ...`, which is how the SDK, CLI, and daemon helpers
+authenticate after email/password sign-in.
 
 ### Principal auth
 
-Principal-facing routes (access endpoints) accept a Bearer token in the `Authorization` header:
+Principal-facing procedures require a Bearer token:
 
+```text
+Authorization: Bearer abl_...   local principal
+Authorization: Bearer abg_...   remote principal
 ```
-Authorization: Bearer abg_...   (remote agent API key)
-Authorization: Bearer abl_...   (local principal API key)
-```
 
-Lookup uses an 8-char prefix optimization, then constant-time SHA-256 hash verification.
+Resolution order:
 
----
+1. candidate lookup by stored `secretPrefix`
+2. constant-time verification of candidate hashes
+3. legacy Better Auth API-key verification fallback
 
-## Vault
+## Procedure tiers
 
-All routes require user session auth. Each user has one vault.
+| Tier | Auth | Used by |
+|------|------|---------|
+| `publicProcedure` | none | No public application procedures currently |
+| `sessionProcedure` | Better Auth session or verified user token | Dashboard, SDK, CLI, daemon helpers |
+| `principalProcedure` | Principal Bearer token | Broker, MCP, remote agents |
 
-### Bootstrap vault
+## Session Procedures
 
-```
-PUT /v1/vault/bootstrap
-```
+### `vault.bootstrap`
+
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `wrappedRootKey` | string | yes | Root KEK encrypted by master password |
-| `kdfSalt` | string | yes | Salt for Argon2id KDF |
-| `kdfParams` | object | yes | `{ algorithm, memory, iterations, parallelism, hashLength }` |
+|------|------|----------|-------------|
+| `wrappedRootKey` | string | yes | Vault root key wrapped by the user password |
+| `kdfSalt` | string | yes | Salt for password KDF |
+| `kdfParams` | object | yes | Argon2id parameters |
 
-Returns 409 if vault already exists.
+Response: `{ id }`
 
-Response: `{ id }` (201)
+### `vault.get`
 
-### Get vault
+Auth: `sessionProcedure`
 
+Input: none
+
+Response:
+
+```ts
+{
+  vault: {
+    id: string;
+    wrappedRootKey: string;
+    kdfSalt: string;
+    kdfParams: {
+      algorithm: "argon2id";
+      memory: number;
+      iterations: number;
+      parallelism: number;
+      hashLength: number;
+    };
+    recoveryWrappedRootKey: string | null;
+    keyVersion: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+}
 ```
-GET /v1/vault
-```
 
-Response: `{ id, wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion, createdAt, updatedAt }`
+### `vault.changePassword`
 
-The server never stores or returns the plaintext root key.
-
-### Change password
-
-```
-POST /v1/vault/change-password
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `wrappedRootKey` | string | yes | Root KEK re-wrapped with new password |
+|------|------|----------|-------------|
+| `wrappedRootKey` | string | yes | Vault root key wrapped with the new password |
 | `kdfSalt` | string | yes | New KDF salt |
-| `kdfParams` | object | yes | New KDF parameters |
+| `kdfParams` | object | yes | New Argon2id parameters |
 
 Response: `{ ok: true }`
 
-### Setup recovery
+### `vault.setupRecovery`
 
-```
-POST /v1/vault/recovery/setup
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `recoveryWrappedRootKey` | string | yes | Root KEK wrapped with recovery key |
+|------|------|----------|-------------|
+| `recoveryWrappedRootKey` | string | yes | Recovery-wrapped copy of the vault root key |
 
 Response: `{ ok: true }`
 
-### Rotate root key
+### `vault.rotateKey`
 
-```
-POST /v1/vault/rotate-key
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `wrappedRootKey` | string | yes | Root KEK wrapped with new key |
-| `recoveryWrappedRootKey` | string | no | Recovery-wrapped root key (updated) |
-| `rekeyedItems` | Record\<string, string> | yes | Map of itemId → new encryptedItemKey |
+|------|------|----------|-------------|
+| `wrappedRootKey` | string | yes | Vault root key wrapped with rotated vault key material |
+| `recoveryWrappedRootKey` | string | no | Replacement recovery-wrapped key |
+| `rekeyedItems` | `Record<string, string>` | yes | Map of item id to replacement `encryptedItemKey` |
 
-Response: `{ ok: true, keyVersion }`
+Response: `{ ok: true, keyVersion: number }`
 
----
+### `items.create`
 
-## Items
+Auth: `sessionProcedure`
 
-All routes require user session auth.
-
-### Create item
-
-```
-POST /v1/items
-```
-
-**Zero-knowledge mode:**
+Zero-knowledge input:
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `storageMode` | `"zero_knowledge"` | yes | Storage mode |
-| `encryptedItemKey` | string | yes | DEK wrapped by vault root key |
-| `keyNonce` | string | yes | Nonce for key wrapping |
-| `ciphertext` | string | yes | Encrypted payload |
-| `contentNonce` | string | yes | Nonce for content encryption |
+|------|------|----------|-------------|
+| `storageMode` | `"zero_knowledge"` | yes | Item stays client-encrypted |
+| `encryptedItemKey` | string | yes | Wrapped per-item key |
+| `ciphertext` | string | yes | Client-encrypted payload |
 
-**Server-managed mode:**
+Server-managed input:
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `storageMode` | `"server_managed"` | yes | Storage mode |
-| `payload` | ItemPayload | yes | `{ v, label, kind, tags, notes, fields }` |
+|------|------|----------|-------------|
+| `storageMode` | `"server_managed"` | yes | Item is encrypted by the API worker |
+| `payload` | `ItemPayload` | yes | JSON-safe item payload |
 
-The server encrypts the payload with AES-256-GCM using the ENCRYPTION\_KEY environment variable.
+Response: `{ id }`
 
-Response: `{ id }` (201)
+### `items.list`
 
-### List items
+Auth: `sessionProcedure`
 
-```
-GET /v1/items
-```
+Input: none
 
-Response: `[{ id, storageMode, cryptoVersion, contentVersion, createdAt, updatedAt }]`
+Response: `{ items: ItemSummary[] }`
 
-Metadata only. Never returns ciphertext or encrypted keys in list view.
+### `items.get`
 
-### Get item
-
-```
-GET /v1/items/:id
-```
-
-**Zero-knowledge response:** `{ id, storageMode, encryptedItemKey, keyNonce, ciphertext, contentNonce, cryptoVersion, contentVersion, createdAt, updatedAt }`
-
-**Server-managed response:** `{ id, storageMode, cryptoVersion, contentVersion, createdAt, updatedAt }`
-
-Server-managed items do not return ciphertext in GET -- use the access routes.
-
-### Update item
-
-```
-PUT /v1/items/:id
-```
-
-Same fields as create, plus:
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `contentVersion` | integer | yes | Must match current version (optimistic concurrency) |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Item identifier |
 
-Returns 409 if contentVersion does not match.
+Response: `{ item: ItemDetail }`
 
-Response: `{ ok: true, contentVersion }`
+Notes:
 
-### Delete item
+* zero-knowledge items return encrypted fields for client-side decryption
+* server-managed items return metadata only, not plaintext
 
-```
-DELETE /v1/items/:id
-```
+### `items.update`
 
-Soft delete (sets `deletedAt` timestamp).
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Item identifier |
+| `data` | `UpdateItemInput` | yes | Replacement item body |
+
+`UpdateItemInput` requires `contentVersion` for optimistic concurrency.
+
+Response: `{ ok: true, contentVersion: number }`
+
+### `items.delete`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Item identifier |
 
 Response: `{ ok: true }`
 
----
+Deletion is soft-delete via `deletedAt`.
 
-## Principals
+### `principals.create`
 
-All routes require user session auth.
-
-### Register principal
-
-```
-POST /v1/principals
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
+|------|------|----------|-------------|
 | `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
 | `name` | string | yes | Display name |
-| `metadata` | object | no | Arbitrary metadata |
+| `metadata` | object | no | Free-form metadata |
 
-Response: `{ principal: { id, kind, locality, name, ... }, secret: "abg_..." or "abl_..." }` (201)
+Response:
 
-The secret is shown **once**. Only the SHA-256 hash and 8-char prefix are stored.
-
-### List principals
-
-```
-GET /v1/principals
-```
-
-Response: `[{ id, userId, kind, locality, name, secretPrefix, enabled, revokedAt, lastUsedAt, metadata, createdAt }]`
-
-Never returns `secretHash`.
-
-### Get principal
-
-```
-GET /v1/principals/:id
+```ts
+{
+  principal: Principal;
+  secret: string;
+}
 ```
 
-Response: Single principal object (same fields as list).
+`secret` is shown once and is never retrievable again.
 
-### Rotate API key
+### `principals.list`
 
-```
-POST /v1/principals/:id/rotate
-```
+Auth: `sessionProcedure`
 
-Invalidates the old key immediately and generates a new one.
+Input: none
 
-Response: `{ secret, secretPrefix }`
+Response: `{ principals: Principal[] }`
 
-### Revoke principal
+### `principals.get`
 
-```
-POST /v1/principals/:id/revoke
-```
+Auth: `sessionProcedure`
 
-Sets `revokedAt` and `enabled=false`.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `principalId` | string | yes | Principal identifier |
+
+Response: `{ principal: Principal }`
+
+### `principals.rotate`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `principalId` | string | yes | Principal identifier |
+
+Response: `{ secret: string, secretPrefix: string }`
+
+### `principals.revoke`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `principalId` | string | yes | Principal identifier |
 
 Response: `{ ok: true }`
 
----
+### `grants.create`
 
-## Grants
-
-All routes require user session auth.
-
-### Create grant
-
-```
-POST /v1/grants
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `principalId` | string | yes | Principal to grant access to |
-| `itemId` | string | yes | Item to grant access to |
+|------|------|----------|-------------|
+| `principalId` | string | yes | Principal receiving access |
+| `itemId` | string | yes | Target item |
 | `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
-| `expiresAt` | ISO date | no | Grant expiration |
+| `expiresAt` | string | no | ISO timestamp for grant expiry |
 
-Both principal and item must belong to the authenticated user. Returns 409 if the grant already
-exists (unique on principalId + itemId + capability).
+Response: `{ grant: Grant }`
 
-**Capability matrix enforcement:**
+Current enforcement also rejects:
 
-* Remote principals cannot access zero-knowledge items (400)
-* Remote principals can only have `reveal_plaintext` capability (400)
-* Local principals can have any capability on any storage mode
+* remote principal + zero-knowledge item
+* remote principal + capability other than `reveal_plaintext`
 
-Response: `{ id }` (201)
+### `grants.list`
 
-### List grants
+Auth: `sessionProcedure`
 
-```
-GET /v1/grants
-```
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `principalId` | string | no | Restrict to one principal |
+| `itemId` | string | no | Restrict to one item |
 
-| Query param | Type | Description |
-|-------------|------|-------------|
-| `principalId` | string | Filter by principal |
-| `itemId` | string | Filter by item |
+Response: `{ grants: Grant[] }`
 
-Response: `[{ id, principalId, itemId, capability, expiresAt, grantedBy, createdAt }]`
+### `grants.revoke`
 
-### Revoke grant
+Auth: `sessionProcedure`
 
-```
-DELETE /v1/grants/:id
-```
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `grantId` | string | yes | Grant identifier |
 
 Response: `{ ok: true }`
 
----
+### `audit.list`
 
-## Access (Principal-facing)
-
-All routes require principal auth (Bearer token). These are the routes principals use to access
-item data.
-
-### Access ciphertext
-
-```
-POST /v1/access/ciphertext
-```
+Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to access |
-
-Returns the encrypted item key and ciphertext for local decryption via daemon.
-
-**Requirements:**
-* Principal locality must be `local`
-* Item storageMode must be `zero_knowledge`
-* Grant must exist with capability `read_ciphertext`
-* Grant must not be expired
-
-Response: `{ encryptedItemKey, ciphertext, cryptoVersion }`
-
-Denied: 403 (no grant or wrong locality)
-
-### Access reveal
-
-```
-POST /v1/access/reveal
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to access |
-
-Server decrypts and returns the plaintext payload.
-
-**Requirements:**
-* Item storageMode must be `server_managed`
-* Grant must exist with capability `reveal_plaintext`
-* Grant must not be expired
-
-Response: `{ payload: { v, label, kind, tags, notes, fields } }`
-
-Denied: 403 (no grant), 400 (wrong storage mode)
-
-### Access mount
-
-```
-POST /v1/access/mount
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `itemId` | string | yes | Item to access |
-| `mountType` | enum | yes | `env` or `file` |
-
-Returns item data for local mounting (env injection or file write).
-
-**Requirements:**
-* Principal locality must be `local`
-* Grant must exist with capability `mount_env` or `mount_file` (matching mountType)
-* Grant must not be expired
-
-**Zero-knowledge response:** `{ storageMode, encryptedItemKey, ciphertext }`
-
-**Server-managed response:** `{ storageMode, payload }`
-
-Denied: 403
-
----
-
-## Audit Log
-
-Requires user session auth.
-
-### Query audit log
-
-```
-GET /v1/audit
-```
-
-| Query param | Type | Description |
-|-------------|------|-------------|
-| `limit` | number (max 200) | Results per page (default: 50) |
-| `cursor` | string | Cursor from previous page (audit log entry ID) |
-| `eventType` | string | Filter by event type (e.g., `access.reveal`, `item.create`) |
-| `result` | enum | `allowed`, `denied`, `expired`, `revoked` |
-| `principalId` | string | Filter by principal |
-| `itemId` | string | Filter by item |
-
-Pagination is cursor-based, descending by ID.
+|------|------|----------|-------------|
+| `limit` | number | no | Maximum entries to return. Defaults to `50` |
+| `cursor` | string | no | Cursor for backward pagination |
+| `eventType` | string | no | Filter by audit event type |
+| `result` | string | no | Filter by audit result |
+| `principalId` | string | no | Filter by principal |
+| `itemId` | string | no | Filter by item |
 
 Response: `{ entries: AuditEntry[], nextCursor: string | null }`
 
-**Audit entry fields:** `id`, `userId`, `principalId`, `itemId`, `eventType`, `result`,
-`deliveryMode`, `meta`, `ipAddress`, `occurredAt`
+## Principal Procedures
 
----
+### `access.ciphertext`
 
-## Event Types
+Auth: `principalProcedure`
 
-| Category | Events |
-|----------|--------|
-| Vault | `vault.bootstrap`, `vault.unlock`, `vault.password_change`, `vault.key_rotate` |
-| Item | `item.create`, `item.read`, `item.update`, `item.delete` |
-| Principal | `principal.create`, `principal.rotate`, `principal.revoke` |
-| Grant | `grant.create`, `grant.revoke` |
-| Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target zero-knowledge item |
 
----
+Response:
 
-## Error Codes
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `UNAUTHORIZED` | 401 | Missing or invalid auth |
-| `INVALID_API_KEY` | 401 | API key is invalid or revoked |
-| `VALIDATION_ERROR` | 400 | Request body failed Zod validation |
-| `NOT_FOUND` | 404 | Resource does not exist or is not owned by this user |
-| `CONFLICT` | 409 | Duplicate resource (vault, grant) or contentVersion mismatch |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `ACCESS_DENIED` | 403 | No matching grant, wrong locality, or wrong capability |
-
----
-
-## Health Check
-
-```
-GET /health
+```ts
+{
+  encryptedItemKey: string;
+  ciphertext: string;
+  cryptoVersion: number;
+}
 ```
 
-Response: `{ "status": "ok" }`
+Restrictions:
 
----
+* local principals only
+* item must be zero-knowledge
+* grant must include `read_ciphertext`
 
-## Rate Limiting
+### `access.reveal`
 
-| Path pattern | Limit |
-|-------------|-------|
-| `/api/auth/*` | 60 requests per 60 seconds |
-| `/v1/*` | 100 requests per 60 seconds |
+Auth: `principalProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target server-managed item |
+
+Response:
+
+```ts
+{
+  payload: ItemPayload;
+}
+```
+
+Restrictions:
+
+* item must be server-managed
+* grant must include `reveal_plaintext`
+
+### `access.mount`
+
+Auth: `principalProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+| `mountType` | `"env" | "file"` | yes | Mount mode |
+
+Response for zero-knowledge items:
+
+```ts
+{
+  storageMode: "zero_knowledge";
+  encryptedItemKey: string;
+  ciphertext: string;
+  cryptoVersion: number;
+}
+```
+
+Response for server-managed items:
+
+```ts
+{
+  storageMode: "server_managed";
+  payload: ItemPayload;
+}
+```
+
+Restrictions:
+
+* local principals only
+* grants must include `mount_env` or `mount_file`
+* remote principals cannot mount
+
+## Errors
+
+tRPC errors are normalized into stable domain codes and messages. Client callers should read the
+error `data.code` and `message`, not rely on raw transport details.
+
+Common codes:
+
+* `UNAUTHORIZED`
+* `FORBIDDEN`
+* `NOT_FOUND`
+* `CONFLICT`
+* `BAD_REQUEST`
+* `INVALID_CAPABILITY`
+* `GRANT_DENIED`
+* `STALE_VERSION`
+* `VAULT_NOT_FOUND`
+
+## Public HTTP Routes
+
+| Path | Method | Auth | Purpose |
+|------|--------|------|---------|
+| `/trpc/*` | tRPC transport | session or principal depending on procedure | Canonical control plane |
+| `/api/auth/*` | Better Auth routes | varies by route | Sign in, sign out, sessions |
+| `/health` | GET | none | Worker health check |

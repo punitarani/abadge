@@ -93,59 +93,54 @@ const productTracks = [
     label: "03.INTERFACES",
     title: "Meet agents and developers where they already work",
     description:
-      "One control plane across dashboard, REST API, TypeScript SDK, CLI, and MCP, not separate access paths with separate policies.",
+      "One control plane across dashboard, tRPC, TypeScript SDK, CLI, and MCP, not separate access paths with separate policies.",
   },
 ];
 
 const interfaceExamples = [
   {
     name: "CLI",
-    body: `# store a native credential
-$ abadge secret create \\
-  --name github-token \\
-  --type api_key \\
-  --value ghp_abc123 \\
-  --environment prod
+    body: `# create a zero-knowledge item
+$ abadge item create
 
-# grant one agent explicit access
+# register a principal and save the one-time key
+$ abadge principal register \\
+  --name "deploy bot" \\
+  --kind remote_agent
+
+# grant one principal explicit access
 $ abadge grant create \\
-  --agent agent-01 \\
-  --credential <credential-id> \\
-  --delivery-modes env_inject,file_mount
+  --principal-id <principal-id> \\
+  --item-id <item-id> \\
+  --capability reveal_plaintext
 
-# use it without handing over the vault
+# run locally with the daemon path
 $ abadge run \\
-  --secret github-token \\
-  --env-var GITHUB_TOKEN \\
+  --item <item-id> \\
   -- npm run deploy`,
   },
   {
     name: "SDK",
     body: `const client = new AbadgeClient({ apiUrl, token });
 
-await client.accessCredential({
-  credentialName: "github-token",
-  deliveryMode: "env_inject",
-  purpose: "deploy release",
-});`,
+const { items } = await client.listItems();
+const mount = await client.accessMount(items[0].id, "env");`,
   },
   {
-    name: "API",
-    body: `curl -X POST https://api.abadge.io/v1/credentials/access \\
-  -H "Authorization: Bearer abg_..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "credentialName": "github-token",
-    "deliveryMode": "reveal",
-    "purpose": "deploy release"
-  }'`,
+    name: "tRPC",
+    body: `const trpc = createNodeTrpcClient({ baseUrl, token });
+
+await trpc.access.mount.mutate({
+  itemId: "<item-id>",
+  mountType: "env",
+});`,
   },
   {
     name: "MCP",
     body: `{
   "tool": "run_with_secret",
   "input": {
-    "credentialName": "github-token",
+    "itemId": "<item-id>",
     "command": "npm",
     "args": ["run", "deploy"],
     "envVarName": "GITHUB_TOKEN"
@@ -223,8 +218,8 @@ export default function HomePage() {
             </h1>
             <p className="mt-5 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600 md:text-base">
               Store native credentials or connect existing secret systems. Grant agents scoped
-              access at request time, require approval for sensitive actions, and keep every attempt
-              auditable across API, CLI, SDK, and MCP.
+              access at request time and keep every attempt auditable across tRPC, CLI, SDK, and
+              MCP.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -243,16 +238,14 @@ export default function HomePage() {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
-              {["Access", "Connect", "SDK", "CLI", "API", "MCP", "Approvals", "Audit"].map(
-                (tag) => (
-                  <span
-                    key={tag}
-                    className="border border-black bg-zinc-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500"
-                  >
-                    {tag}
-                  </span>
-                ),
-              )}
+              {["Access", "Connect", "SDK", "CLI", "tRPC", "MCP", "Audit"].map((tag) => (
+                <span
+                  key={tag}
+                  className="border border-black bg-zinc-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500"
+                >
+                  {tag}
+                </span>
+              ))}
             </div>
 
             <p className="mt-4 max-w-lg text-[10px] font-medium text-zinc-400">

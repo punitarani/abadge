@@ -1,7 +1,8 @@
 "use client";
 
 import { PRINCIPAL_KINDS, type PrincipalKind } from "@abadge/core";
-import { clientEnv } from "@abadge/env/client";
+import { useTRPC } from "@abadge/trpc/react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
 import { Textarea } from "@/components/ui/textarea";
-import { extractApiError } from "@/lib/api-client";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { getClientErrorMessage } from "@/lib/trpc-browser";
 
 const KIND_LABELS: Record<PrincipalKind, string> = {
   device: "Device",
@@ -19,6 +21,8 @@ const KIND_LABELS: Record<PrincipalKind, string> = {
 };
 
 export default function NewPrincipalPage(): React.ReactElement {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<PrincipalKind>("remote_agent");
@@ -26,33 +30,29 @@ export default function NewPrincipalPage(): React.ReactElement {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [apiKey, setApiKey] = useState<string | null>(null);
-
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
+  const createPrincipal = useMutation(
+    trpc.principals.create.mutationOptions({
+      onSuccess: async (result) => {
+        setApiKey(result.secret);
+        await queryClient.invalidateQueries({
+          queryKey: dashboardQueryKeys.principals(),
+        });
+      },
+    }),
+  );
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${apiUrl}/v1/principals`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          name,
-          kind,
-          metadata: description.trim() ? { description: description.trim() } : {},
-        }),
+      await createPrincipal.mutateAsync({
+        name,
+        kind,
+        metadata: description.trim() ? { description: description.trim() } : {},
       });
-      if (res.ok) {
-        const data = await res.json();
-        setApiKey(data.secret);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(extractApiError(data, "Failed to register principal"));
-      }
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (mutationError) {
+      setError(getClientErrorMessage(mutationError, "Failed to register principal"));
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { ITEM_KINDS, type ItemKind } from "@abadge/core";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
@@ -28,7 +29,7 @@ async function itemCreate(_args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   const label = await prompt("Label: ");
-  const kind = await prompt("Kind (api_key, login, token, json_blob, other): ");
+  const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
   const value = await prompt("Value (secret): ", true);
 
   if (!label || !kind || !value) {
@@ -36,25 +37,44 @@ async function itemCreate(_args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  if (!ITEM_KINDS.includes(kind as ItemKind)) {
+    error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
+    process.exit(1);
+  }
+
   // Encrypt via daemon (ZK mode)
-  let encryptedValue: string;
+  let encryptedItem:
+    | {
+        encryptedItemKey: string;
+        ciphertext: string;
+      }
+    | undefined;
   try {
-    const encRes = await daemonEncrypt(value);
+    const encRes = await daemonEncrypt({
+      v: 1,
+      label,
+      kind,
+      tags: [],
+      fields: { value },
+    });
     if (!encRes.ok || !encRes.data) {
       error(encRes.error ?? "Encryption failed.");
       process.exit(1);
     }
-    encryptedValue = encRes.data as string;
+    encryptedItem = encRes.data as {
+      encryptedItemKey: string;
+      ciphertext: string;
+    };
   } catch (err) {
     error(errorMessage(err, "Failed to encrypt via daemon."));
     process.exit(1);
   }
 
   try {
-    const result = await client.post("/v1/items", {
-      name: label,
-      type: kind,
-      encryptedValue,
+    const result = await client.createItem({
+      storageMode: "zero_knowledge",
+      encryptedItemKey: encryptedItem.encryptedItemKey,
+      ciphertext: encryptedItem.ciphertext,
     });
     success("Item created.");
     json(result);
@@ -70,17 +90,7 @@ async function itemList(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const items =
-      await client.get<
-        {
-          id: string;
-          name: string;
-          type: string;
-          sourceType: string;
-          createdAt: string;
-          updatedAt: string;
-        }[]
-      >("/v1/items");
+    const items = (await client.listItems()).items;
 
     if (values.json) {
       json(items);
@@ -90,9 +100,9 @@ async function itemList(args: string[]): Promise<void> {
     table(
       items.map((i) => ({
         ID: i.id,
-        Name: i.name,
-        Type: i.type,
-        Storage: i.sourceType,
+        Storage: i.storageMode,
+        Crypto: String(i.cryptoVersion),
+        Version: String(i.contentVersion),
         Created: i.createdAt,
       })),
     );
@@ -113,21 +123,17 @@ async function itemGet(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const item = await client.get<{
-      id: string;
-      name: string;
-      type: string;
-      sourceType: string;
-      encryptedValue?: string;
-    }>(`/v1/items/${id}`);
+    const item = (await client.getItem(id)).item;
 
     // If ZK-encrypted, decrypt via daemon
-    if (item.encryptedValue) {
+    if (item.storageMode === "zero_knowledge") {
       try {
-        const decRes = await daemonDecrypt(item.encryptedValue);
+        const decRes = await daemonDecrypt(item.encryptedItemKey, item.ciphertext);
         if (decRes.ok && decRes.data) {
-          const { encryptedValue: _, ...rest } = item;
-          json({ ...rest, value: decRes.data as string });
+          json({
+            ...item,
+            payload: (decRes.data as { payload: unknown }).payload,
+          });
           return;
         }
         error("Vault is locked or decryption failed. Run `abadge vault unlock` first.");
@@ -170,7 +176,7 @@ async function itemDelete(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    await client.delete(`/v1/items/${id}`);
+    await client.deleteItem(id);
     success(`Item ${id} deleted.`);
   } catch (err) {
     error(errorMessage(err, "Failed to delete item."));

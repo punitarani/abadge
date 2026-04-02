@@ -33,7 +33,7 @@ echo "Generated $API_FILE ($(wc -l < "$API_FILE" | tr -d ' ') vars)"
 WEB_FILE="$REPO_ROOT/apps/web/.env.local"
 : > "$WEB_FILE"
 
-write_var "$WEB_FILE" "NEXT_PUBLIC_API_URL" "${ABADGE_API_URL:-}"
-write_var "$WEB_FILE" "NEXT_PUBLIC_APP_URL" "${ABADGE_APP_URL:-}"
+write_var "$WEB_FILE" "ABADGE_API_URL" "${ABADGE_API_URL:-}"
+write_var "$WEB_FILE" "ABADGE_APP_URL" "${ABADGE_APP_URL:-}"
 
 echo "Generated $WEB_FILE ($(wc -l < "$WEB_FILE" | tr -d ' ') vars)"

@@ -20,9 +20,7 @@ import {
   wrapRootKey,
   zeroKey,
 } from "@abadge/crypto";
-import { clientEnv } from "@abadge/env/client";
-
-const API_URL = clientEnv.NEXT_PUBLIC_API_URL;
+import { browserTrpcClient, getClientErrorMessage } from "./trpc-browser";
 
 export async function bootstrapVault(
   masterPassword: string,
@@ -33,51 +31,43 @@ export async function bootstrapVault(
   const wrapped = wrapRootKey(rootKey, kek);
   const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
 
-  const res = await fetch(`${API_URL}/v1/vault/bootstrap`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({
+  try {
+    await browserTrpcClient.vault.bootstrap.mutate({
       wrappedRootKey: wrapped.wrapped,
       kdfSalt: toBase64(salt),
       kdfParams: DEFAULT_KDF_PARAMS,
-    }),
-  });
+    });
 
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({ error: "Bootstrap failed" }));
-    throw new Error((data as { error?: string }).error ?? "Bootstrap failed");
+    await browserTrpcClient.vault.setupRecovery.mutate({
+      recoveryWrappedRootKey: recoveryWrapped.wrapped,
+    });
+  } catch (error) {
+    zeroKey(kek);
+    zeroKey(rootKey);
+    throw new Error(getClientErrorMessage(error, "Bootstrap failed"));
   }
-
-  // Set up recovery key
-  await fetch(`${API_URL}/v1/vault/recovery/setup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ recoveryWrappedRootKey: recoveryWrapped.wrapped }),
-  });
 
   zeroKey(kek);
   return { rootKey, recoveryKey };
 }
 
 export async function unlockVault(masterPassword: string): Promise<Uint8Array> {
-  const res = await fetch(`${API_URL}/v1/vault`, {
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error("VAULT_NOT_FOUND");
-    }
-    throw new Error("Failed to fetch vault");
-  }
-
-  const vault = (await res.json()) as {
+  let vault: {
     wrappedRootKey: string;
     kdfSalt: string;
     kdfParams: KDFParams;
   };
+
+  try {
+    const result = await browserTrpcClient.vault.get.query();
+    vault = result.vault;
+  } catch (error) {
+    const message = getClientErrorMessage(error, "Failed to fetch vault");
+    if (message === "Vault not found") {
+      throw new Error("VAULT_NOT_FOUND");
+    }
+    throw new Error(message);
+  }
 
   const salt = Uint8Array.from(atob(vault.kdfSalt.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
     c.charCodeAt(0),

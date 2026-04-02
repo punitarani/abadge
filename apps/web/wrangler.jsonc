@@ -18,8 +18,8 @@
   },
   "secrets": {
     "required": [
-      "NEXT_PUBLIC_API_URL",
-      "NEXT_PUBLIC_APP_URL"
+      "ABADGE_API_URL",
+      "ABADGE_APP_URL"
     ]
   }
 }

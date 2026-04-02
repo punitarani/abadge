@@ -103,13 +103,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "item.encrypt": async (params): Promise<EncryptResult> => {
-      const plaintext = params.plaintext as string | undefined;
-      const kind = (params.kind as string) ?? "secret";
-      if (!plaintext) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "plaintext is required" };
+      const payload = params.payload;
+      if (payload === undefined) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
       }
       requireUnlocked(vault);
-      return vault.encrypt(plaintext, kind);
+      return vault.encrypt(payload);
     },
 
     "item.decrypt": async (params) => {
@@ -122,8 +121,8 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         };
       }
       requireUnlocked(vault);
-      const value = vault.decrypt(encryptedItemKey, ciphertext);
-      return { value };
+      const payload = vault.decrypt(encryptedItemKey, ciphertext);
+      return { payload };
     },
 
     "item.rekey": async (params): Promise<RekeyItemResult[]> => {

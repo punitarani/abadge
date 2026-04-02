@@ -1,7 +1,15 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
-import { useCallback, useEffect, useState } from "react";
+import {
+  AUDIT_EVENT_TYPES,
+  AUDIT_RESULTS,
+  type AuditEntry,
+  type AuditEventType,
+  type AuditResult,
+} from "@abadge/core";
+import { useQuery } from "@tanstack/react-query";
+import { useQueryStates } from "nuqs";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,17 +27,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import {
+  type AuditEventTypeFilter,
+  type AuditResultFilter,
+  auditFilterParsers,
+} from "@/lib/query-state";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
-
-interface AuditEntry {
-  id: string;
-  eventType: string;
-  result: string;
-  principalId: string | null;
-  itemId: string | null;
-  meta: Record<string, unknown> | null;
-  occurredAt: string;
-}
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -51,60 +56,61 @@ function resultBadgeVariant(result: string): BadgeVariant {
 const COLUMN_COUNT = 6;
 
 export default function AuditPage(): React.ReactElement {
-  const [logs, setLogs] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [cursorStack, setCursorStack] = useState<string[]>([]);
-  const [hasMore, setHasMore] = useState(false);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([]);
+  const [{ eventType: eventTypeFilter, result: resultFilter }, setAuditFilters] =
+    useQueryStates(auditFilterParsers);
   const limit = 50;
+  const input = {
+    limit,
+    cursor,
+    ...(eventTypeFilter !== "all" ? { eventType: eventTypeFilter as AuditEventType } : {}),
+    ...(resultFilter !== "all" ? { result: resultFilter as AuditResult } : {}),
+  };
+  const auditQuery = useQuery({
+    queryKey: dashboardQueryKeys.audit(input),
+    queryFn: () => browserTrpcClient.audit.list.query(input),
+  });
+  const logs = auditQuery.data?.entries ?? [];
+  const nextCursor = auditQuery.data?.nextCursor ?? null;
+  const hasMore = Boolean(nextCursor);
 
-  const [eventTypeFilter, setEventTypeFilter] = useState("all");
-  const [resultFilter, setResultFilter] = useState("all");
-
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
-
-  const fetchLogs = useCallback(
-    async (pageCursor: string | null) => {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams({ limit: String(limit) });
-        if (pageCursor) params.set("cursor", pageCursor);
-        if (eventTypeFilter !== "all") params.set("eventType", eventTypeFilter);
-        if (resultFilter !== "all") params.set("result", resultFilter);
-
-        const res = await fetch(`${apiUrl}/v1/audit?${params.toString()}`, {
-          credentials: "include",
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setLogs(data.entries ?? []);
-          setCursor(data.nextCursor ?? null);
-          setHasMore(!!data.nextCursor);
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    [eventTypeFilter, resultFilter],
-  );
-
-  useEffect(() => {
+  function resetPagination(): void {
+    setCursor(undefined);
     setCursorStack([]);
-    fetchLogs(null);
-  }, [fetchLogs]);
+  }
+
+  function handleEventTypeFilterChange(value: string): void {
+    void setAuditFilters({
+      eventType: value as AuditEventTypeFilter,
+    });
+    resetPagination();
+  }
+
+  function handleResultFilterChange(value: string): void {
+    void setAuditFilters({
+      result: value as AuditResultFilter,
+    });
+    resetPagination();
+  }
 
   function handleNext(): void {
-    if (!cursor) return;
-    setCursorStack((prev) => [...prev, logs[0]?.id ?? ""]);
-    fetchLogs(cursor);
+    if (!nextCursor) {
+      return;
+    }
+
+    setCursorStack((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
   }
 
   function handlePrevious(): void {
-    const newStack = [...cursorStack];
-    newStack.pop();
-    setCursorStack(newStack);
-    const prevCursor = newStack.length > 0 ? (newStack[newStack.length - 1] ?? null) : null;
-    fetchLogs(prevCursor);
+    if (cursorStack.length === 0) {
+      return;
+    }
+
+    const previousCursor = cursorStack[cursorStack.length - 1];
+    setCursorStack((prev) => prev.slice(0, -1));
+    setCursor(previousCursor);
   }
 
   return (
@@ -117,36 +123,34 @@ export default function AuditPage(): React.ReactElement {
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Event type</label>
-          <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
+          <Select value={eventTypeFilter} onValueChange={handleEventTypeFilterChange}>
             <SelectTrigger className="w-[160px] h-[28px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="item.read">Item read</SelectItem>
-              <SelectItem value="item.create">Item create</SelectItem>
-              <SelectItem value="item.delete">Item delete</SelectItem>
-              <SelectItem value="grant.create">Grant create</SelectItem>
-              <SelectItem value="grant.revoke">Grant revoke</SelectItem>
-              <SelectItem value="principal.create">Principal create</SelectItem>
-              <SelectItem value="principal.delete">Principal delete</SelectItem>
+              {AUDIT_EVENT_TYPES.map((eventType) => (
+                <SelectItem key={eventType} value={eventType}>
+                  {eventType}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
 
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Result</label>
-          <Select value={resultFilter} onValueChange={setResultFilter}>
+          <Select value={resultFilter} onValueChange={handleResultFilterChange}>
             <SelectTrigger className="w-[140px] h-[28px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="success">Success</SelectItem>
-              <SelectItem value="allowed">Allowed</SelectItem>
-              <SelectItem value="denied">Denied</SelectItem>
-              <SelectItem value="error">Error</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
+              {AUDIT_RESULTS.map((result) => (
+                <SelectItem key={result} value={result}>
+                  {result}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -165,7 +169,13 @@ export default function AuditPage(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {auditQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={COLUMN_COUNT} className="text-center py-8 text-red-700">
+                  {getClientErrorMessage(auditQuery.error, "Failed to load audit log")}
+                </TableCell>
+              </TableRow>
+            ) : auditQuery.isPending ? (
               <TableRow>
                 <TableCell
                   colSpan={COLUMN_COUNT}
@@ -187,7 +197,7 @@ export default function AuditPage(): React.ReactElement {
                 </TableCell>
               </TableRow>
             ) : (
-              logs.map((log) => (
+              logs.map((log: AuditEntry) => (
                 <TableRow key={log.id}>
                   <TableCell className="whitespace-nowrap text-muted-foreground">
                     {formatRelativeTime(log.occurredAt)}

@@ -1,8 +1,8 @@
 "use client";
 
-import { clientEnv } from "@abadge/env/client";
+import type { ItemSummary } from "@abadge/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,48 +13,35 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
-interface Item {
-  id: string;
-  storageMode: string;
-  cryptoVersion: number;
-  contentVersion: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export default function ItemsPage(): React.ReactElement {
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const itemsQuery = useQuery({
+    queryKey: dashboardQueryKeys.items(),
+    queryFn: () => browserTrpcClient.items.list.query(),
+  });
+  const deleteItem = useMutation({
+    mutationFn: ({ itemId }: { itemId: string }) =>
+      browserTrpcClient.items.delete.mutate({ itemId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.items(),
+      });
+    },
+  });
 
-  const apiUrl = clientEnv.NEXT_PUBLIC_API_URL;
+  const items = itemsQuery.data?.items ?? [];
+  const loading = itemsQuery.isPending;
 
-  const fetchItems = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiUrl}/v1/items`, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setItems(Array.isArray(data) ? data : []);
-      }
-    } finally {
-      setLoading(false);
+  async function handleDelete(itemId: string): Promise<void> {
+    if (!confirm("Delete this item? This cannot be undone.")) {
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
-
-  async function handleDelete(id: string): Promise<void> {
-    if (!confirm("Delete this item? This cannot be undone.")) return;
-    const res = await fetch(`${apiUrl}/v1/items/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (res.ok) {
-      fetchItems();
-    }
+    await deleteItem.mutateAsync({ itemId });
   }
 
   return (
@@ -81,7 +68,13 @@ export default function ItemsPage(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {itemsQuery.error ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-red-700">
+                  {getClientErrorMessage(itemsQuery.error, "Failed to load items")}
+                </TableCell>
+              </TableRow>
+            ) : loading ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                   Loading...
@@ -97,7 +90,7 @@ export default function ItemsPage(): React.ReactElement {
                 </TableCell>
               </TableRow>
             ) : (
-              items.map((item) => (
+              items.map((item: ItemSummary) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">
                     <Link href={`/items/${item.id}`} className="text-foreground hover:underline">
@@ -122,8 +115,13 @@ export default function ItemsPage(): React.ReactElement {
                       <Button variant="ghost" size="sm" asChild>
                         <Link href={`/items/${item.id}`}>View</Link>
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
-                        Delete
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deleteItem.isPending}
+                        onClick={() => handleDelete(item.id)}
+                      >
+                        {deleteItem.isPending ? "Deleting..." : "Delete"}
                       </Button>
                     </div>
                   </TableCell>

@@ -1,153 +1,180 @@
-# Testing Report: Full Feature Build
+# Testing Report: tRPC + Effect Refactor Hardening
 
-## Iteration 1: Initial Merge and Verification
+**Date:** 2026-04-02  
+**Workspace:** `/Users/punit/.codex/worktrees/4393/abadge`  
+**Scope:** branch review, command verification, migration verification, manual QA, browser QA, and doc reconciliation
 
-### Merge Process
+## Final status
 
-8 PR branches merged into `feat/v2-full-feature-build` from `main`:
+Branch state is mechanically green after fixes.
 
-| PR | Branch | Merge Result |
-|----|--------|--------------|
-| #21 | worktree-agent-ab60c7bc (tests) | Clean fast-forward |
-| #16 | feat/http-connectors | Clean merge |
-| #22 | feat/credential-connector-link | Clean merge |
-| #17 | feat/auto-grants | **Conflict**: migration journal numbering |
-| #18 | feat/agent-groups-schema-api | **Conflict**: migration journal + schemas.ts |
-| #19 | feat/org-scoped-credentials | **Conflict**: migration journal + schemas.ts + credentials.ts |
-| #23 | worktree-agent-ac320f49 (SDK) | Clean merge |
-| #20 | worktree-agent-a35a11ca (CLI) | **Conflict**: package.json cli script path |
+Validated:
 
-### Conflicts Resolved
+* `bun run format`
+* `bun run lint:fix`
+* `bun run lint`
+* `bun run typecheck`
+* `bun run build`
+* `bun test`
+* `bun run test`
 
-1. **Migration journal** (`packages/db/migrations/meta/_journal.json`): Three branches each created `0002_*.sql`. Renumbered to sequential: 0002_connector_credentials, 0003_auto_grants, 0004_agent_groups, 0005_org_credentials.
+Browser QA and scripted/manual QA also passed against local API and web dev servers.
 
-2. **Schemas** (`packages/core/src/schemas.ts`): Auto-grants and agent groups both added schemas at the same location. Resolved by keeping both sections with proper separation.
+## Verification results
 
-3. **Credentials schema** (`packages/db/src/schema/credentials.ts`): Connector link and org-scoped PRs both added indexes. Resolved by keeping both indexes.
+| Check | Result | Notes |
+|------|--------|-------|
+| `bun run format` | PASS | Biome formatted repo successfully |
+| `bun run lint:fix` | PASS | Clean after auth helper refactor |
+| `bun run lint` | PASS | No remaining warnings |
+| `bun run typecheck` | PASS | 14/14 workspaces successful |
+| `bun run build` | PASS | Worker dry-run build and Next production build succeeded |
+| `bun test` | PASS | 58 pass, 0 fail |
+| `bun run test` | PASS | Workspace turbo test + worker env test successful |
 
-4. **Root package.json**: CLI PR changed script path from `packages/cli` to `apps/cli`; test PR added test script. Resolved by keeping both changes.
+## Migration verification
 
-### Check Results — Iteration 1
+### Doppler state
 
-| Check | Result | Issues |
-|-------|--------|--------|
-| `bun run format` | Fixed 1 file | Auto-fixed |
-| `bun run lint:fix` | 39 errors | `noRestrictedGlobals` for `apps/cli/**` |
-| `bun run typecheck` | 1 failure | `apps/cli/tsconfig.json` included `bin/` outside `rootDir` |
-| `bun run build` | Not run | Blocked by above |
-| `bun run test` | Not run | Blocked by above |
+| Check | Result | Notes |
+|------|--------|-------|
+| `doppler configure get project config --plain` | REVIEWED | Local scope is `amor / dev` |
+| `doppler.yaml` | REVIEWED | Repo expects `abadge / dev` |
+| Root `bun run db:migrate` | FAIL (environment) | Missing `DATABASE_URL` from local Doppler scope |
 
-### Fixes Applied — Iteration 1
+Conclusion:
 
-1. **biome.json**: Added `"apps/cli/**"` to `noRestrictedGlobals` override (CLI legitimately uses `process`)
-2. **apps/cli/tsconfig.json**: Removed `"bin"` from `include`, removed `rootDir: "src"` (bin/abadge.ts is entry point, not compiled source)
+* local Doppler is on the correct environment (`dev`) but the wrong project for this repo
+* the branch itself is not blocking migrations; local secret sourcing is
 
----
+### Direct migration check
 
-## Iteration 2: All Checks Pass
+Commands used:
 
-### Check Results
+```bash
+docker compose up -d
+DATABASE_URL=postgresql://abadge:abadge@localhost:5432/abadge \
+  bun --cwd packages/db run db:migrate
+```
 
-| Check | Result |
-|-------|--------|
-| `bun run format` | 144 files, 0 fixes needed |
-| `bun run lint:fix` | 0 errors, 17 warnings (all pre-existing: cognitive complexity, useExhaustiveDependencies) |
-| `bun run typecheck` | 11/11 packages pass |
-| `bun run build` | 4/4 tasks pass (API worker + Next.js web + CLI binary + SDK) |
-| `bun run test` | 34/34 tests pass (23 API + 11 core) |
+Result:
 
-### E2E Verification
+* Drizzle migration command completed successfully
+* Worker-facing database `abadge` contains the expected schema
+* `drizzle.__drizzle_migrations` contains 4 applied migrations
 
-#### CLI Binary (`apps/cli`)
-- `bun run build` in `apps/cli/` produces 57.6MB native binary
-- `./dist/abadge --version` → "0.1.0"
-- `./dist/abadge --help` → Lists all 12 commands correctly
-- Zero runtime dependencies (standalone binary)
+Manual DB verification:
 
-#### TypeScript SDK (`packages/sdk`)
-- `tsc` produces `dist/` with 12 files (6 `.js` + 6 `.d.ts`)
-- `AbadgeClient` class exported correctly with all 25 methods
-- `deliveryModes` constant exports correctly: `["reveal", "env_inject", "file_mount", "browser_fill", "operation_only"]`
-- `ERROR_CODES` exports 21 error codes
-- Zero workspace dependencies (standalone package, only `zod` runtime dep)
+* confirmed worker local Hyperdrive target is `postgresql://abadge:abadge@localhost:5432/abadge`
+* confirmed application tables exist in database `abadge`
+* confirmed migration ledger is present and populated
 
-#### HTTP Connectors
-- `createHttpConnector("doppler")` → instantiates DopplerHttpConnector
-- `createHttpConnector("hashicorp_vault")` → instantiates HashiCorpVaultHttpConnector
-- `createHttpConnector("infisical")` → instantiates InfisicalHttpConnector
-- `createHttpConnector("bitwarden")` → returns null (unsupported server-side)
-- `isHttpConnectorType()` correctly identifies supported types
+## Manual QA
 
-#### Auto-Grant Matching
-- Environment match: credential `staging` matches auto-grant `matchEnvironment: "staging"` → true
-- Environment mismatch: credential `staging` vs auto-grant `matchEnvironment: "prod"` → false
-- Tag subset: credential `["deploy", "db"]` matches auto-grant `matchTags: ["deploy"]` → true
-- Tag mismatch: credential `["deploy", "db"]` vs auto-grant `matchTags: ["deploy", "nonexistent"]` → false
+### API and SDK
 
-#### API Routes
-All 11 route groups mounted at `/v1/*`:
-- credentials, agents, agent-groups, permissions, audit, policies, approvals, auto-grants, connectors, access (credentials/access), sessions
+Validated end-to-end via `AbadgeClient` against local API:
 
-#### Database Schema
-6 migrations in correct order:
-- 0000: Initial schema
-- 0001: v2 credential firewall (policies, approvals, broker_sessions, connectors)
-- 0002: Connector credentials (sourceType, connectorId, externalRef)
-- 0003: Auto-grants table
-- 0004: Agent groups + members tables
-- 0005: Org credentials (orgId on credentials)
+* user sign-up
+* `vault.get` returns `VAULT_NOT_FOUND` before bootstrap
+* `vault.setupRecovery` is rejected before bootstrap
+* vault bootstrap, recovery setup, password change, and key rotation
+* server-managed item create/list/get/update/delete
+* zero-knowledge item create/list/get/update/delete
+* stale item update returns `STALE_VERSION`
+* principal create/list/get/rotate/revoke
+* grant create/list/revoke
+* remote principal locality restrictions
+* local principal mount access
+* remote reveal access
+* rotated principal old secret rejection
+* revoked grant rejection
+* revoked principal rejection
+* audit log entries for allowed and denied outcomes
 
-All new tables have proper FK constraints, indexes, and cascading deletes.
+### CLI and daemon
 
-#### Credential Schema Columns
-New columns verified:
-- `sourceType` (text, default "native")
-- `connectorId` (text FK to connectors, onDelete set null)
-- `externalRef` (jsonb)
-- `orgId` (text)
-- Indexes on both `connectorId` and `orgId`
+Validated with isolated home directory:
 
-#### Org Helpers
-- `getUserOrgIds()`: Queries Better Auth `member` table by userId
-- `isOrgAdmin()`: Checks for "admin" or "owner" role
+* `abadge login --api-url --email --password`
+* config write to `~/.abadge/config.json`
+* `abadge item list --json`
+* `abadge principal list --json`
+* `abadge grant list --json`
+* `abadge audit --json`
+* `abadge daemon start`
+* `abadge daemon status`
+* `abadge daemon stop`
 
----
+## Browser QA
 
-## Test Suite Details
+Browser QA was executed with Playwright against:
 
-### Policy Engine Tests (18 pass)
-- No active policies → allow all
-- Disabled policy ignored
-- Delivery mode restriction (allow + block)
-- Environment rule (allow, deny, null passthrough)
-- Sensitivity rule with approval trigger
-- Destination allow/block lists
-- TTL enforcement
-- Multi-rule composition
-- compareSensitivity ordering
+* API: `http://localhost:8787`
+* Web: `http://localhost:3000`
 
-### Crypto Tests (5 pass)
-- Encrypt/decrypt roundtrip
-- Random IV uniqueness
-- Wrong key rejection
-- Hash consistency
-- Hash uniqueness
+Validated flow:
 
-### Schema Tests (11 pass)
-- CreateCredentialSchema validation (4 cases)
-- AgentAccessRequestSchema defaults + refinement (3 cases)
-- PolicyRuleSchema type validation (2 cases)
-- CreateSessionSchema TTL enforcement (2 cases)
+1. register a fresh user
+2. bootstrap vault
+3. verify recovery-key screen appears before the dashboard
+4. create a zero-knowledge item
+5. view and locally reveal the zero-knowledge payload
+6. register a `local_cli` principal
+7. create a valid grant for that principal and item
+8. verify audit page loads and URL-backed result filter works
+9. lock the vault
+10. unlock the vault and return to the dashboard
 
----
+Security note from QA:
 
-## Summary
+* attempting to grant a zero-knowledge item to the default `remote_agent` principal correctly fails with `Remote principals cannot access zero-knowledge items.`
 
-- **Total merge conflicts**: 4 (all resolved cleanly)
-- **Post-merge fixes**: 2 (biome override for apps/cli, tsconfig fix)
-- **Iterations to green**: 2
-- **Final state**: All checks pass, all features verified
-- **Test count**: 34 tests, 0 failures
-- **Packages**: 12 (11 existing + 1 new SDK)
-- **New migration files**: 4
-- **New API routes**: 3 (auto-grants, agent-groups, SDK build)
+## Issues found and fixed
+
+1. Circular tRPC router initialization crashed local API startup.
+   Fix: split shared tRPC initialization into `packages/trpc/src/server/init.ts`.
+
+2. Effect failures were surfacing as generic tRPC internal errors.
+   Fix: unwrap Effect fiber failures before domain-error mapping.
+
+3. `vault.setupRecovery` incorrectly succeeded before vault bootstrap.
+   Fix: require an existing vault row before recovery update.
+
+4. Session bearer auth did not accept raw Better Auth session tokens for SDK/CLI callers.
+   Fix: resolve bearer tokens through Better Auth internal session lookup before API-key fallback.
+
+5. Dashboard vault bootstrap skipped the recovery-key screen.
+   Fix: give recovery-key UI precedence over the unlocked-state branch.
+
+6. Dashboard React Query keys were inconsistent across queries and mutations.
+   Fix: introduce shared dashboard query-key helpers and use them consistently.
+
+7. CLI daemon lifecycle was wired to a non-existent executable and stop path was wrong.
+   Fix: spawn the current CLI entrypoint in internal daemon-serve mode and use real stop RPC.
+
+8. Root `bun run test` failed because `apps/api` had no tests.
+   Fix: add a Hono health-route smoke test with explicit test env bindings.
+
+## Docs updated
+
+Updated to match verified behavior:
+
+* `docs/API.md`
+* `docs/ARCHITECTURE.md`
+* `docs/CLI.md`
+* `docs/DEVELOPMENT.md`
+* `docs/SECURITY.md`
+
+Notable doc corrections:
+
+* removed stale `apps/cli` binary references
+* documented scripted CLI login flags
+* documented daemon spawn/stop behavior
+* documented bearer use of raw Better Auth session tokens
+* corrected local Postgres database example to `abadge`
+
+## Residual notes
+
+* Root `bun run db:migrate` still depends on a correctly scoped Doppler project providing `DATABASE_URL`.
+* The branch code and direct migration path are verified; the remaining mismatch is local Doppler configuration, not application behavior.

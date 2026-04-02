@@ -1,6 +1,9 @@
 import { parseArgs } from "node:util";
+import { ApiClient } from "../client";
+import { requireConfig } from "../config";
 import { daemonExecEnv } from "../daemon";
 import { error, errorMessage, str } from "../output";
+import { resolveSecretValue } from "../secret";
 
 export async function runCommand(args: string[]): Promise<void> {
   // Split on -- to get the command to execute
@@ -27,8 +30,16 @@ export async function runCommand(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  const executable = command[0];
+  if (!executable) {
+    error("No command specified. Usage: abadge run --item <id> -- <command>");
+    process.exit(1);
+  }
+
   try {
-    const res = await daemonExecEnv(itemId, command);
+    const client = new ApiClient(requireConfig());
+    const secretValue = await resolveSecretValue(client, itemId, "env");
+    const res = await daemonExecEnv(secretValue, "ABADGE_SECRET", executable, command.slice(1));
     if (!res.ok) {
       error(res.error ?? "Failed to run command.");
       process.exit(1);

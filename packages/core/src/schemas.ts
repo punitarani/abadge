@@ -1,127 +1,304 @@
-import { z } from "zod";
+import { Schema } from "effect";
 import {
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
   PRINCIPAL_KINDS,
+  STORAGE_MODES,
 } from "./constants";
 
-// --- Vault ---
+const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
+const BoundedNameString = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(255));
+const IsoDateString = Schema.String;
+const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+const NullableIsoDateString = Schema.NullOr(IsoDateString);
 
-const KdfParamsSchema = z.object({
-  algorithm: z.literal("argon2id"),
-  memory: z.number().int().positive(),
-  iterations: z.number().int().positive(),
-  parallelism: z.number().int().positive(),
-  hashLength: z.number().int().positive(),
+export const StorageModeSchema = Schema.Literal(...STORAGE_MODES);
+export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
+export const PrincipalKindSchema = Schema.Literal(...PRINCIPAL_KINDS);
+export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
+export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
+export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
+
+export const KdfParamsSchema = Schema.Struct({
+  algorithm: Schema.Literal("argon2id"),
+  memory: Schema.Int.pipe(Schema.positive()),
+  iterations: Schema.Int.pipe(Schema.positive()),
+  parallelism: Schema.Int.pipe(Schema.positive()),
+  hashLength: Schema.Int.pipe(Schema.positive()),
 });
 
-export const VaultBootstrapSchema = z.object({
-  wrappedRootKey: z.string().min(1),
-  kdfSalt: z.string().min(1),
+export const ItemPayloadSchema = Schema.Struct({
+  v: Schema.Int,
+  label: NonEmptyString,
+  kind: ItemKindSchema,
+  tags: Schema.Array(Schema.String),
+  notes: Schema.optional(Schema.String),
+  fields: JsonRecord,
+});
+
+export const VaultBootstrapSchema = Schema.Struct({
+  wrappedRootKey: NonEmptyString,
+  kdfSalt: NonEmptyString,
   kdfParams: KdfParamsSchema,
 });
 
-export const ChangePasswordSchema = z.object({
-  wrappedRootKey: z.string().min(1),
-  kdfSalt: z.string().min(1),
+export const ChangePasswordSchema = Schema.Struct({
+  wrappedRootKey: NonEmptyString,
+  kdfSalt: NonEmptyString,
   kdfParams: KdfParamsSchema,
 });
 
-export const RecoverySetupSchema = z.object({
-  recoveryWrappedRootKey: z.string().min(1),
+export const RecoverySetupSchema = Schema.Struct({
+  recoveryWrappedRootKey: NonEmptyString,
 });
 
-export const RotateKeySchema = z.object({
-  wrappedRootKey: z.string().min(1),
-  recoveryWrappedRootKey: z.string().optional(),
-  /** Map of item ID to new encrypted_item_key (re-wrapped DEKs) */
-  rekeyedItems: z.record(z.string(), z.string().min(1)),
+export const RotateKeySchema = Schema.Struct({
+  wrappedRootKey: NonEmptyString,
+  recoveryWrappedRootKey: Schema.optional(Schema.String),
+  rekeyedItems: Schema.Record({ key: Schema.String, value: NonEmptyString }),
 });
 
-// --- Items ---
-
-export const CreateItemSchema = z.discriminatedUnion("storageMode", [
-  z.object({
-    storageMode: z.literal("zero_knowledge"),
-    encryptedItemKey: z.string().min(1),
-    ciphertext: z.string().min(1),
-  }),
-  z.object({
-    storageMode: z.literal("server_managed"),
-    /** Plaintext payload — server will encrypt */
-    payload: z.object({
-      v: z.number().int(),
-      label: z.string().min(1),
-      kind: z.enum(ITEM_KINDS),
-      tags: z.array(z.string()).default([]),
-      notes: z.string().optional(),
-      fields: z.record(z.string(), z.unknown()),
-    }),
-  }),
-]);
-
-export const UpdateItemSchema = z.discriminatedUnion("storageMode", [
-  z.object({
-    storageMode: z.literal("zero_knowledge"),
-    encryptedItemKey: z.string().min(1),
-    ciphertext: z.string().min(1),
-    contentVersion: z.number().int().positive(),
-  }),
-  z.object({
-    storageMode: z.literal("server_managed"),
-    payload: z.object({
-      v: z.number().int(),
-      label: z.string().min(1),
-      kind: z.enum(ITEM_KINDS),
-      tags: z.array(z.string()).default([]),
-      notes: z.string().optional(),
-      fields: z.record(z.string(), z.unknown()),
-    }),
-    contentVersion: z.number().int().positive(),
-  }),
-]);
-
-// --- Principals ---
-
-export const CreatePrincipalSchema = z.object({
-  kind: z.enum(PRINCIPAL_KINDS),
-  name: z.string().min(1).max(255),
-  metadata: z.record(z.string(), z.unknown()).default({}),
+export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
 });
 
-// --- Grants ---
-
-export const CreateGrantSchema = z.object({
-  principalId: z.string().min(1),
-  itemId: z.string().min(1),
-  capability: z.enum(CAPABILITIES),
-  expiresAt: z.string().datetime().optional(),
+export const ServerManagedCreateItemSchema = Schema.Struct({
+  storageMode: Schema.Literal("server_managed"),
+  payload: ItemPayloadSchema,
 });
 
-// --- Access ---
+export const CreateItemSchema = Schema.Union(
+  ZeroKnowledgeCreateItemSchema,
+  ServerManagedCreateItemSchema,
+);
 
-export const CiphertextAccessSchema = z.object({
-  itemId: z.string().min(1),
+export const ZeroKnowledgeUpdateItemSchema = Schema.Struct({
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
 });
 
-export const RevealAccessSchema = z.object({
-  itemId: z.string().min(1),
+export const ServerManagedUpdateItemSchema = Schema.Struct({
+  storageMode: Schema.Literal("server_managed"),
+  payload: ItemPayloadSchema,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
 });
 
-export const MountAccessSchema = z.object({
-  itemId: z.string().min(1),
-  mountType: z.enum(["env", "file"]),
+export const UpdateItemSchema = Schema.Union(
+  ZeroKnowledgeUpdateItemSchema,
+  ServerManagedUpdateItemSchema,
+);
+
+export const CreatePrincipalSchema = Schema.Struct({
+  kind: PrincipalKindSchema,
+  name: BoundedNameString,
+  metadata: Schema.optional(JsonRecord),
 });
 
-// --- Audit ---
+export const CreateGrantSchema = Schema.Struct({
+  principalId: NonEmptyString,
+  itemId: NonEmptyString,
+  capability: CapabilitySchema,
+  expiresAt: Schema.optional(IsoDateString),
+});
 
-export const AuditQuerySchema = z.object({
-  eventType: z.enum(AUDIT_EVENT_TYPES).optional(),
-  result: z.enum(AUDIT_RESULTS).optional(),
-  principalId: z.string().optional(),
-  itemId: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+export const CiphertextAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+});
+
+export const RevealAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+});
+
+export const MountAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  mountType: Schema.Literal("env", "file"),
+});
+
+export const AuditQuerySchema = Schema.Struct({
+  eventType: Schema.optional(AuditEventTypeSchema),
+  result: Schema.optional(AuditResultSchema),
+  principalId: Schema.optional(Schema.String),
+  itemId: Schema.optional(Schema.String),
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
+});
+
+export const VaultSchema = Schema.Struct({
+  id: NonEmptyString,
+  userId: NonEmptyString,
+  wrappedRootKey: NonEmptyString,
+  kdfSalt: NonEmptyString,
+  kdfParams: KdfParamsSchema,
+  recoveryWrappedRootKey: Schema.NullOr(Schema.String),
+  keyVersion: Schema.Int.pipe(Schema.positive()),
+  createdAt: IsoDateString,
+  updatedAt: IsoDateString,
+});
+
+export const ItemSummarySchema = Schema.Struct({
+  id: NonEmptyString,
+  storageMode: StorageModeSchema,
+  cryptoVersion: Schema.Int,
+  contentVersion: Schema.Int,
+  createdAt: IsoDateString,
+  updatedAt: IsoDateString,
+});
+
+const ItemDetailBaseFields = {
+  id: NonEmptyString,
+  storageMode: StorageModeSchema,
+  cryptoVersion: Schema.Int,
+  contentVersion: Schema.Int,
+  createdAt: IsoDateString,
+  updatedAt: IsoDateString,
+} as const;
+
+export const ZeroKnowledgeItemDetailSchema = Schema.Struct({
+  ...ItemDetailBaseFields,
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+});
+
+export const ServerManagedItemDetailSchema = Schema.Struct({
+  ...ItemDetailBaseFields,
+  storageMode: Schema.Literal("server_managed"),
+});
+
+export const ItemDetailSchema = Schema.Union(
+  ZeroKnowledgeItemDetailSchema,
+  ServerManagedItemDetailSchema,
+);
+
+export const PrincipalSchema = Schema.Struct({
+  id: NonEmptyString,
+  userId: NonEmptyString,
+  kind: PrincipalKindSchema,
+  locality: Schema.Literal("local", "remote"),
+  name: NonEmptyString,
+  secretPrefix: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  revokedAt: Schema.NullOr(IsoDateString),
+  lastUsedAt: Schema.NullOr(IsoDateString),
+  metadata: JsonRecord,
+  createdAt: IsoDateString,
+});
+
+export const PrincipalRegistrationSchema = Schema.Struct({
+  principal: PrincipalSchema,
+  secret: NonEmptyString,
+});
+
+export const PrincipalRotateResultSchema = Schema.Struct({
+  secret: NonEmptyString,
+  secretPrefix: NonEmptyString,
+});
+
+export const GrantSchema = Schema.Struct({
+  id: NonEmptyString,
+  principalId: NonEmptyString,
+  itemId: NonEmptyString,
+  capability: CapabilitySchema,
+  expiresAt: NullableIsoDateString,
+  grantedBy: NonEmptyString,
+  createdAt: IsoDateString,
+});
+
+export const AuditEntrySchema = Schema.Struct({
+  id: Schema.Int,
+  userId: NonEmptyString,
+  principalId: Schema.NullOr(Schema.String),
+  itemId: Schema.NullOr(Schema.String),
+  eventType: AuditEventTypeSchema,
+  result: AuditResultSchema,
+  deliveryMode: Schema.NullOr(Schema.String),
+  meta: JsonRecord,
+  ipAddress: Schema.NullOr(Schema.String),
+  occurredAt: IsoDateString,
+});
+
+export const CiphertextAccessResponseSchema = Schema.Struct({
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+  cryptoVersion: Schema.Int,
+});
+
+export const RevealAccessResponseSchema = Schema.Struct({
+  payload: ItemPayloadSchema,
+});
+
+export const ZeroKnowledgeMountAccessResponseSchema = Schema.Struct({
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+  cryptoVersion: Schema.Int,
+});
+
+export const ServerManagedMountAccessResponseSchema = Schema.Struct({
+  storageMode: Schema.Literal("server_managed"),
+  payload: ItemPayloadSchema,
+});
+
+export const MountAccessResponseSchema = Schema.Union(
+  ZeroKnowledgeMountAccessResponseSchema,
+  ServerManagedMountAccessResponseSchema,
+);
+
+export const IdResultSchema = Schema.Struct({
+  id: NonEmptyString,
+});
+
+export const SuccessResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+});
+
+export const KeyVersionResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  keyVersion: Schema.Int.pipe(Schema.positive()),
+});
+
+export const ItemVersionResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
+});
+
+export const VaultResultSchema = Schema.Struct({
+  vault: VaultSchema,
+});
+
+export const ItemResultSchema = Schema.Struct({
+  item: ItemDetailSchema,
+});
+
+export const ItemListResultSchema = Schema.Struct({
+  items: Schema.Array(ItemSummarySchema),
+});
+
+export const PrincipalResultSchema = Schema.Struct({
+  principal: PrincipalSchema,
+});
+
+export const PrincipalListResultSchema = Schema.Struct({
+  principals: Schema.Array(PrincipalSchema),
+});
+
+export const GrantResultSchema = Schema.Struct({
+  grant: GrantSchema,
+});
+
+export const GrantListResultSchema = Schema.Struct({
+  grants: Schema.Array(GrantSchema),
+});
+
+export const AuditListResultSchema = Schema.Struct({
+  entries: Schema.Array(AuditEntrySchema),
+  nextCursor: Schema.NullOr(Schema.String),
 });

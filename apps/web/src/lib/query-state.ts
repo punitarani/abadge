@@ -1,0 +1,18 @@
+import { AUDIT_EVENT_TYPES, AUDIT_RESULTS } from "@abadge/core";
+import { parseAsString, parseAsStringLiteral } from "nuqs";
+
+const auditEventTypeFilters = ["all", ...AUDIT_EVENT_TYPES] as const;
+const auditResultFilters = ["all", ...AUDIT_RESULTS] as const;
+
+export type AuditEventTypeFilter = (typeof auditEventTypeFilters)[number];
+export type AuditResultFilter = (typeof auditResultFilters)[number];
+
+export const auditFilterParsers = {
+  eventType: parseAsStringLiteral(auditEventTypeFilters).withDefault("all"),
+  result: parseAsStringLiteral(auditResultFilters).withDefault("all"),
+};
+
+export const grantFilterParsers = {
+  principal: parseAsString.withDefault("all"),
+  item: parseAsString.withDefault("all"),
+};

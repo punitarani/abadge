@@ -12,7 +12,15 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@abadge/core": "workspace:*",
+    "@abadge/daemon": "workspace:*",
+    "@abadge/sdk": "workspace:*",
+    "@abadge/trpc": "workspace:*",
+    "effect": "^3.13.7"
+  },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/node": "^25.5.0",
     "typescript": "^5.7.0"
   }

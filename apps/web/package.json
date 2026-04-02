@@ -11,6 +11,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
+    "@abadge/trpc": "workspace:*",
     "next": "^15.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -22,13 +23,16 @@
     "@tailwindcss/postcss": "^4.0.0",
     "@radix-ui/react-select": "^2.1.0",
     "@radix-ui/react-slot": "^1.1.0",
+    "@tanstack/react-query": "^5.66.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
+    "nuqs": "^2",
     "tailwind-merge": "^2.6.0",
     "lucide-react": "latest"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "latest",
+    "@tanstack/react-query-devtools": "^5.66.0",
     "wrangler": "latest",
     "@cloudflare/workers-types": "latest",
     "@types/node": "^22.0.0",
