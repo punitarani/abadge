@@ -14,10 +14,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@abadge/core": "workspace:*",
-    "@abadge/trpc": "workspace:*"
+    "@trpc/client": "^11.0.0"
   },
   "devDependencies": {
+    "@trpc/server": "^11.0.0",
     "typescript": "^5.7.0"
   }
 }

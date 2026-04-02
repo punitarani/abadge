@@ -1,5 +1,5 @@
-import { createNodeTrpcClient } from "@abadge/trpc/client";
 import { AbadgeApiError } from "./errors";
+import { createNodeTrpcClient } from "./trpc";
 import type {
   AuditFilters,
   AuditListResult,
@@ -31,14 +31,65 @@ export interface AbadgeClientConfig {
   token: string;
 }
 
+interface TrpcMutation<TInput, TOutput> {
+  mutate(input: TInput): Promise<TOutput>;
+}
+
+interface TrpcQuery<TInput, TOutput> {
+  query(input: TInput): Promise<TOutput>;
+}
+
+interface TrpcQueryWithoutInput<TOutput> {
+  query(): Promise<TOutput>;
+}
+
+interface SdkTrpcClient {
+  vault: {
+    bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
+    get: TrpcQueryWithoutInput<VaultResult>;
+    changePassword: TrpcMutation<ChangePasswordInput, SuccessResult>;
+    rotateKey: TrpcMutation<RotateKeyInput, { ok: boolean; keyVersion: number }>;
+    setupRecovery: TrpcMutation<SetupRecoveryInput, SuccessResult>;
+  };
+  items: {
+    create: TrpcMutation<CreateItemInput, { id: string }>;
+    list: TrpcQueryWithoutInput<ItemListResult>;
+    get: TrpcQuery<{ itemId: string }, ItemResult>;
+    update: TrpcMutation<
+      { itemId: string; data: UpdateItemInput },
+      { ok: boolean; contentVersion: number }
+    >;
+    delete: TrpcMutation<{ itemId: string }, SuccessResult>;
+  };
+  principals: {
+    create: TrpcMutation<CreatePrincipalInput, PrincipalWithKey>;
+    list: TrpcQueryWithoutInput<PrincipalListResult>;
+    rotate: TrpcMutation<{ principalId: string }, PrincipalRotateResult>;
+    revoke: TrpcMutation<{ principalId: string }, SuccessResult>;
+  };
+  grants: {
+    create: TrpcMutation<CreateGrantInput, GrantResult>;
+    list: TrpcQuery<GrantFilters, GrantListResult>;
+    revoke: TrpcMutation<{ grantId: string }, SuccessResult>;
+  };
+  access: {
+    ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
+    reveal: TrpcMutation<{ itemId: string }, RevealAccessResponse>;
+    mount: TrpcMutation<{ itemId: string; mountType: "env" | "file" }, MountAccessResponse>;
+  };
+  audit: {
+    list: TrpcQuery<AuditFilters, AuditListResult>;
+  };
+}
+
 export class AbadgeClient {
-  private readonly client;
+  private readonly client: SdkTrpcClient;
 
   constructor(config: AbadgeClientConfig) {
     this.client = createNodeTrpcClient({
       baseUrl: config.apiUrl,
       token: config.token,
-    });
+    }) as unknown as SdkTrpcClient;
   }
 
   // --- Vault ---

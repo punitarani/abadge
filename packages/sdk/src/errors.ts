@@ -1,4 +1,4 @@
-import { normalizeTrpcError } from "@abadge/trpc/client";
+import { normalizeTrpcError } from "./trpc";
 
 export class AbadgeApiError extends Error {
   public readonly statusCode: number;

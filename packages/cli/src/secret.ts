@@ -34,6 +34,19 @@ async function decryptMountedPayload(
   return payloadToSecret((result.data as { payload: unknown }).payload);
 }
 
+async function resolveMountedSecret(
+  client: ApiClient,
+  itemId: string,
+  mountType: "env" | "file",
+): Promise<string> {
+  const mounted = await client.accessMount(itemId, mountType);
+  if (mounted.storageMode === "zero_knowledge") {
+    return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext);
+  }
+
+  return payloadToSecret(mounted.payload);
+}
+
 export async function resolveSecretValue(
   client: ApiClient,
   itemId: string,
@@ -41,21 +54,16 @@ export async function resolveSecretValue(
 ): Promise<string> {
   try {
     const item = (await client.getItem(itemId)).item;
-    if (item.storageMode !== "zero_knowledge") {
-      throw new Error("Server-managed items require a principal token with a mount grant.");
+    if (item.storageMode === "zero_knowledge") {
+      return decryptMountedPayload(item.encryptedItemKey, item.ciphertext);
     }
 
-    return decryptMountedPayload(item.encryptedItemKey, item.ciphertext);
+    return resolveMountedSecret(client, itemId, mountType);
   } catch (error) {
     if (!(error instanceof AbadgeApiError) || error.code !== "UNAUTHORIZED") {
       throw error;
     }
 
-    const mounted = await client.accessMount(itemId, mountType);
-    if (mounted.storageMode === "zero_knowledge") {
-      return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext);
-    }
-
-    return payloadToSecret(mounted.payload);
+    return resolveMountedSecret(client, itemId, mountType);
   }
 }

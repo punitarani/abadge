@@ -67,4 +67,34 @@ describe("resolveSessionIdentity", () => {
       userId: "user_from_session",
     });
   });
+
+  test("does not treat API keys as session identities", async () => {
+    const ctx = createMockContext({
+      Authorization: "Bearer abg_test_api_key",
+    });
+    ctx.auth = {
+      api: {
+        getSession: async () => null,
+        verifyApiKey: async () => ({
+          valid: true,
+          key: {
+            id: "principal_123",
+            referenceId: "user_from_api_key",
+          },
+        }),
+      },
+      $context: Promise.resolve({
+        internalAdapter: {
+          findSession: async () => null,
+        },
+      }),
+    } as BaseRequestContext["auth"];
+
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
+
+    expect(error).toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Unauthorized",
+    });
+  });
 });

@@ -237,19 +237,6 @@ const resolveBearerSessionIdentity = (
       };
     }
 
-    const result = (yield* tryAsync(() =>
-      ctx.auth.api.verifyApiKey({
-        body: { key: token },
-      }),
-    )) as VerifyApiKeyResult;
-
-    if (result.valid && result.key?.referenceId) {
-      return {
-        kind: "session" as const,
-        userId: result.key.referenceId,
-      };
-    }
-
     return null;
   });
 
