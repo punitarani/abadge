@@ -59,14 +59,15 @@ export function createRequestContext(options: {
 }): BaseRequestContext {
   const validatedEnv = validateWorkerEnv(options.env as unknown as Record<string, unknown>);
   const db = createDb(getConnectionString(options.env));
+  const env = { ...options.env, ...validatedEnv };
 
   return {
     req: options.req,
     resHeaders: options.resHeaders,
-    env: options.env,
+    env,
     validatedEnv,
     db,
-    auth: createAuth(db, options.env),
+    auth: createAuth(db, validatedEnv),
     ipAddress:
       options.req.headers.get("cf-connecting-ip") ??
       options.req.headers.get("x-forwarded-for") ??

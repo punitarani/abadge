@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@abadge/trpc": "workspace:*",
+    "@abadge/env": "workspace:*",
     "hono": "^4.7.0",
     "@hono/zod-validator": "latest",
     "zod": "^3.24.0",

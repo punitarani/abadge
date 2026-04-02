@@ -5,9 +5,8 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { openAPI, organization } from "better-auth/plugins";
 
 export interface AuthEnv {
-  API_URL: string;
-  APP_URL: string;
-  BETTER_AUTH_URL: string;
+  ABADGE_API_URL: string;
+  ABADGE_APP_URL: string;
   BETTER_AUTH_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -15,15 +14,25 @@ export interface AuthEnv {
   GITHUB_CLIENT_SECRET?: string;
 }
 
-export function getTrustedOrigins(env: Pick<AuthEnv, "API_URL" | "APP_URL">): string[] {
-  return [env.API_URL, env.APP_URL, "http://localhost:3000", "http://localhost:3001"];
+type AuthOriginsEnv = Partial<Pick<AuthEnv, "ABADGE_API_URL" | "ABADGE_APP_URL">> & {
+  API_URL?: string;
+  APP_URL?: string;
+};
+
+export function getTrustedOrigins(env: AuthOriginsEnv): string[] {
+  const apiUrl = env.ABADGE_API_URL ?? env.API_URL;
+  const appUrl = env.ABADGE_APP_URL ?? env.APP_URL;
+
+  return [apiUrl, appUrl, "http://localhost:3000", "http://localhost:3001"].filter(
+    (origin): origin is string => typeof origin === "string" && origin.length > 0,
+  );
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createAuth(db: Database, env: AuthEnv): any {
   return betterAuth({
     database: drizzleAdapter(db, { provider: "pg" }),
-    baseURL: env.BETTER_AUTH_URL,
+    baseURL: env.ABADGE_API_URL,
     secret: env.BETTER_AUTH_SECRET,
     emailAndPassword: {
       enabled: true,

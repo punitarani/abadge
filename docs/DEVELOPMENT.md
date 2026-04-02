@@ -28,12 +28,10 @@ Required variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/abadge` |
-| `API_URL` | Public API origin | `http://localhost:8787` |
-| `APP_URL` | Public web origin | `http://localhost:3000` |
-| `BETTER_AUTH_URL` | Better Auth base URL | `http://localhost:8787` |
+| `ABADGE_API_URL` | Public API origin and Better Auth base URL | `http://localhost:8787` |
+| `ABADGE_APP_URL` | Public web origin | `http://localhost:3000` |
 | `BETTER_AUTH_SECRET` | Better Auth secret | random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items | `openssl rand -base64 32` |
-| `NEXT_PUBLIC_API_URL` | Browser-visible API origin | `http://localhost:8787` |
 
 Optional variables:
 
@@ -44,7 +42,9 @@ Optional variables:
 | `GITHUB_CLIENT_ID` | GitHub OAuth |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth |
 
-`bun run dev` regenerates `apps/api/.dev.vars` from Doppler before starting local Worker dev.
+`bun run dev` regenerates `apps/api/.dev.vars` and `apps/web/.env.local` from Doppler before
+starting local Worker dev. The canonical URL inputs are `ABADGE_API_URL` and `ABADGE_APP_URL`;
+the web client still accepts `NEXT_PUBLIC_*` as a legacy fallback.
 
 ## Database
 

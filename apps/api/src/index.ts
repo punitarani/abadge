@@ -1,4 +1,5 @@
 import { createAuth, getTrustedOrigins } from "@abadge/auth";
+import { validateWorkerEnv } from "@abadge/env/worker";
 import { handleTrpcRequest } from "@abadge/trpc/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -27,7 +28,7 @@ app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 // Better Auth catch-all route
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
-  const auth = createAuth(db, c.env);
+  const auth = createAuth(db, validateWorkerEnv(c.env as unknown as Record<string, unknown>));
   return auth.handler(c.req.raw);
 });
 

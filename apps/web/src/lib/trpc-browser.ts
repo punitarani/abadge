@@ -5,7 +5,7 @@ import { createBrowserTrpcClient, normalizeTrpcError } from "@abadge/trpc/client
 
 export const browserTrpcClient: ReturnType<typeof createBrowserTrpcClient> =
   createBrowserTrpcClient({
-    baseUrl: clientEnv.NEXT_PUBLIC_API_URL,
+    baseUrl: clientEnv.ABADGE_API_URL,
   });
 
 function formatIssue(issue: unknown): string | undefined {
