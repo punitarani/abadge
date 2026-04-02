@@ -55,14 +55,20 @@ export function buildSecretPayload(
 }
 
 type CliOptions = {
+  check: boolean;
   config: string;
 };
 
 export function parseCliArgs(args: string[]): CliOptions {
+  let check = false;
   let config = "";
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--check") {
+      check = true;
+      continue;
+    }
     if (arg === "--config") {
       config = args[index + 1] ?? "";
       index += 1;
@@ -73,7 +79,7 @@ export function parseCliArgs(args: string[]): CliOptions {
     throw new Error("Usage: bun scripts/sync-worker-secrets.ts --config <path>");
   }
 
-  return { config };
+  return { check, config };
 }
 
 export async function syncWorkerSecrets(options: CliOptions): Promise<void> {
@@ -81,6 +87,11 @@ export async function syncWorkerSecrets(options: CliOptions): Promise<void> {
   const requiredKeys = parseRequiredSecretsFromWranglerConfig(readFileSync(configPath, "utf8"));
   const payload = buildSecretPayload(Bun.env, requiredKeys);
   const secretCount = Object.keys(payload).length;
+
+  if (options.check) {
+    console.log(`Validated ${secretCount} required worker secret${secretCount === 1 ? "" : "s"}`);
+    return;
+  }
 
   console.log(`Syncing ${secretCount} worker secret${secretCount === 1 ? "" : "s"} from Doppler`);
 

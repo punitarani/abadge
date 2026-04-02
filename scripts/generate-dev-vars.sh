@@ -9,6 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+API_WRANGLER_CONFIG="$REPO_ROOT/apps/api/wrangler.jsonc"
 
 write_var() {
   local file="$1" key="$2" value="$3"
@@ -18,6 +19,8 @@ write_var() {
 }
 
 # --- API worker (apps/api/.dev.vars) ---
+
+bun "$SCRIPT_DIR/sync-worker-secrets.ts" --config "$API_WRANGLER_CONFIG" --check
 
 API_FILE="$REPO_ROOT/apps/api/.dev.vars"
 : > "$API_FILE"

@@ -18,6 +18,10 @@
       "ABADGE_APP_URL",
       "BETTER_AUTH_SECRET",
       "ENCRYPTION_KEY",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
     ]
   },
   "placement": {

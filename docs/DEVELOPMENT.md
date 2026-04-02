@@ -32,19 +32,16 @@ Required variables:
 | `ABADGE_APP_URL` | Public web origin | `http://localhost:3000` |
 | `BETTER_AUTH_SECRET` | Better Auth secret | random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items | `openssl rand -base64 32` |
-
-Optional variables:
-
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth |
-| `GITHUB_CLIENT_ID` | GitHub OAuth |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth |
+| `GOOGLE_CLIENT_ID` | Google OAuth client id | from Google OAuth app |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | from Google OAuth app |
+| `GITHUB_CLIENT_ID` | GitHub OAuth client id | from GitHub OAuth app |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | from GitHub OAuth app |
 
 `bun run dev` regenerates `apps/api/.dev.vars` and `apps/web/.env.local` from Doppler before
-starting local Worker dev. The canonical URL inputs are `ABADGE_API_URL` and `ABADGE_APP_URL`;
-the web client still accepts `NEXT_PUBLIC_*` as a legacy fallback.
+starting local Worker dev. Before writing `apps/api/.dev.vars`, the script validates that every
+secret declared in `apps/api/wrangler.jsonc` `secrets.required` is present in Doppler, so local dev
+fails fast on missing API Worker secrets. The canonical URL inputs are `ABADGE_API_URL` and
+`ABADGE_APP_URL`; the web client still accepts `NEXT_PUBLIC_*` as a legacy fallback.
 
 Production deploys also run through Doppler. Each Worker deploy script syncs the secrets declared
 in that Worker's `wrangler.jsonc` `secrets.required` list from the active Doppler environment

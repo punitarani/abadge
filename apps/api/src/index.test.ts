@@ -94,6 +94,10 @@ const testEnv: Bindings = {
   ABADGE_APP_URL: "http://localhost:3000",
   ENCRYPTION_KEY: "test-encryption-key",
   BETTER_AUTH_SECRET: "test-better-auth-secret",
+  GOOGLE_CLIENT_ID: "test-google-client-id",
+  GOOGLE_CLIENT_SECRET: "test-google-client-secret",
+  GITHUB_CLIENT_ID: "test-github-client-id",
+  GITHUB_CLIENT_SECRET: "test-github-client-secret",
 };
 
 beforeEach(() => {

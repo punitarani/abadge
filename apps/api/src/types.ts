@@ -7,10 +7,10 @@ export type Bindings = {
   ABADGE_APP_URL: string;
   ENCRYPTION_KEY: string;
   BETTER_AUTH_SECRET: string;
-  GOOGLE_CLIENT_ID?: string;
-  GOOGLE_CLIENT_SECRET?: string;
-  GITHUB_CLIENT_ID?: string;
-  GITHUB_CLIENT_SECRET?: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GITHUB_CLIENT_ID: string;
+  GITHUB_CLIENT_SECRET: string;
 };
 
 /** Environment for session-authenticated routes (human users). */

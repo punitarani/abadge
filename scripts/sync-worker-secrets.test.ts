@@ -69,11 +69,19 @@ describe("sync-worker-secrets", () => {
 });
 
 describe("worker required secrets", () => {
-  it("uses canonical ABADGE names for the API worker", async () => {
+  it("requires the full OAuth-aware secret set for the API worker", async () => {
     const requiredSecrets = await readWranglerRequiredSecrets("apps/api/wrangler.jsonc");
 
-    expect(requiredSecrets).toContain("ABADGE_API_URL");
-    expect(requiredSecrets).toContain("ABADGE_APP_URL");
+    expect(requiredSecrets).toEqual([
+      "ABADGE_API_URL",
+      "ABADGE_APP_URL",
+      "BETTER_AUTH_SECRET",
+      "ENCRYPTION_KEY",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET",
+    ]);
   });
 
   it("uses canonical ABADGE names for the web worker", async () => {
