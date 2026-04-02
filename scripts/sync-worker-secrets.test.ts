@@ -25,6 +25,22 @@ describe("sync-worker-secrets", () => {
     ).toThrow('Duplicate worker secret key "FOO"');
   });
 
+  it("rejects invalid lowercase or mixed-case keys instead of silently skipping them", () => {
+    expect(() =>
+      parseRequiredSecretsFromWranglerConfig('{ "secrets": { "required": ["my_secret"] } }'),
+    ).toThrow('Invalid worker secret key "my_secret"');
+
+    expect(() =>
+      parseRequiredSecretsFromWranglerConfig('{ "secrets": { "required": ["Mixed_Case"] } }'),
+    ).toThrow('Invalid worker secret key "Mixed_Case"');
+  });
+
+  it("rejects an empty required secret list", () => {
+    expect(() =>
+      parseRequiredSecretsFromWranglerConfig('{ "secrets": { "required": [] } }'),
+    ).toThrow('Wrangler config "secrets.required" is empty');
+  });
+
   it("builds a payload from required env vars", () => {
     expect(
       buildSecretPayload(

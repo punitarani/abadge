@@ -5,12 +5,12 @@ const SECRET_KEY_PATTERN = /^[A-Z0-9_]+$/;
 
 export function parseRequiredSecretsFromWranglerConfig(text: string): string[] {
   const match = text.match(/"secrets"\s*:\s*\{[\s\S]*?"required"\s*:\s*\[([\s\S]*?)\]/);
-  if (!match?.[1]) {
+  if (!match || match[1] === undefined) {
     throw new Error('Could not parse "secrets.required" from Wrangler config');
   }
 
   const seen = new Set<string>();
-  const keys = [...match[1].matchAll(/"([A-Z0-9_]+)"/g)].map(([, key]) => key);
+  const keys = [...match[1].matchAll(/"([^"]+)"/g)].map(([, key]) => key);
 
   if (keys.length === 0) {
     throw new Error('Wrangler config "secrets.required" is empty');
@@ -81,10 +81,6 @@ export async function syncWorkerSecrets(options: CliOptions): Promise<void> {
   const requiredKeys = parseRequiredSecretsFromWranglerConfig(readFileSync(configPath, "utf8"));
   const payload = buildSecretPayload(Bun.env, requiredKeys);
   const secretCount = Object.keys(payload).length;
-
-  if (secretCount === 0) {
-    throw new Error("No worker secrets resolved for sync");
-  }
 
   console.log(`Syncing ${secretCount} worker secret${secretCount === 1 ? "" : "s"} from Doppler`);
 
