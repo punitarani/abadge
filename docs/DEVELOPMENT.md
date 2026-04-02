@@ -46,6 +46,15 @@ Optional variables:
 starting local Worker dev. The canonical URL inputs are `ABADGE_API_URL` and `ABADGE_APP_URL`;
 the web client still accepts `NEXT_PUBLIC_*` as a legacy fallback.
 
+Production deploys also run through Doppler. Each Worker deploy script syncs the secrets declared
+in that Worker's `wrangler.jsonc` `secrets.required` list from the active Doppler environment
+before the code deploy, so Doppler remains the source of truth for deploy-time values.
+
+```bash
+cd apps/api && doppler run -- bun run deploy
+cd apps/web && doppler run -- bun run deploy
+```
+
 ## Database
 
 ```bash

@@ -1,7 +1,8 @@
 ## Worker environment variable keys
 ## Derived from Bindings in apps/api/src/types.ts,
 ## excluding Cloudflare-managed bindings (e.g. HYPERDRIVE).
-## Used by: generate-dev-vars.sh
+## Used by: generate-dev-vars.sh for local worker development only.
+## Not used for deploy-time secret sync.
 ## Note: generate-dev-vars.sh only writes keys that currently have non-empty values.
 
 # Database (local dev / fallback when not using Hyperdrive binding)

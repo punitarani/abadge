@@ -62,7 +62,8 @@ jobs:
       - name: Build web worker bundle
         working-directory: apps/web
         env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.abadge.io' }}
+          ABADGE_API_URL: ${{ vars.ABADGE_API_URL || 'https://api.abadge.io' }}
+          ABADGE_APP_URL: ${{ vars.ABADGE_APP_URL || 'https://abadge.io' }}
         run: bunx opennextjs-cloudflare build
 
   db-validate:
@@ -126,22 +127,6 @@ jobs:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
       - uses: dopplerhq/cli-action@v3
-      - name: Sync API worker secrets from Doppler
-        working-directory: apps/api
-        run: |
-          set -euo pipefail
-          export CLOUDFLARE_API_TOKEN=$(doppler secrets get CLOUDFLARE_API_TOKEN --plain)
-          payload=$(
-            doppler secrets download --no-file --format json | \
-              jq -c 'with_entries(select(.key as $k | ["ENCRYPTION_KEY", "BETTER_AUTH_SECRET"] | index($k)))'
-          )
-          for key in ENCRYPTION_KEY BETTER_AUTH_SECRET; do
-            if ! printf '%s' "$payload" | jq -e --arg k "$key" 'has($k)' > /dev/null; then
-              echo "ERROR: Required secret $key not found in Doppler"
-              exit 1
-            fi
-          done
-          printf '%s' "$payload" | npx wrangler secret bulk
       - working-directory: apps/api
         run: doppler run -- bun run deploy
 
@@ -159,9 +144,5 @@ jobs:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
       - uses: dopplerhq/cli-action@v3
-      - name: Build OpenNext bundle
-        working-directory: apps/web
-        run: doppler run -- bunx opennextjs-cloudflare build
-      - name: Deploy OpenNext worker
-        working-directory: apps/web
-        run: doppler run -- bunx opennextjs-cloudflare deploy
+      - working-directory: apps/web
+        run: doppler run -- bun run deploy

@@ -24,7 +24,7 @@
     "api:clean:worker": "rm -rf apps/api/.wrangler",
     "cli": "bun packages/cli/bin/abadge.ts",
     "mcp": "doppler run -- bun packages/mcp/src/index.ts",
-    "test": "turbo test && bun test scripts/worker-env-keys.test.ts"
+    "test": "turbo test && bun test scripts/worker-env-keys.test.ts scripts/sync-worker-secrets.test.ts"
   },
   "overrides": {
     "drizzle-orm": "0.45.2",
