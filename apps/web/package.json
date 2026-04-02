@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
+    "deploy": "opennextjs-cloudflare build && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@abadge/trpc": "workspace:*",
