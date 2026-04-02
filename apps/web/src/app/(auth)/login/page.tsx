@@ -62,10 +62,10 @@ export default function LoginPage() {
 
       if (socialError) {
         setError(socialError.message ?? `Could not start ${provider} sign-in`);
+        setSocialLoading(null);
       }
     } catch {
       setError("An unexpected error occurred");
-    } finally {
       setSocialLoading(null);
     }
   }
