@@ -113,7 +113,7 @@ export default function LoginPage() {
         </form>
 
         <SocialAuthButtons
-          providers={[...SOCIAL_PROVIDERS]}
+          providers={SOCIAL_PROVIDERS}
           loadingProvider={socialLoading}
           onProviderClick={handleSocialSignIn}
         />

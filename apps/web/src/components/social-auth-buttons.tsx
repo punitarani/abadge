@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { SocialProvider } from "@/lib/auth-client";
 
 interface SocialAuthButtonsProps {
-  providers: SocialProvider[];
+  providers: readonly SocialProvider[];
   loadingProvider: SocialProvider | null;
   onProviderClick: (provider: SocialProvider) => void;
 }
