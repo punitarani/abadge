@@ -21,6 +21,7 @@ export const clientEnv = createEnv({
     NEXT_PUBLIC_API_URL: resolvePublicApiUrl(),
     NEXT_PUBLIC_APP_URL: resolvePublicAppUrl(),
   },
-  skipValidation: !!process.env.SKIP_ENV_VALIDATION || process.env.NODE_ENV === "development",
+  // Skip validation during build / SSR prerender — validated at runtime in the browser
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION || process.env.NODE_ENV === "production",
   emptyStringAsUndefined: true,
 });

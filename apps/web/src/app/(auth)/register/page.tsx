@@ -64,10 +64,10 @@ export default function RegisterPage() {
 
       if (socialError) {
         setError(socialError.message ?? `Could not start ${provider} sign-in`);
-        setSocialLoading(null);
       }
     } catch {
       setError("An unexpected error occurred");
+    } finally {
       setSocialLoading(null);
     }
   }
@@ -126,7 +126,7 @@ export default function RegisterPage() {
         </form>
 
         <SocialAuthButtons
-          providers={[...SOCIAL_PROVIDERS]}
+          providers={SOCIAL_PROVIDERS}
           loadingProvider={socialLoading}
           onProviderClick={handleSocialSignIn}
         />

@@ -44,7 +44,7 @@ interface ItemEntry {
 
 async function readJsonArrayIfOk(res: Response): Promise<unknown[]> {
   if (!res.ok) return [];
-  const data = await res.json();
+  const data = await res.json().catch(() => null);
   return Array.isArray(data) ? data : [];
 }
 
