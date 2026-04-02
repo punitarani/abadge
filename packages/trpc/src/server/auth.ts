@@ -17,18 +17,21 @@ function getCandidatePrefixes(token: string): string[] {
 }
 
 interface AuthSessionResult {
-  user: {
-    id: string;
-  };
+  session?: {
+    userId?: string | null;
+  } | null;
+  user?: {
+    id?: string | null;
+  } | null;
 }
 
 interface AuthSessionLookupResult {
-  session: {
-    userId: string;
-  };
-  user: {
-    id: string;
-  };
+  session?: {
+    userId?: string | null;
+  } | null;
+  user?: {
+    id?: string | null;
+  } | null;
 }
 
 interface AuthContextWithSessionLookup {
@@ -195,10 +198,11 @@ export const resolveSessionIdentity = (
       }),
     )) as AuthSessionResult | null;
 
-    if (session) {
+    const sessionUserId = session?.user?.id ?? session?.session?.userId;
+    if (sessionUserId) {
       return {
         kind: "session" as const,
-        userId: session.user.id,
+        userId: sessionUserId,
       };
     }
 
@@ -225,10 +229,11 @@ const resolveBearerSessionIdentity = (
       authContext.internalAdapter.findSession(token),
     )) as AuthSessionLookupResult | null;
 
-    if (sessionLookup?.user?.id ?? sessionLookup?.session?.userId) {
+    const sessionUserId = sessionLookup?.user?.id ?? sessionLookup?.session?.userId;
+    if (sessionUserId) {
       return {
         kind: "session" as const,
-        userId: sessionLookup.user.id ?? sessionLookup.session.userId,
+        userId: sessionUserId,
       };
     }
 

@@ -60,6 +60,53 @@ function decodeServerManagedPayload(itemId: string, decrypted: Uint8Array) {
   };
 }
 
+const failMissingServerManagedData = (
+  itemId: string,
+  eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
+) =>
+  Effect.gen(function* () {
+    const ctx = yield* PrincipalRequestContextTag;
+
+    yield* logPrincipalAudit({
+      userId: ctx.identity.principalUserId,
+      principalId: ctx.identity.principalId,
+      itemId,
+      eventType,
+      result: "denied",
+      ipAddress: ctx.ipAddress,
+      meta: { reason: "item has no server-encrypted data" },
+    });
+
+    return yield* Effect.fail(new Error("Item has no server-encrypted data"));
+  });
+
+const decryptServerManagedItem = (
+  item: typeof items.$inferSelect,
+  eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
+) =>
+  Effect.gen(function* () {
+    const ctx = yield* PrincipalRequestContextTag;
+
+    if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+      return yield* failMissingServerManagedData(item.id, eventType);
+    }
+
+    const ciphertext = item.serverCiphertext;
+    const iv = item.serverIv;
+    const keyVersion = item.serverKeyVersion;
+
+    return yield* Effect.tryPromise(() =>
+      serverDecrypt(
+        {
+          ciphertext,
+          iv,
+          keyVersion,
+        },
+        ctx.env.ENCRYPTION_KEY,
+      ),
+    );
+  });
+
 const checkGrant = (principalId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
     const ctx = yield* PrincipalRequestContextTag;
@@ -236,23 +283,7 @@ const accessReveal = (input: RevealAccessInput) =>
       );
     }
 
-    if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-      throw new Error("Item has no server-encrypted data");
-    }
-
-    const ciphertext = item.serverCiphertext;
-    const iv = item.serverIv;
-    const keyVersion = item.serverKeyVersion;
-    const decrypted = yield* Effect.tryPromise(() =>
-      serverDecrypt(
-        {
-          ciphertext,
-          iv,
-          keyVersion,
-        },
-        ctx.env.ENCRYPTION_KEY,
-      ),
-    );
+    const decrypted = yield* decryptServerManagedItem(item, "access.reveal");
 
     yield* logPrincipalAudit({
       userId: ctx.identity.principalUserId,
@@ -313,6 +344,27 @@ const accessMount = (input: MountAccessInput) =>
       );
     }
 
+    if (item.storageMode === "zero_knowledge") {
+      yield* logPrincipalAudit({
+        userId: ctx.identity.principalUserId,
+        principalId: ctx.identity.principalId,
+        itemId: input.itemId,
+        eventType,
+        result: "allowed",
+        deliveryMode: `mount_${input.mountType}`,
+        ipAddress: ctx.ipAddress,
+      });
+
+      return {
+        storageMode: "zero_knowledge" as const,
+        encryptedItemKey: item.encryptedItemKey ?? "",
+        ciphertext: item.ciphertext ?? "",
+        cryptoVersion: item.cryptoVersion,
+      };
+    }
+
+    const decrypted = yield* decryptServerManagedItem(item, eventType);
+
     yield* logPrincipalAudit({
       userId: ctx.identity.principalUserId,
       principalId: ctx.identity.principalId,
@@ -322,33 +374,6 @@ const accessMount = (input: MountAccessInput) =>
       deliveryMode: `mount_${input.mountType}`,
       ipAddress: ctx.ipAddress,
     });
-
-    if (item.storageMode === "zero_knowledge") {
-      return {
-        storageMode: "zero_knowledge" as const,
-        encryptedItemKey: item.encryptedItemKey ?? "",
-        ciphertext: item.ciphertext ?? "",
-        cryptoVersion: item.cryptoVersion,
-      };
-    }
-
-    if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-      throw new Error("Item has no server-encrypted data");
-    }
-
-    const ciphertext = item.serverCiphertext;
-    const iv = item.serverIv;
-    const keyVersion = item.serverKeyVersion;
-    const decrypted = yield* Effect.tryPromise(() =>
-      serverDecrypt(
-        {
-          ciphertext,
-          iv,
-          keyVersion,
-        },
-        ctx.env.ENCRYPTION_KEY,
-      ),
-    );
 
     return {
       storageMode: "server_managed" as const,

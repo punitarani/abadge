@@ -145,6 +145,18 @@ const listGrants = (input: Schema.Schema.Type<typeof GrantListQuerySchema>) =>
       );
     } else if (input.itemId) {
       const itemId = input.itemId;
+      const [item] = yield* Effect.tryPromise(() =>
+        ctx.db
+          .select({ id: items.id })
+          .from(items)
+          .where(and(eq(items.id, itemId), eq(items.userId, ctx.identity.userId)))
+          .limit(1),
+      );
+
+      if (!item) {
+        return { grants: [] };
+      }
+
       result = yield* Effect.tryPromise(() =>
         ctx.db.select().from(grants).where(eq(grants.itemId, itemId)),
       );
