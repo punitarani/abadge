@@ -1,6 +1,6 @@
 # Capability Matrix
 
-## Principal Types
+## Agent Types
 
 | Kind | Locality | Auth Method | Can Decrypt ZK | Description |
 |------|----------|-------------|----------------|-------------|
@@ -19,20 +19,20 @@
 | `mount_file` | Write to temp file | Local only (daemon) | Local only (daemon) |
 | `use_without_reveal` | Use without seeing value (future: sign, mint) | Future | Future |
 
-## Grant Validation Rules
+## Permission Validation Rules
 
-When creating a grant, the server enforces:
+When creating a permission, the server enforces:
 
-1. **Remote + ZK + reveal**: Denied. Remote principals cannot reveal ZK items.
-2. **Remote + ZK + any**: Denied. Remote principals cannot access ZK items at all.
+1. **Remote + ZK + reveal**: Denied. Remote agents cannot reveal ZK items.
+2. **Remote + ZK + any**: Denied. Remote agents cannot access ZK items at all.
 3. **Remote + managed + reveal**: Allowed. This is the primary remote use case.
-4. **Remote + managed + mount**: Denied. Remote principals can't mount locally.
+4. **Remote + managed + mount**: Denied. Remote agents can't mount locally.
 5. **Local + ZK + any non-future capability**: Allowed. Daemon handles decryption.
 6. **Local + managed + any non-future capability**: Allowed.
 
 ```mermaid
 flowchart TD
-  START["Grant request:<br/>principal + item + capability"] --> LOC{"Principal<br/>locality?"}
+  START["Permission request:<br/>agent + item + capability"] --> LOC{"Agent<br/>locality?"}
 
   LOC -->|local| SM1{"Item storage<br/>mode?"}
   LOC -->|remote| SM2{"Item storage<br/>mode?"}
@@ -66,7 +66,7 @@ flowchart TD
 
 ## Access Procedure Mapping
 
-| Procedure | Required Capability | Item Mode | Principal Locality |
+| Procedure | Required Capability | Item Mode | Agent Locality |
 |----------|---------------------|-----------|--------------------|
 | `trpc.access.ciphertext` | `read_ciphertext` | `zero_knowledge` | local |
 | `trpc.access.reveal` | `reveal_plaintext` | `server_managed` | any |
@@ -80,7 +80,7 @@ flowchart TD
 | CLI runs command with ZK secret | CLI → daemon (IPC) → daemon decrypts → daemon spawns subprocess with env var |
 | Local MCP uses ZK secret | MCP → daemon (IPC) → daemon decrypts → daemon injects |
 | Remote agent reveals managed secret | Agent → API (HTTPS) → server decrypts → returns plaintext |
-| Remote agent tries to access ZK item | Denied at grant validation or access route |
+| Remote agent tries to access ZK item | Denied at permission validation or access route |
 
 ```mermaid
 flowchart LR

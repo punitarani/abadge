@@ -6,7 +6,7 @@ This repo builds abadge: an agent credential firewall. Users store secrets, defi
 
 ## Prime directives
 
-1. Preserve the product model: users store secrets, register agents, grant access per credential with policies, approve sensitive requests, and inspect a full audit trail.
+1. Preserve the product model: users store secrets, register agents, create per-credential permissions with policies, approve sensitive requests, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
 3. Preserve the security model: encrypted credentials, hashed agent API keys, explicit permission checks, policy evaluation, delivery mode enforcement, immutable access logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
@@ -51,11 +51,11 @@ packages/
 Owns:
 
 * auth endpoints (Better Auth catch-all + social provider discovery)
-* dashboard CRUD endpoints (credentials, agents, permissions, policies, approvals, connectors, auto-grants, agent groups)
+* dashboard CRUD endpoints (credentials, agents, permissions, policies, approvals, connectors, automatic permissions, agent groups)
 * agent credential access endpoint with policy evaluation
 * AES-256-GCM encryption/decryption of credential values and connector configs
 * agent auth via API key hash lookup and broker session token verification
-* permission enforcement (explicit grants + auto-grant fallback)
+* permission enforcement (explicit permissions + automatic permission fallback)
 * policy evaluation (pure function, per-access)
 * approval workflows (create on policy trigger, approve/deny by owner)
 * broker session management (create, list, revoke)
@@ -92,7 +92,7 @@ Owns:
 
 * shared domain types (Credential, Agent, Permission, Policy, Approval, BrokerSession, Connector, AutoGrant, AgentGroup, AccessLogEntry, etc.)
 * zod schemas (CreateCredentialSchema, CreateAgentSchema, GrantPermissionSchema, AgentAccessRequestSchema, CreatePolicySchema, CreateSessionSchema, CreateConnectorSchema, CreateAutoGrantSchema, CreateAgentGroupSchema, etc.)
-* constants (credential types, delivery modes, environments, sensitivities, principal types, access outcomes, approval statuses, connector types, social providers, session statuses)
+* constants (credential types, delivery modes, environments, sensitivities, agent types, access outcomes, approval statuses, connector types, social providers, session statuses)
 * shared error shapes and error codes
 
 ### packages/db
@@ -139,7 +139,7 @@ Does not own:
 
 Owns:
 
-* command parsing and routing (login, whoami, secret, grant, run, mount, audit, approve, connector)
+* command parsing and routing (login, whoami, secret, agent, permission, run, mount, audit, approve, connector)
 * user config (~/.abadge/config.json)
 * terminal output formatting
 * interactive login flow
@@ -181,7 +181,7 @@ Does not own:
 * No plaintext credential storage.
 * No plaintext API key storage.
 * No plaintext session token storage.
-* No credential read without an explicit agent-credential grant or matching auto-grant.
+* No credential read without an explicit agent-credential permission or matching automatic permission.
 * No cross-user credential access.
 * Every allowed and denied agent read must be logged.
 * No wildcard permissions for v1.
@@ -199,8 +199,8 @@ Does not own:
 
 * `user` owns `credentials` (encrypted values, unique name per user)
 * `user` owns `agents` (Better Auth API keys, hashed, prefix `abg_`)
-* `agent_credential_permissions` is the explicit grant table (composite PK on agent+credential, optional policy attachment, delivery mode constraints, expiration)
-* `auto_grants` define pattern-matching rules that grant agents automatic access to matching credentials
+* `agent_credential_permissions` is the explicit permission table (composite PK on agent+credential, optional policy attachment, delivery mode constraints, expiration)
+* `auto_grants` define pattern-matching rules that automatically allow agents to access matching credentials
 * `policies` define access rules (delivery mode, environment, sensitivity, destination, TTL)
 * `approvals` track pending access requests (24h TTL, approve/deny by credential owner)
 * `broker_sessions` provide short-lived scoped access tokens (prefix `abs_`, max 24h TTL)
@@ -229,7 +229,7 @@ Does not own:
 * authenticate bearer token (session token first by `abs_` prefix, then API key)
 * resolve agent
 * resolve credential for same user
-* check explicit permission or matching auto-grant
+* check explicit permission or matching automatic permission
 * check permission expiration
 * evaluate attached policy (if any)
 * check delivery mode constraints (credential x permission x policy intersection)
@@ -395,7 +395,7 @@ Flag:
 Default to the smallest change that preserves these invariants:
 
 * one database
-* explicit grants
+* explicit permissions
 * decrypt only on authorized read
 * log every attempt
 * keep the repo understandable in one pass

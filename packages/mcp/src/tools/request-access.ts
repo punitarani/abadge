@@ -41,7 +41,7 @@ export async function handler(
     }
 
     return JSON.stringify({
-      status: "granted",
+      status: "allowed",
       itemId: input.itemId,
       capability: input.capability,
     });

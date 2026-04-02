@@ -19,8 +19,8 @@ const navSections = [
   {
     label: "Access",
     items: [
-      { href: "/principals", label: "Principals" },
-      { href: "/grants", label: "Grants" },
+      { href: "/agents", label: "Agents" },
+      { href: "/permissions", label: "Permissions" },
     ],
   },
   {

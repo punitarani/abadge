@@ -4,7 +4,7 @@
 
 **Abadge is a credential control plane for AI agents.**
 
-It stores native credentials or references existing secret systems, grants agents explicit access
+It stores native credentials or references existing secret systems, allows agents explicit access
 per credential, evaluates policy at request time, supports approval for sensitive access, and
 records a complete audit trail across the dashboard, API, CLI, SDK, and MCP server.
 
@@ -69,7 +69,7 @@ under which policy.
 
 Current implementation:
 
-* explicit agent-to-credential grants
+* explicit agent-to-credential permissions
 * policy evaluation at access time
 * approval-required flows
 * short-lived broker sessions
@@ -126,5 +126,5 @@ Use this sentence when in doubt:
 More explicit version:
 
 **Abadge is the secure access layer between AI agents and credentials. It stores native secrets or
-connects to existing vaults, grants least-privilege access just in time, supports approvals for
+connects to existing vaults, permissions least-privilege access just in time, supports approvals for
 sensitive actions, and keeps every access attributable and auditable.**

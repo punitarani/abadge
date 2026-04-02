@@ -69,7 +69,7 @@ items, the tool also verifies that local daemon decryption is possible.
 Successful output:
 
 ```json
-{ "status": "granted", "itemId": "...", "capability": "mount_env" }
+{ "status": "allowed", "itemId": "...", "capability": "mount_env" }
 ```
 
 Failure output:
@@ -143,5 +143,5 @@ The MCP server treats the model as untrusted:
 * `mount_secret` exposes a file path, not the secret
 * there is no tool that returns raw secret bytes directly to the model
 
-The MCP server authenticates with a local principal token, uses the shared tRPC client for control
+The MCP server authenticates with a local agent token, uses the shared tRPC client for control
 plane access, and delegates zero-knowledge decrypt work to the local daemon.

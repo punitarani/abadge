@@ -1,19 +1,28 @@
 import { AuditListResultSchema, type AuditQuery, AuditQuerySchema } from "@abadge/core";
-import { and, desc, eq, lt } from "@abadge/db";
+import { and, desc, eq, lt, or } from "@abadge/db";
 import { auditLog } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
 import { createTrpcRouter, sessionProcedure } from "../init";
-import { serializeAuditEntry } from "../serialize";
+import { getAuditEventTypeFilters, serializeAuditEntry } from "../serialize";
 
 const listAuditEntries = (input: AuditQuery) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const conditions = [eq(auditLog.userId, ctx.identity.userId)];
 
-    if (input.eventType) conditions.push(eq(auditLog.eventType, input.eventType));
+    if (input.eventType) {
+      const eventTypes = getAuditEventTypeFilters(input.eventType);
+      const eventTypeFilter =
+        eventTypes.length === 1
+          ? eq(auditLog.eventType, eventTypes[0] ?? input.eventType)
+          : or(...eventTypes.map((eventType) => eq(auditLog.eventType, eventType)));
+      if (eventTypeFilter) {
+        conditions.push(eventTypeFilter);
+      }
+    }
     if (input.result) conditions.push(eq(auditLog.result, input.result));
-    if (input.principalId) conditions.push(eq(auditLog.principalId, input.principalId));
+    if (input.agentId) conditions.push(eq(auditLog.principalId, input.agentId));
     if (input.itemId) conditions.push(eq(auditLog.itemId, input.itemId));
     if (input.cursor) conditions.push(lt(auditLog.id, Number(input.cursor)));
 

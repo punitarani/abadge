@@ -1,7 +1,7 @@
 import { initTRPC } from "@trpc/server";
 import { Effect } from "effect";
-import { resolvePrincipalIdentity, resolveSessionIdentity } from "./auth";
-import type { BaseRequestContext, PrincipalRequestContext, SessionRequestContext } from "./context";
+import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
+import type { AgentRequestContext, BaseRequestContext, SessionRequestContext } from "./context";
 import { getTrpcErrorData, toTrpcError } from "./errors";
 
 const t = initTRPC.context<BaseRequestContext>().create({
@@ -34,14 +34,14 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
   }
 });
 
-export const principalProcedure = publicProcedure.use(async ({ ctx, next }) => {
+export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
-    const identity = await Effect.runPromise(resolvePrincipalIdentity(ctx));
+    const identity = await Effect.runPromise(resolveAgentIdentity(ctx));
     return next({
       ctx: {
         ...ctx,
         identity,
-      } satisfies PrincipalRequestContext,
+      } satisfies AgentRequestContext,
     });
   } catch (error) {
     throw toTrpcError(error);

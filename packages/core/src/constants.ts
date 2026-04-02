@@ -12,11 +12,11 @@ export type ItemKind = (typeof ITEM_KINDS)[number];
 export const STORAGE_MODES = ["zero_knowledge", "server_managed"] as const;
 export type StorageMode = (typeof STORAGE_MODES)[number];
 
-export const PRINCIPAL_KINDS = ["device", "local_cli", "local_mcp", "remote_agent"] as const;
-export type PrincipalKind = (typeof PRINCIPAL_KINDS)[number];
+export const AGENT_KINDS = ["device", "local_cli", "local_mcp", "remote_agent"] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
 
-export const PRINCIPAL_LOCALITIES = ["local", "remote"] as const;
-export type PrincipalLocality = (typeof PRINCIPAL_LOCALITIES)[number];
+export const AGENT_LOCALITIES = ["local", "remote"] as const;
+export type AgentLocality = (typeof AGENT_LOCALITIES)[number];
 
 export const CAPABILITIES = [
   "read_ciphertext",
@@ -36,11 +36,11 @@ export const AUDIT_EVENT_TYPES = [
   "item.read",
   "item.update",
   "item.delete",
-  "principal.create",
-  "principal.rotate",
-  "principal.revoke",
-  "grant.create",
-  "grant.revoke",
+  "agent.create",
+  "agent.rotate",
+  "agent.revoke",
+  "permission.create",
+  "permission.revoke",
   "access.ciphertext",
   "access.reveal",
   "access.mount_env",
@@ -51,14 +51,14 @@ export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 export const AUDIT_RESULTS = ["allowed", "denied", "expired", "revoked"] as const;
 export type AuditResult = (typeof AUDIT_RESULTS)[number];
 
-/** API key prefixes by principal locality */
+/** API key prefixes by agent locality */
 export const API_KEY_PREFIX = {
   remote: "abg_",
   local: "abl_",
 } as const;
 
-/** Locality derived from principal kind */
-export function localityForKind(kind: PrincipalKind): PrincipalLocality {
+/** Locality derived from agent kind */
+export function agentLocalityForKind(kind: AgentKind): AgentLocality {
   switch (kind) {
     case "device":
     case "local_cli":
@@ -79,11 +79,11 @@ export type ErrorCode =
   | "VAULT_NOT_FOUND"
   | "VAULT_ALREADY_EXISTS"
   | "ITEM_NOT_FOUND"
-  | "PRINCIPAL_NOT_FOUND"
-  | "PRINCIPAL_REVOKED"
-  | "GRANT_NOT_FOUND"
-  | "GRANT_DENIED"
-  | "GRANT_EXPIRED"
+  | "AGENT_NOT_FOUND"
+  | "AGENT_REVOKED"
+  | "PERMISSION_NOT_FOUND"
+  | "PERMISSION_DENIED"
+  | "PERMISSION_EXPIRED"
   | "INVALID_CAPABILITY"
   | "STALE_VERSION"
   | "VALIDATION_ERROR";

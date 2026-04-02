@@ -32,7 +32,7 @@ Notes:
 * browser callers use cookies with `httpBatchLink`
 * node and bun callers use Bearer auth headers
 * timestamps are JSON-safe ISO strings at the boundary
-* there is no REST compatibility shim
+* `/v1/agents`, `/v1/permissions`, and `/v1/audit` expose the same renamed contract over HTTP
 
 ## Authentication
 
@@ -53,18 +53,18 @@ Dashboard callers use Better Auth cookies. Session-backed tRPC procedures also a
 Auth session token in `Authorization: Bearer ...`, which is how the SDK, CLI, and daemon helpers
 authenticate after email/password sign-in.
 
-### Principal auth
+### Agent auth
 
-Principal-facing procedures require a Bearer token:
+Agent-facing procedures require a Bearer token:
 
 ```text
-Authorization: Bearer abl_...   local principal
-Authorization: Bearer abg_...   remote principal
+Authorization: Bearer abl_...   local agent
+Authorization: Bearer abg_...   remote agent
 ```
 
 Resolution order:
 
-1. candidate lookup by stored `secretPrefix`
+1. candidate lookup by stored `keyPrefix`
 2. constant-time verification of candidate hashes
 3. legacy Better Auth API-key verification fallback
 
@@ -74,7 +74,7 @@ Resolution order:
 |------|------|---------|
 | `publicProcedure` | none | No public application procedures currently |
 | `sessionProcedure` | Better Auth session or verified user token | Dashboard, SDK, CLI, daemon helpers |
-| `principalProcedure` | Principal Bearer token | Broker, MCP, remote agents |
+| `agentProcedure` | Agent Bearer token | Broker, MCP, remote agents |
 
 ## Session Procedures
 
@@ -222,7 +222,7 @@ Response: `{ ok: true }`
 
 Deletion is soft-delete via `deletedAt`.
 
-### `principals.create`
+### `agents.create`
 
 Auth: `sessionProcedure`
 
@@ -236,87 +236,87 @@ Response:
 
 ```ts
 {
-  principal: Principal;
-  secret: string;
+  agent: Agent;
+  apiKey: string;
 }
 ```
 
-`secret` is shown once and is never retrievable again.
+`apiKey` is shown once and is never retrievable again.
 
-### `principals.list`
+### `agents.list`
 
 Auth: `sessionProcedure`
 
 Input: none
 
-Response: `{ principals: Principal[] }`
+Response: `{ agents: Agent[] }`
 
-### `principals.get`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `principalId` | string | yes | Principal identifier |
-
-Response: `{ principal: Principal }`
-
-### `principals.rotate`
+### `agents.get`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `principalId` | string | yes | Principal identifier |
+| `agentId` | string | yes | Agent identifier |
 
-Response: `{ secret: string, secretPrefix: string }`
+Response: `{ agent: Agent }`
 
-### `principals.revoke`
+### `agents.rotate`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `principalId` | string | yes | Principal identifier |
+| `agentId` | string | yes | Agent identifier |
+
+Response: `{ apiKey: string, keyPrefix: string }`
+
+### `agents.revoke`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `agentId` | string | yes | Agent identifier |
 
 Response: `{ ok: true }`
 
-### `grants.create`
+### `permissions.create`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `principalId` | string | yes | Principal receiving access |
+| `agentId` | string | yes | Agent receiving access |
 | `itemId` | string | yes | Target item |
 | `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
-| `expiresAt` | string | no | ISO timestamp for grant expiry |
+| `expiresAt` | string | no | ISO timestamp for permission expiry |
 
-Response: `{ grant: Grant }`
+Response: `{ permission: Permission }`
 
 Current enforcement also rejects:
 
-* remote principal + zero-knowledge item
-* remote principal + capability other than `reveal_plaintext`
+* remote agent + zero-knowledge item
+* remote agent + capability other than `reveal_plaintext`
 
-### `grants.list`
+### `permissions.list`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `principalId` | string | no | Restrict to one principal |
+| `agentId` | string | no | Restrict to one agent |
 | `itemId` | string | no | Restrict to one item |
 
-Response: `{ grants: Grant[] }`
+Response: `{ permissions: Permission[] }`
 
-### `grants.revoke`
+### `permissions.revoke`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `grantId` | string | yes | Grant identifier |
+| `permissionId` | string | yes | Permission identifier |
 
 Response: `{ ok: true }`
 
@@ -330,16 +330,16 @@ Auth: `sessionProcedure`
 | `cursor` | string | no | Cursor for backward pagination |
 | `eventType` | string | no | Filter by audit event type |
 | `result` | string | no | Filter by audit result |
-| `principalId` | string | no | Filter by principal |
+| `agentId` | string | no | Filter by agent |
 | `itemId` | string | no | Filter by item |
 
 Response: `{ entries: AuditEntry[], nextCursor: string | null }`
 
-## Principal Procedures
+## Agent Procedures
 
 ### `access.ciphertext`
 
-Auth: `principalProcedure`
+Auth: `agentProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -357,13 +357,13 @@ Response:
 
 Restrictions:
 
-* local principals only
+* local agents only
 * item must be zero-knowledge
-* grant must include `read_ciphertext`
+* permission must include `read_ciphertext`
 
 ### `access.reveal`
 
-Auth: `principalProcedure`
+Auth: `agentProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -380,11 +380,11 @@ Response:
 Restrictions:
 
 * item must be server-managed
-* grant must include `reveal_plaintext`
+* permission must include `reveal_plaintext`
 
 ### `access.mount`
 
-Auth: `principalProcedure`
+Auth: `agentProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -413,9 +413,9 @@ Response for server-managed items:
 
 Restrictions:
 
-* local principals only
-* grants must include `mount_env` or `mount_file`
-* remote principals cannot mount
+* local agents only
+* permissions must include `mount_env` or `mount_file`
+* remote agents cannot mount
 
 ## Errors
 
@@ -438,6 +438,6 @@ Common codes:
 
 | Path | Method | Auth | Purpose |
 |------|--------|------|---------|
-| `/trpc/*` | tRPC transport | session or principal depending on procedure | Canonical control plane |
+| `/trpc/*` | tRPC transport | session or agent depending on procedure | Canonical control plane |
 | `/api/auth/*` | Better Auth routes | varies by route | Sign in, sign out, sessions |
 | `/health` | GET | none | Worker health check |

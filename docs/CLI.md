@@ -146,74 +146,74 @@ abadge item delete <item-id>
 abadge item delete <item-id> --force
 ```
 
-### `abadge principal register`
+### `abadge agent register`
 
-Creates a new principal and prints the one-time secret.
+Creates a new agent and prints the one-time API key.
 
 ```bash
-abadge principal register --name "dev laptop" --kind local_cli
-abadge principal register --name "ci bot" --kind remote_agent --description "deploy runner"
+abadge agent register --name "dev laptop" --kind local_cli
+abadge agent register --name "ci bot" --kind remote_agent --description "deploy runner"
 ```
 
 Flags:
 
 | Flag | Description |
 |------|-------------|
-| `--name, -n` | Principal display name |
-| `--kind, -k` | Principal kind |
+| `--name, -n` | Agent display name |
+| `--kind, -k` | Agent kind |
 | `--description, -d` | Optional metadata description |
 | `--json` | Print raw JSON |
 
-### `abadge principal list`
+### `abadge agent list`
 
-Lists registered principals.
+Lists registered agents.
 
 ```bash
-abadge principal list
-abadge principal list --json
+abadge agent list
+abadge agent list --json
 ```
 
-### `abadge principal revoke <id>`
+### `abadge agent revoke <id>`
 
-Revokes a principal.
+Revokes an agent.
 
 ```bash
-abadge principal revoke <principal-id>
+abadge agent revoke <agent-id>
 ```
 
-### `abadge grant create`
+### `abadge permission create`
 
-Creates an explicit grant. The default capability is `mount_env`.
+Creates an explicit permission. The default capability is `mount_env`.
 
 ```bash
-abadge grant create --principal-id <principal-id> --item-id <item-id>
-abadge grant create --principal-id <principal-id> --item-id <item-id> --capability reveal_plaintext
+abadge permission create --agent-id <agent-id> --item-id <item-id>
+abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
 ```
 
 Flags:
 
 | Flag | Description |
 |------|-------------|
-| `--principal-id` | Target principal |
+| `--agent-id` | Target agent |
 | `--item-id` | Target item |
-| `--capability` | Capability to grant |
+| `--capability` | Allowed capability |
 | `--json` | Print raw JSON |
 
-### `abadge grant list`
+### `abadge permission list`
 
-Lists grants.
+Lists permissions.
 
 ```bash
-abadge grant list
-abadge grant list --json
+abadge permission list
+abadge permission list --json
 ```
 
-### `abadge grant revoke <id>`
+### `abadge permission revoke <id>`
 
-Revokes a grant.
+Revokes a permission.
 
 ```bash
-abadge grant revoke <grant-id>
+abadge permission revoke <permission-id>
 ```
 
 ### `abadge run`

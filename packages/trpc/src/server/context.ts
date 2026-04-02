@@ -27,19 +27,19 @@ export interface SessionIdentity {
   userId: string;
 }
 
-export interface PrincipalIdentity {
-  kind: "principal";
-  principalId: string;
-  principalUserId: string;
-  principalLocality: "local" | "remote";
+export interface AgentIdentity {
+  kind: "agent";
+  agentId: string;
+  agentUserId: string;
+  agentLocality: "local" | "remote";
 }
 
 export interface SessionRequestContext extends BaseRequestContext {
   identity: SessionIdentity;
 }
 
-export interface PrincipalRequestContext extends BaseRequestContext {
-  identity: PrincipalIdentity;
+export interface AgentRequestContext extends BaseRequestContext {
+  identity: AgentIdentity;
 }
 
 export function getConnectionString(env: AppBindings): string {

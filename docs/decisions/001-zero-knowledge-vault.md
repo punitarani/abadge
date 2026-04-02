@@ -17,8 +17,8 @@ Rewrite the credential storage system to be **zero-knowledge first** with an opt
 
 | Mode | Encryption | Who can decrypt | Use case |
 |------|-----------|-----------------|----------|
-| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via libsodium | Only the user (via master password) and their local principals | User secrets, local CLI/MCP usage |
-| `server_managed` (opt-in) | Server-side AES-256-GCM envelope encryption | Server, for authorized remote principal access | Remote agent reveal, hosted workflows |
+| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via libsodium | Only the user (via master password) and their local agents | User secrets, local CLI/MCP usage |
+| `server_managed` (opt-in) | Server-side AES-256-GCM envelope encryption | Server, for authorized remote agent access | Remote agent reveal, hosted workflows |
 
 These are **separate items**, not dual-ciphertext on the same item.
 
@@ -33,9 +33,9 @@ Master Password → Argon2id → KEK → wraps → Root Key → wraps → Item D
 - **KEK**: Derived from master password via Argon2id. Used only to wrap/unwrap the root key.
 - **Recovery Key**: 256-bit random key, shown once, wraps root key independently of KEK.
 
-### Principal Split
+### Agent Split
 
-Principals are split into two classes:
+Agents are split into two classes:
 
 - **Local** (device, local_cli, local_mcp): Can access ZK items through the local daemon which holds the unlocked root key.
 - **Remote** (remote_agent): Cannot decrypt ZK items. Can only access `server_managed` items via `reveal_plaintext` capability.
@@ -57,7 +57,7 @@ The web dashboard derives the KEK in the browser and holds the root key in JS me
 
 ### What Gets Dropped
 
-Connectors, auto-grants, agent groups, broker sessions, policy engine, approval workflows, organization vault cryptography, browser_fill delivery mode. All can return in v2.
+Connectors, auto-permissions, agent groups, broker sessions, policy engine, approval workflows, organization vault cryptography, browser_fill delivery mode. All can return in v2.
 
 ## Consequences
 

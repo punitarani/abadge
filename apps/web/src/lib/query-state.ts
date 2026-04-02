@@ -12,7 +12,7 @@ export const auditFilterParsers = {
   result: parseAsStringLiteral(auditResultFilters).withDefault("all"),
 };
 
-export const grantFilterParsers = {
-  principal: parseAsString.withDefault("all"),
+export const permissionFilterParsers = {
+  agent: parseAsString.withDefault("all"),
   item: parseAsString.withDefault("all"),
 };

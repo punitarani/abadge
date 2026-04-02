@@ -22,13 +22,13 @@ export type Env = {
   };
 };
 
-/** Environment for principal-authenticated routes (agents/devices). */
-export type PrincipalEnv = {
+/** Environment for agent-authenticated routes (agents/devices). */
+export type AgentEnv = {
   Bindings: Bindings;
   Variables: {
-    principalId: string;
-    principalUserId: string;
-    principalLocality: string;
+    agentId: string;
+    agentUserId: string;
+    agentLocality: string;
     db: Database;
   };
 };
