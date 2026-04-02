@@ -1,5 +1,39 @@
 # Threat Model
 
+## Trust Boundary Overview
+
+```mermaid
+flowchart TB
+  subgraph T1["Tier 1: Local Daemon (Strongest)"]
+    Daemon["vaultd process<br/>Root key in memory<br/>Unix socket (0600)"]
+  end
+
+  subgraph T2["Tier 2: Browser (Convenient)"]
+    Browser["Root key in JS memory<br/>Lost on tab close<br/>Vulnerable to XSS"]
+  end
+
+  subgraph T3["Tier 3: Server (ZK for ZK items)"]
+    API["API Worker"]
+    DB["Postgres<br/>(ciphertext only for ZK)"]
+    EK["ENCRYPTION_KEY<br/>(Worker Secret)"]
+  end
+
+  subgraph T4["Tier 4: Remote Principals"]
+    Agent["Remote Agent<br/>API key auth<br/>server_managed only"]
+  end
+
+  Daemon -->|IPC: decrypt requests| T3
+  Browser -->|HTTPS: encrypted data| T3
+  Agent -->|HTTPS: reveal requests| T3
+  API --> DB
+  EK -.-> API
+
+  style T1 fill:#dfd,stroke:#3c3,stroke-width:3px
+  style T2 fill:#ffd,stroke:#cc3,stroke-width:2px
+  style T3 fill:#e8f4fd,stroke:#2196F3,stroke-width:2px
+  style T4 fill:#fdd,stroke:#c33,stroke-width:1px
+```
+
 ## Trust Boundaries
 
 ### Tier 1: Local Daemon (Strongest)
@@ -78,6 +112,27 @@ Remote principals (hosted agents, cloud workers) authenticate with API keys and 
 | Metadata leakage | ZK item metadata encrypted inside ciphertext. Server sees only IDs + timestamps + storage mode. |
 | Key rotation failure | Per-item DEKs: rotation rewraps DEKs, doesn't re-encrypt content. Atomic transaction. |
 | Nonce reuse | XChaCha20-Poly1305 uses 192-bit random nonces. Collision probability negligible. |
+
+### Server breach impact by storage mode
+
+```mermaid
+flowchart LR
+  BREACH["Server breach"] --> ZK["ZK Items"]
+  BREACH --> SM["Server-Managed Items"]
+
+  ZK --> ZK_EXP["Attacker gets:<br/>- Wrapped root keys<br/>- Wrapped DEKs<br/>- Item ciphertext<br/>- KDF params + salt"]
+  ZK_EXP --> ZK_NEED["Still needs:<br/>Master password<br/>(Argon2id brute-force)"]
+  ZK_NEED --> ZK_RESULT["Impractical for<br/>strong passwords"]
+
+  SM --> SM_EXP["Attacker gets:<br/>- AES-256-GCM ciphertext<br/>- IVs"]
+  SM_EXP --> SM_KEY{"ENCRYPTION_KEY<br/>compromised?"}
+  SM_KEY -->|"No (Worker Secret intact)"| SM_SAFE["Items remain encrypted"]
+  SM_KEY -->|"Yes (full infra breach)"| SM_EXPOSED["All SM items exposed"]
+
+  style ZK_RESULT fill:#dfd,stroke:#3c3
+  style SM_SAFE fill:#dfd,stroke:#3c3
+  style SM_EXPOSED fill:#fdd,stroke:#c33
+```
 
 ## Explicit Non-Goals for v1
 

@@ -1,6 +1,6 @@
 # MCP Server
 
-The abadge MCP server exposes policy-aware credential tools to AI agents (Claude, Codex, Cursor,
+The abadge MCP server exposes capability-aware credential tools to AI agents (Claude, Codex, Cursor,
 etc.) via the Model Context Protocol. Secrets are never returned to the LLM by default.
 
 ## Setup
@@ -11,7 +11,7 @@ Set environment variables or create `~/.abadge/config.json`:
 
 ```bash
 export ABADGE_API_URL=http://localhost:8787
-export ABADGE_TOKEN=abg_your_api_key
+export ABADGE_TOKEN=abl_your_api_key
 ```
 
 ### Running
@@ -36,7 +36,7 @@ Add to your MCP config (e.g., `claude_desktop_config.json`):
       "args": ["packages/mcp/src/index.ts"],
       "env": {
         "ABADGE_API_URL": "http://localhost:8787",
-        "ABADGE_TOKEN": "abg_your_api_key"
+        "ABADGE_TOKEN": "abl_your_api_key"
       }
     }
   }
@@ -45,82 +45,61 @@ Add to your MCP config (e.g., `claude_desktop_config.json`):
 
 ## Tools
 
-### `list_available_credentials`
+### `list_items`
 
-List credentials the agent has access to. Returns names and metadata, never values.
+List items the principal has access to. Returns metadata only, never values.
 
 Input: `{}` (no required parameters)
 
-### `request_secret_use`
+Output: `{ items: [{ id, name, storageMode, createdAt, updatedAt }] }`
 
-Request to use a credential with a specific delivery mode. Does NOT return the secret value.
+### `request_access`
+
+Request access to an item with a specific capability. Does NOT return the secret value.
 
 Input:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentialName` | string | yes | Credential to access |
-| `deliveryMode` | enum | yes | env\_inject, file\_mount, operation\_only |
+| `itemId` | string | yes | Item to access |
+| `capability` | enum | yes | `mount_env` or `mount_file` |
 | `purpose` | string | no | Reason for access |
+
+Output: `{ status, itemId, capability }` or `{ status: "pending_approval" }`
 
 ### `run_with_secret`
 
-Run a command with a credential injected as an environment variable. The secret is never exposed to the AI model -- only the command's stdout/stderr is returned.
+Run a command with a secret injected as an environment variable. The secret is never exposed to
+the AI model -- only the command's stdout/stderr is returned (max 4KB each).
 
 Input:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentialName` | string | yes | Credential to inject |
+| `itemId` | string | yes | Item to inject |
 | `command` | string | yes | Command to run |
 | `args` | string[] | no | Command arguments |
 | `envVarName` | string | no | Environment variable name |
 | `purpose` | string | no | Reason for access |
 
-### `mount_secret_file`
+Output: `{ exitCode, stdout, stderr }`
 
-Mount a credential as a temporary file with restricted permissions. Returns the file path.
+### `mount_secret`
+
+Mount a secret as a temporary file with restricted permissions. Returns the file path, not the
+content. Auto-cleanup after 5 minutes.
 
 Input:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentialName` | string | yes | Credential to mount |
-| `path` | string | no | Desired file path |
+| `itemId` | string | yes | Item to mount |
+| `filename` | string | no | Desired filename |
 | `purpose` | string | no | Reason for access |
 
-### `fill_login`
+Output: `{ path, permissions: "0600", message }`
 
-Get instructions for browser-based login filling. Returns target URL and field identifiers, not the raw password.
-
-Input:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `credentialName` | string | yes | Login credential |
-| `targetUrl` | string | yes | URL to fill |
-
-### `request_approval`
-
-Check status of a pending approval or list pending approvals.
-
-Input:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `approvalId` | string | no | Specific approval to check |
-
-### `get_secret_metadata`
-
-Get metadata about a credential without accessing its value.
-
-Input:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `credentialName` | string | yes | Credential to inspect |
-
-### `get_audit_context`
+### `get_audit`
 
 Get recent audit log entries.
 
@@ -128,17 +107,23 @@ Input:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `credentialName` | string | no | Filter by credential |
-| `limit` | number | no | Max entries to return |
+| `itemId` | string | no | Filter by item |
+| `limit` | number | no | Max entries to return (1-100) |
+
+Output: `{ entries: [{ id, itemId, action, capability, outcome, timestamp }] }`
 
 ## Security model
 
 The MCP server follows the principle that **the LLM is untrusted**:
 
 * `run_with_secret` injects into a subprocess -- the LLM sees command output, not the secret
-* `fill_login` returns form instructions -- the broker does the actual fill
-* `mount_secret_file` returns a file path -- the LLM can reference the path, not the content
-* `request_secret_use` returns a confirmation -- never the raw value
-* There is no `reveal_secret_plaintext` tool
+* `mount_secret` returns a file path -- the LLM can reference the path, not the content
+* `request_access` returns a confirmation -- never the raw value
+* `list_items` returns metadata -- never ciphertext or plaintext
+* There is no tool that returns raw secret values to the LLM
 
-All access goes through the same API authorization, policy evaluation, and audit pipeline as direct API calls. Every tool invocation that touches credentials is logged in the audit trail.
+All access goes through the same API authorization, capability matrix enforcement, and audit
+pipeline as direct API calls. Every tool invocation that touches items is logged in the audit trail.
+
+The MCP server authenticates as a local principal (`abl_` prefix), so it can access zero-knowledge
+items via the local daemon.

@@ -32,16 +32,7 @@ app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 // Better Auth catch-all route
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
-  const auth = createAuth(db, {
-    API_URL: c.env.API_URL,
-    APP_URL: c.env.APP_URL,
-    BETTER_AUTH_URL: c.env.BETTER_AUTH_URL,
-    BETTER_AUTH_SECRET: c.env.BETTER_AUTH_SECRET,
-    GOOGLE_CLIENT_ID: c.env.GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: c.env.GOOGLE_CLIENT_SECRET,
-    GITHUB_CLIENT_ID: c.env.GITHUB_CLIENT_ID,
-    GITHUB_CLIENT_SECRET: c.env.GITHUB_CLIENT_SECRET,
-  });
+  const auth = createAuth(db, c.env);
   return auth.handler(c.req.raw);
 });
 

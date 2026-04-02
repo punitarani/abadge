@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -283,22 +283,15 @@ function DashboardShell({ children }: { children: React.ReactNode }): React.Reac
 
 function AuthenticatedDashboard({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-
-  const checkSession = useCallback(async () => {
-    const session = await authClient.getSession();
-    if (!session) {
-      router.push("/login");
-    } else {
-      setAuthenticated(true);
-    }
-  }, [router]);
+  const { data: session, isPending } = authClient.useSession();
 
   useEffect(() => {
-    checkSession();
-  }, [checkSession]);
+    if (!isPending && !session) {
+      router.push("/login");
+    }
+  }, [isPending, session, router]);
 
-  if (authenticated === null) {
+  if (isPending || !session) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading...</div>

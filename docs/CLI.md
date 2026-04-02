@@ -29,11 +29,13 @@ Config is stored at `~/.abadge/config.json`:
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "token": "abg_..."
+  "token": "..."
 }
 ```
 
 Created automatically by `abadge login`.
+
+The local vault daemon communicates via Unix socket at `~/.abadge/vaultd.sock`.
 
 ## Commands
 
@@ -46,63 +48,130 @@ abadge login --api-url http://localhost:8787
 # Prompts for email and password
 ```
 
-### `abadge whoami`
+### `abadge vault unlock`
 
-Show current identity.
+Unlock the local vault daemon with your master password.
 
 ```bash
-abadge whoami
-abadge whoami --json
+abadge vault unlock
+# Prompts for master password
 ```
 
-### `abadge secret create`
+### `abadge vault lock`
 
-Store a new credential.
+Lock the vault daemon (clears root key from memory).
 
 ```bash
-abadge secret create \
-  --name github-token \
-  --type api_key \
-  --value ghp_abc123 \
-  --environment prod \
-  --sensitivity high \
-  --service github
+abadge vault lock
 ```
 
-### `abadge secret list`
+### `abadge vault status`
 
-List all credentials (metadata only, never values).
+Check vault daemon status (initialized, locked, item count).
 
 ```bash
-abadge secret list
-abadge secret list --json
+abadge vault status
 ```
 
-### `abadge secret get <name>`
+### `abadge vault change-password`
 
-Get credential metadata. Does NOT reveal the value by default.
+Change the vault master password.
 
 ```bash
-abadge secret get github-token
-abadge secret get github-token --reveal   # Explicitly request plaintext
-abadge secret get github-token --json
+abadge vault change-password
+```
+
+### `abadge item create`
+
+Store a new item in the vault.
+
+```bash
+abadge item create \
+  --label github-token \
+  --kind api_key \
+  --value ghp_abc123
+```
+
+For zero-knowledge items, the CLI encrypts client-side via the daemon before sending to the API. For server-managed items, the value is sent to the API for server-side encryption.
+
+### `abadge item list`
+
+List all items (metadata only, never values).
+
+```bash
+abadge item list
+abadge item list --json
+```
+
+### `abadge item get <id>`
+
+Get item metadata.
+
+```bash
+abadge item get <item-id>
+abadge item get <item-id> --json
+```
+
+### `abadge item delete <id>`
+
+Soft delete an item.
+
+```bash
+abadge item delete <item-id>
+```
+
+### `abadge principal register`
+
+Register a new principal (device, CLI, MCP server, or remote agent).
+
+```bash
+abadge principal register --kind local_cli --name "dev laptop"
+abadge principal register --kind remote_agent --name "ci-bot"
+```
+
+The API key is shown **once** and never retrievable again.
+
+### `abadge principal list`
+
+List registered principals.
+
+```bash
+abadge principal list
+abadge principal list --json
+```
+
+### `abadge principal revoke <id>`
+
+Revoke a principal's access.
+
+```bash
+abadge principal revoke <principal-id>
 ```
 
 ### `abadge grant create`
 
-Grant an agent access to a credential.
+Grant a principal a capability on an item.
 
 ```bash
-abadge grant create --agent <agent-id> --credential <credential-id>
-abadge grant create --agent <id> --credential <id> --delivery-modes env_inject,file_mount
+abadge grant create --principal <id> --item <id> --capability reveal_plaintext
+abadge grant create --principal <id> --item <id> --capability mount_env
 ```
 
 ### `abadge grant list`
 
-List permission grants for a credential.
+List grants.
 
 ```bash
-abadge grant list --credential <credential-id>
+abadge grant list --item <item-id>
+abadge grant list --principal <principal-id>
+```
+
+### `abadge grant revoke <id>`
+
+Revoke a grant.
+
+```bash
+abadge grant revoke <grant-id>
 ```
 
 ### `abadge run`
@@ -110,26 +179,25 @@ abadge grant list --credential <credential-id>
 Run a command with a secret injected as an environment variable. The secret is never written to disk or printed to stdout.
 
 ```bash
-abadge run --secret github-token -- npm run deploy
-abadge run --secret github-token --env-var GITHUB_TOKEN -- npm run deploy
-abadge run --secret aws-key --env-var AWS_SECRET_ACCESS_KEY -- aws s3 sync . s3://bucket
+abadge run --item <item-id> -- npm run deploy
+abadge run --item <item-id> --env-var GITHUB_TOKEN -- npm run deploy
 ```
 
 How it works:
 
-1. Authenticates with the API
-2. Requests the secret with `deliveryMode: reveal`
-3. Spawns the child process with the secret injected as an env var
-4. Forwards the child's exit code
-5. Secret never touches disk or stdout
+1. Authenticates with the API or daemon
+2. For ZK items: daemon decrypts locally
+3. For server-managed items: requests via access API
+4. Spawns the child process with the secret injected as an env var
+5. Forwards the child's exit code
+6. Secret never touches disk or stdout
 
 ### `abadge mount`
 
 Mount a secret as a temporary file with restricted permissions (0600).
 
 ```bash
-abadge mount --secret tls-cert --path /tmp/cert.pem
-abadge mount --secret service-account --path /tmp/sa.json
+abadge mount --item <item-id> --path /tmp/cert.pem
 ```
 
 The file is deleted when you press Enter or Ctrl+C.
@@ -144,21 +212,20 @@ abadge audit --limit 50
 abadge audit --json
 ```
 
-### `abadge approve`
+### `abadge daemon start`
 
-Approve or deny a pending access request.
+Start the local vault daemon.
 
 ```bash
-abadge approve <approval-id>
-abadge approve <approval-id> --deny --reason "Not authorized for prod"
+abadge daemon start
 ```
 
-### `abadge connector`
+### `abadge daemon stop`
 
-Manage external vault connectors.
+Stop the local vault daemon.
 
 ```bash
-abadge connector add --name my-1p --type onepassword
+abadge daemon stop
 ```
 
 ## Global options

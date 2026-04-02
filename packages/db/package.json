@@ -24,11 +24,11 @@
   "dependencies": {
     "@abadge/core": "workspace:*",
     "@abadge/env": "workspace:*",
-    "drizzle-orm": "latest",
+    "drizzle-orm": "0.45.2",
     "postgres": "^3.4.0"
   },
   "devDependencies": {
-    "drizzle-kit": "latest",
+    "drizzle-kit": "0.31.10",
     "dotenv": "^16.4.0",
     "typescript": "^5.7.0"
   }

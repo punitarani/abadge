@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { SocialProvider } from "@/lib/auth-client";
-import { authClient } from "@/lib/auth-client";
+import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 
 export default function LoginPage() {
@@ -17,25 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [availableProviders, setAvailableProviders] = useState<SocialProvider[]>([
-    "github",
-    "google",
-  ]);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void authClient.getAvailableSocialProviders().then((providers) => {
-      if (!cancelled) {
-        setAvailableProviders(providers);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));
@@ -50,9 +32,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await authClient.signIn(email, password);
-      if (result.error) {
-        setError(result.error.message);
+      const { error: signInError } = await authClient.signIn.email({
+        email,
+        password,
+      });
+      if (signInError) {
+        setError(signInError.message ?? "Sign in failed");
       } else {
         router.push("/items");
       }
@@ -69,17 +54,15 @@ export default function LoginPage() {
 
     try {
       const currentURL = new URL(window.location.href);
-      const result = await authClient.signInWithSocial(provider, {
+      const { error: socialError } = await authClient.signIn.social({
+        provider,
         callbackURL: `${currentURL.origin}/items`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
-      if (result.error) {
-        setError(result.error.message);
-        return;
+      if (socialError) {
+        setError(socialError.message ?? `Could not start ${provider} sign-in`);
       }
-
-      window.location.assign(result.url);
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -130,7 +113,7 @@ export default function LoginPage() {
         </form>
 
         <SocialAuthButtons
-          providers={availableProviders}
+          providers={SOCIAL_PROVIDERS}
           loadingProvider={socialLoading}
           onProviderClick={handleSocialSignIn}
         />

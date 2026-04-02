@@ -42,6 +42,12 @@ interface ItemEntry {
   name: string;
 }
 
+async function readJsonArrayIfOk(res: Response): Promise<unknown[]> {
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => null);
+  return Array.isArray(data) ? data : [];
+}
+
 export default function GrantsPage(): React.ReactElement {
   const [grants, setGrants] = useState<Grant[]>([]);
   const [principals, setPrincipals] = useState<PrincipalEntry[]>([]);
@@ -64,18 +70,14 @@ export default function GrantsPage(): React.ReactElement {
         fetch(`${apiUrl}/v1/items`, { credentials: "include" }),
       ]);
 
-      if (grantsRes.ok) {
-        const data = await grantsRes.json();
-        setGrants(Array.isArray(data) ? data : []);
-      }
-      if (principalsRes.ok) {
-        const data = await principalsRes.json();
-        setPrincipals(Array.isArray(data) ? data : []);
-      }
-      if (itemsRes.ok) {
-        const data = await itemsRes.json();
-        setItems(Array.isArray(data) ? data : []);
-      }
+      const [grantsData, principalsData, itemsData] = await Promise.all([
+        readJsonArrayIfOk(grantsRes),
+        readJsonArrayIfOk(principalsRes),
+        readJsonArrayIfOk(itemsRes),
+      ]);
+      setGrants(grantsData as Grant[]);
+      setPrincipals(principalsData as PrincipalEntry[]);
+      setItems(itemsData as ItemEntry[]);
     } finally {
       setLoading(false);
     }

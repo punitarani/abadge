@@ -2,23 +2,26 @@
 
 ## Overview
 
-abadge is a credential control plane for AI agents. Users store native encrypted credentials or
-reference external secret systems, define access policies, register agents, grant scoped
-permissions, and audit every access attempt. The system defaults to non-reveal delivery --
-plaintext is the exception, not the product.
+abadge is a credential control plane for AI agents. Users store secrets in a personal vault with
+dual encryption modes (zero-knowledge or server-managed), register principals (devices, CLIs, MCP
+servers, remote agents), grant scoped capabilities per item, and audit every access attempt. The
+system defaults to non-reveal delivery -- plaintext exposure is the exception, not the product.
 
 ## System parts
 
-* **API** -- Hono on Cloudflare Workers. Canonical control plane for auth, CRUD, policy
-  evaluation, approval workflows, encryption, session issuance, and audit logging.
-* **Web** -- Next.js App Router dashboard via OpenNext. Operator surface for credentials, agents,
-  policies, approvals, connectors, and audit.
-* **CLI** -- `abadge` command. Developer/admin interface for runtime secret use and management.
+* **API** -- Hono on Cloudflare Workers. Canonical control plane for auth, vault management, item
+  CRUD, principal management, grant enforcement, access control, and audit logging.
+* **Web** -- Next.js App Router dashboard via OpenNext. Operator surface for items, principals,
+  grants, and audit.
+* **CLI** -- `abadge` command. Developer/admin interface for vault management, runtime secret use,
+  and item management.
 * **SDK** -- TypeScript client (`@abadge/sdk`). Typed API client for applications and agent runtimes.
 * **MCP server** -- Model Context Protocol server for AI agents. Secrets never returned to the LLM
   by default.
 * **Broker** -- Local execution engine shared by CLI and MCP. Handles subprocess injection, temp
-  file mounts, session management, and broker-side external vault connectors.
+  file mounts, and daemon IPC for zero-knowledge decryption.
+* **Crypto** -- Shared cryptography package. Server-side AES-256-GCM, API key generation/verification,
+  encoding utilities.
 * **Database** -- Single Postgres instance (PlanetScale via Hyperdrive). Source of truth for all
   control-plane state.
 
@@ -31,222 +34,222 @@ apps/
   web/        Next.js dashboard
 packages/
   auth/       Better Auth setup (server + client)
-  broker/     local execution engine (env inject, file mount, sessions, connectors)
+  broker/     local execution engine (env inject, file mount, daemon IPC)
   cli/        CLI tool library (commands, config, output)
   config/     shared tsconfig
   core/       shared types, zod schemas, constants, error shapes
+  crypto/     server-side encryption, API key generation, encoding
   db/         Drizzle schema + database client
   env/        environment variable validation (server, client, worker)
   mcp/        MCP server for AI agents
   sdk/        TypeScript SDK (@abadge/sdk)
 ```
 
-Build order: `config -> core -> env -> db -> auth -> api/web` (Turborepo handles this).
+Build order: `config -> core -> env -> crypto -> db -> auth -> api/web` (Turborepo handles this).
 
 ## Deployment model
 
 ```mermaid
 flowchart LR
-  U[User Browser] --> W[Next.js on Cloudflare Workers]
-  A[Agent / CLI / MCP] --> API[Hono API on Cloudflare Workers]
+  subgraph Client["Client Tier"]
+    U[User Browser]
+    CLI[CLI / MCP]
+    Agent[Remote Agent]
+  end
+
+  subgraph Local["Local Tier"]
+    Daemon["Vault Daemon<br/>(vaultd)"]
+  end
+
+  subgraph Edge["Cloudflare Edge"]
+    W["Next.js<br/>(OpenNext)"]
+    API["Hono API<br/>(Control Plane)"]
+  end
+
+  subgraph Data["Data Tier"]
+    H[Hyperdrive]
+    DB[(PlanetScale<br/>Postgres)]
+  end
+
+  U --> W
+  U -.->|ZK decrypt in browser| U
+  CLI --> Daemon
+  Daemon --> API
+  Agent --> API
   W --> API
-  API --> H[Cloudflare Hyperdrive]
-  H --> DB[(PlanetScale Postgres)]
-  CLI[CLI / MCP] --> Broker[Local Broker]
-  Broker --> API
-  Broker --> ExtVault[External Vaults]
+  API --> H
+  H --> DB
+```
+
+## Storage mode comparison
+
+```mermaid
+flowchart TB
+  subgraph ZK["Zero-Knowledge Mode (default)"]
+    direction TB
+    ZK1[User enters master password] --> ZK2[Argon2id derives KEK]
+    ZK2 --> ZK3[KEK unwraps Root Key]
+    ZK3 --> ZK4[Root Key unwraps Item DEK]
+    ZK4 --> ZK5[DEK decrypts item ciphertext]
+    ZK5 --> ZK6[Plaintext in client memory only]
+  end
+
+  subgraph SM["Server-Managed Mode (opt-in)"]
+    direction TB
+    SM1[Principal sends access request] --> SM2[API verifies grant + capability]
+    SM2 --> SM3[API loads ENCRYPTION_KEY from Worker Secrets]
+    SM3 --> SM4[AES-256-GCM decrypts ciphertext]
+    SM4 --> SM5[Plaintext returned to principal]
+  end
 ```
 
 ## Core concepts
 
-### Credential
+### Vault
 
-A user-owned encrypted secret entry with structured metadata.
+A user-owned encryption root. Each user has one vault containing:
 
-* **Identity**: uuid id, user\_id, name (unique per user)
-* **Classification**: type (api\_key, login, token, json\_blob, oauth\_client, service\_account\_json, cookie\_session, pii, other)
-* **Security**: sensitivity (low/medium/high/critical), allowed delivery modes, allowed destinations
-* **Context**: environment (dev/staging/prod), service, provider, project, tags
-* **Secret material**: AES-256-GCM encrypted value + IV (never stored plaintext)
-* **Ownership**: ownerScope (user/org/system), orgId
-* **External source**: sourceType (native/external), connectorId, externalRef (name, path, version)
+* **wrappedRootKey**: The root KEK encrypted by the user's master password (via Argon2id KDF)
+* **kdfSalt**: Salt for the key derivation function
+* **kdfParams**: Argon2id parameters (algorithm, memory, iterations, parallelism, hashLength)
+* **recoveryWrappedRootKey**: Optional recovery-wrapped root key
+* **keyVersion**: Integer, incremented on root key rotation
 
-Credentials with `sourceType: "external"` store a reference to a secret in an external vault rather than an encrypted value. The value is fetched from the connector at access time.
+The server never stores or sees the plaintext root key. The root key is unwrapped client-side
+(in the browser or local daemon) using the master password.
 
-### Agent
+### Item
 
-A user-registered consumer of secrets, implemented as a Better Auth API key with prefix `abg_`. The key is SHA-256 hashed before storage. Only the hash and a visible prefix are persisted.
+A user-owned secret entry with one of two storage modes:
 
-### Permission
+* **zero\_knowledge** (default): Client-side encrypted with XChaCha20-Poly1305. The server stores
+  only ciphertext and a wrapped per-item DEK. Only the user (via master password) or local
+  principals (via daemon) can decrypt.
+* **server\_managed** (opt-in): Server-side encrypted with AES-256-GCM. Remote agents can access
+  plaintext via the `reveal_plaintext` capability.
 
-An explicit grant joining one agent to one credential. Can attach a policy and constrain delivery modes with an expiration. Stored in `agent_credential_permissions` with a composite primary key.
+Items have:
 
-### Auto-grant
+* **storageMode**: `zero_knowledge` or `server_managed`
+* **cryptoVersion**: Encryption format version
+* **contentVersion**: Incremented on update (optimistic concurrency control)
+* **Soft delete**: `deletedAt` timestamp, never hard-deleted
 
-A rule that automatically grants an agent permission to access any credential matching specified criteria. Matching is conjunctive (all non-null criteria must match). Evaluated at access time as a fallback when no explicit permission exists.
+Item kinds: `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque`.
 
-### Policy
+### Principal
 
-A set of rules attached to a credential or grant that governs access:
+A registered consumer of secrets. Principals have a kind and derived locality:
 
-* **delivery\_mode** -- restrict which delivery modes are allowed
-* **environment** -- restrict to specific environments
-* **sensitivity** -- require approval above a threshold
-* **destination** -- allow/block specific destinations
-* **ttl** -- limit session duration
+| Kind | Locality | Auth prefix | Description |
+|------|----------|-------------|-------------|
+| `device` | local | `abl_` | User's registered device |
+| `local_cli` | local | `abl_` | CLI installation |
+| `local_mcp` | local | `abl_` | Local MCP server |
+| `remote_agent` | remote | `abg_` | Hosted agent, cloud worker, webhook |
 
-Policy evaluation is a pure function with no side effects.
+API keys are 32 random bytes + prefix, SHA-256 hashed before storage. Only the hash and an 8-char
+prefix are persisted. Full key shown once at creation, never retrievable again.
 
-### Approval
+### Grant
 
-A pending access request created when a policy requires human approval. Approvals have a 24-hour TTL. Only the credential owner can approve or deny.
+An explicit capability grant joining one principal to one item. Grants specify:
 
-### Broker session
+* **capability**: What the principal can do (`read_ciphertext`, `reveal_plaintext`, `mount_env`,
+  `mount_file`, `use_without_reveal`)
+* **expiresAt**: Optional expiration
+* **grantedBy**: User who created the grant
 
-A short-lived, scoped token (prefix `abs_`) that replaces static API keys for runtime access. Sessions have a TTL (max 24h), optional credential scopes, and delivery mode constraints. Revocable.
+Unique constraint on (principalId, itemId, capability). No wildcard grants.
 
-### Connector
+### Capabilities
 
-A configuration for fetching secrets from external vaults. Two categories:
+| Capability | Description | ZK Items | Server-Managed Items |
+|------------|-------------|----------|---------------------|
+| `read_ciphertext` | Receive encrypted item data | Local only | Local only |
+| `reveal_plaintext` | Receive decrypted plaintext | Not allowed | Remote + Local |
+| `mount_env` | Inject as env var in subprocess | Local only (daemon) | Local only (daemon) |
+| `mount_file` | Write to temp file | Local only (daemon) | Local only (daemon) |
+| `use_without_reveal` | Use without seeing value (future) | Future | Future |
 
-* **Client-side connectors** (via broker): native, 1Password, AWS Secrets Manager, Bitwarden, GCloud Secret Manager
-* **HTTP connectors** (server-side): Doppler, HashiCorp Vault, Infisical
+### Audit log
 
-Connector configs are encrypted at rest with AES-256-GCM.
+Immutable event for every access attempt (allowed, denied, expired, revoked). No foreign key
+constraints -- records persist after entity deletion. Includes principal identity, item identity,
+event type, result, delivery mode, metadata, IP address, and timestamp.
 
-### Agent group
-
-A named collection of agents owned by a user. Groups organize agents for management. Membership cascades on group deletion.
-
-### Delivery modes
-
-| Mode | Behavior | Value returned? |
-|------|----------|-----------------|
-| `reveal` | Return decrypted plaintext in API response | Yes |
-| `env_inject` | API returns value; broker injects as env var in subprocess | Yes |
-| `file_mount` | API returns value; broker writes to temp file (mode 0600) | Yes |
-| `browser_fill` | Metadata only; broker fills browser form fields | No |
-| `operation_only` | Metadata only; credential used server-side only | No |
-
-Default is NOT reveal. Plaintext exposure requires explicit opt-in.
-
-### Access log
-
-Immutable event for every access attempt (allowed, denied, pending\_approval, expired). No foreign key constraints -- records persist after entity deletion. Includes agent identity, credential identity, delivery mode, outcome, destination, environment, purpose, session ID, IP address, and timestamp.
+Event types cover vault operations (bootstrap, unlock, password change, key rotation), item CRUD,
+principal lifecycle, grant management, and access attempts.
 
 ## Entity model
 
 ```mermaid
 erDiagram
-  USER ||--o{ CREDENTIAL : owns
-  USER ||--o{ AGENT : registers
-  USER ||--o{ POLICY : defines
-  USER ||--o{ CONNECTOR : configures
-  USER ||--o{ AUTO_GRANT : defines
-  USER ||--o{ AGENT_GROUP : owns
-  AGENT ||--o{ PERMISSION : has
-  AGENT ||--o{ AUTO_GRANT : receives
-  AGENT ||--o{ AGENT_GROUP_MEMBER : belongs_to
-  AGENT_GROUP ||--o{ AGENT_GROUP_MEMBER : contains
-  CREDENTIAL ||--o{ PERMISSION : grants
-  CREDENTIAL }o--o| CONNECTOR : sourced_from
-  POLICY ||--o{ PERMISSION : constrains
-  CREDENTIAL ||--o{ POLICY : scoped_to
-  AGENT ||--o{ BROKER_SESSION : creates
-  AGENT ||--o{ ACCESS_LOG : generates
-  CREDENTIAL ||--o{ ACCESS_LOG : targets
-  CREDENTIAL ||--o{ APPROVAL : requires
+  USER ||--o| VAULT : owns
+  USER ||--o{ ITEM : owns
+  USER ||--o{ PRINCIPAL : registers
+  VAULT ||--o{ ITEM : contains
+  PRINCIPAL ||--o{ GRANT : has
+  ITEM ||--o{ GRANT : grants
+  PRINCIPAL ||--o{ AUDIT_LOG : generates
+  ITEM ||--o{ AUDIT_LOG : targets
 
-  CREDENTIAL {
-    uuid id PK
-    string user_id FK
-    string name
-    string type
-    string encrypted_value
-    string iv
-    string sensitivity
-    string environment
-    string source_type
-    string connector_id FK
-    jsonb external_ref
-    string org_id
-    jsonb allowed_delivery_modes
-    jsonb tags
+  VAULT {
+    text id PK
+    text user_id FK
+    text wrapped_root_key
+    text kdf_salt
+    jsonb kdf_params
+    text recovery_wrapped_root_key
+    integer key_version
   }
 
-  AGENT {
-    string id PK
-    string name
-    string key_hash
-    string prefix
+  ITEM {
+    text id PK
+    text user_id FK
+    text vault_id FK
+    text storage_mode
+    text encrypted_item_key
+    text ciphertext
+    text server_ciphertext
+    text server_iv
+    integer crypto_version
+    integer content_version
+    timestamp deleted_at
+  }
+
+  PRINCIPAL {
+    text id PK
+    text user_id FK
+    text kind
+    text locality
+    text name
+    text secret_hash
+    text secret_prefix
     boolean enabled
-    string reference_id FK
+    timestamp revoked_at
   }
 
-  PERMISSION {
-    string agent_id PK_FK
-    uuid credential_id PK_FK
-    string policy_id FK
-    jsonb allowed_delivery_modes
+  GRANT {
+    text id PK
+    text principal_id FK
+    text item_id FK
+    text capability
     timestamp expires_at
+    text granted_by FK
   }
 
-  POLICY {
-    string id PK
-    string user_id FK
-    string name
-    uuid credential_id FK
-    jsonb rules
-    boolean enabled
-  }
-
-  AUTO_GRANT {
-    string id PK
-    string agent_id FK
-    string user_id FK
-    string match_environment
-    jsonb match_tags
-    string match_type
-    string match_service
-    string match_sensitivity
-  }
-
-  AGENT_GROUP {
-    string id PK
-    string user_id FK
-    string name
-    string description
-  }
-
-  APPROVAL {
-    string id PK
-    string requester_id FK
-    string approver_id
-    string credential_id FK
-    string agent_id FK
-    string status
-    string delivery_mode
-    timestamp expires_at
-  }
-
-  BROKER_SESSION {
-    string id PK
-    string token_hash
-    string agent_id FK
-    string user_id FK
-    jsonb scopes
-    timestamp expires_at
-  }
-
-  ACCESS_LOG {
-    serial id PK
-    string agent_id
-    uuid credential_id
-    string outcome
-    string delivery_mode
-    string principal_type
-    string environment
-    string session_id
+  AUDIT_LOG {
+    bigserial id PK
+    text user_id
+    text principal_id
+    text item_id
+    text event_type
+    text result
+    text delivery_mode
+    jsonb meta
+    text ip_address
+    timestamp occurred_at
   }
 ```
 
@@ -256,7 +259,12 @@ erDiagram
 flowchart TB
   subgraph Public
     U[User Browser]
-    A[Agent / CLI / MCP]
+    A[Remote Agent]
+  end
+
+  subgraph Local Runtime
+    CLI[CLI / MCP]
+    Daemon[Vault Daemon]
   end
 
   subgraph Edge Runtime
@@ -264,38 +272,34 @@ flowchart TB
     API[API]
   end
 
-  subgraph Local Runtime
-    Broker[Broker]
-    ExtVault[External Vaults]
-  end
-
   subgraph Data Layer
     DB[(Postgres)]
   end
 
   U --> W
-  A --> Broker
-  Broker --> API
+  A --> API
+  CLI --> Daemon
+  Daemon --> API
   W --> API
   API --> DB
 
-  K[(Worker Secret: Encryption Key)] -. available only to API .-> API
+  K[(Worker Secret: Encryption Key)] -. server-managed items only .-> API
 ```
 
 ### Boundary rules
 
-* The database never stores plaintext credentials or API keys
-* The encryption key lives only in Worker Secrets, never in the database
-* The web app does not decide authorization for agent reads
-* The API is the only place where credential decryption happens
-* Decryption occurs only for value-returning delivery modes AND after authorization passes
-* Agents can only access credentials owned by the same user who registered them
+* The database never stores plaintext item values, API keys, or vault root keys
+* For zero-knowledge items, the server never sees plaintext -- only wrapped keys and ciphertext
+* For server-managed items, the encryption key lives only in Worker Secrets, never in the database
+* The web app does not decide authorization for principal access
+* The API decrypts server-managed items only after all authorization checks pass
+* Principals can only access items owned by the same user who registered them
+* Remote principals cannot access zero-knowledge items at all
 * The LLM never receives raw secrets through the MCP server by default
-* HTTP connectors make outbound requests from the API worker -- connector credentials are encrypted at rest and never leave the server
 
 ## Main request paths
 
-### Policy-aware agent access (primary path)
+### Remote agent reveals server-managed item
 
 ```mermaid
 sequenceDiagram
@@ -304,47 +308,99 @@ sequenceDiagram
   participant DB
   participant Crypto
 
-  Agent->>API: Bearer token + credential + deliveryMode + purpose
-  API->>DB: Resolve agent (hash lookup)
-  API->>DB: Resolve credential (scoped to agent's user)
-  API->>DB: Check explicit permission or auto-grant (+ expiry)
-  API->>DB: Load attached policy (if any)
-
-  alt policy requires approval
-    API->>DB: Create approval record
-    API->>DB: Log pending_approval
-    API-->>Agent: 202 + approvalId
-  else delivery mode denied
-    API->>DB: Log denied
-    API-->>Agent: 403
-  else value-returning mode (reveal/env_inject/file_mount)
-    API->>Crypto: Decrypt (or fetch from connector)
-    Crypto-->>API: Plaintext
-    API->>DB: Log allowed
-    API-->>Agent: Credential value
-  else non-value mode (browser_fill/operation_only)
-    API->>DB: Log allowed
-    API-->>Agent: Credential metadata (no value)
-  end
+  Agent->>API: Bearer abg_... + POST /v1/access/reveal {itemId}
+  API->>DB: Resolve principal (prefix lookup + hash verify)
+  API->>DB: Resolve item (scoped to principal's user)
+  API->>DB: Check grant exists (capability=reveal_plaintext, not expired)
+  API->>DB: Verify storageMode=server_managed
+  API->>Crypto: Decrypt serverCiphertext + serverIv
+  Crypto-->>API: Plaintext payload
+  API->>DB: Log audit event (access.reveal, allowed)
+  API-->>Agent: {payload}
 ```
 
-### Local broker injection (CLI / MCP)
+### Local CLI accesses ZK item
 
 ```mermaid
 sequenceDiagram
   actor Dev
   participant CLI
-  participant Broker
+  participant Daemon
   participant API
-  participant Subprocess
 
-  Dev->>CLI: abadge run --secret X -- cmd
-  CLI->>Broker: accessSecret(name, deliveryMode=reveal)
-  Broker->>API: POST /v1/credentials/access
-  API-->>Broker: Decrypted value
-  Broker->>Subprocess: spawn(cmd, env={SECRET=value})
-  Subprocess-->>CLI: exit code
+  Dev->>CLI: abadge run --item X -- cmd
+  CLI->>Daemon: decrypt(encryptedItemKey, ciphertext) via Unix socket
+  Note over CLI,Daemon: Daemon holds unlocked root key in memory
+  Daemon-->>CLI: Plaintext value
+  CLI->>API: Log audit event
+  CLI->>CLI: Spawn subprocess with SECRET=value in env
   CLI-->>Dev: Forward exit code
+```
+
+### MCP agent uses secret without reveal
+
+```mermaid
+sequenceDiagram
+  actor LLM as AI Model
+  participant MCP as MCP Server
+  participant Daemon
+  participant Sub as Subprocess
+
+  LLM->>MCP: run_with_secret(itemId, "npm deploy")
+  MCP->>Daemon: decrypt(encryptedItemKey, ciphertext)
+  Daemon-->>MCP: Plaintext value
+  MCP->>Sub: spawn("npm deploy", env={SECRET=value})
+  Sub-->>MCP: stdout + stderr + exitCode
+  MCP-->>LLM: {exitCode, stdout, stderr}
+  Note over LLM: LLM sees command output,<br/>never the secret value
+```
+
+### Browser views ZK item
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant Browser
+  participant API
+  participant DB
+
+  User->>Browser: Enter master password
+  Browser->>Browser: Argon2id(password, salt) → KEK
+  Browser->>API: GET /v1/vault
+  API->>DB: Load vault record
+  DB-->>API: {wrappedRootKey, kdfSalt, kdfParams}
+  API-->>Browser: Vault metadata
+  Browser->>Browser: KEK unwraps Root Key
+  Browser->>API: GET /v1/items/:id
+  API->>DB: Load item (ciphertext only)
+  DB-->>API: {encryptedItemKey, ciphertext}
+  API-->>Browser: Encrypted item data
+  Browser->>Browser: Root Key unwraps DEK
+  Browser->>Browser: DEK decrypts ciphertext
+  Note over Browser: Plaintext in JS memory only,<br/>cleared on tab close
+```
+
+### Grant creation with capability validation
+
+```mermaid
+sequenceDiagram
+  actor User
+  participant API
+  participant DB
+
+  User->>API: POST /v1/grants {principalId, itemId, capability}
+  API->>DB: Load principal (kind, locality)
+  API->>DB: Load item (storageMode)
+
+  alt Remote + ZK item
+    API-->>User: 400 Remote cannot access ZK items
+  else Remote + non-reveal capability
+    API-->>User: 400 Remote can only reveal_plaintext
+  else Valid combination
+    API->>DB: Insert grant (unique on principal+item+capability)
+    API->>DB: Log grant.create audit event
+    API-->>User: 201 {id}
+  end
 ```
 
 ## Authentication
@@ -353,32 +409,33 @@ sequenceDiagram
 
 * Better Auth with email/password and optional social login (Google, GitHub)
 * Session-based
-* Used for all `/v1/*` management routes
+* Used for all `/v1/*` management routes (vault, items, principals, grants, audit)
 
-### Agent auth (two methods)
+### Principal auth
 
-1. **API key** (static) -- `abg_` prefix, SHA-256 hashed, shown once at creation
-2. **Broker session** (short-lived) -- `abs_` prefix, SHA-256 hashed, TTL up to 24h, scoped
-
-Agent auth middleware tries session token first (by prefix), then falls back to API key.
+* Bearer token in `Authorization` header
+* Token prefixes: `abg_` (remote) or `abl_` (local)
+* Prefix-based lookup optimization: try 8, 6, 4-char prefixes
+* Constant-time hash comparison via SHA-256
+* Updates `lastUsedAt` timestamp on successful auth
+* Used for all `/v1/access/*` routes
 
 ### Authorization model
 
 * No wildcard grants
 * No cross-user access
-* Explicit permission per agent-credential pair (or matching auto-grant)
-* Policy evaluation on every access
-* Delivery mode enforcement on every access
-* Permission expiration checked on every access
+* Explicit grant per principal-item-capability tuple
+* Capability matrix enforcement (remote principals restricted from ZK items)
+* Grant expiration checked on every access
+* Locality checks on every access route
 
 ## Security invariant
 
 A secret value is only returned when ALL conditions are true:
 
-1. The agent presented a valid, active API key or non-expired session token
-2. The credential exists and belongs to the agent's owner
-3. An explicit permission grant or matching auto-grant exists and has not expired
-4. All attached policies allow the requested action
-5. No policy requires approval (or approval was granted and not expired)
-6. The requested delivery mode is value-returning (reveal, env\_inject, or file\_mount)
-7. The delivery mode is permitted by credential, permission, and policy constraints
+1. The principal presented a valid, enabled, non-revoked API key
+2. The item exists and belongs to the principal's owner
+3. A grant exists for this principal-item pair with the required capability, and has not expired
+4. The capability is compatible with the item's storage mode and the principal's locality
+5. For server-managed items: server decrypts using ENCRYPTION_KEY
+6. For ZK items: the local daemon decrypts using the unlocked root key (server never sees plaintext)
