@@ -6,7 +6,7 @@ import { AppProviders } from "@/lib/trpc-provider";
 export const metadata: Metadata = {
   title: "abadge",
   description:
-    "Credential control plane for AI agents. Store or connect credentials, grant least-privilege access, and audit every attempt.",
+    "Credential control plane for AI agents. Store or connect credentials, allow least-privilege access, and audit every attempt.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

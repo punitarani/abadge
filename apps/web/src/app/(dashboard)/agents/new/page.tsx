@@ -1,6 +1,6 @@
 "use client";
 
-import { PRINCIPAL_KINDS, type PrincipalKind } from "@abadge/core";
+import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import { useTRPC } from "@abadge/trpc/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -13,29 +13,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { getClientErrorMessage } from "@/lib/trpc-browser";
 
-const KIND_LABELS: Record<PrincipalKind, string> = {
+const KIND_LABELS: Record<AgentKind, string> = {
   device: "Device",
   local_cli: "Local CLI",
   local_mcp: "Local MCP",
   remote_agent: "Remote Agent",
 };
 
-export default function NewPrincipalPage(): React.ReactElement {
+export default function NewAgentPage(): React.ReactElement {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<PrincipalKind>("remote_agent");
+  const [kind, setKind] = useState<AgentKind>("remote_agent");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const createPrincipal = useMutation(
-    trpc.principals.create.mutationOptions({
+  const createAgent = useMutation(
+    trpc.agents.create.mutationOptions({
       onSuccess: async (result) => {
-        setApiKey(result.secret);
+        setApiKey(result.apiKey);
         await queryClient.invalidateQueries({
-          queryKey: dashboardQueryKeys.principals(),
+          queryKey: dashboardQueryKeys.agents(),
         });
       },
     }),
@@ -46,13 +46,13 @@ export default function NewPrincipalPage(): React.ReactElement {
     setLoading(true);
     setError("");
     try {
-      await createPrincipal.mutateAsync({
+      await createAgent.mutateAsync({
         name,
         kind,
         metadata: description.trim() ? { description: description.trim() } : {},
       });
     } catch (mutationError) {
-      setError(getClientErrorMessage(mutationError, "Failed to register principal"));
+      setError(getClientErrorMessage(mutationError, "Failed to register agent"));
     } finally {
       setLoading(false);
     }
@@ -62,16 +62,16 @@ export default function NewPrincipalPage(): React.ReactElement {
     return (
       <div className="max-w-lg space-y-6">
         <div>
-          <h1 className="text-lg font-semibold">Principal registered</h1>
+          <h1 className="text-lg font-semibold">Agent registered</h1>
           <p className="text-sm text-muted-foreground">
             Copy the API key below. It will not be shown again.
           </p>
         </div>
 
-        <div className="border border-border rounded-lg p-5 space-y-4">
+        <div className="space-y-4 rounded-lg border border-border p-5">
           <SecretDisplay value={apiKey} />
 
-          <Button onClick={() => router.push("/principals")} className="w-full" size="sm">
+          <Button onClick={() => router.push("/agents")} className="w-full" size="sm">
             Done
           </Button>
         </div>
@@ -82,13 +82,13 @@ export default function NewPrincipalPage(): React.ReactElement {
   return (
     <div className="max-w-lg space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">Register principal</h1>
+        <h1 className="text-lg font-semibold">Register agent</h1>
         <p className="text-sm text-muted-foreground">
           Create a new agent or service identity and get an API key
         </p>
       </div>
 
-      <div className="border border-border rounded-lg p-5">
+      <div className="rounded-lg border border-border p-5">
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -96,9 +96,9 @@ export default function NewPrincipalPage(): React.ReactElement {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="principal-name">Name</Label>
+            <Label htmlFor="agent-name">Name</Label>
             <Input
-              id="principal-name"
+              id="agent-name"
               placeholder="e.g., Claude Code, Cursor, CI Pipeline"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -109,25 +109,25 @@ export default function NewPrincipalPage(): React.ReactElement {
           <div className="space-y-1.5">
             <Label>Kind</Label>
             <div className="flex flex-wrap gap-3">
-              {PRINCIPAL_KINDS.map((k) => (
-                <label key={k} className="flex items-center gap-1.5 text-sm">
+              {AGENT_KINDS.map((agentKind) => (
+                <label key={agentKind} className="flex items-center gap-1.5 text-sm">
                   <input
                     type="radio"
                     name="kind"
-                    value={k}
-                    checked={kind === k}
-                    onChange={() => setKind(k)}
+                    value={agentKind}
+                    checked={kind === agentKind}
+                    onChange={() => setKind(agentKind)}
                   />
-                  {KIND_LABELS[k]}
+                  {KIND_LABELS[agentKind]}
                 </label>
               ))}
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="principal-desc">Description (optional)</Label>
+            <Label htmlFor="agent-desc">Description (optional)</Label>
             <Textarea
-              id="principal-desc"
-              placeholder="What this principal does..."
+              id="agent-desc"
+              placeholder="What this agent does..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={256}
@@ -138,12 +138,12 @@ export default function NewPrincipalPage(): React.ReactElement {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => router.push("/principals")}
+              onClick={() => router.push("/agents")}
             >
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={loading}>
-              {loading ? "Registering..." : "Register principal"}
+              {loading ? "Registering..." : "Register agent"}
             </Button>
           </div>
         </form>

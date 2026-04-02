@@ -82,14 +82,14 @@ Validated end-to-end via `AbadgeClient` against local API:
 * server-managed item create/list/get/update/delete
 * zero-knowledge item create/list/get/update/delete
 * stale item update returns `STALE_VERSION`
-* principal create/list/get/rotate/revoke
-* grant create/list/revoke
-* remote principal locality restrictions
-* local principal mount access
+* agent create/list/get/rotate/revoke
+* permission create/list/revoke
+* remote agent locality restrictions
+* local agent mount access
 * remote reveal access
-* rotated principal old secret rejection
-* revoked grant rejection
-* revoked principal rejection
+* rotated agent old secret rejection
+* revoked permission rejection
+* revoked agent rejection
 * audit log entries for allowed and denied outcomes
 
 ### CLI and daemon
@@ -99,8 +99,8 @@ Validated with isolated home directory:
 * `abadge login --api-url --email --password`
 * config write to `~/.abadge/config.json`
 * `abadge item list --json`
-* `abadge principal list --json`
-* `abadge grant list --json`
+* `abadge agent list --json`
+* `abadge permission list --json`
 * `abadge audit --json`
 * `abadge daemon start`
 * `abadge daemon status`
@@ -120,15 +120,15 @@ Validated flow:
 3. verify recovery-key screen appears before the dashboard
 4. create a zero-knowledge item
 5. view and locally reveal the zero-knowledge payload
-6. register a `local_cli` principal
-7. create a valid grant for that principal and item
+6. register a `local_cli` agent
+7. create a valid permission for that agent and item
 8. verify audit page loads and URL-backed result filter works
 9. lock the vault
 10. unlock the vault and return to the dashboard
 
 Security note from QA:
 
-* attempting to grant a zero-knowledge item to the default `remote_agent` principal correctly fails with `Remote principals cannot access zero-knowledge items.`
+* attempting to permission a zero-knowledge item to the default `remote_agent` agent correctly fails with `Remote agents cannot access zero-knowledge items.`
 
 ## Issues found and fixed
 

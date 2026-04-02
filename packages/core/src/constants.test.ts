@@ -1,19 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { Either, Schema } from "effect";
 import {
+  AGENT_KINDS,
   API_KEY_PREFIX,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
+  agentLocalityForKind,
   CAPABILITIES,
   ITEM_KINDS,
-  localityForKind,
-  PRINCIPAL_KINDS,
   STORAGE_MODES,
 } from "./constants";
 import {
-  CreateGrantSchema,
+  CreateAgentSchema,
   CreateItemSchema,
-  CreatePrincipalSchema,
+  CreatePermissionSchema,
   VaultBootstrapSchema,
 } from "./schemas";
 
@@ -47,13 +47,13 @@ describe("STORAGE_MODES", () => {
   });
 });
 
-describe("PRINCIPAL_KINDS", () => {
+describe("AGENT_KINDS", () => {
   test("includes all expected kinds", () => {
-    expect(PRINCIPAL_KINDS).toContain("device");
-    expect(PRINCIPAL_KINDS).toContain("local_cli");
-    expect(PRINCIPAL_KINDS).toContain("local_mcp");
-    expect(PRINCIPAL_KINDS).toContain("remote_agent");
-    expect(PRINCIPAL_KINDS.length).toBe(4);
+    expect(AGENT_KINDS).toContain("device");
+    expect(AGENT_KINDS).toContain("local_cli");
+    expect(AGENT_KINDS).toContain("local_mcp");
+    expect(AGENT_KINDS).toContain("remote_agent");
+    expect(AGENT_KINDS.length).toBe(4);
   });
 });
 
@@ -93,11 +93,11 @@ describe("AUDIT_RESULTS", () => {
   });
 });
 
-describe("localityForKind", () => {
-  test("device is local", () => expect(localityForKind("device")).toBe("local"));
-  test("local_cli is local", () => expect(localityForKind("local_cli")).toBe("local"));
-  test("local_mcp is local", () => expect(localityForKind("local_mcp")).toBe("local"));
-  test("remote_agent is remote", () => expect(localityForKind("remote_agent")).toBe("remote"));
+describe("agentLocalityForKind", () => {
+  test("device is local", () => expect(agentLocalityForKind("device")).toBe("local"));
+  test("local_cli is local", () => expect(agentLocalityForKind("local_cli")).toBe("local"));
+  test("local_mcp is local", () => expect(agentLocalityForKind("local_mcp")).toBe("local"));
+  test("remote_agent is remote", () => expect(agentLocalityForKind("remote_agent")).toBe("remote"));
 });
 
 describe("API_KEY_PREFIX", () => {
@@ -142,28 +142,28 @@ describe("schema validation", () => {
     ).toBe(true);
   });
 
-  test("CreateGrantSchema rejects invalid capability", () => {
+  test("CreatePermissionSchema rejects invalid capability", () => {
     expect(
-      isValid(CreateGrantSchema, {
-        principalId: "p1",
+      isValid(CreatePermissionSchema, {
+        agentId: "p1",
         itemId: "i1",
         capability: "wildcard",
       }),
     ).toBe(false);
   });
 
-  test("CreateGrantSchema accepts valid capability", () => {
+  test("CreatePermissionSchema accepts valid capability", () => {
     expect(
-      isValid(CreateGrantSchema, {
-        principalId: "p1",
+      isValid(CreatePermissionSchema, {
+        agentId: "p1",
         itemId: "i1",
         capability: "read_ciphertext",
       }),
     ).toBe(true);
   });
 
-  test("CreatePrincipalSchema requires name and kind", () => {
-    expect(isValid(CreatePrincipalSchema, {})).toBe(false);
-    expect(isValid(CreatePrincipalSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
+  test("CreateAgentSchema requires name and kind", () => {
+    expect(isValid(CreateAgentSchema, {})).toBe(false);
+    expect(isValid(CreateAgentSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
   });
 });

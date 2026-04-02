@@ -163,7 +163,7 @@ The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as 
 
 ## API Key Format
 
-- Prefix: `abg_` (for remote principals) or `abl_` (for local principals)
+- Prefix: `abg_` (for remote agents) or `abl_` (for local agents)
 - Random portion: 32 bytes, base64url-encoded
 - Full key shown once on creation
 - Server stores: SHA-256 hash of full key + first 8 chars as prefix for lookup

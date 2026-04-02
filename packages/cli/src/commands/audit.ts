@@ -19,7 +19,7 @@ export async function auditCommand(args: string[]): Promise<void> {
     table(
       entries.map((e) => ({
         ID: String(e.id),
-        Principal: e.principalId ?? "-",
+        Agent: e.agentId ?? "-",
         Item: e.itemId ?? "-",
         Event: e.eventType,
         Outcome: e.result,

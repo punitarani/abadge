@@ -1,17 +1,19 @@
 import type { Schema } from "effect";
 import type {
+  AgentListResultSchema,
+  AgentResultSchema,
+  AgentRotateResultSchema,
+  AgentSchema,
+  AgentWithKeySchema,
   AuditEntrySchema,
   AuditListResultSchema,
   AuditQuerySchema,
   ChangePasswordSchema,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
-  CreateGrantSchema,
+  CreateAgentSchema,
   CreateItemSchema,
-  CreatePrincipalSchema,
-  GrantListResultSchema,
-  GrantResultSchema,
-  GrantSchema,
+  CreatePermissionSchema,
   ItemDetailSchema,
   ItemListResultSchema,
   ItemPayloadSchema,
@@ -22,11 +24,9 @@ import type {
   KeyVersionResultSchema,
   MountAccessResponseSchema,
   MountAccessSchema,
-  PrincipalListResultSchema,
-  PrincipalRegistrationSchema,
-  PrincipalResultSchema,
-  PrincipalRotateResultSchema,
-  PrincipalSchema,
+  PermissionListResultSchema,
+  PermissionResultSchema,
+  PermissionSchema,
   RecoverySetupSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -53,13 +53,13 @@ export type UpdateItemInput = TypeOf<typeof UpdateItemSchema>;
 export type ItemSummary = TypeOf<typeof ItemSummarySchema>;
 export type ItemDetail = TypeOf<typeof ItemDetailSchema>;
 
-export type CreatePrincipalInput = TypeOf<typeof CreatePrincipalSchema>;
-export type Principal = TypeOf<typeof PrincipalSchema>;
-export type PrincipalRegistration = TypeOf<typeof PrincipalRegistrationSchema>;
-export type PrincipalRotateResult = TypeOf<typeof PrincipalRotateResultSchema>;
+export type CreateAgentInput = TypeOf<typeof CreateAgentSchema>;
+export type Agent = TypeOf<typeof AgentSchema>;
+export type AgentWithKey = TypeOf<typeof AgentWithKeySchema>;
+export type AgentRotateResult = TypeOf<typeof AgentRotateResultSchema>;
 
-export type CreateGrantInput = TypeOf<typeof CreateGrantSchema>;
-export type Grant = TypeOf<typeof GrantSchema>;
+export type CreatePermissionInput = TypeOf<typeof CreatePermissionSchema>;
+export type Permission = TypeOf<typeof PermissionSchema>;
 export type AuditQuery = TypeOf<typeof AuditQuerySchema>;
 export type AuditEntry = TypeOf<typeof AuditEntrySchema>;
 
@@ -70,10 +70,10 @@ export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
 export type VaultResult = TypeOf<typeof VaultResultSchema>;
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
-export type PrincipalResult = TypeOf<typeof PrincipalResultSchema>;
-export type PrincipalListResult = TypeOf<typeof PrincipalListResultSchema>;
-export type GrantResult = TypeOf<typeof GrantResultSchema>;
-export type GrantListResult = TypeOf<typeof GrantListResultSchema>;
+export type AgentResult = TypeOf<typeof AgentResultSchema>;
+export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
+export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
+export type PermissionListResult = TypeOf<typeof PermissionListResultSchema>;
 export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
 
 export type SuccessResult = TypeOf<typeof SuccessResultSchema>;

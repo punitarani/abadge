@@ -30,7 +30,7 @@ const operatingPrinciples = [
     description: "Use native encrypted credentials or reference existing secret systems.",
   },
   {
-    title: "Grant per agent",
+    title: "Permission per agent",
     description:
       "Decide which agent can use which credential, through which delivery mode, and for how long.",
   },
@@ -81,7 +81,7 @@ const productTracks = [
     label: "01.ACCESS",
     title: "Control credential use at request time",
     description:
-      "Per-agent grants, policy checks, approval workflows, short-lived broker sessions, delivery-mode enforcement, and audit on every attempt.",
+      "Per-agent permissions, policy checks, approval workflows, short-lived broker sessions, delivery-mode enforcement, and audit on every attempt.",
   },
   {
     label: "02.CONNECT",
@@ -103,14 +103,14 @@ const interfaceExamples = [
     body: `# create a zero-knowledge item
 $ abadge item create
 
-# register a principal and save the one-time key
-$ abadge principal register \\
+# register an agent and save the one-time key
+$ abadge agent register \\
   --name "deploy bot" \\
   --kind remote_agent
 
-# grant one principal explicit access
-$ abadge grant create \\
-  --principal-id <principal-id> \\
+# create one explicit permission
+$ abadge permission create \\
+  --agent-id <agent-id> \\
   --item-id <item-id> \\
   --capability reveal_plaintext
 
@@ -174,7 +174,7 @@ const externalSignals = [
 export const metadata: Metadata = {
   title: "abadge | The credential control plane for AI agents",
   description:
-    "Store or connect credentials, grant agents scoped access at request time, require approval for sensitive actions, and audit every attempt.",
+    "Store or connect credentials, allow agents scoped access at request time, require approval for sensitive actions, and audit every attempt.",
 };
 
 export default function HomePage() {
@@ -217,7 +217,7 @@ export default function HomePage() {
               for AI agents
             </h1>
             <p className="mt-5 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600 md:text-base">
-              Store native credentials or connect existing secret systems. Grant agents scoped
+              Store native credentials or connect existing secret systems. Allow agents scoped
               access at request time and keep every attempt auditable across tRPC, CLI, SDK, and
               MCP.
             </p>
@@ -250,7 +250,7 @@ export default function HomePage() {
 
             <p className="mt-4 max-w-lg text-[10px] font-medium text-zinc-400">
               Not another shared vault. Abadge is scoped, least-privilege agent access with explicit
-              grants, policy checks, approvals, and a full audit trail.
+              permissions, policy checks, approvals, and a full audit trail.
             </p>
           </div>
 
@@ -379,13 +379,13 @@ export default function HomePage() {
             </h2>
             <p className="mt-6 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600">
               Traditional secret management assumes a human on the other side. abadge keeps the
-              control plane tight: explicit grants, policy-aware access, approval flows,
+              control plane tight: explicit permissions, policy-aware access, approval flows,
               delivery-mode restrictions, and audit on every attempt.
             </p>
 
             <div className="mt-8 space-y-3">
               {[
-                "Explicit per-agent grants instead of broad vault access",
+                "Explicit per-agent permissions instead of broad vault access",
                 "Approval required for sensitive access when policy demands it",
                 "MCP tools that avoid raw secret exposure to the model",
               ].map((item) => (

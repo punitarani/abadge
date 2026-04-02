@@ -133,7 +133,7 @@ export default function ItemDetailPage(): React.ReactElement {
           <div className="text-sm font-semibold">Secret value</div>
           <p className="text-sm text-muted-foreground">
             Server-managed items are encrypted server-side. Agents can access them through the API
-            with appropriate grants.
+            with appropriate permissions.
           </p>
         </div>
       )}

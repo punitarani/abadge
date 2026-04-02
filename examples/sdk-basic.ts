@@ -1,4 +1,4 @@
-// SDK basics: credential CRUD, agent registration, and permission grants.
+// SDK basics: item CRUD, agent registration, and permission creation.
 // Requires a running abadge API and a valid session token.
 
 import { AbadgeClient } from "@abadge/sdk";
@@ -8,35 +8,35 @@ const client = new AbadgeClient({
   token: "your-session-token",
 });
 
-// List credentials
-const { credentials } = await client.listCredentials();
-console.log(
-  "Credentials:",
-  credentials.map((c) => c.name),
-);
-
-// Create a credential
-const { credential } = await client.createCredential({
-  name: "prod-db-url",
-  type: "api_key",
-  value: "postgres://...",
-  environment: "prod",
-  sensitivity: "critical",
+const createdItem = await client.createItem({
+  storageMode: "server_managed",
+  payload: {
+    v: 1,
+    label: "prod-db-url",
+    kind: "opaque",
+    tags: ["prod"],
+    fields: {
+      value: "postgres://...",
+    },
+  },
 });
-console.log("Created credential:", credential.id);
+console.log("Created item:", createdItem.id);
 
-// Register an agent
-const { agent, apiKey } = await client.createAgent({ name: "deploy-bot" });
-console.log("Agent API key (save this!):", apiKey);
+const { items } = await client.listItems();
+console.log("Items:", items.map((item) => item.id));
 
-// Grant the agent access with restricted delivery mode
-await client.grantPermission({
+const { agent, apiKey } = await client.createAgent({
+  name: "deploy-bot",
+  kind: "remote_agent",
+});
+console.log("Agent API key (save this now):", apiKey);
+
+const { permission } = await client.createPermission({
   agentId: agent.id,
-  credentialId: credential.id,
-  allowedDeliveryModes: ["env_inject"],
+  itemId: createdItem.id,
+  capability: "reveal_plaintext",
 });
-console.log("Permission granted");
+console.log("Created permission:", permission.id);
 
-// Verify via audit log
-const { logs } = await client.getAuditLog({ limit: 5 });
-console.log("Recent audit entries:", logs.length);
+const { entries } = await client.getAudit({ limit: 5, agentId: agent.id });
+console.log("Recent audit entries:", entries.length);

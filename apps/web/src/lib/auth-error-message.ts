@@ -1,5 +1,5 @@
 const authErrorMessages: Record<string, string> = {
-  access_denied: "Sign-in was canceled before access was granted.",
+  access_denied: "Sign-in was canceled before access was allowed.",
   account_already_linked_to_different_user:
     "This social account is already linked to another user.",
   email_is_missing: "Your social account did not return an email address required for sign-in.",

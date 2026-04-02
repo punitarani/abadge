@@ -19,7 +19,16 @@ export function handleTrpcRequest(
   });
 }
 
+export function createServerCallerContext(req: Request, env: AppBindings) {
+  const resHeaders = new Headers();
+  const ctx = createRequestContext({ req, resHeaders, env });
+
+  return {
+    caller: createTrpcCallerFactory(appRouter)(ctx),
+    resHeaders,
+  };
+}
+
 export function createServerCaller(req: Request, env: AppBindings) {
-  const ctx = createRequestContext({ req, resHeaders: new Headers(), env });
-  return createTrpcCallerFactory(appRouter)(ctx);
+  return createServerCallerContext(req, env).caller;
 }

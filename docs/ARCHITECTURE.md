@@ -3,7 +3,7 @@
 ## Overview
 
 abadge is a credential control plane for agent access. Users own vaults and items, register
-principals, grant per-item capabilities, and inspect every access attempt through an append-only
+agents, permission per-item capabilities, and inspect every access attempt through an append-only
 audit log.
 
 The system keeps one synchronous control plane:
@@ -23,7 +23,7 @@ The system keeps one synchronous control plane:
   daemon
 * **SDK**: `AbadgeClient`, implemented directly on top of the shared tRPC client
 * **MCP**: local Model Context Protocol server that uses the same tRPC access path as other
-  principals
+  agents
 * **Daemon**: local zero-knowledge vault runtime that unlocks, encrypts, decrypts, mounts files,
   and spawns subprocesses
 * **Database**: single Postgres instance accessed through Drizzle
@@ -57,7 +57,7 @@ flowchart LR
     Browser["Dashboard"]
     CLI["CLI / SDK"]
     MCP["MCP / Broker"]
-    Remote["Remote principal"]
+    Remote["Remote agent"]
   end
 
   subgraph Local["Local runtime"]
@@ -101,8 +101,8 @@ The application router is split into six domain routers:
 
 * `vault`
 * `items`
-* `principals`
-* `grants`
+* `agents`
+* `permissions`
 * `access`
 * `audit`
 
@@ -123,7 +123,7 @@ Each tRPC request constructs context once:
 Procedure middleware then adds identity:
 
 * `sessionProcedure` resolves a user session or verified user token
-* `principalProcedure` resolves a principal token, including legacy fallback
+* `principalProcedure` resolves a agent token, including legacy fallback
 
 ## Contract model
 
@@ -147,11 +147,11 @@ Every public procedure declares both input and output schemas. No custom transfo
 5. Effect program runs domain logic
 6. response is encoded as JSON-safe data
 
-### Principal flow
+### Agent flow
 
 1. caller sends `Authorization: Bearer ...`
-2. `principalProcedure` resolves the principal identity
-3. grant and locality checks run before any decrypt path
+2. `principalProcedure` resolves the agent identity
+3. permission and locality checks run before any decrypt path
 4. access attempt is appended to the audit log
 5. ciphertext or payload is returned based on capability and storage mode
 
@@ -160,7 +160,7 @@ Every public procedure declares both input and output schemas. No custom transfo
 1. browser or daemon unlocks the vault locally
 2. local runtime encrypts or decrypts item payloads
 3. API stores ciphertext and wrapped item keys
-4. remote principals never receive zero-knowledge plaintext
+4. remote agents never receive zero-knowledge plaintext
 
 ## Persistence model
 
@@ -168,12 +168,12 @@ Core persisted entities:
 
 * `vaults`
 * `items`
-* `principals`
-* `grants`
+* `agents`
+* `permissions`
 * `audit_log`
 * Better Auth tables
 
-Current runtime logic depends on explicit grants and does not use a background job system.
+Current runtime logic depends on explicit permissions and does not use a background job system.
 
 ## Boundaries
 

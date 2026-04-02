@@ -1,9 +1,9 @@
 import { UnauthorizedError } from "@abadge/core";
 import { verifyApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull, or } from "@abadge/db";
-import { principals } from "@abadge/db/schema";
+import { principals as agentRecords } from "@abadge/db/schema";
 import { Effect } from "effect";
-import type { BaseRequestContext, PrincipalIdentity, SessionIdentity } from "./context";
+import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
 
 function getCandidatePrefixes(token: string): string[] {
@@ -48,13 +48,13 @@ interface VerifyApiKeyResult {
   };
 }
 
-type ActivePrincipalCandidate = Pick<
-  typeof principals.$inferSelect,
+type ActiveAgentCandidate = Pick<
+  typeof agentRecords.$inferSelect,
   "id" | "userId" | "locality" | "secretHash"
 >;
 
-type MigratedPrincipal = Pick<
-  typeof principals.$inferSelect,
+type MigratedAgent = Pick<
+  typeof agentRecords.$inferSelect,
   "id" | "userId" | "locality" | "enabled" | "revokedAt"
 >;
 
@@ -74,52 +74,52 @@ function getBearerToken(ctx: BaseRequestContext): Effect.Effect<string, Unauthor
   return Effect.fail(unauthorized("Missing Bearer token"));
 }
 
-function touchPrincipal(ctx: BaseRequestContext, principalId: string): void {
+function touchAgent(ctx: BaseRequestContext, agentId: string): void {
   void ctx.db
-    .update(principals)
+    .update(agentRecords)
     .set({ lastUsedAt: new Date() })
-    .where(eq(principals.id, principalId))
+    .where(eq(agentRecords.id, agentId))
     .execute();
 }
 
-function toPrincipalIdentity(
-  principal: Pick<typeof principals.$inferSelect, "id" | "userId" | "locality">,
-): PrincipalIdentity {
+function toAgentIdentity(
+  agent: Pick<typeof agentRecords.$inferSelect, "id" | "userId" | "locality">,
+): AgentIdentity {
   return {
-    kind: "principal",
-    principalId: principal.id,
-    principalUserId: principal.userId,
-    principalLocality: principal.locality,
+    kind: "agent",
+    agentId: agent.id,
+    agentUserId: agent.userId,
+    agentLocality: agent.locality,
   };
 }
 
-const verifyLocalPrincipalIdentity = (
+const verifyLocalAgentIdentity = (
   ctx: BaseRequestContext,
   token: string,
-): Effect.Effect<PrincipalIdentity | null, Error> =>
+): Effect.Effect<AgentIdentity | null, Error> =>
   Effect.gen(function* () {
     const prefixes = getCandidatePrefixes(token);
     const activeCandidates = (yield* tryAsync(() =>
       ctx.db
         .select({
-          id: principals.id,
-          userId: principals.userId,
-          locality: principals.locality,
-          secretHash: principals.secretHash,
+          id: agentRecords.id,
+          userId: agentRecords.userId,
+          locality: agentRecords.locality,
+          secretHash: agentRecords.secretHash,
         })
-        .from(principals)
+        .from(agentRecords)
         .where(
           and(
-            or(...prefixes.map((prefix) => eq(principals.secretPrefix, prefix))),
-            eq(principals.enabled, true),
-            isNull(principals.revokedAt),
+            or(...prefixes.map((prefix) => eq(agentRecords.secretPrefix, prefix))),
+            eq(agentRecords.enabled, true),
+            isNull(agentRecords.revokedAt),
           ),
         )
         .limit(10),
-    )) as Array<ActivePrincipalCandidate>;
+    )) as Array<ActiveAgentCandidate>;
 
-    for (const principal of activeCandidates) {
-      const secretHash = principal.secretHash;
+    for (const agent of activeCandidates) {
+      const secretHash = agent.secretHash;
       if (!secretHash) {
         continue;
       }
@@ -129,17 +129,17 @@ const verifyLocalPrincipalIdentity = (
         continue;
       }
 
-      touchPrincipal(ctx, principal.id);
-      return toPrincipalIdentity(principal);
+      touchAgent(ctx, agent.id);
+      return toAgentIdentity(agent);
     }
 
     return null;
   });
 
-const verifyLegacyPrincipalIdentity = (
+const verifyLegacyAgentIdentity = (
   ctx: BaseRequestContext,
   token: string,
-): Effect.Effect<PrincipalIdentity, Error | UnauthorizedError> =>
+): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
   Effect.gen(function* () {
     const result = (yield* tryAsync(() =>
       ctx.auth.api.verifyApiKey({
@@ -151,40 +151,40 @@ const verifyLegacyPrincipalIdentity = (
       return yield* Effect.fail(unauthorized("Invalid API key"));
     }
 
-    const legacyPrincipalId = result.key.id;
+    const legacyAgentId = result.key.id;
     const legacyUserId = result.key.referenceId;
-    if (!legacyPrincipalId || !legacyUserId) {
+    if (!legacyAgentId || !legacyUserId) {
       return yield* Effect.fail(unauthorized("Invalid API key"));
     }
 
-    const [migratedPrincipal] = (yield* tryAsync(() =>
+    const [migratedAgent] = (yield* tryAsync(() =>
       ctx.db
         .select({
-          id: principals.id,
-          userId: principals.userId,
-          locality: principals.locality,
-          enabled: principals.enabled,
-          revokedAt: principals.revokedAt,
+          id: agentRecords.id,
+          userId: agentRecords.userId,
+          locality: agentRecords.locality,
+          enabled: agentRecords.enabled,
+          revokedAt: agentRecords.revokedAt,
         })
-        .from(principals)
-        .where(eq(principals.id, legacyPrincipalId))
+        .from(agentRecords)
+        .where(eq(agentRecords.id, legacyAgentId))
         .limit(1),
-    )) as Array<MigratedPrincipal>;
+    )) as Array<MigratedAgent>;
 
-    if (migratedPrincipal && (!migratedPrincipal.enabled || migratedPrincipal.revokedAt)) {
+    if (migratedAgent && (!migratedAgent.enabled || migratedAgent.revokedAt)) {
       return yield* Effect.fail(unauthorized("Invalid API key"));
     }
 
-    if (migratedPrincipal) {
-      touchPrincipal(ctx, legacyPrincipalId);
-      return toPrincipalIdentity(migratedPrincipal);
+    if (migratedAgent) {
+      touchAgent(ctx, legacyAgentId);
+      return toAgentIdentity(migratedAgent);
     }
 
     return {
-      kind: "principal",
-      principalId: legacyPrincipalId,
-      principalUserId: legacyUserId,
-      principalLocality: "remote",
+      kind: "agent",
+      agentId: legacyAgentId,
+      agentUserId: legacyUserId,
+      agentLocality: "remote",
     };
   });
 
@@ -240,15 +240,15 @@ const resolveBearerSessionIdentity = (
     return null;
   });
 
-export const resolvePrincipalIdentity = (
+export const resolveAgentIdentity = (
   ctx: BaseRequestContext,
-): Effect.Effect<PrincipalIdentity, Error | UnauthorizedError> =>
+): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
   Effect.gen(function* () {
     const token = yield* getBearerToken(ctx);
-    const principalIdentity = yield* verifyLocalPrincipalIdentity(ctx, token);
-    if (principalIdentity) {
-      return principalIdentity;
+    const agentIdentity = yield* verifyLocalAgentIdentity(ctx, token);
+    if (agentIdentity) {
+      return agentIdentity;
     }
 
-    return yield* verifyLegacyPrincipalIdentity(ctx, token);
+    return yield* verifyLegacyAgentIdentity(ctx, token);
   });

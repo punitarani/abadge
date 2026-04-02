@@ -1,11 +1,66 @@
-import type { AuditEntry, Grant, ItemDetail, ItemSummary, Principal, Vault } from "@abadge/core";
+import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Vault } from "@abadge/core";
+import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
 import type { auditLog, grants, items, principals, vaults } from "@abadge/db/schema";
 
 type VaultRow = typeof vaults.$inferSelect;
 type ItemRow = typeof items.$inferSelect;
-type PrincipalRow = typeof principals.$inferSelect;
-type GrantRow = typeof grants.$inferSelect;
+type AgentRow = typeof principals.$inferSelect;
+type PermissionRow = typeof grants.$inferSelect;
 type AuditRow = typeof auditLog.$inferSelect;
+
+export const LEGACY_AUDIT_EVENT_TYPES = [
+  "principal.create",
+  "principal.rotate",
+  "principal.revoke",
+  "grant.create",
+  "grant.revoke",
+] as const;
+
+type LegacyAuditEventType = (typeof LEGACY_AUDIT_EVENT_TYPES)[number];
+
+const AUDIT_EVENT_TYPE_ALIASES: Record<LegacyAuditEventType, AuditEventType> = {
+  "principal.create": "agent.create",
+  "principal.rotate": "agent.rotate",
+  "principal.revoke": "agent.revoke",
+  "grant.create": "permission.create",
+  "grant.revoke": "permission.revoke",
+};
+
+function isAuditEventType(eventType: string): eventType is AuditEventType {
+  return (AUDIT_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
+export function normalizeAuditEventType(eventType: string): AuditEventType {
+  const normalized = AUDIT_EVENT_TYPE_ALIASES[eventType as LegacyAuditEventType] ?? eventType;
+
+  // Surface unexpected DB/event drift instead of serializing invalid public values.
+  if (!isAuditEventType(normalized)) {
+    throw new Error(`Unknown audit event type: ${eventType}`);
+  }
+
+  return normalized;
+}
+
+export function getAuditEventTypeFilters(
+  eventType: AuditEventType | LegacyAuditEventType,
+): string[] {
+  const normalized = normalizeAuditEventType(eventType);
+
+  switch (normalized) {
+    case "agent.create":
+      return ["agent.create", "principal.create"];
+    case "agent.rotate":
+      return ["agent.rotate", "principal.rotate"];
+    case "agent.revoke":
+      return ["agent.revoke", "principal.revoke"];
+    case "permission.create":
+      return ["permission.create", "grant.create"];
+    case "permission.revoke":
+      return ["permission.revoke", "grant.revoke"];
+    default:
+      return [normalized];
+  }
+}
 
 export function serializeVault(row: VaultRow): Vault {
   return {
@@ -62,14 +117,14 @@ export function serializeItemDetail(row: ItemRow): ItemDetail {
   };
 }
 
-export function serializePrincipal(row: PrincipalRow): Principal {
+export function serializeAgent(row: AgentRow): Agent {
   return {
     id: row.id,
     userId: row.userId,
     kind: row.kind,
     locality: row.locality,
     name: row.name,
-    secretPrefix: row.secretPrefix,
+    keyPrefix: row.secretPrefix,
     enabled: row.enabled,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
@@ -78,14 +133,14 @@ export function serializePrincipal(row: PrincipalRow): Principal {
   };
 }
 
-export function serializeGrant(row: GrantRow): Grant {
+export function serializePermission(row: PermissionRow): Permission {
   return {
     id: row.id,
-    principalId: row.principalId,
+    agentId: row.principalId,
     itemId: row.itemId,
     capability: row.capability,
     expiresAt: row.expiresAt?.toISOString() ?? null,
-    grantedBy: row.grantedBy,
+    createdBy: row.grantedBy,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -94,9 +149,9 @@ export function serializeAuditEntry(row: AuditRow): AuditEntry {
   return {
     id: row.id,
     userId: row.userId,
-    principalId: row.principalId,
+    agentId: row.principalId,
     itemId: row.itemId,
-    eventType: row.eventType as AuditEntry["eventType"],
+    eventType: normalizeAuditEventType(row.eventType),
     result: row.result as AuditEntry["result"],
     deliveryMode: row.deliveryMode,
     meta: row.meta,

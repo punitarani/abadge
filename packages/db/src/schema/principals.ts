@@ -1,4 +1,4 @@
-import { PRINCIPAL_KINDS, PRINCIPAL_LOCALITIES } from "@abadge/core";
+import { AGENT_KINDS, AGENT_LOCALITIES } from "@abadge/core";
 import { boolean, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
@@ -9,8 +9,8 @@ export const principals = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: PRINCIPAL_KINDS }).notNull(),
-    locality: text("locality", { enum: PRINCIPAL_LOCALITIES }).notNull(),
+    kind: text("kind", { enum: AGENT_KINDS }).notNull(),
+    locality: text("locality", { enum: AGENT_LOCALITIES }).notNull(),
     name: text("name").notNull(),
     secretHash: text("secret_hash"),
     secretPrefix: text("secret_prefix"),

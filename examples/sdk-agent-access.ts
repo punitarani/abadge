@@ -1,33 +1,14 @@
-// Agent credential access: authenticate with an API key and retrieve a secret.
-// The agent must already have a permission grant for the target credential.
+// Agent access: authenticate with an API key and request a server-managed item.
+// The agent must already have a permission for the target item.
 
-import { AbadgeClient, ApprovalRequiredError } from "@abadge/sdk";
+import { AbadgeClient } from "@abadge/sdk";
 
-// Agent authenticates with its API key (the abg_... key shown once at registration)
 const client = new AbadgeClient({
   apiUrl: "http://localhost:8787",
-  token: "abg_...", // agent API key
+  token: "abg_...", // agent API key shown once at registration
 });
 
-try {
-  // Access a credential by name
-  const result = await client.accessCredential({
-    credentialName: "prod-db-url",
-    deliveryMode: "env_inject",
-    purpose: "Database migration",
-  });
+const result = await client.accessReveal("item_123");
 
-  if (result.value) {
-    // Inject into subprocess environment -- never log the raw value
-    console.log("Got credential for:", result.credential.name);
-    console.log("Delivery mode:", result.deliveryMode);
-  }
-} catch (err) {
-  if (err instanceof ApprovalRequiredError) {
-    // A policy requires human approval before this credential can be accessed.
-    // The request is queued; retry after approval.
-    console.log("Access pending approval");
-  } else {
-    throw err;
-  }
-}
+console.log("Payload label:", result.payload.label);
+console.log("Payload fields:", result.payload.fields);

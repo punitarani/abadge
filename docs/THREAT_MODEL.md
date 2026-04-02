@@ -18,7 +18,7 @@ flowchart TB
     EK["ENCRYPTION_KEY<br/>(Worker Secret)"]
   end
 
-  subgraph T4["Tier 4: Remote Principals"]
+  subgraph T4["Tier 4: Remote Agents"]
     Agent["Remote Agent<br/>API key auth<br/>server_managed only"]
   end
 
@@ -78,7 +78,7 @@ The server stores only ciphertext, wrapped keys, salts, and KDF parameters for Z
 - See item IDs, storage modes, timestamps, and sizes for all items
 - Delete or corrupt ciphertext (availability attack, not confidentiality)
 - Serve malicious JS to browser clients (see Tier 2)
-- Observe access patterns (which principals access which items, when)
+- Observe access patterns (which agents access which items, when)
 
 **What a full server breach exposes:**
 - All `server_managed` item plaintext
@@ -87,17 +87,17 @@ The server stores only ciphertext, wrapped keys, salts, and KDF parameters for Z
 - KDF parameters (enables offline brute-force of weak master passwords)
 - Access patterns and audit metadata
 
-### Tier 4: Remote Principals
+### Tier 4: Remote Agents
 
-Remote principals (hosted agents, cloud workers) authenticate with API keys and can only access `server_managed` items with `reveal_plaintext` grants.
+Remote agents (hosted agents, cloud workers) authenticate with API keys and can only access `server_managed` items with `reveal_plaintext` permissions.
 
-**What a compromised remote principal exposes:**
-- Only the `server_managed` items it has grants for
-- Only until the grant expires or is revoked
+**What a compromised remote agent exposes:**
+- Only the `server_managed` items it has permissions for
+- Only until the permission expires or is revoked
 
 **What it cannot access:**
 - Any ZK item (no decryption capability)
-- Any item it doesn't have a grant for
+- Any item it doesn't have a permission for
 
 ## Key Threats and Mitigations
 
@@ -107,7 +107,7 @@ Remote principals (hosted agents, cloud workers) authenticate with API keys and 
 | Weak master password | Argon2id with 64MB memory makes brute-force expensive. Product should enforce minimum entropy. |
 | Lost master password | Recovery key (shown once, user stores offline). No server-side recovery. |
 | XSS in browser | CSP headers. Root key in JS memory only. Prefer CLI for high-security ops. |
-| Compromised remote agent | Scoped grants with expiry. Cannot access ZK items. Audit trail. |
+| Compromised remote agent | Scoped permissions with expiry. Cannot access ZK items. Audit trail. |
 | Local attacker with root | Out of scope for v1. Daemon provides defense-in-depth, not a guarantee. |
 | Metadata leakage | ZK item metadata encrypted inside ciphertext. Server sees only IDs + timestamps + storage mode. |
 | Key rotation failure | Per-item DEKs: rotation rewraps DEKs, doesn't re-encrypt content. Atomic transaction. |

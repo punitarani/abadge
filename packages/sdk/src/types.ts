@@ -2,9 +2,9 @@ type ItemKind = "login" | "api_key" | "token" | "json" | "certificate" | "ssh_ke
 
 type StorageMode = "zero_knowledge" | "server_managed";
 
-type PrincipalKind = "device" | "local_cli" | "local_mcp" | "remote_agent";
+type AgentKind = "device" | "local_cli" | "local_mcp" | "remote_agent";
 
-type PrincipalLocality = "local" | "remote";
+type AgentLocality = "local" | "remote";
 
 type Capability =
   | "read_ciphertext"
@@ -22,11 +22,11 @@ type AuditEventType =
   | "item.read"
   | "item.update"
   | "item.delete"
-  | "principal.create"
-  | "principal.rotate"
-  | "principal.revoke"
-  | "grant.create"
-  | "grant.revoke"
+  | "agent.create"
+  | "agent.rotate"
+  | "agent.revoke"
+  | "permission.create"
+  | "permission.revoke"
   | "access.ciphertext"
   | "access.reveal"
   | "access.mount_env"
@@ -125,19 +125,19 @@ export interface ServerManagedItemDetail extends ItemSummary {
 export type ItemDetail = ZeroKnowledgeItemDetail | ServerManagedItemDetail;
 export type Item = ItemDetail;
 
-export interface CreatePrincipalInput {
-  kind: PrincipalKind;
+export interface CreateAgentInput {
+  kind: AgentKind;
   name: string;
   metadata?: JsonRecord;
 }
 
-export interface Principal {
+export interface Agent {
   id: string;
   userId: string;
-  kind: PrincipalKind;
-  locality: PrincipalLocality;
+  kind: AgentKind;
+  locality: AgentLocality;
   name: string;
-  secretPrefix: string | null;
+  keyPrefix: string | null;
   enabled: boolean;
   revokedAt: string | null;
   lastUsedAt: string | null;
@@ -145,37 +145,37 @@ export interface Principal {
   createdAt: string;
 }
 
-export interface PrincipalRegistration {
-  principal: Principal;
-  secret: string;
+export interface AgentWithKey {
+  agent: Agent;
+  apiKey: string;
 }
 
-export interface PrincipalRotateResult {
-  secret: string;
-  secretPrefix: string;
+export interface AgentRotateResult {
+  apiKey: string;
+  keyPrefix: string;
 }
 
-export interface CreateGrantInput {
-  principalId: string;
+export interface CreatePermissionInput {
+  agentId: string;
   itemId: string;
   capability: Capability;
   expiresAt?: string;
 }
 
-export interface Grant {
+export interface Permission {
   id: string;
-  principalId: string;
+  agentId: string;
   itemId: string;
   capability: Capability;
   expiresAt: string | null;
-  grantedBy: string;
+  createdBy: string;
   createdAt: string;
 }
 
 export interface AuditQuery {
   eventType?: AuditEventType;
   result?: AuditResult;
-  principalId?: string;
+  agentId?: string;
   itemId?: string;
   cursor?: string;
   limit?: number;
@@ -184,7 +184,7 @@ export interface AuditQuery {
 export interface AuditEntry {
   id: number;
   userId: string;
-  principalId: string | null;
+  agentId: string | null;
   itemId: string | null;
   eventType: AuditEventType;
   result: AuditResult;
@@ -218,20 +218,20 @@ export interface ItemListResult {
   items: ItemSummary[];
 }
 
-export interface PrincipalResult {
-  principal: Principal;
+export interface AgentResult {
+  agent: Agent;
 }
 
-export interface PrincipalListResult {
-  principals: Principal[];
+export interface AgentListResult {
+  agents: Agent[];
 }
 
-export interface GrantResult {
-  grant: Grant;
+export interface PermissionResult {
+  permission: Permission;
 }
 
-export interface GrantListResult {
-  grants: Grant[];
+export interface PermissionListResult {
+  permissions: Permission[];
 }
 
 export interface AuditListResult {
@@ -272,8 +272,7 @@ export type MountAccessResponse =
 export type BootstrapVaultInput = VaultBootstrapInput;
 export type SetupRecoveryInput = RecoverySetupInput;
 export type KeyDerivationParams = KdfParams;
-export type PrincipalWithKey = PrincipalRegistration;
-export type GrantFilters = Partial<Pick<CreateGrantInput, "principalId" | "itemId">>;
+export type PermissionFilters = Partial<Pick<CreatePermissionInput, "agentId" | "itemId">>;
 export type AuditFilters = AuditQuery;
 
 export interface ReEncryptedItem {

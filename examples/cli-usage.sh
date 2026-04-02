@@ -4,42 +4,32 @@
 
 set -euo pipefail
 
-# --- Authentication ---
-
 # Interactive login (opens browser)
 abadge login
 
-# --- Credentials ---
+# Unlock the local vault before decrypting zero-knowledge items
+abadge vault unlock
 
-# Store a secret
-abadge secret create \
-  --name prod-db-url \
-  --type api_key \
-  --value "postgres://..." \
-  --environment prod \
-  --sensitivity critical
+# Create an item (interactive: prompts for label, kind, and value)
+abadge item create
 
-# List all credentials
-abadge secret list
+# List registered items
+abadge item list
 
-# --- Running commands with secrets ---
+# Register an agent and save the one-time API key
+abadge agent register --name "deploy bot" --kind remote_agent
 
-# Inject a secret as an environment variable and run a command.
-# deploy.sh can read $PROD_DB_URL from its environment.
-abadge run --secret prod-db-url -- ./deploy.sh
+# Create a permission for one agent + item pair
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability reveal_plaintext
 
-# Mount a secret as a temporary file (created with 0600 permissions)
-abadge mount --secret tls-cert --path /tmp/cert.pem
+# Run a local command with an item mounted into the environment
+abadge run --item <item-id> -- ./deploy.sh
 
-# --- Agents and permissions ---
-
-# Grant an agent access to a credential
-abadge grant create \
-  --agent "<agent-id>" \
-  --credential "<credential-id>" \
-  --delivery-modes env_inject,file_mount
-
-# --- Audit ---
+# Mount an item as a temporary file
+abadge mount --item <item-id>
 
 # View recent audit log entries
-abadge audit --limit 20
+abadge audit

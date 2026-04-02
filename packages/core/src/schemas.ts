@@ -1,10 +1,10 @@
 import { Schema } from "effect";
 import {
+  AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
-  PRINCIPAL_KINDS,
   STORAGE_MODES,
 } from "./constants";
 
@@ -16,7 +16,7 @@ const NullableIsoDateString = Schema.NullOr(IsoDateString);
 
 export const StorageModeSchema = Schema.Literal(...STORAGE_MODES);
 export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
-export const PrincipalKindSchema = Schema.Literal(...PRINCIPAL_KINDS);
+export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
@@ -94,14 +94,14 @@ export const UpdateItemSchema = Schema.Union(
   ServerManagedUpdateItemSchema,
 );
 
-export const CreatePrincipalSchema = Schema.Struct({
-  kind: PrincipalKindSchema,
+export const CreateAgentSchema = Schema.Struct({
+  kind: AgentKindSchema,
   name: BoundedNameString,
   metadata: Schema.optional(JsonRecord),
 });
 
-export const CreateGrantSchema = Schema.Struct({
-  principalId: NonEmptyString,
+export const CreatePermissionSchema = Schema.Struct({
+  agentId: NonEmptyString,
   itemId: NonEmptyString,
   capability: CapabilitySchema,
   expiresAt: Schema.optional(IsoDateString),
@@ -123,7 +123,7 @@ export const MountAccessSchema = Schema.Struct({
 export const AuditQuerySchema = Schema.Struct({
   eventType: Schema.optional(AuditEventTypeSchema),
   result: Schema.optional(AuditResultSchema),
-  principalId: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
   itemId: Schema.optional(Schema.String),
   cursor: Schema.optional(Schema.String),
   limit: Schema.optional(
@@ -178,13 +178,13 @@ export const ItemDetailSchema = Schema.Union(
   ServerManagedItemDetailSchema,
 );
 
-export const PrincipalSchema = Schema.Struct({
+export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
   userId: NonEmptyString,
-  kind: PrincipalKindSchema,
+  kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
   name: NonEmptyString,
-  secretPrefix: Schema.NullOr(Schema.String),
+  keyPrefix: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
   revokedAt: Schema.NullOr(IsoDateString),
   lastUsedAt: Schema.NullOr(IsoDateString),
@@ -192,30 +192,30 @@ export const PrincipalSchema = Schema.Struct({
   createdAt: IsoDateString,
 });
 
-export const PrincipalRegistrationSchema = Schema.Struct({
-  principal: PrincipalSchema,
-  secret: NonEmptyString,
+export const AgentWithKeySchema = Schema.Struct({
+  agent: AgentSchema,
+  apiKey: NonEmptyString,
 });
 
-export const PrincipalRotateResultSchema = Schema.Struct({
-  secret: NonEmptyString,
-  secretPrefix: NonEmptyString,
+export const AgentRotateResultSchema = Schema.Struct({
+  apiKey: NonEmptyString,
+  keyPrefix: NonEmptyString,
 });
 
-export const GrantSchema = Schema.Struct({
+export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
-  principalId: NonEmptyString,
+  agentId: NonEmptyString,
   itemId: NonEmptyString,
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  grantedBy: NonEmptyString,
+  createdBy: NonEmptyString,
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
   userId: NonEmptyString,
-  principalId: Schema.NullOr(Schema.String),
+  agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
   eventType: AuditEventTypeSchema,
   result: AuditResultSchema,
@@ -282,20 +282,20 @@ export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
 });
 
-export const PrincipalResultSchema = Schema.Struct({
-  principal: PrincipalSchema,
+export const AgentResultSchema = Schema.Struct({
+  agent: AgentSchema,
 });
 
-export const PrincipalListResultSchema = Schema.Struct({
-  principals: Schema.Array(PrincipalSchema),
+export const AgentListResultSchema = Schema.Struct({
+  agents: Schema.Array(AgentSchema),
 });
 
-export const GrantResultSchema = Schema.Struct({
-  grant: GrantSchema,
+export const PermissionResultSchema = Schema.Struct({
+  permission: PermissionSchema,
 });
 
-export const GrantListResultSchema = Schema.Struct({
-  grants: Schema.Array(GrantSchema),
+export const PermissionListResultSchema = Schema.Struct({
+  permissions: Schema.Array(PermissionSchema),
 });
 
 export const AuditListResultSchema = Schema.Struct({

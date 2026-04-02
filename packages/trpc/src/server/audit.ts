@@ -1,11 +1,11 @@
 import type { AuditEventType, AuditResult } from "@abadge/core";
 import { auditLog } from "@abadge/db/schema";
 import { Effect } from "effect";
-import { PrincipalRequestContextTag, SessionRequestContextTag, tryAsync } from "./effect";
+import { AgentRequestContextTag, SessionRequestContextTag, tryAsync } from "./effect";
 
 export interface AuditEntryInput {
   userId: string;
-  principalId?: string;
+  agentId?: string;
   itemId?: string;
   eventType: AuditEventType;
   result: AuditResult;
@@ -22,7 +22,7 @@ export const logSessionAudit = (
     yield* tryAsync(() =>
       ctx.db.insert(auditLog).values({
         userId: entry.userId,
-        principalId: entry.principalId ?? null,
+        principalId: entry.agentId ?? null,
         itemId: entry.itemId ?? null,
         eventType: entry.eventType,
         result: entry.result,
@@ -33,15 +33,15 @@ export const logSessionAudit = (
     );
   });
 
-export const logPrincipalAudit = (
+export const logAgentAudit = (
   entry: AuditEntryInput,
-): Effect.Effect<void, Error, PrincipalRequestContextTag> =>
+): Effect.Effect<void, Error, AgentRequestContextTag> =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
     yield* tryAsync(() =>
       ctx.db.insert(auditLog).values({
         userId: entry.userId,
-        principalId: entry.principalId ?? null,
+        principalId: entry.agentId ?? null,
         itemId: entry.itemId ?? null,
         eventType: entry.eventType,
         result: entry.result,

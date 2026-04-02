@@ -17,11 +17,11 @@ import {
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
 import { and, eq, isNull } from "@abadge/db";
-import { grants, items } from "@abadge/db/schema";
+import { items, grants as permissionRecords } from "@abadge/db/schema";
 import { Effect } from "effect";
-import { logPrincipalAudit } from "../audit";
-import { PrincipalRequestContextTag, runPrincipalEffect, strictSchema } from "../effect";
-import { createTrpcRouter, principalProcedure } from "../init";
+import { logAgentAudit } from "../audit";
+import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
+import { agentProcedure, createTrpcRouter } from "../init";
 
 function decodeServerManagedPayload(itemId: string, decrypted: Uint8Array) {
   const text = new TextDecoder().decode(decrypted);
@@ -65,11 +65,11 @@ const failMissingServerManagedData = (
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
 ) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
 
-    yield* logPrincipalAudit({
-      userId: ctx.identity.principalUserId,
-      principalId: ctx.identity.principalId,
+    yield* logAgentAudit({
+      userId: ctx.identity.agentUserId,
+      agentId: ctx.identity.agentId,
       itemId,
       eventType,
       result: "denied",
@@ -85,7 +85,7 @@ const decryptServerManagedItem = (
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
 ) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
 
     if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
       return yield* failMissingServerManagedData(item.id, eventType);
@@ -107,28 +107,28 @@ const decryptServerManagedItem = (
     );
   });
 
-const checkGrant = (principalId: string, itemId: string, capability: Capability) =>
+const checkPermission = (agentId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
-    const [grant] = yield* Effect.tryPromise(() =>
+    const ctx = yield* AgentRequestContextTag;
+    const [permission] = yield* Effect.tryPromise(() =>
       ctx.db
         .select()
-        .from(grants)
+        .from(permissionRecords)
         .where(
           and(
-            eq(grants.principalId, principalId),
-            eq(grants.itemId, itemId),
-            eq(grants.capability, capability),
+            eq(permissionRecords.principalId, agentId),
+            eq(permissionRecords.itemId, itemId),
+            eq(permissionRecords.capability, capability),
           ),
         )
         .limit(1),
     );
 
-    if (!grant) {
+    if (!permission) {
       return false;
     }
 
-    if (grant.expiresAt && grant.expiresAt < new Date()) {
+    if (permission.expiresAt && permission.expiresAt < new Date()) {
       return false;
     }
 
@@ -137,7 +137,7 @@ const checkGrant = (principalId: string, itemId: string, capability: Capability)
 
 const loadAccessibleItem = (itemId: string) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
     const [item] = yield* Effect.tryPromise(() =>
       ctx.db
         .select()
@@ -145,7 +145,7 @@ const loadAccessibleItem = (itemId: string) =>
         .where(
           and(
             eq(items.id, itemId),
-            eq(items.userId, ctx.identity.principalUserId),
+            eq(items.userId, ctx.identity.agentUserId),
             isNull(items.deletedAt),
           ),
         )
@@ -166,32 +166,32 @@ const loadAccessibleItem = (itemId: string) =>
 
 const accessCiphertext = (input: CiphertextAccessInput) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
 
-    if (ctx.identity.principalLocality !== "local") {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+    if (ctx.identity.agentLocality !== "local") {
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.ciphertext",
         result: "denied",
         ipAddress: ctx.ipAddress,
-        meta: { reason: "remote principal cannot read ciphertext" },
+        meta: { reason: "remote agent cannot read ciphertext" },
       });
 
       return yield* Effect.fail(
         new ForbiddenError({
-          code: "GRANT_DENIED",
-          message: "Remote principals cannot access ciphertext",
+          code: "PERMISSION_DENIED",
+          message: "Remote agents cannot access ciphertext",
         }),
       );
     }
 
     const item = yield* loadAccessibleItem(input.itemId);
     if (item.storageMode !== "zero_knowledge") {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.ciphertext",
         result: "denied",
@@ -206,11 +206,15 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       );
     }
 
-    const hasGrant = yield* checkGrant(ctx.identity.principalId, input.itemId, "read_ciphertext");
-    if (!hasGrant) {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+    const hasPermission = yield* checkPermission(
+      ctx.identity.agentId,
+      input.itemId,
+      "read_ciphertext",
+    );
+    if (!hasPermission) {
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.ciphertext",
         result: "denied",
@@ -219,15 +223,15 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
 
       return yield* Effect.fail(
         new ForbiddenError({
-          code: "GRANT_DENIED",
-          message: "No valid grant",
+          code: "PERMISSION_DENIED",
+          message: "No valid permission",
         }),
       );
     }
 
-    yield* logPrincipalAudit({
-      userId: ctx.identity.principalUserId,
-      principalId: ctx.identity.principalId,
+    yield* logAgentAudit({
+      userId: ctx.identity.agentUserId,
+      agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType: "access.ciphertext",
       result: "allowed",
@@ -243,13 +247,13 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
 
 const accessReveal = (input: RevealAccessInput) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
     const item = yield* loadAccessibleItem(input.itemId);
 
     if (item.storageMode !== "server_managed") {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.reveal",
         result: "denied",
@@ -264,11 +268,15 @@ const accessReveal = (input: RevealAccessInput) =>
       );
     }
 
-    const hasGrant = yield* checkGrant(ctx.identity.principalId, input.itemId, "reveal_plaintext");
-    if (!hasGrant) {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+    const hasPermission = yield* checkPermission(
+      ctx.identity.agentId,
+      input.itemId,
+      "reveal_plaintext",
+    );
+    if (!hasPermission) {
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.reveal",
         result: "denied",
@@ -277,17 +285,17 @@ const accessReveal = (input: RevealAccessInput) =>
 
       return yield* Effect.fail(
         new ForbiddenError({
-          code: "GRANT_DENIED",
-          message: "No valid grant",
+          code: "PERMISSION_DENIED",
+          message: "No valid permission",
         }),
       );
     }
 
     const decrypted = yield* decryptServerManagedItem(item, "access.reveal");
 
-    yield* logPrincipalAudit({
-      userId: ctx.identity.principalUserId,
-      principalId: ctx.identity.principalId,
+    yield* logAgentAudit({
+      userId: ctx.identity.agentUserId,
+      agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType: "access.reveal",
       result: "allowed",
@@ -302,13 +310,13 @@ const accessReveal = (input: RevealAccessInput) =>
 
 const accessMount = (input: MountAccessInput) =>
   Effect.gen(function* () {
-    const ctx = yield* PrincipalRequestContextTag;
+    const ctx = yield* AgentRequestContextTag;
     const eventType = `access.mount_${input.mountType}` as const;
 
-    if (ctx.identity.principalLocality !== "local") {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+    if (ctx.identity.agentLocality !== "local") {
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
         result: "denied",
@@ -317,19 +325,19 @@ const accessMount = (input: MountAccessInput) =>
 
       return yield* Effect.fail(
         new ForbiddenError({
-          code: "GRANT_DENIED",
-          message: "Remote principals cannot mount",
+          code: "PERMISSION_DENIED",
+          message: "Remote agents cannot mount",
         }),
       );
     }
 
     const item = yield* loadAccessibleItem(input.itemId);
     const capability: Capability = input.mountType === "env" ? "mount_env" : "mount_file";
-    const hasGrant = yield* checkGrant(ctx.identity.principalId, input.itemId, capability);
-    if (!hasGrant) {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+    const hasPermission = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
+    if (!hasPermission) {
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
         result: "denied",
@@ -338,16 +346,16 @@ const accessMount = (input: MountAccessInput) =>
 
       return yield* Effect.fail(
         new ForbiddenError({
-          code: "GRANT_DENIED",
-          message: "No valid grant",
+          code: "PERMISSION_DENIED",
+          message: "No valid permission",
         }),
       );
     }
 
     if (item.storageMode === "zero_knowledge") {
-      yield* logPrincipalAudit({
-        userId: ctx.identity.principalUserId,
-        principalId: ctx.identity.principalId,
+      yield* logAgentAudit({
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
         result: "allowed",
@@ -365,9 +373,9 @@ const accessMount = (input: MountAccessInput) =>
 
     const decrypted = yield* decryptServerManagedItem(item, eventType);
 
-    yield* logPrincipalAudit({
-      userId: ctx.identity.principalUserId,
-      principalId: ctx.identity.principalId,
+    yield* logAgentAudit({
+      userId: ctx.identity.agentUserId,
+      agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType,
       result: "allowed",
@@ -382,16 +390,16 @@ const accessMount = (input: MountAccessInput) =>
   });
 
 export const accessRouter = createTrpcRouter({
-  ciphertext: principalProcedure
+  ciphertext: agentProcedure
     .input(strictSchema(CiphertextAccessSchema))
     .output(strictSchema(CiphertextAccessResponseSchema))
-    .mutation(({ ctx, input }) => runPrincipalEffect(ctx, accessCiphertext(input))),
-  reveal: principalProcedure
+    .mutation(({ ctx, input }) => runAgentEffect(ctx, accessCiphertext(input))),
+  reveal: agentProcedure
     .input(strictSchema(RevealAccessSchema))
     .output(strictSchema(RevealAccessResponseSchema))
-    .mutation(({ ctx, input }) => runPrincipalEffect(ctx, accessReveal(input))),
-  mount: principalProcedure
+    .mutation(({ ctx, input }) => runAgentEffect(ctx, accessReveal(input))),
+  mount: agentProcedure
     .input(strictSchema(MountAccessSchema))
     .output(strictSchema(MountAccessResponseSchema))
-    .mutation(({ ctx, input }) => runPrincipalEffect(ctx, accessMount(input))),
+    .mutation(({ ctx, input }) => runAgentEffect(ctx, accessMount(input))),
 });

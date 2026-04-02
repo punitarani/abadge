@@ -163,7 +163,7 @@ export default function AuditPage(): React.ReactElement {
               <TableHead>Time</TableHead>
               <TableHead>Event</TableHead>
               <TableHead>Result</TableHead>
-              <TableHead>Principal</TableHead>
+              <TableHead>Agent</TableHead>
               <TableHead>Item</TableHead>
               <TableHead>Details</TableHead>
             </TableRow>
@@ -209,7 +209,7 @@ export default function AuditPage(): React.ReactElement {
                     <Badge variant={resultBadgeVariant(log.result)}>{log.result}</Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {log.principalId?.slice(0, 8) ?? "\u2014"}
+                    {log.agentId?.slice(0, 8) ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {log.itemId?.slice(0, 8) ?? "\u2014"}

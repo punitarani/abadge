@@ -1,21 +1,87 @@
-import { AuditListResultSchema, type AuditQuery, AuditQuerySchema } from "@abadge/core";
-import { and, desc, eq, lt } from "@abadge/db";
+import {
+  AUDIT_EVENT_TYPES,
+  AuditListResultSchema,
+  type AuditQuery,
+  AuditResultSchema,
+} from "@abadge/core";
+import { and, desc, eq, lt, or, type SQL } from "@abadge/db";
 import { auditLog } from "@abadge/db/schema";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
 import { createTrpcRouter, sessionProcedure } from "../init";
-import { serializeAuditEntry } from "../serialize";
+import {
+  getAuditEventTypeFilters,
+  LEGACY_AUDIT_EVENT_TYPES,
+  normalizeAuditEventType,
+  serializeAuditEntry,
+} from "../serialize";
+
+const AUDIT_EVENT_TYPE_FILTERS = [...AUDIT_EVENT_TYPES, ...LEGACY_AUDIT_EVENT_TYPES] as const;
+
+export const AuditQueryInputSchema = Schema.Struct({
+  eventType: Schema.optional(Schema.Literal(...AUDIT_EVENT_TYPE_FILTERS)),
+  result: Schema.optional(AuditResultSchema),
+  agentId: Schema.optional(Schema.String),
+  itemId: Schema.optional(Schema.String),
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
+});
+
+function normalizeAuditQuery(input: Schema.Schema.Type<typeof AuditQueryInputSchema>): AuditQuery {
+  const eventType = input.eventType ? normalizeAuditEventType(input.eventType) : undefined;
+
+  return {
+    agentId: input.agentId,
+    itemId: input.itemId,
+    eventType,
+    result: input.result,
+    cursor: input.cursor,
+    limit: input.limit,
+  };
+}
+
+function buildEventTypeCondition(eventType: NonNullable<AuditQuery["eventType"]>): SQL {
+  const eventTypes = getAuditEventTypeFilters(eventType);
+  const [firstEventType, ...remainingEventTypes] = eventTypes;
+
+  if (!firstEventType) {
+    throw new Error(`No audit event filters available for ${eventType}`);
+  }
+
+  if (remainingEventTypes.length === 0) {
+    return eq(auditLog.eventType, firstEventType);
+  }
+
+  const condition = or(
+    eq(auditLog.eventType, firstEventType),
+    ...remainingEventTypes.map((candidate) => eq(auditLog.eventType, candidate)),
+  );
+
+  if (!condition) {
+    throw new Error(`Failed to build audit event filter for ${eventType}`);
+  }
+
+  return condition;
+}
+
+function buildAuditConditions(input: AuditQuery, userId: string): SQL[] {
+  const conditions: SQL[] = [eq(auditLog.userId, userId)];
+
+  if (input.eventType) conditions.push(buildEventTypeCondition(input.eventType));
+  if (input.result) conditions.push(eq(auditLog.result, input.result));
+  if (input.agentId) conditions.push(eq(auditLog.principalId, input.agentId));
+  if (input.itemId) conditions.push(eq(auditLog.itemId, input.itemId));
+  if (input.cursor) conditions.push(lt(auditLog.id, Number(input.cursor)));
+
+  return conditions;
+}
 
 const listAuditEntries = (input: AuditQuery) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const conditions = [eq(auditLog.userId, ctx.identity.userId)];
-
-    if (input.eventType) conditions.push(eq(auditLog.eventType, input.eventType));
-    if (input.result) conditions.push(eq(auditLog.result, input.result));
-    if (input.principalId) conditions.push(eq(auditLog.principalId, input.principalId));
-    if (input.itemId) conditions.push(eq(auditLog.itemId, input.itemId));
-    if (input.cursor) conditions.push(lt(auditLog.id, Number(input.cursor)));
+    const conditions = buildAuditConditions(input, ctx.identity.userId);
 
     const limit = input.limit ?? 50;
     const result = yield* Effect.tryPromise(() =>
@@ -36,7 +102,7 @@ const listAuditEntries = (input: AuditQuery) =>
 
 export const auditRouter = createTrpcRouter({
   list: sessionProcedure
-    .input(strictSchema(AuditQuerySchema))
+    .input(strictSchema(AuditQueryInputSchema))
     .output(strictSchema(AuditListResultSchema))
-    .query(({ ctx, input }) => runSessionEffect(ctx, listAuditEntries(input))),
+    .query(({ ctx, input }) => runSessionEffect(ctx, listAuditEntries(normalizeAuditQuery(input)))),
 });

@@ -4,27 +4,27 @@ import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { error, errorMessage, json, str, success, table } from "../output";
 
-export async function grantCommand(args: string[]): Promise<void> {
+export async function permissionCommand(args: string[]): Promise<void> {
   const sub = args[0];
 
   switch (sub) {
     case "create":
-      return grantCreate(args.slice(1));
+      return permissionCreate(args.slice(1));
     case "list":
-      return grantList(args.slice(1));
+      return permissionList(args.slice(1));
     case "revoke":
-      return grantRevoke(args.slice(1));
+      return permissionRevoke(args.slice(1));
     default:
-      console.log("Usage: abadge grant <create|list|revoke>");
+      console.log("Usage: abadge permission <create|list|revoke>");
       process.exit(sub ? 1 : 0);
   }
 }
 
-async function grantCreate(args: string[]): Promise<void> {
+async function permissionCreate(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
     options: {
-      "principal-id": { type: "string" },
+      "agent-id": { type: "string" },
       "item-id": { type: "string" },
       capability: { type: "string" },
       json: { type: "boolean" },
@@ -32,12 +32,12 @@ async function grantCreate(args: string[]): Promise<void> {
     strict: false,
   });
 
-  const principalId = str(values["principal-id"]);
+  const agentId = str(values["agent-id"]);
   const itemId = str(values["item-id"]);
   const capability = (str(values.capability) ?? "mount_env") as Capability;
 
-  if (!principalId || !itemId) {
-    error("--principal-id and --item-id are required.");
+  if (!agentId || !itemId) {
+    error("--agent-id and --item-id are required.");
     process.exit(1);
   }
 
@@ -50,8 +50,8 @@ async function grantCreate(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    const result = await client.createGrant({
-      principalId,
+    const result = await client.createPermission({
+      agentId,
       itemId,
       capability,
     });
@@ -59,46 +59,46 @@ async function grantCreate(args: string[]): Promise<void> {
     if (values.json) {
       json(result);
     } else {
-      success("Grant created.");
+      success("Permission created.");
     }
   } catch (err) {
-    error(errorMessage(err, "Failed to create grant."));
+    error(errorMessage(err, "Failed to create permission."));
     process.exit(1);
   }
 }
 
-async function grantList(args: string[]): Promise<void> {
+async function permissionList(args: string[]): Promise<void> {
   const { values } = parseArgs({ args, options: { json: { type: "boolean" } }, strict: false });
   const config = requireConfig();
   const client = new ApiClient(config);
 
   try {
-    const grants = (await client.listGrants()).grants;
+    const permissions = (await client.listPermissions()).permissions;
 
     if (values.json) {
-      json(grants);
+      json(permissions);
       return;
     }
 
     table(
-      grants.map((g) => ({
-        ID: g.id,
-        Principal: g.principalId,
-        Item: g.itemId,
-        Capability: g.capability,
-        Granted: g.createdAt,
+      permissions.map((permission) => ({
+        ID: permission.id,
+        Agent: permission.agentId,
+        Item: permission.itemId,
+        Capability: permission.capability,
+        Created: permission.createdAt,
       })),
     );
   } catch (err) {
-    error(errorMessage(err, "Failed to list grants."));
+    error(errorMessage(err, "Failed to list permissions."));
     process.exit(1);
   }
 }
 
-async function grantRevoke(args: string[]): Promise<void> {
+async function permissionRevoke(args: string[]): Promise<void> {
   const id = args[0];
   if (!id) {
-    error("Usage: abadge grant revoke <id>");
+    error("Usage: abadge permission revoke <id>");
     process.exit(1);
   }
 
@@ -106,10 +106,10 @@ async function grantRevoke(args: string[]): Promise<void> {
   const client = new ApiClient(config);
 
   try {
-    await client.revokeGrant(id);
-    success(`Grant ${id} revoked.`);
+    await client.revokePermission(id);
+    success(`Permission ${id} revoked.`);
   } catch (err) {
-    error(errorMessage(err, "Failed to revoke grant."));
+    error(errorMessage(err, "Failed to revoke permission."));
     process.exit(1);
   }
 }

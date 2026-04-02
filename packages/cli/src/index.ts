@@ -1,10 +1,10 @@
+import { agentCommand } from "./commands/agent";
 import { auditCommand } from "./commands/audit";
 import { daemonCommand, daemonServeCommand } from "./commands/daemon";
-import { grantCommand } from "./commands/grant";
 import { itemCommand } from "./commands/item";
 import { loginCommand } from "./commands/login";
 import { mountCommand } from "./commands/mount";
-import { principalCommand } from "./commands/principal";
+import { permissionCommand } from "./commands/permission";
 import { runCommand } from "./commands/run";
 import { vaultCommand } from "./commands/vault";
 
@@ -17,8 +17,8 @@ Commands:
   daemon start|stop|status  Manage local daemon
   vault unlock|lock|status|change-password  Manage vault encryption
   item create|list|get|delete  Manage vault items
-  principal register|list|revoke  Manage principals (agents)
-  grant create|list|revoke  Manage access grants
+  agent register|list|revoke  Manage agents
+  permission create|list|revoke  Manage access permissions
   run --item <id> -- <cmd>  Run command with secret in env
   mount --item <id>         Mount secret as temp file
   audit                     View access audit log
@@ -40,10 +40,10 @@ export async function main(argv: string[]): Promise<void> {
       return vaultCommand(args);
     case "item":
       return itemCommand(args);
-    case "principal":
-      return principalCommand(args);
-    case "grant":
-      return grantCommand(args);
+    case "agent":
+      return agentCommand(args);
+    case "permission":
+      return permissionCommand(args);
     case "run":
       return runCommand(args);
     case "mount":

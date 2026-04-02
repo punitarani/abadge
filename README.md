@@ -2,7 +2,7 @@
 
 **Credential control plane for AI agents.**
 
-abadge lets teams store native encrypted credentials or connect existing secret systems, grant
+abadge lets teams store native encrypted credentials or connect existing secret systems, permission
 agents explicit access only when needed, enforce policy and approval checks at runtime, and audit
 every access attempt across the dashboard, API, CLI, SDK, and MCP server.
 
@@ -11,7 +11,7 @@ every access attempt across the dashboard, API, CLI, SDK, and MCP server.
 * Stores native credentials as encrypted entries
 * References external secrets through connectors
 * Registers agents with unique API keys
-* Grants access per credential, per agent
+* Per-credential permissions for each agent
 * Evaluates policy and approval requirements at request time
 * Issues short-lived broker sessions for runtime access
 * Records allowed, denied, and pending approval access events
@@ -24,7 +24,7 @@ Agents need credentials. Operators need control.
 abadge sits between them:
 
 * users keep ownership of credentials
-* agents only use what they were explicitly granted
+* agents only use what they were explicitly allowed
 * policy and approval rules are enforced before use
 * every access attempt is visible and attributable
 
@@ -32,7 +32,7 @@ abadge sits between them:
 
 For v1, abadge should be understood as:
 
-* **Access** -- explicit grants, policy checks, approvals, sessions, and audit
+* **Access** -- explicit permissions, policy checks, approvals, sessions, and audit
 * **Connect** -- native encrypted storage plus external secret references
 * **Interfaces** -- REST API, dashboard, CLI, SDK, and MCP tools
 
@@ -44,7 +44,7 @@ It is not positioned as a generic human password manager.
 
 * Native credential CRUD
 * Agent registry
-* Per-credential grants
+* Per-credential permissions
 * Policies and approvals
 * Connector support
 * Short-lived broker sessions
@@ -72,7 +72,7 @@ Each credential is a named entry with:
 
 Agents authenticate with a static API key issued once at registration or with a short-lived broker
 session token. Keys and session tokens are hashed before storage. Every access request is checked
-against explicit grants, attached policy, delivery-mode constraints, and approval state before any
+against explicit permissions, attached policy, delivery-mode constraints, and approval state before any
 decryption occurs.
 
 ## How it works
@@ -80,9 +80,9 @@ decryption occurs.
 1. A user signs in to the dashboard or CLI.
 2. The user stores a native credential or configures an external reference.
 3. The user registers one or more agents.
-4. The user grants Agent X access to Credential Y and optionally attaches policy.
+4. The user creates a permission for Agent X to access Credential Y and optionally attaches policy.
 5. The agent calls the API with an API key or session token.
-6. abadge verifies agent identity, ownership, grant, delivery mode, policy, and approval status.
+6. abadge verifies agent identity, ownership, permission, delivery mode, policy, and approval status.
 7. If allowed, abadge resolves the secret only for the requested delivery mode.
 8. abadge records the access attempt in the audit log.
 

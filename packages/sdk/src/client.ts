@@ -1,23 +1,23 @@
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
+  AgentListResult,
+  AgentRotateResult,
+  AgentWithKey,
   AuditFilters,
   AuditListResult,
   BootstrapVaultInput,
   ChangePasswordInput,
   CiphertextAccessResponse,
-  CreateGrantInput,
+  CreateAgentInput,
   CreateItemInput,
-  CreatePrincipalInput,
-  GrantFilters,
-  GrantListResult,
-  GrantResult,
+  CreatePermissionInput,
   ItemListResult,
   ItemResult,
   MountAccessResponse,
-  PrincipalListResult,
-  PrincipalRotateResult,
-  PrincipalWithKey,
+  PermissionFilters,
+  PermissionListResult,
+  PermissionResult,
   RevealAccessResponse,
   RotateKeyInput,
   SetupRecoveryInput,
@@ -61,16 +61,16 @@ interface SdkTrpcClient {
     >;
     delete: TrpcMutation<{ itemId: string }, SuccessResult>;
   };
-  principals: {
-    create: TrpcMutation<CreatePrincipalInput, PrincipalWithKey>;
-    list: TrpcQueryWithoutInput<PrincipalListResult>;
-    rotate: TrpcMutation<{ principalId: string }, PrincipalRotateResult>;
-    revoke: TrpcMutation<{ principalId: string }, SuccessResult>;
+  agents: {
+    create: TrpcMutation<CreateAgentInput, AgentWithKey>;
+    list: TrpcQueryWithoutInput<AgentListResult>;
+    rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
+    revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
-  grants: {
-    create: TrpcMutation<CreateGrantInput, GrantResult>;
-    list: TrpcQuery<GrantFilters, GrantListResult>;
-    revoke: TrpcMutation<{ grantId: string }, SuccessResult>;
+  permissions: {
+    create: TrpcMutation<CreatePermissionInput, PermissionResult>;
+    list: TrpcQuery<PermissionFilters, PermissionListResult>;
+    revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
   access: {
     ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
@@ -91,8 +91,6 @@ export class AbadgeClient {
       token: config.token,
     }) as unknown as SdkTrpcClient;
   }
-
-  // --- Vault ---
 
   async bootstrapVault(data: BootstrapVaultInput): Promise<{ id: string }> {
     return this.call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
@@ -119,8 +117,6 @@ export class AbadgeClient {
       "Failed to set up recovery",
     );
   }
-
-  // --- Items ---
 
   async createItem(data: CreateItemInput): Promise<{ id: string }> {
     return this.call(() => this.client.items.create.mutate(data), "Failed to create item");
@@ -151,51 +147,48 @@ export class AbadgeClient {
     );
   }
 
-  // --- Principals ---
+  async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
+    return this.call(() => this.client.agents.create.mutate(data), "Failed to create agent");
+  }
 
-  async createPrincipal(data: CreatePrincipalInput): Promise<PrincipalWithKey> {
+  async listAgents(): Promise<AgentListResult> {
+    return this.call(() => this.client.agents.list.query(), "Failed to list agents");
+  }
+
+  async rotateAgent(id: string): Promise<AgentRotateResult> {
     return this.call(
-      () => this.client.principals.create.mutate(data),
-      "Failed to create principal",
+      () => this.client.agents.rotate.mutate({ agentId: id }),
+      "Failed to rotate agent",
     );
   }
 
-  async listPrincipals(): Promise<PrincipalListResult> {
-    return this.call(() => this.client.principals.list.query(), "Failed to list principals");
-  }
-
-  async rotatePrincipal(id: string): Promise<PrincipalRotateResult> {
+  async revokeAgent(id: string): Promise<SuccessResult> {
     return this.call(
-      () => this.client.principals.rotate.mutate({ principalId: id }),
-      "Failed to rotate principal",
+      () => this.client.agents.revoke.mutate({ agentId: id }),
+      "Failed to revoke agent",
     );
   }
 
-  async revokePrincipal(id: string): Promise<SuccessResult> {
+  async createPermission(data: CreatePermissionInput): Promise<PermissionResult> {
     return this.call(
-      () => this.client.principals.revoke.mutate({ principalId: id }),
-      "Failed to revoke principal",
+      () => this.client.permissions.create.mutate(data),
+      "Failed to create permission",
     );
   }
 
-  // --- Grants ---
-
-  async createGrant(data: CreateGrantInput): Promise<GrantResult> {
-    return this.call(() => this.client.grants.create.mutate(data), "Failed to create grant");
-  }
-
-  async listGrants(filters: GrantFilters = {}): Promise<GrantListResult> {
-    return this.call(() => this.client.grants.list.query(filters), "Failed to list grants");
-  }
-
-  async revokeGrant(id: string): Promise<SuccessResult> {
+  async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
     return this.call(
-      () => this.client.grants.revoke.mutate({ grantId: id }),
-      "Failed to revoke grant",
+      () => this.client.permissions.list.query(filters),
+      "Failed to list permissions",
     );
   }
 
-  // --- Access ---
+  async revokePermission(id: string): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.permissions.revoke.mutate({ permissionId: id }),
+      "Failed to revoke permission",
+    );
+  }
 
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
     return this.call(
@@ -215,13 +208,9 @@ export class AbadgeClient {
     );
   }
 
-  // --- Audit ---
-
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
   }
-
-  // --- Internal ---
 
   private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
     try {

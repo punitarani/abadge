@@ -1,5 +1,5 @@
 import { Context, Effect, Schema } from "effect";
-import type { BaseRequestContext, PrincipalRequestContext, SessionRequestContext } from "./context";
+import type { AgentRequestContext, BaseRequestContext, SessionRequestContext } from "./context";
 import { toTrpcError } from "./errors";
 
 export const strictSchema = <S extends Schema.Schema.AnyNoContext>(schema: S) =>
@@ -10,9 +10,9 @@ export class SessionRequestContextTag extends Context.Tag("@abadge/trpc/SessionR
   SessionRequestContext
 >() {}
 
-export class PrincipalRequestContextTag extends Context.Tag("@abadge/trpc/PrincipalRequestContext")<
-  PrincipalRequestContextTag,
-  PrincipalRequestContext
+export class AgentRequestContextTag extends Context.Tag("@abadge/trpc/AgentRequestContext")<
+  AgentRequestContextTag,
+  AgentRequestContext
 >() {}
 
 export class BaseRequestContextTag extends Context.Tag("@abadge/trpc/BaseRequestContext")<
@@ -34,11 +34,11 @@ function withSessionContext<A, E>(
   return Effect.provideService(effect, SessionRequestContextTag, ctx);
 }
 
-function withPrincipalContext<A, E>(
-  ctx: PrincipalRequestContext,
-  effect: Effect.Effect<A, E, PrincipalRequestContextTag>,
+function withAgentContext<A, E>(
+  ctx: AgentRequestContext,
+  effect: Effect.Effect<A, E, AgentRequestContextTag>,
 ): Effect.Effect<A, E, never> {
-  return Effect.provideService(effect, PrincipalRequestContextTag, ctx);
+  return Effect.provideService(effect, AgentRequestContextTag, ctx);
 }
 
 export async function runBaseEffect<A, E>(
@@ -63,12 +63,12 @@ export async function runSessionEffect<A, E>(
   }
 }
 
-export async function runPrincipalEffect<A, E>(
-  ctx: PrincipalRequestContext,
-  effect: Effect.Effect<A, E, PrincipalRequestContextTag>,
+export async function runAgentEffect<A, E>(
+  ctx: AgentRequestContext,
+  effect: Effect.Effect<A, E, AgentRequestContextTag>,
 ): Promise<A> {
   try {
-    return await Effect.runPromise(withPrincipalContext(ctx, effect));
+    return await Effect.runPromise(withAgentContext(ctx, effect));
   } catch (error) {
     throw toTrpcError(error);
   }
