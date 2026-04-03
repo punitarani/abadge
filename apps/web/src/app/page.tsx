@@ -154,7 +154,7 @@ export default function HomePage() {
       </header>
 
       <main>
-        <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="flex min-w-0 flex-col justify-center border-black bg-white p-6 lg:border-r lg:p-12">
             <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
               Status: Alpha
