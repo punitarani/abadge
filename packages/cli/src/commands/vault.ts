@@ -1,23 +1,29 @@
+import { Command } from "commander";
 import { daemonChangePassword, daemonLock, daemonUnlock, daemonVaultStatus } from "../daemon";
 import { error, success } from "../output";
 import { prompt } from "../prompt";
 
 export async function vaultCommand(args: string[]): Promise<void> {
-  const sub = args[0];
+  const cmd = new Command("vault")
+    .description("Manage vault encryption")
+    .addCommand(
+      new Command("unlock").description("Unlock the vault").action(vaultUnlock),
+    )
+    .addCommand(
+      new Command("lock").description("Lock the vault").action(vaultLockCmd),
+    )
+    .addCommand(
+      new Command("status")
+        .description("Show vault status")
+        .action(vaultStatusCmd),
+    )
+    .addCommand(
+      new Command("change-password")
+        .description("Change master password")
+        .action(vaultChangePassword),
+    );
 
-  switch (sub) {
-    case "unlock":
-      return vaultUnlock();
-    case "lock":
-      return vaultLockCmd();
-    case "status":
-      return vaultStatusCmd();
-    case "change-password":
-      return vaultChangePassword();
-    default:
-      console.log("Usage: abadge vault <unlock|lock|status|change-password>");
-      process.exit(sub ? 1 : 0);
-  }
+  await cmd.parseAsync(args, { from: "user" });
 }
 
 async function vaultUnlock(): Promise<void> {
