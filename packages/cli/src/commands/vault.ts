@@ -50,8 +50,11 @@ async function vaultStatusCmd(): Promise<void> {
     error(res.error ?? "Failed to get vault status.");
     process.exit(1);
   }
-  const data = res.data as { unlocked?: boolean } | undefined;
-  console.log(`Vault: ${data?.unlocked ? "unlocked" : "locked"}`);
+  const data = res.data as { locked?: boolean; keyVersion?: number } | undefined;
+  console.log(`Vault: ${data?.locked === false ? "unlocked" : "locked"}`);
+  if (data?.locked === false && data.keyVersion) {
+    console.log(`Key version: ${data.keyVersion}`);
+  }
 }
 
 async function vaultChangePassword(): Promise<void> {
