@@ -1,6 +1,5 @@
-import { getApiClient, getApiErrorMessage } from "./api-client.js";
-import type { McpConfig } from "./config.js";
-import { daemonCall } from "./daemon-client.js";
+import type { AbadgeClient } from "@abadge/sdk";
+import { daemonDecrypt } from "./daemon-client.js";
 
 function payloadToSecret(payload: unknown): string {
   if (typeof payload === "string") {
@@ -23,29 +22,16 @@ function payloadToSecret(payload: unknown): string {
 }
 
 export async function resolveSecret(
-  config: McpConfig,
+  client: AbadgeClient,
   itemId: string,
-  capability: "mount_env" | "mount_file",
-  _purpose: string,
+  mountType: "env" | "file",
 ): Promise<string> {
-  const client = getApiClient(config);
+  const result = await client.accessMount(itemId, mountType);
 
-  try {
-    const result = await client.access.mount.mutate({
-      itemId,
-      mountType: capability === "mount_file" ? "file" : "env",
-    });
-
-    if (result.storageMode === "zero_knowledge") {
-      const decrypted = await daemonCall<{ payload: unknown }>("item.decrypt", {
-        encryptedItemKey: result.encryptedItemKey,
-        ciphertext: result.ciphertext,
-      });
-      return payloadToSecret(decrypted.payload);
-    }
-
-    return payloadToSecret(result.payload);
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "Access denied"));
+  if (result.storageMode === "zero_knowledge") {
+    const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext);
+    return payloadToSecret(decrypted.payload);
   }
+
+  return payloadToSecret(result.payload);
 }

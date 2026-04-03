@@ -1,5 +1,6 @@
+import { AbadgeApiError } from "@abadge/sdk";
 import { z } from "zod";
-import { getApiClient, getApiErrorMessage } from "../api-client.js";
+import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
 
 export const toolName = "get_audit";
@@ -18,13 +19,14 @@ export async function handler(
   const client = getApiClient(config);
 
   try {
-    const response = await client.audit.list.query({
+    const response = await client.getAudit({
       ...(input.limit ? { limit: input.limit } : {}),
       ...(input.itemId ? { itemId: input.itemId } : {}),
     });
 
     return JSON.stringify({ entries: response.entries });
   } catch (error) {
-    return JSON.stringify({ error: getApiErrorMessage(error, "Failed to fetch audit logs") });
+    const message = error instanceof AbadgeApiError ? error.message : "Failed to fetch audit logs";
+    return JSON.stringify({ error: message });
   }
 }

@@ -5,6 +5,17 @@ import type { Bindings } from "./types";
 let lastAgentCreateInput: unknown;
 let lastPermissionCreateInput: unknown;
 let lastAuditInput: unknown;
+let lastVaultBootstrapInput: unknown;
+let lastVaultChangePasswordInput: unknown;
+let lastVaultRecoveryInput: unknown;
+let lastVaultRotateKeyInput: unknown;
+let lastItemCreateInput: unknown;
+let lastItemGetInput: unknown;
+let lastItemUpdateInput: unknown;
+let lastItemDeleteInput: unknown;
+let lastAccessCiphertextInput: unknown;
+let lastAccessRevealInput: unknown;
+let lastAccessMountInput: unknown;
 let callerHeaders = new Headers();
 
 const fakeCaller = {
@@ -76,6 +87,118 @@ const fakeCaller = {
       return { entries: [], nextCursor: null };
     },
   },
+  vault: {
+    bootstrap: async (input: unknown) => {
+      lastVaultBootstrapInput = input;
+      return { id: "vault_123" };
+    },
+    get: async () => ({
+      vault: {
+        id: "vault_123",
+        userId: "user_123",
+        wrappedRootKey: "wrapped_key_data",
+        kdfSalt: "salt_data",
+        kdfParams: {
+          algorithm: "argon2id",
+          memory: 65536,
+          iterations: 3,
+          parallelism: 1,
+          hashLength: 32,
+        },
+        recoveryWrappedRootKey: null,
+        keyVersion: 1,
+        createdAt: "2026-04-02T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+      },
+    }),
+    changePassword: async (input: unknown) => {
+      lastVaultChangePasswordInput = input;
+      return { ok: true };
+    },
+    setupRecovery: async (input: unknown) => {
+      lastVaultRecoveryInput = input;
+      return { ok: true };
+    },
+    rotateKey: async (input: unknown) => {
+      lastVaultRotateKeyInput = input;
+      return { ok: true, keyVersion: 2 };
+    },
+  },
+  items: {
+    create: async (input: unknown) => {
+      lastItemCreateInput = input;
+      return { id: "item_123" };
+    },
+    list: async () => ({
+      items: [
+        {
+          id: "item_123",
+          storageMode: "server_managed",
+          cryptoVersion: 1,
+          contentVersion: 1,
+          createdAt: "2026-04-02T00:00:00.000Z",
+          updatedAt: "2026-04-02T00:00:00.000Z",
+        },
+      ],
+    }),
+    get: async (input: unknown) => {
+      lastItemGetInput = input;
+      const { itemId } = input as { itemId: string };
+      return {
+        item: {
+          id: itemId,
+          storageMode: "server_managed",
+          cryptoVersion: 1,
+          contentVersion: 1,
+          createdAt: "2026-04-02T00:00:00.000Z",
+          updatedAt: "2026-04-02T00:00:00.000Z",
+        },
+      };
+    },
+    update: async (input: unknown) => {
+      lastItemUpdateInput = input;
+      return { ok: true, contentVersion: 2 };
+    },
+    delete: async (input: unknown) => {
+      lastItemDeleteInput = input;
+      return { ok: true };
+    },
+  },
+  access: {
+    ciphertext: async (input: unknown) => {
+      lastAccessCiphertextInput = input;
+      return {
+        encryptedItemKey: "encrypted_key",
+        ciphertext: "encrypted_data",
+        cryptoVersion: 1,
+      };
+    },
+    reveal: async (input: unknown) => {
+      lastAccessRevealInput = input;
+      return {
+        payload: {
+          v: 1,
+          label: "my-secret",
+          kind: "opaque",
+          tags: [],
+          fields: { value: "secret_value" },
+        },
+      };
+    },
+    mount: async (input: unknown) => {
+      lastAccessMountInput = input;
+      return {
+        storageMode: "server_managed",
+        payload: {
+          v: 1,
+          label: "my-secret",
+          kind: "opaque",
+          tags: [],
+          fields: { value: "secret_value" },
+        },
+      };
+    },
+  },
 };
 
 mock.module("@abadge/trpc/server", () => ({
@@ -104,6 +227,17 @@ beforeEach(() => {
   lastAgentCreateInput = undefined;
   lastPermissionCreateInput = undefined;
   lastAuditInput = undefined;
+  lastVaultBootstrapInput = undefined;
+  lastVaultChangePasswordInput = undefined;
+  lastVaultRecoveryInput = undefined;
+  lastVaultRotateKeyInput = undefined;
+  lastItemCreateInput = undefined;
+  lastItemGetInput = undefined;
+  lastItemUpdateInput = undefined;
+  lastItemDeleteInput = undefined;
+  lastAccessCiphertextInput = undefined;
+  lastAccessRevealInput = undefined;
+  lastAccessMountInput = undefined;
   callerHeaders = new Headers();
 
   fakeCaller.permissions.create = async (input: unknown) => {
@@ -249,5 +383,377 @@ describe("api app", () => {
       error: "Agent not found",
       code: "AGENT_NOT_FOUND",
     });
+  });
+});
+
+describe("vault routes", () => {
+  test("POST /v1/vault/bootstrap forwards body and returns 201", async () => {
+    const response = await app.request(
+      "http://localhost/v1/vault/bootstrap",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wrappedRootKey: "wrapped_key",
+          kdfSalt: "salt",
+          kdfParams: {
+            algorithm: "argon2id",
+            memory: 65536,
+            iterations: 3,
+            parallelism: 1,
+            hashLength: 32,
+          },
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { id: string };
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({ id: "vault_123" });
+    expect(lastVaultBootstrapInput).toEqual({
+      wrappedRootKey: "wrapped_key",
+      kdfSalt: "salt",
+      kdfParams: {
+        algorithm: "argon2id",
+        memory: 65536,
+        iterations: 3,
+        parallelism: 1,
+        hashLength: 32,
+      },
+    });
+  });
+
+  test("GET /v1/vault returns vault metadata", async () => {
+    const response = await app.request("http://localhost/v1/vault", undefined, testEnv);
+    const body = (await response.json()) as { vault: { id: string } };
+
+    expect(response.status).toBe(200);
+    expect(body.vault.id).toBe("vault_123");
+    expect(body.vault).toHaveProperty("wrappedRootKey");
+    expect(body.vault).toHaveProperty("kdfSalt");
+  });
+
+  test("POST /v1/vault/change-password forwards body", async () => {
+    const response = await app.request(
+      "http://localhost/v1/vault/change-password",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wrappedRootKey: "new_wrapped_key",
+          kdfSalt: "new_salt",
+          kdfParams: {
+            algorithm: "argon2id",
+            memory: 65536,
+            iterations: 3,
+            parallelism: 1,
+            hashLength: 32,
+          },
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { ok: boolean };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(lastVaultChangePasswordInput).toEqual({
+      wrappedRootKey: "new_wrapped_key",
+      kdfSalt: "new_salt",
+      kdfParams: {
+        algorithm: "argon2id",
+        memory: 65536,
+        iterations: 3,
+        parallelism: 1,
+        hashLength: 32,
+      },
+    });
+  });
+
+  test("POST /v1/vault/recovery forwards body", async () => {
+    const response = await app.request(
+      "http://localhost/v1/vault/recovery",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recoveryWrappedRootKey: "recovery_wrapped" }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { ok: boolean };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(lastVaultRecoveryInput).toEqual({ recoveryWrappedRootKey: "recovery_wrapped" });
+  });
+
+  test("POST /v1/vault/rotate-key forwards body and returns keyVersion", async () => {
+    const response = await app.request(
+      "http://localhost/v1/vault/rotate-key",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wrappedRootKey: "rotated_key",
+          rekeyedItems: { item_1: "new_enc_key_1" },
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { ok: boolean; keyVersion: number };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, keyVersion: 2 });
+    expect(lastVaultRotateKeyInput).toEqual({
+      wrappedRootKey: "rotated_key",
+      rekeyedItems: { item_1: "new_enc_key_1" },
+    });
+  });
+
+  test("POST /v1/vault/bootstrap returns 409 on conflict", async () => {
+    fakeCaller.vault.bootstrap = async () => {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Vault already exists",
+        cause: { statusCode: 409, code: "VAULT_ALREADY_EXISTS" },
+      });
+    };
+
+    const response = await app.request(
+      "http://localhost/v1/vault/bootstrap",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wrappedRootKey: "x",
+          kdfSalt: "x",
+          kdfParams: {
+            algorithm: "argon2id",
+            memory: 65536,
+            iterations: 3,
+            parallelism: 1,
+            hashLength: 32,
+          },
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { error: string; code: string };
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("VAULT_ALREADY_EXISTS");
+  });
+});
+
+describe("item routes", () => {
+  test("POST /v1/items creates item and returns 201", async () => {
+    const response = await app.request(
+      "http://localhost/v1/items",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storageMode: "server_managed",
+          payload: {
+            v: 1,
+            label: "my-secret",
+            kind: "opaque",
+            tags: [],
+            fields: { value: "secret" },
+          },
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { id: string };
+
+    expect(response.status).toBe(201);
+    expect(body).toEqual({ id: "item_123" });
+    expect(lastItemCreateInput).toEqual({
+      storageMode: "server_managed",
+      payload: {
+        v: 1,
+        label: "my-secret",
+        kind: "opaque",
+        tags: [],
+        fields: { value: "secret" },
+      },
+    });
+  });
+
+  test("GET /v1/items lists items", async () => {
+    const response = await app.request("http://localhost/v1/items", undefined, testEnv);
+    const body = (await response.json()) as { items: Array<{ id: string }> };
+
+    expect(response.status).toBe(200);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.id).toBe("item_123");
+  });
+
+  test("GET /v1/items/:itemId returns single item", async () => {
+    const response = await app.request("http://localhost/v1/items/item_456", undefined, testEnv);
+    const body = (await response.json()) as { item: { id: string } };
+
+    expect(response.status).toBe(200);
+    expect(body.item.id).toBe("item_456");
+    expect(lastItemGetInput).toEqual({ itemId: "item_456" });
+  });
+
+  test("PUT /v1/items/:itemId updates item", async () => {
+    const response = await app.request(
+      "http://localhost/v1/items/item_456",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storageMode: "server_managed",
+          payload: {
+            v: 1,
+            label: "updated",
+            kind: "opaque",
+            tags: [],
+            fields: { value: "new_value" },
+          },
+          contentVersion: 1,
+        }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { ok: boolean; contentVersion: number };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, contentVersion: 2 });
+    expect(lastItemUpdateInput).toEqual({
+      itemId: "item_456",
+      data: {
+        storageMode: "server_managed",
+        payload: {
+          v: 1,
+          label: "updated",
+          kind: "opaque",
+          tags: [],
+          fields: { value: "new_value" },
+        },
+        contentVersion: 1,
+      },
+    });
+  });
+
+  test("DELETE /v1/items/:itemId deletes item", async () => {
+    const response = await app.request(
+      "http://localhost/v1/items/item_456",
+      { method: "DELETE" },
+      testEnv,
+    );
+    const body = (await response.json()) as { ok: boolean };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(lastItemDeleteInput).toEqual({ itemId: "item_456" });
+  });
+});
+
+describe("access routes", () => {
+  test("POST /v1/access/ciphertext returns encrypted blob", async () => {
+    const response = await app.request(
+      "http://localhost/v1/access/ciphertext",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer abl_test_key",
+        },
+        body: JSON.stringify({ itemId: "item_123" }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as {
+      encryptedItemKey: string;
+      ciphertext: string;
+      cryptoVersion: number;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      encryptedItemKey: "encrypted_key",
+      ciphertext: "encrypted_data",
+      cryptoVersion: 1,
+    });
+    expect(lastAccessCiphertextInput).toEqual({ itemId: "item_123" });
+  });
+
+  test("POST /v1/access/reveal returns decrypted payload", async () => {
+    const response = await app.request(
+      "http://localhost/v1/access/reveal",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer abg_test_key",
+        },
+        body: JSON.stringify({ itemId: "item_123" }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as {
+      payload: { v: number; label: string; kind: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.payload.label).toBe("my-secret");
+    expect(body.payload.kind).toBe("opaque");
+    expect(lastAccessRevealInput).toEqual({ itemId: "item_123" });
+  });
+
+  test("POST /v1/access/mount returns mount data", async () => {
+    const response = await app.request(
+      "http://localhost/v1/access/mount",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer abl_test_key",
+        },
+        body: JSON.stringify({ itemId: "item_123", mountType: "env" }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as {
+      storageMode: string;
+      payload: { label: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.storageMode).toBe("server_managed");
+    expect(body.payload.label).toBe("my-secret");
+    expect(lastAccessMountInput).toEqual({ itemId: "item_123", mountType: "env" });
+  });
+
+  test("POST /v1/access/reveal returns 403 on permission denied", async () => {
+    fakeCaller.access.reveal = async () => {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "No valid permission",
+        cause: { statusCode: 403, code: "PERMISSION_DENIED" },
+      });
+    };
+
+    const response = await app.request(
+      "http://localhost/v1/access/reveal",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer abg_test_key",
+        },
+        body: JSON.stringify({ itemId: "item_no_perm" }),
+      },
+      testEnv,
+    );
+    const body = (await response.json()) as { error: string; code: string };
+
+    expect(response.status).toBe(403);
+    expect(body.code).toBe("PERMISSION_DENIED");
   });
 });

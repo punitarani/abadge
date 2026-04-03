@@ -1,24 +1,14 @@
-import { createNodeTrpcClient, normalizeTrpcError } from "@abadge/trpc/client";
+import { AbadgeClient } from "@abadge/sdk";
 import type { McpConfig } from "./config.js";
 
-const clientCache = new Map<string, ReturnType<typeof createNodeTrpcClient>>();
+let cached: AbadgeClient | null = null;
+let cachedKey: string | null = null;
 
-export function getApiClient(config: McpConfig): ReturnType<typeof createNodeTrpcClient> {
+export function getApiClient(config: McpConfig): AbadgeClient {
   const key = `${config.apiUrl}::${config.authToken}`;
-  const existing = clientCache.get(key);
-  if (existing) {
-    return existing;
+  if (!cached || cachedKey !== key) {
+    cached = new AbadgeClient({ apiUrl: config.apiUrl, token: config.authToken });
+    cachedKey = key;
   }
-
-  const client = createNodeTrpcClient({
-    baseUrl: config.apiUrl,
-    token: config.authToken,
-  });
-  clientCache.set(key, client);
-  return client;
-}
-
-export function getApiErrorMessage(error: unknown, fallback: string): string {
-  const normalized = normalizeTrpcError(error);
-  return normalized.message || fallback;
+  return cached;
 }

@@ -3,6 +3,7 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
 import { resolveSecret } from "../resolve-secret.js";
 
@@ -21,12 +22,8 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const secret = await resolveSecret(
-    config,
-    input.itemId,
-    "mount_file",
-    input.purpose ?? "Mount as temporary file",
-  );
+  const client = getApiClient(config);
+  const secret = await resolveSecret(client, input.itemId, "file");
 
   const suffix = randomBytes(8).toString("hex");
   const dir = join(tmpdir(), `abadge-${suffix}`);
