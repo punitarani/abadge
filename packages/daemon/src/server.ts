@@ -183,12 +183,15 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       if (!path) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "path is required" };
       }
+      if (!mountedFiles.has(path)) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "Path was not mounted by this daemon" };
+      }
+      mountedFiles.delete(path);
       try {
         rmSync(path);
       } catch {
         // File may already be cleaned up
       }
-      mountedFiles.delete(path);
       return { ok: true };
     },
   };

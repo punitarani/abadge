@@ -14,7 +14,12 @@ function loadConfigFile(): Partial<McpConfig> {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
       apiUrl: typeof parsed.apiUrl === "string" ? parsed.apiUrl : undefined,
-      authToken: typeof parsed.authToken === "string" ? parsed.authToken : undefined,
+      authToken:
+        typeof parsed.authToken === "string"
+          ? parsed.authToken
+          : typeof parsed.token === "string"
+            ? parsed.token
+            : undefined,
     };
   } catch {
     return {};

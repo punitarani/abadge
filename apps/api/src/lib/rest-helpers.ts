@@ -94,8 +94,12 @@ export async function withCallerResult(
   }
 }
 
-export function readJsonBody<T>(request: Request): Promise<T> {
-  return request.json() as Promise<T>;
+export async function readJsonBody<T>(request: Request): Promise<T> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid JSON body" });
+  }
 }
 
 export function readOptionalInt(value: string | undefined): number | undefined {

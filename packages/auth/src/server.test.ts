@@ -3,15 +3,34 @@ import type { Database } from "@abadge/db";
 import { createAuth, getTrustedOrigins } from "./server";
 
 describe("getTrustedOrigins", () => {
-  it("includes ABADGE API and app URLs plus localhost origins", () => {
+  it("includes localhost origins in dev when URLs are localhost", () => {
+    const origins = getTrustedOrigins({
+      ABADGE_API_URL: "http://localhost:8787",
+      ABADGE_APP_URL: "http://localhost:3000",
+    });
+    expect(origins).toContain("http://localhost:8787");
+    expect(origins).toContain("http://localhost:3000");
+    expect(origins).toContain("http://localhost:3001");
+  });
+
+  it("excludes localhost origins in production", () => {
     const origins = getTrustedOrigins({
       ABADGE_API_URL: "https://api.abadge.io",
       ABADGE_APP_URL: "https://abadge.io",
     });
     expect(origins).toContain("https://api.abadge.io");
     expect(origins).toContain("https://abadge.io");
-    expect(origins).toContain("http://localhost:3000");
-    expect(origins).toContain("http://localhost:3001");
+    expect(origins).not.toContain("http://localhost:3000");
+    expect(origins).not.toContain("http://localhost:3001");
+  });
+
+  it("deduplicates origins", () => {
+    const origins = getTrustedOrigins({
+      ABADGE_API_URL: "http://localhost:8787",
+      ABADGE_APP_URL: "http://localhost:3000",
+    });
+    const count = origins.filter((o) => o === "http://localhost:3000").length;
+    expect(count).toBe(1);
   });
 });
 

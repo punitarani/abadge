@@ -4,6 +4,7 @@ import { handleTrpcRequest } from "@abadge/trpc/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
+import { trimTrailingSlash } from "hono/trailing-slash";
 import { getConnectionString, getDb } from "./lib/db";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { accessRoutes } from "./routes/access";
@@ -17,6 +18,7 @@ import type { Bindings } from "./types";
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Global middleware
+app.use(trimTrailingSlash());
 app.use("*", secureHeaders());
 app.use("*", async (c, next) =>
   cors({

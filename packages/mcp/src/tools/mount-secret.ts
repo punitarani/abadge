@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -29,8 +29,11 @@ export async function handler(
   const dir = join(tmpdir(), `abadge-${suffix}`);
   await mkdir(dir, { mode: 0o700 });
 
-  const filename = input.filename ?? input.itemId;
-  const filePath = join(dir, filename);
+  const sanitized = basename(input.filename ?? input.itemId);
+  const filePath = join(dir, sanitized);
+  if (!filePath.startsWith(`${dir}/`)) {
+    throw new Error("Invalid filename");
+  }
 
   await writeFile(filePath, secret, { mode: 0o600 });
 

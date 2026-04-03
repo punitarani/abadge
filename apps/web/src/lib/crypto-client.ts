@@ -84,6 +84,48 @@ export async function unlockVault(masterPassword: string): Promise<Uint8Array> {
   }
 }
 
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ recoveryKey: string }> {
+  const rootKey = await unlockVault(currentPassword);
+
+  const newSalt = generateSalt();
+  const newKek = deriveKEK(newPassword, newSalt, DEFAULT_KDF_PARAMS);
+  const wrapped = wrapRootKey(rootKey, newKek);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
+
+  try {
+    await browserTrpcClient.vault.changePassword.mutate({
+      wrappedRootKey: wrapped.wrapped,
+      kdfSalt: toBase64(newSalt),
+      kdfParams: DEFAULT_KDF_PARAMS,
+    });
+  } catch (error) {
+    zeroKey(newKek);
+    zeroKey(rootKey);
+    throw new Error(getClientErrorMessage(error, "Password change failed"));
+  }
+
+  try {
+    await browserTrpcClient.vault.setupRecovery.mutate({
+      recoveryWrappedRootKey: recoveryWrapped.wrapped,
+    });
+  } catch {
+    zeroKey(newKek);
+    zeroKey(rootKey);
+    // Password was changed successfully but recovery key update failed.
+    // The user's new password is active — communicate this clearly.
+    throw new Error(
+      "Password changed successfully, but recovery key update failed. Your new password is active. Please try updating recovery from settings.",
+    );
+  }
+
+  zeroKey(newKek);
+  zeroKey(rootKey);
+  return { recoveryKey };
+}
+
 export function encryptItemForVault(
   payload: ItemPayload,
   rootKey: Uint8Array,

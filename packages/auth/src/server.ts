@@ -22,10 +22,14 @@ type AuthOriginsEnv = Partial<Pick<AuthEnv, "ABADGE_API_URL" | "ABADGE_APP_URL">
 export function getTrustedOrigins(env: AuthOriginsEnv): string[] {
   const apiUrl = env.ABADGE_API_URL ?? env.API_URL;
   const appUrl = env.ABADGE_APP_URL ?? env.APP_URL;
-
-  return [apiUrl, appUrl, "http://localhost:3000", "http://localhost:3001"].filter(
+  const origins = [apiUrl, appUrl].filter(
     (origin): origin is string => typeof origin === "string" && origin.length > 0,
   );
+  const isDev = origins.some((o) => o.startsWith("http://localhost"));
+  if (isDev) {
+    origins.push("http://localhost:3000", "http://localhost:3001");
+  }
+  return [...new Set(origins)];
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize

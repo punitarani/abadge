@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
-import { bootstrapVault, unlockVault } from "@/lib/crypto-client";
+import { changePassword } from "@/lib/crypto-client";
 
 export default function SettingsPage(): React.ReactElement {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -32,11 +32,7 @@ export default function SettingsPage(): React.ReactElement {
 
     setChanging(true);
     try {
-      // Verify current password by unlocking
-      await unlockVault(currentPassword);
-
-      // Re-bootstrap with new password (re-wraps the root key)
-      const result = await bootstrapVault(newPassword);
+      const result = await changePassword(currentPassword, newPassword);
       setRecoveryKey(result.recoveryKey);
       setSuccess("Master password changed successfully");
       setCurrentPassword("");
