@@ -14,7 +14,7 @@ import {
   VaultBootstrapSchema,
   VaultResultSchema,
 } from "@abadge/core";
-import { eq } from "@abadge/db";
+import { and, eq } from "@abadge/db";
 import { items, vaults } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { logSessionAudit } from "../audit";
@@ -188,7 +188,7 @@ const rotateKey = (input: RotateKeyInput) =>
             encryptedItemKey: newEncryptedItemKey,
             updatedAt: new Date(),
           })
-          .where(eq(items.id, itemId)),
+          .where(and(eq(items.id, itemId), eq(items.userId, userId))),
       );
     }
 

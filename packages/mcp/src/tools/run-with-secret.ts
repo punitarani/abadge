@@ -65,10 +65,11 @@ export async function handler(
 
   const result = await runCommand(input.command, input.args ?? [], childEnv);
 
-  // Never return the secret, only command output
+  // Redact secret from output to prevent leakage to LLM
+  const redact = (s: string): string => s.replaceAll(secret, "[REDACTED]");
   return JSON.stringify({
     exitCode: result.exitCode,
-    stdout: truncate(result.stdout),
-    stderr: truncate(result.stderr),
+    stdout: truncate(redact(result.stdout)),
+    stderr: truncate(redact(result.stderr)),
   });
 }
