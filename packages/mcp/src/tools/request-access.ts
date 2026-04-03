@@ -1,7 +1,8 @@
+import { AbadgeApiError } from "@abadge/sdk";
 import { z } from "zod";
-import { getApiClient, getApiErrorMessage } from "../api-client.js";
+import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
-import { daemonCall } from "../daemon-client.js";
+import { daemonDecrypt } from "../daemon-client.js";
 
 export const toolName = "request_access";
 
@@ -23,17 +24,14 @@ export async function handler(
   const client = getApiClient(config);
 
   try {
-    const response = await client.access.mount.mutate({
-      itemId: input.itemId,
-      mountType: input.capability === "mount_file" ? "file" : "env",
-    });
+    const response = await client.accessMount(
+      input.itemId,
+      input.capability === "mount_file" ? "file" : "env",
+    );
 
     if (response.storageMode === "zero_knowledge") {
       try {
-        await daemonCall("item.decrypt", {
-          encryptedItemKey: response.encryptedItemKey,
-          ciphertext: response.ciphertext,
-        });
+        await daemonDecrypt(response.encryptedItemKey, response.ciphertext);
       } catch (error) {
         const message = error instanceof Error ? error.message : "Daemon decryption failed";
         return JSON.stringify({ status: "error", error: message });
@@ -46,9 +44,10 @@ export async function handler(
       capability: input.capability,
     });
   } catch (error) {
+    const message = error instanceof AbadgeApiError ? error.message : "Access denied";
     return JSON.stringify({
       status: "denied",
-      error: getApiErrorMessage(error, "Access denied"),
+      error: message,
     });
   }
 }
