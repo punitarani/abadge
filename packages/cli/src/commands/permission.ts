@@ -1,5 +1,5 @@
-import { Command } from "commander";
 import { CAPABILITIES, type Capability } from "@abadge/core";
+import { Command } from "commander";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { error, errorMessage, json, success, table } from "../output";
@@ -16,12 +16,11 @@ export function createPermissionCommand(): Command {
     .option("--json", "Output as JSON")
     .action(
       async (opts: { agentId: string; itemId: string; capability: string; json?: boolean }) => {
-        const capability = opts.capability as Capability;
-
-        if (!CAPABILITIES.includes(capability)) {
+        if (!CAPABILITIES.includes(opts.capability as Capability)) {
           error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
           process.exit(1);
         }
+        const capability = opts.capability as Capability;
 
         const config = requireConfig();
         const client = new ApiClient(config);
@@ -94,8 +93,4 @@ export function createPermissionCommand(): Command {
     });
 
   return cmd;
-}
-
-export async function permissionCommand(args: string[]): Promise<void> {
-  await createPermissionCommand().parseAsync(args, { from: "user" });
 }

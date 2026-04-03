@@ -111,7 +111,6 @@
         "@abadge/sdk": "workspace:*",
         "@abadge/trpc": "workspace:*",
         "commander": "^13.1.0",
-        "effect": "^3.13.7",
       },
       "devDependencies": {
         "@types/bun": "latest",

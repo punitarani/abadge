@@ -9,6 +9,8 @@ export function createRunCommand(): Command {
   const cmd = new Command("run")
     .description("Run command with secret in env")
     .requiredOption("--item <id>", "Item ID")
+    // Allow unrecognised positional args so `abadge run --item <id> -- <cmd> [args...]`
+    // passes everything after `--` through as cmd.args.
     .allowExcessArguments()
     .action(async (opts: { item: string }) => {
       const command = cmd.args;
@@ -42,8 +44,4 @@ export function createRunCommand(): Command {
     });
 
   return cmd;
-}
-
-export async function runCommand(args: string[]): Promise<void> {
-  await createRunCommand().parseAsync(args, { from: "user" });
 }

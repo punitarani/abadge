@@ -1,5 +1,5 @@
-import { Command } from "commander";
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
+import { Command } from "commander";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { error, errorMessage, json, success, table, warn } from "../output";
@@ -14,39 +14,36 @@ export function createAgentCommand(): Command {
     .option("-k, --kind <kind>", "Agent kind", "remote_agent")
     .option("-d, --description <text>", "Agent description")
     .option("--json", "Output as JSON")
-    .action(
-      async (opts: { name: string; kind: string; description?: string; json?: boolean }) => {
-        const kind = opts.kind as AgentKind;
+    .action(async (opts: { name: string; kind: string; description?: string; json?: boolean }) => {
+      if (!AGENT_KINDS.includes(opts.kind as AgentKind)) {
+        error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
+        process.exit(1);
+      }
+      const kind = opts.kind as AgentKind;
 
-        if (!AGENT_KINDS.includes(kind)) {
-          error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
-          process.exit(1);
+      const config = requireConfig();
+      const client = new ApiClient(config);
+
+      try {
+        const result = await client.createAgent({
+          name: opts.name,
+          kind,
+          metadata: opts.description ? { description: opts.description } : {},
+        });
+
+        if (opts.json) {
+          json(result);
+        } else {
+          success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+          console.log("");
+          warn("Save this API key — it will NOT be shown again:");
+          console.log(`  ${result.apiKey}`);
         }
-
-        const config = requireConfig();
-        const client = new ApiClient(config);
-
-        try {
-          const result = await client.createAgent({
-            name: opts.name,
-            kind,
-            metadata: opts.description ? { description: opts.description } : {},
-          });
-
-          if (opts.json) {
-            json(result);
-          } else {
-            success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-            console.log("");
-            warn("Save this API key — it will NOT be shown again:");
-            console.log(`  ${result.apiKey}`);
-          }
-        } catch (err) {
-          error(errorMessage(err, "Failed to register agent."));
-          process.exit(1);
-        }
-      },
-    );
+      } catch (err) {
+        error(errorMessage(err, "Failed to register agent."));
+        process.exit(1);
+      }
+    });
 
   cmd
     .command("list")
@@ -124,8 +121,4 @@ export function createAgentCommand(): Command {
     });
 
   return cmd;
-}
-
-export async function agentCommand(args: string[]): Promise<void> {
-  await createAgentCommand().parseAsync(args, { from: "user" });
 }

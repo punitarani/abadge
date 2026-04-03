@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { Command } from "commander";
 import { startDaemon, stopDaemon } from "@abadge/daemon";
+import { Command } from "commander";
 import { requireConfig } from "../config";
 import { daemonStatus, SOCKET_PATH } from "../daemon";
 import { error, success } from "../output";
@@ -9,20 +9,11 @@ import { error, success } from "../output";
 export function createDaemonCommand(): Command {
   const cmd = new Command("daemon").description("Manage local daemon");
 
-  cmd
-    .command("start")
-    .description("Start the daemon")
-    .action(daemonStart);
+  cmd.command("start").description("Start the daemon").action(daemonStart);
 
-  cmd
-    .command("stop")
-    .description("Stop the daemon")
-    .action(daemonStop);
+  cmd.command("stop").description("Stop the daemon").action(daemonStop);
 
-  cmd
-    .command("status")
-    .description("Show daemon status")
-    .action(daemonStatusCmd);
+  cmd.command("status").description("Show daemon status").action(daemonStatusCmd);
 
   return cmd;
 }
@@ -143,12 +134,4 @@ async function waitForDaemonReady(): Promise<boolean> {
   }
 
   return false;
-}
-
-export async function daemonCommand(args: string[]): Promise<void> {
-  await createDaemonCommand().parseAsync(args, { from: "user" });
-}
-
-export async function daemonServeCommand(args: string[]): Promise<void> {
-  await createDaemonServeCommand().parseAsync(args, { from: "user" });
 }

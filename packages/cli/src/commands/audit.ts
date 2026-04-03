@@ -36,7 +36,3 @@ export function createAuditCommand(): Command {
       }
     });
 }
-
-export async function auditCommand(args: string[]): Promise<void> {
-  await createAuditCommand().parseAsync(args, { from: "user" });
-}

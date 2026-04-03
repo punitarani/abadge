@@ -1,5 +1,5 @@
-import { Command } from "commander";
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
+import { Command } from "commander";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
@@ -241,8 +241,4 @@ export function createItemCommand(): Command {
     });
 
   return cmd;
-}
-
-export async function itemCommand(args: string[]): Promise<void> {
-  await createItemCommand().parseAsync(args, { from: "user" });
 }

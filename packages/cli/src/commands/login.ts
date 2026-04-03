@@ -45,7 +45,3 @@ export function createLoginCommand(): Command {
       success("Logged in successfully.");
     });
 }
-
-export async function loginCommand(args: string[]): Promise<void> {
-  await createLoginCommand().parseAsync(args, { from: "user" });
-}

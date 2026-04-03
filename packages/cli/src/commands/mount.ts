@@ -31,7 +31,3 @@ export function createMountCommand(): Command {
       }
     });
 }
-
-export async function mountCommand(args: string[]): Promise<void> {
-  await createMountCommand().parseAsync(args, { from: "user" });
-}
