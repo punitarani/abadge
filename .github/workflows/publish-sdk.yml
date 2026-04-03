@@ -48,7 +48,7 @@ jobs:
             exit 1
           fi
 
-          echo "SDK_VERSION=$sdk_version" >> "$GITHUB_ENV"
+          echo "Version verified: $sdk_version"
 
       - name: Verify tag commit is reachable from origin/main
         run: |
