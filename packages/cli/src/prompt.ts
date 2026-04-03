@@ -42,6 +42,7 @@ function promptSilent(question: string): Promise<string> {
     }
 
     process.stdout.write(question);
+    stdin.resume();
     let input = "";
 
     const onData = (char: Buffer): void => {
@@ -54,6 +55,7 @@ function promptSilent(question: string): Promise<string> {
           stdin.setRawMode(wasRaw ?? false);
         }
         stdin.removeListener("data", onData);
+        stdin.pause();
         process.stdout.write("\n");
         resolve(next.input);
         return;
