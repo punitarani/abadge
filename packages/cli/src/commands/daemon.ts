@@ -1,25 +1,40 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { parseArgs } from "node:util";
+import { Command } from "commander";
 import { startDaemon, stopDaemon } from "@abadge/daemon";
 import { requireConfig } from "../config";
 import { daemonStatus, SOCKET_PATH } from "../daemon";
 import { error, success } from "../output";
 
-export async function daemonCommand(args: string[]): Promise<void> {
-  const sub = args[0];
+export function createDaemonCommand(): Command {
+  const cmd = new Command("daemon").description("Manage local daemon");
 
-  switch (sub) {
-    case "start":
-      return daemonStart();
-    case "stop":
-      return daemonStop();
-    case "status":
-      return daemonStatusCmd();
-    default:
-      console.log("Usage: abadge daemon <start|stop|status>");
-      process.exit(sub ? 1 : 0);
-  }
+  cmd
+    .command("start")
+    .description("Start the daemon")
+    .action(daemonStart);
+
+  cmd
+    .command("stop")
+    .description("Stop the daemon")
+    .action(daemonStop);
+
+  cmd
+    .command("status")
+    .description("Show daemon status")
+    .action(daemonStatusCmd);
+
+  return cmd;
+}
+
+export function createDaemonServeCommand(): Command {
+  return new Command("__daemon-serve")
+    .requiredOption("--api-url <url>", "API URL")
+    .requiredOption("--token <token>", "Auth token")
+    .action(async (opts: { apiUrl: string; token: string }) => {
+      startDaemon({ apiUrl: opts.apiUrl, authToken: opts.token });
+      await new Promise(() => {});
+    });
 }
 
 async function daemonStart(): Promise<void> {
@@ -130,29 +145,10 @@ async function waitForDaemonReady(): Promise<boolean> {
   return false;
 }
 
+export async function daemonCommand(args: string[]): Promise<void> {
+  await createDaemonCommand().parseAsync(args, { from: "user" });
+}
+
 export async function daemonServeCommand(args: string[]): Promise<void> {
-  const { values } = parseArgs({
-    args,
-    options: {
-      "api-url": { type: "string" },
-      token: { type: "string" },
-    },
-    strict: true,
-  });
-
-  const apiUrl = values["api-url"];
-  const token = values.token;
-  if (!apiUrl || !token) {
-    error("Daemon runtime requires --api-url and --token.");
-    process.exit(1);
-  }
-
-  startDaemon({
-    apiUrl,
-    authToken: token,
-  });
-
-  await new Promise(() => {
-    // Keep the daemon process alive until it receives a signal.
-  });
+  await createDaemonServeCommand().parseAsync(args, { from: "user" });
 }

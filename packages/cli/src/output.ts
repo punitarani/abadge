@@ -39,11 +39,6 @@ export function json(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
-/** Extract a string from parseArgs values (which return string | boolean unions with strict: false). */
-export function str(v: unknown): string | undefined {
-  return typeof v === "string" ? v : undefined;
-}
-
 /** Extract error message from an unknown catch value. */
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
