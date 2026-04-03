@@ -31,7 +31,7 @@ export async function handler(
 
   const sanitized = basename(input.filename ?? input.itemId);
   const filePath = join(dir, sanitized);
-  if (!filePath.startsWith(dir)) {
+  if (!filePath.startsWith(`${dir}/`)) {
     throw new Error("Invalid filename");
   }
 

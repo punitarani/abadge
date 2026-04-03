@@ -101,14 +101,24 @@ export async function changePassword(
       kdfSalt: toBase64(newSalt),
       kdfParams: DEFAULT_KDF_PARAMS,
     });
-
-    await browserTrpcClient.vault.setupRecovery.mutate({
-      recoveryWrappedRootKey: recoveryWrapped.wrapped,
-    });
   } catch (error) {
     zeroKey(newKek);
     zeroKey(rootKey);
     throw new Error(getClientErrorMessage(error, "Password change failed"));
+  }
+
+  try {
+    await browserTrpcClient.vault.setupRecovery.mutate({
+      recoveryWrappedRootKey: recoveryWrapped.wrapped,
+    });
+  } catch {
+    zeroKey(newKek);
+    zeroKey(rootKey);
+    // Password was changed successfully but recovery key update failed.
+    // The user's new password is active — communicate this clearly.
+    throw new Error(
+      "Password changed successfully, but recovery key update failed. Your new password is active. Please try updating recovery from settings.",
+    );
   }
 
   zeroKey(newKek);
