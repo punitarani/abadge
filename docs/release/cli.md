@@ -26,7 +26,6 @@ CLI release identity is package-scoped:
 
 * registry: [`scripts/releases/registry.ts`](../../scripts/releases/registry.ts)
 * publish runner: [`scripts/releases/publish.ts`](../../scripts/releases/publish.ts)
-* CLI wrapper: [`scripts/release-cli.ts`](../../scripts/release-cli.ts)
 * installer: [`install.sh`](../../install.sh)
 * workflow: [`.github/workflows/release.yml`](../../.github/workflows/release.yml)
 

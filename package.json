@@ -28,9 +28,9 @@
     "test": "turbo test && bun run test:scripts",
     "changeset": "changeset",
     "version:packages": "changeset version",
-    "release:publish": "bun scripts/release-publish.ts",
-    "release:cli": "bun scripts/release-cli.ts",
-    "release:cli:dry-run": "bun scripts/release-cli.ts --dry-run"
+    "release:publish": "bun scripts/releases/publish.ts",
+    "release:cli": "bun scripts/releases/publish.ts --package cli",
+    "release:cli:dry-run": "bun scripts/releases/publish.ts --dry-run --package cli"
   },
   "overrides": {
     "drizzle-orm": "0.45.2",

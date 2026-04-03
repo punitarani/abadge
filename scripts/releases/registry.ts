@@ -56,8 +56,6 @@ export const releasePackages = [
       "packages/trpc/",
       "packages/crypto/",
       "install.sh",
-      "scripts/release-cli.ts",
-      "scripts/release-publish.ts",
       "scripts/releases/",
       ".github/workflows/release.yml",
       "README.md",
