@@ -15,8 +15,14 @@ import { and, eq, isNull } from "@abadge/db";
 import { principals as agentRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, sessionProcedure } from "../init";
+import {
+  AgentRequestContextTag,
+  runAgentEffect,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+} from "../effect";
+import { agentProcedure, createTrpcRouter, sessionProcedure } from "../init";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -103,6 +109,24 @@ const getAgent = (agentId: string) =>
 
     return { agent: serializeAgent(agent) };
   });
+
+const getCurrentAgent = Effect.gen(function* () {
+  const ctx = yield* AgentRequestContextTag;
+  const [agent] = yield* Effect.tryPromise(() =>
+    ctx.db.select().from(agentRecords).where(eq(agentRecords.id, ctx.identity.agentId)).limit(1),
+  );
+
+  if (!agent) {
+    return yield* Effect.fail(
+      new NotFoundError({
+        code: "AGENT_NOT_FOUND",
+        message: "Agent not found",
+      }),
+    );
+  }
+
+  return { agent: serializeAgent(agent) };
+});
 
 const rotateAgent = (agentId: string) =>
   Effect.gen(function* () {
@@ -206,6 +230,9 @@ export const agentsRouter = createTrpcRouter({
   list: sessionProcedure
     .output(strictSchema(AgentListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listAgents)),
+  self: agentProcedure
+    .output(strictSchema(AgentResultSchema))
+    .query(({ ctx }) => runAgentEffect(ctx, getCurrentAgent)),
   get: sessionProcedure
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(AgentResultSchema))

@@ -1,17 +1,14 @@
 import { Command } from "commander";
-import { daemonChangePassword, daemonLock, daemonUnlock, daemonVaultStatus } from "../daemon";
-import { error, success } from "../output";
+import { daemonChangePassword, daemonLock, daemonStatus, daemonUnlock } from "../daemon";
+import { error, errorMessage, success } from "../output";
 import { prompt } from "../prompt";
 
 export function createVaultCommand(): Command {
   const cmd = new Command("vault").description("Manage vault encryption");
 
   cmd.command("unlock").description("Unlock the vault").action(vaultUnlock);
-
   cmd.command("lock").description("Lock the vault").action(vaultLockCmd);
-
   cmd.command("status").description("Show vault status").action(vaultStatusCmd);
-
   cmd.command("change-password").description("Change master password").action(vaultChangePassword);
 
   return cmd;
@@ -24,33 +21,33 @@ async function vaultUnlock(): Promise<void> {
     process.exit(1);
   }
 
-  const res = await daemonUnlock(password);
-  if (!res.ok) {
-    error(res.error ?? "Failed to unlock vault.");
+  try {
+    const res = await daemonUnlock(password);
+    success(`Vault unlocked (key version ${res.keyVersion}).`);
+  } catch (err) {
+    error(errorMessage(err, "Failed to unlock vault."));
     process.exit(1);
   }
-  success("Vault unlocked.");
 }
 
 async function vaultLockCmd(): Promise<void> {
-  const res = await daemonLock();
-  if (!res.ok) {
-    error(res.error ?? "Failed to lock vault.");
+  try {
+    await daemonLock();
+    success("Vault locked.");
+  } catch (err) {
+    error(errorMessage(err, "Failed to lock vault."));
     process.exit(1);
   }
-  success("Vault locked.");
 }
 
 async function vaultStatusCmd(): Promise<void> {
-  const res = await daemonVaultStatus();
-  if (!res.ok) {
-    error(res.error ?? "Failed to get vault status.");
+  try {
+    const status = await daemonStatus();
+    console.log(`Vault: ${status.locked ? "locked" : "unlocked"}`);
+    console.log(`Key version: ${status.keyVersion}`);
+  } catch (err) {
+    error(errorMessage(err, "Failed to get vault status."));
     process.exit(1);
-  }
-  const data = res.data as { locked?: boolean; keyVersion?: number } | undefined;
-  console.log(`Vault: ${data?.locked === false ? "unlocked" : "locked"}`);
-  if (data?.locked === false && data.keyVersion) {
-    console.log(`Key version: ${data.keyVersion}`);
   }
 }
 
@@ -69,10 +66,11 @@ async function vaultChangePassword(): Promise<void> {
     process.exit(1);
   }
 
-  const res = await daemonChangePassword(oldPassword, newPassword);
-  if (!res.ok) {
-    error(res.error ?? "Failed to change password.");
+  try {
+    await daemonChangePassword(oldPassword, newPassword);
+    success("Master password changed.");
+  } catch (err) {
+    error(errorMessage(err, "Failed to change password."));
     process.exit(1);
   }
-  success("Master password changed.");
 }

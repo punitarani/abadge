@@ -17,8 +17,8 @@ function loadConfigFile(): Partial<McpConfig> {
       authToken:
         typeof parsed.authToken === "string"
           ? parsed.authToken
-          : typeof parsed.token === "string"
-            ? parsed.token
+          : typeof parsed.principalSecret === "string"
+            ? parsed.principalSecret
             : undefined,
     };
   } catch {
@@ -30,7 +30,7 @@ export function loadConfig(): McpConfig {
   const file = loadConfigFile();
   const env = globalThis.process?.env ?? {};
   const apiUrl = env.ABADGE_API_URL ?? file.apiUrl;
-  const authToken = env.ABADGE_AUTH_TOKEN ?? file.authToken;
+  const authToken = env.ABADGE_AUTH_TOKEN ?? env.ABADGE_TOKEN ?? file.authToken;
 
   if (!apiUrl) {
     throw new Error("ABADGE_API_URL is required (env or ~/.abadge/config.json)");

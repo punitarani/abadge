@@ -31,6 +31,24 @@ function applySilentInputChar(
   return { input: input + c, done: false, interrupt: false };
 }
 
+export function applySilentInputChunk(
+  chunk: string,
+  input: string,
+): { readonly input: string; readonly done: boolean; readonly interrupt: boolean } {
+  let nextInput = input;
+
+  for (const c of chunk) {
+    const next = applySilentInputChar(c, nextInput);
+    nextInput = next.input;
+
+    if (next.done || next.interrupt) {
+      return next;
+    }
+  }
+
+  return { input: nextInput, done: false, interrupt: false };
+}
+
 /** Read input without echoing characters (for passwords). */
 function promptSilent(question: string): Promise<string> {
   return new Promise((resolve) => {
@@ -46,7 +64,7 @@ function promptSilent(question: string): Promise<string> {
     let input = "";
 
     const onData = (char: Buffer): void => {
-      const next = applySilentInputChar(char.toString("utf-8"), input);
+      const next = applySilentInputChunk(char.toString("utf-8"), input);
       if (next.interrupt) {
         process.exit(1);
       }

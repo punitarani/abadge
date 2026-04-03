@@ -19,8 +19,8 @@ The system keeps one synchronous control plane:
   the mounted tRPC fetch adapter at `/trpc`
 * **Web**: Next.js App Router dashboard. Client-rendered operator surface backed by one React
   Query + tRPC provider
-* **CLI**: local operator tool that talks to the control plane through `@abadge/sdk` and the local
-  daemon
+* **CLI**: local operator tool that talks to the control plane through `@abadge/sdk`, ships as a
+  compiled Unix binary, and runs the daemon through an internal `abadge daemon serve` mode
 * **SDK**: `AbadgeClient`, implemented directly on top of the shared tRPC client
 * **MCP**: local Model Context Protocol server that uses the same tRPC access path as other
   agents

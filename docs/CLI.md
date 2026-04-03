@@ -5,29 +5,38 @@ The `abadge` CLI is the local operator interface for the control plane and the v
 ## Installation
 
 ```bash
-# Development
+# Development entrypoint
 bun run cli -- --help
 
-# Direct entrypoint
+# Direct TypeScript entrypoint
 bun packages/cli/bin/abadge.ts --help
 ```
 
-### Standalone binary
+### Compiled binary
 
 ```bash
-mkdir -p dist
-bun build --compile packages/cli/bin/abadge.ts --outfile dist/abadge
-./dist/abadge --help
+bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
 ```
+
+### Public installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+See [`docs/release/cli.md`](./release/cli.md) for the release and installer flow.
 
 ## Configuration
 
-Config lives at `~/.abadge/config.json`:
+Config lives at `~/.abadge/config.json`. The CLI stores a user session for control-plane commands
+and a local CLI agent key for principal-authenticated access commands:
 
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "token": "..."
+  "sessionCookie": "...",
+  "principalId": "agt_...",
+  "principalSecret": "abg_..."
 }
 ```
 
@@ -37,8 +46,8 @@ The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ### `abadge login`
 
-Interactive email/password login. Stores `apiUrl` and the returned Better Auth session token in the
-local config.
+Interactive email/password login. Stores `apiUrl`, the Better Auth session cookie, and ensures a
+reusable local CLI agent exists for `run` and `mount`.
 
 ```bash
 abadge login --api-url http://localhost:8787
@@ -106,18 +115,24 @@ abadge vault change-password
 
 ### `abadge item create`
 
-Interactive item creation. The current CLI path encrypts locally through the daemon and creates a
-zero-knowledge item.
+Creates a new item. Zero-knowledge items are encrypted locally through the daemon. Server-managed
+items are sent as payloads to the control plane.
 
 ```bash
 abadge item create
+abadge item create --label "OpenAI" --kind api_key --value sk-... --storage-mode zero_knowledge
+abadge item create --label "Deploy token" --kind token --value abc --storage-mode server_managed
 ```
 
-Prompts:
+Flags:
 
-* label
-* item kind
-* secret value
+| Flag | Description |
+|------|-------------|
+| `--name`, `--label` | Item label |
+| `--kind` | Item kind |
+| `--value` | Secret value |
+| `--storage-mode` | `zero_knowledge` or `server_managed` |
+| `--json` | Print raw JSON |
 
 ### `abadge item list`
 
@@ -130,11 +145,19 @@ abadge item list --json
 
 ### `abadge item get <id>`
 
-Fetches one item. For zero-knowledge items, the CLI attempts local daemon decryption and prints the
-decrypted payload when available.
+Fetches one item. Use `--reveal` to decrypt a zero-knowledge item locally through the daemon.
 
 ```bash
 abadge item get <item-id>
+abadge item get <item-id> --reveal
+```
+
+### `abadge item update <id>`
+
+Updates an item interactively.
+
+```bash
+abadge item update <item-id>
 ```
 
 ### `abadge item delete <id>`
@@ -173,6 +196,15 @@ abadge agent list
 abadge agent list --json
 ```
 
+### `abadge agent rotate <id>`
+
+Rotates an agent API key and prints the new one-time key.
+
+```bash
+abadge agent rotate <agent-id>
+abadge agent rotate <agent-id> --json
+```
+
 ### `abadge agent revoke <id>`
 
 Revokes an agent.
@@ -183,10 +215,10 @@ abadge agent revoke <agent-id>
 
 ### `abadge permission create`
 
-Creates an explicit permission. The default capability is `mount_env`.
+Creates an explicit permission.
 
 ```bash
-abadge permission create --agent-id <agent-id> --item-id <item-id>
+abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
 abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
 ```
 
@@ -197,6 +229,7 @@ Flags:
 | `--agent-id` | Target agent |
 | `--item-id` | Target item |
 | `--capability` | Allowed capability |
+| `--expires-at` | Optional ISO timestamp expiry |
 | `--json` | Print raw JSON |
 
 ### `abadge permission list`
@@ -205,6 +238,8 @@ Lists permissions.
 
 ```bash
 abadge permission list
+abadge permission list --agent-id <agent-id>
+abadge permission list --item-id <item-id>
 abadge permission list --json
 ```
 
@@ -223,11 +258,12 @@ process exit code.
 
 ```bash
 abadge run --item <item-id> -- npm run deploy
+abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 ```
 
 Notes:
 
-* the injected environment variable name is currently fixed to `ABADGE_SECRET`
+* defaults to `ABADGE_SECRET`
 * zero-knowledge items are decrypted locally through the daemon
 * server-managed items are fetched through the access router first
 
@@ -237,6 +273,7 @@ Resolves a secret and asks the daemon to mount it as a temporary file.
 
 ```bash
 abadge mount --item <item-id>
+abadge mount --item <item-id> --path /tmp/my-secret.txt
 ```
 
 The daemon chooses the file path and the CLI prints it.

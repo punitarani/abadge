@@ -2,6 +2,7 @@ import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
   AgentListResult,
+  AgentResult,
   AgentRotateResult,
   AgentWithKey,
   AuditFilters,
@@ -72,6 +73,7 @@ interface SdkTrpcClient {
   agents: {
     create: TrpcMutation<CreateAgentInput, AgentWithKey>;
     list: TrpcQueryWithoutInput<AgentListResult>;
+    self: TrpcQueryWithoutInput<AgentResult>;
     rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
@@ -265,6 +267,10 @@ export class AbadgeClient {
    */
   async listAgents(): Promise<AgentListResult> {
     return this.call(() => this.client.agents.list.query(), "Failed to list agents");
+  }
+
+  async getCurrentAgent(): Promise<AgentResult> {
+    return this.call(() => this.client.agents.self.query(), "Failed to fetch agent");
   }
 
   /**

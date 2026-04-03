@@ -11,8 +11,8 @@ export interface DaemonConfig {
   autoLockMs: number;
   /** API base URL for fetching vault metadata. */
   apiUrl: string;
-  /** Auth token for API requests. */
-  authToken: string;
+  /** Better Auth session cookie for human-authenticated vault routes. */
+  sessionCookie: string;
 }
 
 /** Vault metadata fetched from the API. */

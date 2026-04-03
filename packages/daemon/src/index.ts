@@ -1,5 +1,5 @@
 export { DaemonClient } from "./client";
-export { isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
+export { clearDaemonState, isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
 export type {
   DaemonConfig,
   DecryptResult,

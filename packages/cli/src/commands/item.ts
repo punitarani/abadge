@@ -1,24 +1,77 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
+import type { CreateItemInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requireConfig } from "../config";
+import { SessionApiClient } from "../client";
+import { requireSessionConfig } from "../config";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
 
-async function encryptPayload(payload: {
-  v: number;
+type ItemPayload = Extract<CreateItemInput, { storageMode: "server_managed" }>["payload"];
+type CreateItemOptions = {
+  name?: string;
+  label?: string;
+  kind?: string;
+  value?: string;
+  storageMode?: string;
+  json?: boolean;
+};
+type CreateItemValues = {
   label: string;
-  kind: string;
-  tags: string[];
-  fields: { value: string };
-}): Promise<{ encryptedItemKey: string; ciphertext: string }> {
-  const encRes = await daemonEncrypt(payload);
-  if (!encRes.ok || !encRes.data) {
-    error(encRes.error ?? "Encryption failed.");
+  kind: ItemKind;
+  value: string;
+  storageMode: "zero_knowledge" | "server_managed";
+};
+
+function buildPayload(label: string, value: string, kind: ItemKind): ItemPayload {
+  return {
+    v: 1,
+    label,
+    kind,
+    tags: [],
+    fields: { value },
+  };
+}
+
+async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItemValues> {
+  const label = opts.label ?? opts.name ?? (await prompt("Label: "));
+  const value = opts.value ?? (await prompt("Value (secret): ", true));
+
+  if (!label || !value) {
+    error("Label and value are required.");
     process.exit(1);
   }
-  return encRes.data as { encryptedItemKey: string; ciphertext: string };
+
+  const kind = (opts.kind ?? "opaque") as ItemKind;
+  if (!ITEM_KINDS.includes(kind)) {
+    error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
+    process.exit(1);
+  }
+
+  const storageMode = opts.storageMode ?? "zero_knowledge";
+  if (storageMode !== "zero_knowledge" && storageMode !== "server_managed") {
+    error("Storage mode must be one of: zero_knowledge, server_managed");
+    process.exit(1);
+  }
+
+  return { label, kind, value, storageMode };
+}
+
+async function buildCreateItemInput(values: CreateItemValues): Promise<CreateItemInput> {
+  const payload = buildPayload(values.label, values.value, values.kind);
+  if (values.storageMode === "server_managed") {
+    return {
+      storageMode: "server_managed",
+      payload,
+    };
+  }
+
+  const encrypted = await daemonEncrypt(payload);
+  return {
+    storageMode: "zero_knowledge",
+    encryptedItemKey: encrypted.encryptedItemKey,
+    ciphertext: encrypted.ciphertext,
+  };
 }
 
 export function createItemCommand(): Command {
@@ -27,33 +80,24 @@ export function createItemCommand(): Command {
   cmd
     .command("create")
     .description("Create a new vault item")
-    .action(async () => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
-      const label = await prompt("Label: ");
-      const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
-      const value = await prompt("Value (secret): ", true);
-
-      if (!label || !kind || !value) {
-        error("Label, kind, and value are required.");
-        process.exit(1);
-      }
-
-      if (!ITEM_KINDS.includes(kind as ItemKind)) {
-        error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
-        process.exit(1);
-      }
+    .option("--name <name>", "Item label")
+    .option("--label <label>", "Item label")
+    .option("--kind <kind>", "Item kind")
+    .option("--value <value>", "Secret value")
+    .option("--storage-mode <mode>", "zero_knowledge or server_managed")
+    .option("--json", "Output as JSON")
+    .action(async (opts: CreateItemOptions) => {
+      const client = new SessionApiClient(requireSessionConfig());
 
       try {
-        const encrypted = await encryptPayload({ v: 1, label, kind, tags: [], fields: { value } });
-        const result = await client.createItem({
-          storageMode: "zero_knowledge",
-          encryptedItemKey: encrypted.encryptedItemKey,
-          ciphertext: encrypted.ciphertext,
-        });
-        success("Item created.");
-        json(result);
+        const values = await readCreateItemValues(opts);
+        const result = await client.createItem(await buildCreateItemInput(values));
+        if (opts.json) {
+          json(result);
+          return;
+        }
+
+        success(`Item created (id: ${result.id}).`);
       } catch (err) {
         error(errorMessage(err, "Failed to create item."));
         process.exit(1);
@@ -65,8 +109,7 @@ export function createItemCommand(): Command {
     .description("List all vault items")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
+      const client = new SessionApiClient(requireSessionConfig());
 
       try {
         const items = (await client.listItems()).items;
@@ -77,12 +120,12 @@ export function createItemCommand(): Command {
         }
 
         table(
-          items.map((i) => ({
-            ID: i.id,
-            Storage: i.storageMode,
-            Crypto: String(i.cryptoVersion),
-            Version: String(i.contentVersion),
-            Created: i.createdAt,
+          items.map((item) => ({
+            ID: item.id,
+            Storage: item.storageMode,
+            Crypto: String(item.cryptoVersion),
+            Version: String(item.contentVersion),
+            Created: item.createdAt,
           })),
         );
       } catch (err) {
@@ -95,32 +138,24 @@ export function createItemCommand(): Command {
     .command("get")
     .description("Get a vault item")
     .argument("<id>", "Item ID")
-    .action(async (id: string) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
+    .option("--json", "Output as JSON")
+    .option("--reveal", "Decrypt zero-knowledge item locally")
+    .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
+      const client = new SessionApiClient(requireSessionConfig());
 
       try {
         const item = (await client.getItem(id)).item;
 
-        if (item.storageMode === "zero_knowledge") {
-          try {
-            const decRes = await daemonDecrypt(item.encryptedItemKey, item.ciphertext);
-            if (decRes.ok && decRes.data) {
-              json({
-                ...item,
-                payload: (decRes.data as { payload: unknown }).payload,
-              });
-              return;
-            }
-            error("Vault is locked or decryption failed. Run `abadge vault unlock` first.");
-            json(item);
-          } catch {
-            error("Cannot decrypt — daemon unavailable. Showing encrypted item.");
-            json(item);
-          }
-        } else {
+        if (!opts.reveal || item.storageMode !== "zero_knowledge") {
           json(item);
+          return;
         }
+
+        const decrypted = await daemonDecrypt(item.encryptedItemKey, item.ciphertext);
+        json({
+          ...item,
+          payload: decrypted.payload,
+        });
       } catch (err) {
         error(errorMessage(err, "Failed to get item."));
         process.exit(1);
@@ -133,8 +168,7 @@ export function createItemCommand(): Command {
     .argument("<id>", "Item ID")
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
+      const client = new SessionApiClient(requireSessionConfig());
 
       let currentItem: Awaited<ReturnType<typeof client.getItem>>["item"];
       try {
@@ -159,11 +193,11 @@ export function createItemCommand(): Command {
       }
 
       try {
-        const payload = { v: 1, label, kind, tags: [] as string[], fields: { value } };
+        const payload = buildPayload(label, value, kind as ItemKind);
         let result: { ok: boolean; contentVersion: number };
 
         if (currentItem.storageMode === "zero_knowledge") {
-          const encrypted = await encryptPayload(payload);
+          const encrypted = await daemonEncrypt(payload);
           result = await client.updateItem(id, {
             storageMode: "zero_knowledge",
             encryptedItemKey: encrypted.encryptedItemKey,
@@ -173,16 +207,17 @@ export function createItemCommand(): Command {
         } else {
           result = await client.updateItem(id, {
             storageMode: "server_managed",
-            payload: { ...payload, kind: kind as ItemKind },
+            payload,
             contentVersion: currentItem.contentVersion,
           });
         }
 
         if (opts.json) {
           json(result);
-        } else {
-          success(`Item ${id} updated (version ${result.contentVersion}).`);
+          return;
         }
+
+        success(`Item ${id} updated (version ${result.contentVersion}).`);
       } catch (err) {
         error(errorMessage(err, "Failed to update item."));
         process.exit(1);
@@ -203,8 +238,7 @@ export function createItemCommand(): Command {
         }
       }
 
-      const config = requireConfig();
-      const client = new ApiClient(config);
+      const client = new SessionApiClient(requireSessionConfig());
 
       try {
         await client.deleteItem(id);

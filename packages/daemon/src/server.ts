@@ -25,7 +25,7 @@ export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
     pidPath: partial.pidPath ?? defaultPidPath(),
     autoLockMs: partial.autoLockMs ?? DEFAULT_AUTO_LOCK_MS,
     apiUrl: partial.apiUrl ?? "",
-    authToken: partial.authToken ?? "",
+    sessionCookie: partial.sessionCookie ?? "",
   };
 }
 
@@ -52,7 +52,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.authToken);
+      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
@@ -86,7 +86,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.authToken);
+      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -98,7 +98,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
       }
 
-      await updateVaultPassword(config.apiUrl, config.authToken, result);
+      await updateVaultPassword(config.apiUrl, config.sessionCookie, result);
       return { ok: true };
     },
 
