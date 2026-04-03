@@ -12,10 +12,12 @@ export async function agentCommand(args: string[]): Promise<void> {
       return agentRegister(args.slice(1));
     case "list":
       return agentList(args.slice(1));
+    case "rotate":
+      return agentRotate(args.slice(1));
     case "revoke":
       return agentRevoke(args.slice(1));
     default:
-      console.log("Usage: abadge agent <register|list|revoke>");
+      console.log("Usage: abadge agent <register|list|rotate|revoke>");
       process.exit(sub ? 1 : 0);
   }
 }
@@ -93,6 +95,39 @@ async function agentList(args: string[]): Promise<void> {
     );
   } catch (err) {
     error(errorMessage(err, "Failed to list agents."));
+    process.exit(1);
+  }
+}
+
+async function agentRotate(args: string[]): Promise<void> {
+  const id = args[0];
+  if (!id) {
+    error("Usage: abadge agent rotate <id>");
+    process.exit(1);
+  }
+
+  const { values } = parseArgs({
+    args,
+    options: { json: { type: "boolean" } },
+    strict: false,
+  });
+
+  const config = requireConfig();
+  const client = new ApiClient(config);
+
+  try {
+    const result = await client.rotateAgent(id);
+
+    if (values.json) {
+      json({ apiKey: result.apiKey, keyPrefix: result.keyPrefix });
+    } else {
+      success(`Agent ${id} key rotated.`);
+      console.log("");
+      warn("Save this API key — it will NOT be shown again:");
+      console.log(`  ${result.apiKey}`);
+    }
+  } catch (err) {
+    error(errorMessage(err, "Failed to rotate agent key."));
     process.exit(1);
   }
 }

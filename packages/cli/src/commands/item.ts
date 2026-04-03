@@ -16,10 +16,12 @@ export async function itemCommand(args: string[]): Promise<void> {
       return itemList(args.slice(1));
     case "get":
       return itemGet(args.slice(1));
+    case "update":
+      return itemUpdate(args.slice(1));
     case "delete":
       return itemDelete(args.slice(1));
     default:
-      console.log("Usage: abadge item <create|list|get|delete>");
+      console.log("Usage: abadge item <create|list|get|update|delete>");
       process.exit(sub ? 1 : 0);
   }
 }
@@ -108,6 +110,89 @@ async function itemList(args: string[]): Promise<void> {
     );
   } catch (err) {
     error(errorMessage(err, "Failed to list items."));
+    process.exit(1);
+  }
+}
+
+async function itemUpdate(args: string[]): Promise<void> {
+  const id = args[0];
+  if (!id) {
+    error("Usage: abadge item update <id>");
+    process.exit(1);
+  }
+
+  const { values } = parseArgs({
+    args,
+    options: { json: { type: "boolean" } },
+    strict: false,
+  });
+
+  const config = requireConfig();
+  const client = new ApiClient(config);
+
+  let currentItem: Awaited<ReturnType<typeof client.getItem>>["item"];
+  try {
+    currentItem = (await client.getItem(id)).item;
+  } catch (err) {
+    error(errorMessage(err, "Failed to fetch item."));
+    process.exit(1);
+  }
+
+  const label = await prompt("Label: ");
+  const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
+  const value = await prompt("Value (secret): ", true);
+
+  if (!label || !kind || !value) {
+    error("Label, kind, and value are required.");
+    process.exit(1);
+  }
+
+  if (!ITEM_KINDS.includes(kind as ItemKind)) {
+    error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
+    process.exit(1);
+  }
+
+  try {
+    let result: { ok: boolean; contentVersion: number };
+
+    if (currentItem.storageMode === "zero_knowledge") {
+      const encRes = await daemonEncrypt({
+        v: 1,
+        label,
+        kind,
+        tags: [],
+        fields: { value },
+      });
+      if (!encRes.ok || !encRes.data) {
+        error(encRes.error ?? "Encryption failed.");
+        process.exit(1);
+      }
+      const encrypted = encRes.data as {
+        encryptedItemKey: string;
+        ciphertext: string;
+      };
+
+      result = await client.updateItem(id, {
+        storageMode: "zero_knowledge",
+        encryptedItemKey: encrypted.encryptedItemKey,
+        ciphertext: encrypted.ciphertext,
+        contentVersion: currentItem.contentVersion,
+      });
+    } else {
+      result = await client.updateItem(id, {
+        storageMode: "server_managed",
+        payload: { v: 1, label, kind: kind as ItemKind, tags: [], fields: { value } },
+        contentVersion: currentItem.contentVersion,
+      });
+    }
+
+    if (values.json) {
+      json(result);
+    } else {
+      success(`Item ${id} updated (version ${result.contentVersion}).`);
+    }
+  } catch (err) {
+    error(errorMessage(err, "Failed to update item."));
     process.exit(1);
   }
 }
