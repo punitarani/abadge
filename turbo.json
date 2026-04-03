@@ -56,7 +56,8 @@
       "passThroughEnv": ["DATABASE_URL"]
     },
     "test": {
-      "cache": false
+      "cache": false,
+      "dependsOn": ["^build"]
     }
   }
 }
