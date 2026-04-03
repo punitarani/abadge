@@ -1,22 +1,20 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { McpConfig } from "../config.js";
 
-const mountMutate = mock(async () => ({ storageMode: "server_managed" }));
-const daemonCallMock = mock(async () => undefined);
+const accessMountMock = mock(async () => ({
+  storageMode: "server_managed" as const,
+  payload: { v: 1, label: "", kind: "opaque" as const, tags: [], fields: {} },
+}));
+const daemonDecryptMock = mock(async () => ({ payload: "decrypted" }));
 
 mock.module("../api-client.js", () => ({
   getApiClient: () => ({
-    access: {
-      mount: {
-        mutate: mountMutate,
-      },
-    },
+    accessMount: accessMountMock,
   }),
-  getApiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
 mock.module("../daemon-client.js", () => ({
-  daemonCall: daemonCallMock,
+  daemonDecrypt: daemonDecryptMock,
 }));
 
 const { handler } = await import("./request-access");
@@ -28,8 +26,8 @@ const config: McpConfig = {
 
 describe("request_access", () => {
   beforeEach(() => {
-    mountMutate.mockClear();
-    daemonCallMock.mockClear();
+    accessMountMock.mockClear();
+    daemonDecryptMock.mockClear();
   });
 
   test("returns granted for successful access requests", async () => {
@@ -48,10 +46,7 @@ describe("request_access", () => {
       itemId: "item_123",
       capability: "mount_env",
     });
-    expect(mountMutate).toHaveBeenCalledWith({
-      itemId: "item_123",
-      mountType: "env",
-    });
-    expect(daemonCallMock).not.toHaveBeenCalled();
+    expect(accessMountMock).toHaveBeenCalledWith("item_123", "env");
+    expect(daemonDecryptMock).not.toHaveBeenCalled();
   });
 });

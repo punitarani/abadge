@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { z } from "zod";
+import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
 import { resolveSecret } from "../resolve-secret.js";
 
@@ -56,12 +57,8 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const secret = await resolveSecret(
-    config,
-    input.itemId,
-    "mount_env",
-    input.purpose ?? `Run command: ${input.command}`,
-  );
+  const client = getApiClient(config);
+  const secret = await resolveSecret(client, input.itemId, "env");
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
   const childEnv = { ...globalThis.process?.env, [envVarName]: secret };
