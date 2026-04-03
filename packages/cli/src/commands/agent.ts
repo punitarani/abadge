@@ -1,152 +1,126 @@
-import { parseArgs } from "node:util";
+import { Command } from "commander";
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
-import { error, errorMessage, json, str, success, table, warn } from "../output";
+import { error, errorMessage, json, success, table, warn } from "../output";
 
 export async function agentCommand(args: string[]): Promise<void> {
-  const sub = args[0];
+  const cmd = new Command("agent")
+    .description("Manage agents")
+    .addHelpCommand(false);
 
-  switch (sub) {
-    case "register":
-      return agentRegister(args.slice(1));
-    case "list":
-      return agentList(args.slice(1));
-    case "rotate":
-      return agentRotate(args.slice(1));
-    case "revoke":
-      return agentRevoke(args.slice(1));
-    default:
-      console.log("Usage: abadge agent <register|list|rotate|revoke>");
-      process.exit(sub ? 1 : 0);
-  }
-}
+  cmd
+    .command("register")
+    .description("Register a new agent")
+    .requiredOption("-n, --name <name>", "Agent name")
+    .option("-k, --kind <kind>", "Agent kind", "remote_agent")
+    .option("-d, --description <text>", "Agent description")
+    .option("--json", "Output as JSON")
+    .action(async (opts: { name: string; kind: string; description?: string; json?: boolean }) => {
+      const kind = opts.kind as AgentKind;
+      if (!AGENT_KINDS.includes(kind)) {
+        error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
+        process.exit(1);
+      }
 
-async function agentRegister(args: string[]): Promise<void> {
-  const { values } = parseArgs({
-    args,
-    options: {
-      name: { type: "string", short: "n" },
-      kind: { type: "string", short: "k" },
-      description: { type: "string", short: "d" },
-      json: { type: "boolean" },
-    },
-    strict: false,
-  });
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-  const name = str(values.name);
-  const kind = (str(values.kind) ?? "remote_agent") as AgentKind;
-  if (!name) {
-    error("--name is required.");
-    process.exit(1);
-  }
+      try {
+        const result = await client.createAgent({
+          name: opts.name,
+          kind,
+          metadata: opts.description ? { description: opts.description } : {},
+        });
 
-  if (!AGENT_KINDS.includes(kind)) {
-    error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
-    process.exit(1);
-  }
-
-  const config = requireConfig();
-  const client = new ApiClient(config);
-
-  try {
-    const result = await client.createAgent({
-      name,
-      kind,
-      metadata: str(values.description) ? { description: str(values.description) } : {},
+        if (opts.json) {
+          json(result);
+        } else {
+          success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+          console.log("");
+          warn("Save this API key — it will NOT be shown again:");
+          console.log(`  ${result.apiKey}`);
+        }
+      } catch (err) {
+        error(errorMessage(err, "Failed to register agent."));
+        process.exit(1);
+      }
     });
 
-    if (values.json) {
-      json(result);
-    } else {
-      success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-      console.log("");
-      warn("Save this API key — it will NOT be shown again:");
-      console.log(`  ${result.apiKey}`);
-    }
-  } catch (err) {
-    error(errorMessage(err, "Failed to register agent."));
-    process.exit(1);
-  }
-}
+  cmd
+    .command("list")
+    .description("List agents")
+    .option("--json", "Output as JSON")
+    .action(async (opts: { json?: boolean }) => {
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-async function agentList(args: string[]): Promise<void> {
-  const { values } = parseArgs({ args, options: { json: { type: "boolean" } }, strict: false });
-  const config = requireConfig();
-  const client = new ApiClient(config);
+      try {
+        const agents = (await client.listAgents()).agents;
 
-  try {
-    const agents = (await client.listAgents()).agents;
+        if (opts.json) {
+          json(agents);
+          return;
+        }
 
-    if (values.json) {
-      json(agents);
-      return;
-    }
+        table(
+          agents.map((agent) => ({
+            ID: agent.id,
+            Name: agent.name,
+            Kind: agent.kind,
+            Locality: agent.locality,
+            Enabled: String(agent.enabled && agent.revokedAt === null),
+            Created: agent.createdAt,
+          })),
+        );
+      } catch (err) {
+        error(errorMessage(err, "Failed to list agents."));
+        process.exit(1);
+      }
+    });
 
-    table(
-      agents.map((agent) => ({
-        ID: agent.id,
-        Name: agent.name,
-        Kind: agent.kind,
-        Locality: agent.locality,
-        Enabled: String(agent.enabled && agent.revokedAt === null),
-        Created: agent.createdAt,
-      })),
-    );
-  } catch (err) {
-    error(errorMessage(err, "Failed to list agents."));
-    process.exit(1);
-  }
-}
+  cmd
+    .command("rotate")
+    .description("Rotate an agent API key")
+    .argument("<id>", "Agent ID")
+    .option("--json", "Output as JSON")
+    .action(async (id: string, opts: { json?: boolean }) => {
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-async function agentRotate(args: string[]): Promise<void> {
-  const id = args[0];
-  if (!id) {
-    error("Usage: abadge agent rotate <id>");
-    process.exit(1);
-  }
+      try {
+        const result = await client.rotateAgent(id);
 
-  const { values } = parseArgs({
-    args,
-    options: { json: { type: "boolean" } },
-    strict: false,
-  });
+        if (opts.json) {
+          json({ apiKey: result.apiKey, keyPrefix: result.keyPrefix });
+        } else {
+          success(`Agent ${id} key rotated.`);
+          console.log("");
+          warn("Save this API key — it will NOT be shown again:");
+          console.log(`  ${result.apiKey}`);
+        }
+      } catch (err) {
+        error(errorMessage(err, "Failed to rotate agent key."));
+        process.exit(1);
+      }
+    });
 
-  const config = requireConfig();
-  const client = new ApiClient(config);
+  cmd
+    .command("revoke")
+    .description("Revoke an agent")
+    .argument("<id>", "Agent ID")
+    .action(async (id: string) => {
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-  try {
-    const result = await client.rotateAgent(id);
+      try {
+        await client.revokeAgent(id);
+        success(`Agent ${id} revoked.`);
+      } catch (err) {
+        error(errorMessage(err, "Failed to revoke agent."));
+        process.exit(1);
+      }
+    });
 
-    if (values.json) {
-      json({ apiKey: result.apiKey, keyPrefix: result.keyPrefix });
-    } else {
-      success(`Agent ${id} key rotated.`);
-      console.log("");
-      warn("Save this API key — it will NOT be shown again:");
-      console.log(`  ${result.apiKey}`);
-    }
-  } catch (err) {
-    error(errorMessage(err, "Failed to rotate agent key."));
-    process.exit(1);
-  }
-}
-
-async function agentRevoke(args: string[]): Promise<void> {
-  const id = args[0];
-  if (!id) {
-    error("Usage: abadge agent revoke <id>");
-    process.exit(1);
-  }
-
-  const config = requireConfig();
-  const client = new ApiClient(config);
-
-  try {
-    await client.revokeAgent(id);
-    success(`Agent ${id} revoked.`);
-  } catch (err) {
-    error(errorMessage(err, "Failed to revoke agent."));
-    process.exit(1);
-  }
+  await cmd.parseAsync(args, { from: "user" });
 }

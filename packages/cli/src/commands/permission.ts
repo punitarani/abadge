@@ -1,115 +1,96 @@
-import { parseArgs } from "node:util";
+import { Command } from "commander";
 import { CAPABILITIES, type Capability } from "@abadge/core";
 import { ApiClient } from "../client";
 import { requireConfig } from "../config";
-import { error, errorMessage, json, str, success, table } from "../output";
+import { error, errorMessage, json, success, table } from "../output";
 
 export async function permissionCommand(args: string[]): Promise<void> {
-  const sub = args[0];
+  const cmd = new Command("permission")
+    .description("Manage access permissions")
+    .addHelpCommand(false);
 
-  switch (sub) {
-    case "create":
-      return permissionCreate(args.slice(1));
-    case "list":
-      return permissionList(args.slice(1));
-    case "revoke":
-      return permissionRevoke(args.slice(1));
-    default:
-      console.log("Usage: abadge permission <create|list|revoke>");
-      process.exit(sub ? 1 : 0);
-  }
-}
+  cmd
+    .command("create")
+    .description("Create a permission")
+    .requiredOption("--agent-id <id>", "Agent ID")
+    .requiredOption("--item-id <id>", "Item ID")
+    .option("--capability <cap>", "Capability", "mount_env")
+    .option("--json", "Output as JSON")
+    .action(async (opts: { agentId: string; itemId: string; capability: string; json?: boolean }) => {
+      const capability = opts.capability as Capability;
+      if (!CAPABILITIES.includes(capability)) {
+        error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
+        process.exit(1);
+      }
 
-async function permissionCreate(args: string[]): Promise<void> {
-  const { values } = parseArgs({
-    args,
-    options: {
-      "agent-id": { type: "string" },
-      "item-id": { type: "string" },
-      capability: { type: "string" },
-      json: { type: "boolean" },
-    },
-    strict: false,
-  });
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-  const agentId = str(values["agent-id"]);
-  const itemId = str(values["item-id"]);
-  const capability = (str(values.capability) ?? "mount_env") as Capability;
+      try {
+        const result = await client.createPermission({
+          agentId: opts.agentId,
+          itemId: opts.itemId,
+          capability,
+        });
 
-  if (!agentId || !itemId) {
-    error("--agent-id and --item-id are required.");
-    process.exit(1);
-  }
-
-  if (!CAPABILITIES.includes(capability)) {
-    error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
-    process.exit(1);
-  }
-
-  const config = requireConfig();
-  const client = new ApiClient(config);
-
-  try {
-    const result = await client.createPermission({
-      agentId,
-      itemId,
-      capability,
+        if (opts.json) {
+          json(result);
+        } else {
+          success("Permission created.");
+        }
+      } catch (err) {
+        error(errorMessage(err, "Failed to create permission."));
+        process.exit(1);
+      }
     });
 
-    if (values.json) {
-      json(result);
-    } else {
-      success("Permission created.");
-    }
-  } catch (err) {
-    error(errorMessage(err, "Failed to create permission."));
-    process.exit(1);
-  }
-}
+  cmd
+    .command("list")
+    .description("List permissions")
+    .option("--json", "Output as JSON")
+    .action(async (opts: { json?: boolean }) => {
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-async function permissionList(args: string[]): Promise<void> {
-  const { values } = parseArgs({ args, options: { json: { type: "boolean" } }, strict: false });
-  const config = requireConfig();
-  const client = new ApiClient(config);
+      try {
+        const permissions = (await client.listPermissions()).permissions;
 
-  try {
-    const permissions = (await client.listPermissions()).permissions;
+        if (opts.json) {
+          json(permissions);
+          return;
+        }
 
-    if (values.json) {
-      json(permissions);
-      return;
-    }
+        table(
+          permissions.map((permission) => ({
+            ID: permission.id,
+            Agent: permission.agentId,
+            Item: permission.itemId,
+            Capability: permission.capability,
+            Created: permission.createdAt,
+          })),
+        );
+      } catch (err) {
+        error(errorMessage(err, "Failed to list permissions."));
+        process.exit(1);
+      }
+    });
 
-    table(
-      permissions.map((permission) => ({
-        ID: permission.id,
-        Agent: permission.agentId,
-        Item: permission.itemId,
-        Capability: permission.capability,
-        Created: permission.createdAt,
-      })),
-    );
-  } catch (err) {
-    error(errorMessage(err, "Failed to list permissions."));
-    process.exit(1);
-  }
-}
+  cmd
+    .command("revoke")
+    .description("Revoke a permission")
+    .argument("<id>", "Permission ID")
+    .action(async (id: string) => {
+      const config = requireConfig();
+      const client = new ApiClient(config);
 
-async function permissionRevoke(args: string[]): Promise<void> {
-  const id = args[0];
-  if (!id) {
-    error("Usage: abadge permission revoke <id>");
-    process.exit(1);
-  }
+      try {
+        await client.revokePermission(id);
+        success(`Permission ${id} revoked.`);
+      } catch (err) {
+        error(errorMessage(err, "Failed to revoke permission."));
+        process.exit(1);
+      }
+    });
 
-  const config = requireConfig();
-  const client = new ApiClient(config);
-
-  try {
-    await client.revokePermission(id);
-    success(`Permission ${id} revoked.`);
-  } catch (err) {
-    error(errorMessage(err, "Failed to revoke permission."));
-    process.exit(1);
-  }
+  await cmd.parseAsync(args, { from: "user" });
 }
