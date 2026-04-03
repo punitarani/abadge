@@ -109,6 +109,28 @@ bun run api:clean:worker
 | `bun run mcp` | Start the MCP server |
 | `bun test` | Run tests |
 
+## Releasing `@abadge/sdk`
+
+SDK publishing is isolated to `.github/workflows/publish-sdk.yml`. It does not use Doppler or
+`DOPPLER_TOKEN`; npm publishing is authenticated through GitHub Actions OIDC trusted publishing.
+
+Before the first release, configure npm trusted publishing for package `@abadge/sdk` to trust this
+repository and the exact workflow file `.github/workflows/publish-sdk.yml`.
+
+Release flow:
+
+```bash
+# 1. Bump packages/sdk/package.json version and merge that change to main
+
+# 2. Create a matching release tag from main
+git tag sdk-v0.1.0
+git push origin sdk-v0.1.0
+```
+
+The workflow only runs for tags matching `sdk-vX.Y.Z`. It verifies that the tag version matches
+`packages/sdk/package.json` and that the tagged commit is reachable from `origin/main` before
+publishing `@abadge/sdk` to npm.
+
 ## Package structure
 
 ```text
