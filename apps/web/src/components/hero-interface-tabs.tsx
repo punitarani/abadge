@@ -445,13 +445,16 @@ export function HeroInterfaceTabs() {
         </div>
 
         <div className="min-h-0 flex-1 px-6 py-6">
-          <div className="h-full min-h-0 overflow-y-auto pr-1">
-            <div className="space-y-5">
-              {active.sections.map((section) => (
-                <SurfaceSectionBlock key={`${active.id}-${section.label}`} {...section} />
-              ))}
-              {active.footnote}
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              <div className="space-y-5">
+                {active.sections.map((section) => (
+                  <SurfaceSectionBlock key={`${active.id}-${section.label}`} {...section} />
+                ))}
+              </div>
             </div>
+
+            <div className="pt-4">{active.footnote}</div>
           </div>
         </div>
       </div>
