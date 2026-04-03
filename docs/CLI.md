@@ -15,9 +15,7 @@ bun packages/cli/bin/abadge.ts --help
 Standalone binary:
 
 ```bash
-mkdir -p dist
-bun build --compile packages/cli/bin/abadge.ts --outfile dist/abadge
-./dist/abadge --help
+bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
 ```
 
 Release dry-run:
@@ -153,7 +151,20 @@ Interactive item creation. The CLI encrypts through the daemon and creates a zer
 
 ```bash
 abadge item create
+abadge item create --label "OpenAI" --kind api_key --value sk-... --storage-mode zero_knowledge
+abadge item create --label "Deploy token" --kind token --value abc --storage-mode server_managed
 ```
+
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `--name`, `--label` | Item label |
+| `--kind` | Item kind |
+| `--value` | Secret value |
+| `--storage-mode` | `zero_knowledge` or `server_managed` |
+| `--json` | Print raw JSON |
+
 
 ### `abadge item list`
 
@@ -170,6 +181,15 @@ Fetches one item. For zero-knowledge items, the CLI attempts local daemon decryp
 
 ```bash
 abadge item get <item-id>
+abadge item get <item-id> --reveal
+```
+
+### `abadge item update <id>`
+
+Updates an item interactively.
+
+```bash
+abadge item update <item-id>
 ```
 
 ### `abadge item update <id>`
@@ -254,12 +274,23 @@ abadge agent revoke <agent-id>
 
 ### `abadge permission create`
 
-Creates an explicit permission. The default capability is `mount_env`.
+Creates an explicit permission.
 
 ```bash
-abadge permission create --agent-id <agent-id> --item-id <item-id>
+abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
 abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
 ```
+
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `--agent-id` | Target agent |
+| `--item-id` | Target item |
+| `--capability` | Allowed capability |
+| `--expires-at` | Optional ISO timestamp expiry |
+| `--json` | Print raw JSON |
+
 
 ### `abadge permission list`
 
@@ -267,6 +298,8 @@ Lists permissions.
 
 ```bash
 abadge permission list
+abadge permission list --agent-id <agent-id>
+abadge permission list --item-id <item-id>
 abadge permission list --json
 ```
 
@@ -285,6 +318,7 @@ item through the access path, and injects the secret into a subprocess through t
 
 ```bash
 abadge run --item <item-id> -- npm run deploy
+abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 ```
 
 The injected environment variable name is currently fixed to `ABADGE_SECRET`.
@@ -296,6 +330,7 @@ item through the access path, and asks the daemon to mount it as a temporary fil
 
 ```bash
 abadge mount --item <item-id>
+abadge mount --item <item-id> --path /tmp/my-secret.txt
 ```
 
 ### `abadge audit`

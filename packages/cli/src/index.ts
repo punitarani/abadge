@@ -2,7 +2,7 @@ import { Command } from "commander";
 import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
 import { createAuditCommand } from "./commands/audit";
-import { createDaemonCommand, createDaemonServeCommand } from "./commands/daemon";
+import { createDaemonCommand } from "./commands/daemon";
 import { createItemCommand } from "./commands/item";
 import { createLoginCommand } from "./commands/login";
 import { createLogoutCommand } from "./commands/logout";
@@ -26,7 +26,6 @@ program.addCommand(createPermissionCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createMountCommand());
 program.addCommand(createAuditCommand());
-program.addCommand(createDaemonServeCommand(), { hidden: true });
 
 export { program };
 

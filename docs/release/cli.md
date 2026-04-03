@@ -33,6 +33,7 @@ The difference is the trigger:
 * CLI publishing is triggered from the versioned `main` release flow, which then creates the
   `cli-vX.Y.Z` GitHub Release tag
 
+
 ## Files that matter
 
 * registry: [`scripts/releases/registry.ts`](../../scripts/releases/registry.ts)
