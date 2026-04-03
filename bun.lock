@@ -109,7 +109,6 @@
         "@abadge/core": "workspace:*",
         "@abadge/daemon": "workspace:*",
         "@abadge/sdk": "workspace:*",
-        "@abadge/trpc": "workspace:*",
         "commander": "^13.1.0",
       },
       "devDependencies": {

@@ -12,7 +12,7 @@ export function createRunCommand(): Command {
     // Allow unrecognised positional args so `abadge run --item <id> -- <cmd> [args...]`
     // passes everything after `--` through as cmd.args.
     .allowExcessArguments()
-    .action(async (opts: { item: string }) => {
+    .action(async (opts: { item: string }, cmd: Command) => {
       const command = cmd.args;
 
       if (command.length === 0) {
@@ -20,11 +20,7 @@ export function createRunCommand(): Command {
         process.exit(1);
       }
 
-      const executable = command[0];
-      if (!executable) {
-        error("No command specified. Usage: abadge run --item <id> -- <command>");
-        process.exit(1);
-      }
+      const executable = command[0] as string;
 
       try {
         const client = new ApiClient(requireConfig());
