@@ -6,6 +6,21 @@ import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
 
+async function encryptPayload(payload: {
+  v: number;
+  label: string;
+  kind: string;
+  tags: string[];
+  fields: { value: string };
+}): Promise<{ encryptedItemKey: string; ciphertext: string }> {
+  const encRes = await daemonEncrypt(payload);
+  if (!encRes.ok || !encRes.data) {
+    error(encRes.error ?? "Encryption failed.");
+    process.exit(1);
+  }
+  return encRes.data as { encryptedItemKey: string; ciphertext: string };
+}
+
 export function createItemCommand(): Command {
   const cmd = new Command("item").description("Manage vault items");
 
@@ -30,38 +45,12 @@ export function createItemCommand(): Command {
         process.exit(1);
       }
 
-      let encryptedItem:
-        | {
-            encryptedItemKey: string;
-            ciphertext: string;
-          }
-        | undefined;
       try {
-        const encRes = await daemonEncrypt({
-          v: 1,
-          label,
-          kind,
-          tags: [],
-          fields: { value },
-        });
-        if (!encRes.ok || !encRes.data) {
-          error(encRes.error ?? "Encryption failed.");
-          process.exit(1);
-        }
-        encryptedItem = encRes.data as {
-          encryptedItemKey: string;
-          ciphertext: string;
-        };
-      } catch (err) {
-        error(errorMessage(err, "Failed to encrypt via daemon."));
-        process.exit(1);
-      }
-
-      try {
+        const encrypted = await encryptPayload({ v: 1, label, kind, tags: [], fields: { value } });
         const result = await client.createItem({
           storageMode: "zero_knowledge",
-          encryptedItemKey: encryptedItem.encryptedItemKey,
-          ciphertext: encryptedItem.ciphertext,
+          encryptedItemKey: encrypted.encryptedItemKey,
+          ciphertext: encrypted.ciphertext,
         });
         success("Item created.");
         json(result);
@@ -170,25 +159,11 @@ export function createItemCommand(): Command {
       }
 
       try {
+        const payload = { v: 1, label, kind, tags: [] as string[], fields: { value } };
         let result: { ok: boolean; contentVersion: number };
 
         if (currentItem.storageMode === "zero_knowledge") {
-          const encRes = await daemonEncrypt({
-            v: 1,
-            label,
-            kind,
-            tags: [],
-            fields: { value },
-          });
-          if (!encRes.ok || !encRes.data) {
-            error(encRes.error ?? "Encryption failed.");
-            process.exit(1);
-          }
-          const encrypted = encRes.data as {
-            encryptedItemKey: string;
-            ciphertext: string;
-          };
-
+          const encrypted = await encryptPayload(payload);
           result = await client.updateItem(id, {
             storageMode: "zero_knowledge",
             encryptedItemKey: encrypted.encryptedItemKey,
@@ -198,7 +173,7 @@ export function createItemCommand(): Command {
         } else {
           result = await client.updateItem(id, {
             storageMode: "server_managed",
-            payload: { v: 1, label, kind: kind as ItemKind, tags: [], fields: { value } },
+            payload: { ...payload, kind: kind as ItemKind },
             contentVersion: currentItem.contentVersion,
           });
         }
