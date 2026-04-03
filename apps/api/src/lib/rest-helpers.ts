@@ -12,10 +12,33 @@ type ApiErrorBody = {
   issues?: unknown;
 };
 
+function trpcCodeToStatus(code: string): number {
+  switch (code) {
+    case "BAD_REQUEST":
+    case "PARSE_ERROR":
+      return 400;
+    case "UNAUTHORIZED":
+      return 401;
+    case "FORBIDDEN":
+      return 403;
+    case "NOT_FOUND":
+      return 404;
+    case "CONFLICT":
+      return 409;
+    case "TOO_MANY_REQUESTS":
+      return 429;
+    default:
+      return 500;
+  }
+}
+
 export function toApiError(error: unknown): { status: number; body: ApiErrorBody } {
   if (error instanceof TRPCError) {
     const statusSource = error.cause as unknown as { statusCode?: unknown } | undefined;
-    const status = typeof statusSource?.statusCode === "number" ? statusSource.statusCode : 500;
+    const status =
+      typeof statusSource?.statusCode === "number"
+        ? statusSource.statusCode
+        : trpcCodeToStatus(error.code);
     const cause = error.cause as unknown as { code?: unknown; issues?: unknown } | undefined;
 
     return {
