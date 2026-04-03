@@ -16,8 +16,8 @@ Commands:
   login                     Authenticate with abadge
   daemon start|stop|status  Manage local daemon
   vault unlock|lock|status|change-password  Manage vault encryption
-  item create|list|get|delete  Manage vault items
-  agent register|list|revoke  Manage agents
+  item create|list|get|update|delete  Manage vault items
+  agent register|list|rotate|revoke  Manage agents
   permission create|list|revoke  Manage access permissions
   run --item <id> -- <cmd>  Run command with secret in env
   mount --item <id>         Mount secret as temp file

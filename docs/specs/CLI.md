@@ -235,6 +235,31 @@ abadge item get <id> [--json]
 
 **Requires:** Daemon running and vault unlocked (for ZK decryption).
 
+#### `abadge item update <id>`
+
+Update an existing item's secret value. Interactive flow.
+
+```
+abadge item update <id> [--json]
+```
+
+**Interactive prompts:**
+1. **Label** -- human-readable name (required).
+2. **Kind** -- select from: `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque`.
+3. **Value** -- the new secret content (masked input).
+
+**Behavior:**
+1. Fetch the current item to determine `storageMode` and `contentVersion`.
+2. For `zero_knowledge`: encrypt payload locally via daemon, then send encrypted blob with `contentVersion` to API.
+3. For `server_managed`: send payload with `contentVersion` to API.
+4. The `contentVersion` enables optimistic concurrency -- the API rejects the update if another write occurred since the fetch.
+
+**Output (terminal):** Success message with new content version.
+
+**Output (JSON):** `{ ok: boolean, contentVersion: number }`
+
+**Requires:** Daemon running and vault unlocked (for ZK items).
+
 #### `abadge item delete <id>`
 
 Soft-delete an item.
@@ -298,6 +323,26 @@ ID                  Name          Kind           Locality  Enabled  Created
 a1b2c3d4-...        my-ci-agent   remote_agent   remote    true     2026-04-01T...
 e5f6g7h8-...        local-dev     local_cli      local     true     2026-03-28T...
 ```
+
+#### `abadge agent rotate <id>`
+
+Rotate an agent's API key. Invalidates the old key and issues a new one.
+
+```
+abadge agent rotate <agentId> [--json]
+```
+
+**Output (terminal):**
+
+```
+Agent a1b2c3d4-... key rotated.
+
+  API Key: abg_x9y8z7w6v5u4...
+
+  WARNING: This key will not be shown again. Store it securely.
+```
+
+**Output (JSON):** `{ apiKey: string, keyPrefix: string }`
 
 #### `abadge agent revoke <id>`
 
