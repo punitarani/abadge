@@ -73,4 +73,4 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/sdk
-        run: npm publish --provenance --access public
+        run: npm publish --provenance
