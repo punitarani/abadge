@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
 import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand, createDaemonServeCommand } from "./commands/daemon";
@@ -13,7 +14,7 @@ import { createVaultCommand } from "./commands/vault";
 const program = new Command()
   .name("abadge")
   .description("Zero-knowledge credential vault CLI")
-  .version("0.1.0", "-v, --version");
+  .version(packageJson.version, "-v, --version");
 
 program.addCommand(createLoginCommand());
 program.addCommand(createLogoutCommand());

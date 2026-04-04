@@ -20,6 +20,20 @@ bun build --compile packages/cli/bin/abadge.ts --outfile dist/abadge
 ./dist/abadge --help
 ```
 
+Release dry-run:
+
+```bash
+bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
+```
+
+Public installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+See [`docs/release/cli.md`](./release/cli.md) for the package-scoped release flow.
+
 ## Configuration
 
 Config lives at `~/.abadge/config.json`.

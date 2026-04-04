@@ -106,18 +106,20 @@ interface DaemonCommandTarget {
   args: string[];
 }
 
-function resolveDaemonCommand(): DaemonCommandTarget {
-  const entrypoint = process.argv[1];
+export function resolveDaemonCommand(
+  entrypoint: string | undefined = process.argv[1],
+  execPath: string = process.execPath,
+): DaemonCommandTarget {
   if (entrypoint && (entrypoint.endsWith(".ts") || entrypoint.endsWith(".js"))) {
     return {
-      executable: process.execPath,
+      executable: execPath,
       args: [entrypoint, "__daemon-serve"],
     };
   }
 
   return {
-    executable: process.execPath,
-    args: ["__daemon-serve"],
+    executable: execPath,
+    args: [entrypoint ?? execPath, "__daemon-serve"],
   };
 }
 

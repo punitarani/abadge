@@ -34,7 +34,7 @@ For v1, abadge should be understood as:
 
 * **Access** -- explicit permissions, policy checks, approvals, sessions, and audit
 * **Connect** -- native encrypted storage plus external secret references
-* **Interfaces** -- REST API, dashboard, CLI, SDK, and MCP tools
+* **Interfaces** -- dashboard, CLI, SDK, MCP, and the control-plane tRPC API
 
 It is not positioned as a generic human password manager.
 
@@ -50,7 +50,6 @@ It is not positioned as a generic human password manager.
 * Short-lived broker sessions
 * Immutable access log
 * Web dashboard
-* REST API
 * CLI, SDK, and MCP surfaces
 * Organization support
 
@@ -102,15 +101,35 @@ decryption occurs.
 
 ```text
 apps/
-  api/    Hono API worker
-  web/    Next.js dashboard
+  api/      Hono API worker
+  web/      Next.js dashboard
 packages/
-  auth/   Better Auth config (org, API key, OpenAPI plugins)
-  config/ shared TS config
-  core/   shared types, schemas, constants
-  db/     Drizzle schema, client, and migrations
-  env/    t3-env type-safe environment variables
+  auth/     Better Auth config
+  broker/   local execution helpers
+  cli/      CLI commands, config, and compiled binary entrypoint
+  config/   shared TS config
+  core/     shared types, schemas, constants
+  crypto/   encryption and API-key helpers
+  daemon/   local vault daemon
+  db/       Drizzle schema, client, and migrations
+  env/      environment validation
+  mcp/      MCP server and tools
+  sdk/      TypeScript client
+  trpc/     canonical application router and clients
 ```
+
+## CLI install
+
+The CLI ships as a Unix binary through GitHub Releases.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+Release docs:
+
+* [`docs/release/overview.md`](./docs/release/overview.md)
+* [`docs/release/cli.md`](./docs/release/cli.md)
 
 ## Security principles
 

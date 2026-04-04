@@ -7,11 +7,8 @@ export function createVaultCommand(): Command {
   const cmd = new Command("vault").description("Manage vault encryption");
 
   cmd.command("unlock").description("Unlock the vault").action(vaultUnlock);
-
   cmd.command("lock").description("Lock the vault").action(vaultLockCmd);
-
   cmd.command("status").description("Show vault status").action(vaultStatusCmd);
-
   cmd.command("change-password").description("Change master password").action(vaultChangePassword);
 
   return cmd;
