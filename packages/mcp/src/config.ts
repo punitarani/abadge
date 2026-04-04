@@ -9,6 +9,11 @@ export interface McpConfig {
   privateKeyPath?: string;
 }
 
+function getConfigPath(): string {
+  const home = globalThis.process?.env?.HOME || homedir();
+  return join(home, ".abadge", "config.json");
+}
+
 function readAgentField(
   record: Record<string, unknown> | null,
   field: "agentId" | "privateKeyPath",
@@ -43,8 +48,7 @@ function readLocalAgentReferences(parsed: Record<string, unknown>): {
 
 function loadConfigFile(): Partial<McpConfig> {
   try {
-    const configPath = join(homedir(), ".abadge", "config.json");
-    const raw = readFileSync(configPath, "utf-8");
+    const raw = readFileSync(getConfigPath(), "utf-8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const localAgentReference = readLocalAgentReferences(parsed);
 
