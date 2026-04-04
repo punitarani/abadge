@@ -115,7 +115,8 @@ SDK publishing is isolated to `.github/workflows/publish-sdk.yml`. It does not u
 `DOPPLER_TOKEN`; npm publishing is authenticated through GitHub Actions OIDC trusted publishing.
 
 Before the first release, configure npm trusted publishing for package `@abadge/sdk` to trust this
-repository and the exact workflow file `.github/workflows/publish-sdk.yml`.
+repository and the workflow filename `publish-sdk.yml` (npm expects the filename only, not the
+full `.github/workflows/...` path).
 
 Release flow:
 
