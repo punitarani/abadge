@@ -41,7 +41,7 @@ function AgentRow({
       <TableCell className="text-muted-foreground">{agent.locality}</TableCell>
       <TableCell>
         {agent.keyPrefix ? (
-          <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs">
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
             {agent.keyPrefix}
           </code>
         ) : (
