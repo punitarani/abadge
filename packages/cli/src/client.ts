@@ -297,7 +297,9 @@ interface SessionResponse {
   user?: { id: string; email: string };
 }
 
-function hasVerifiedSessionUser(session: SessionResponse | undefined): boolean {
+function hasVerifiedSessionUser(
+  session: SessionResponse | undefined,
+): session is SessionResponse & { user: { id: string; email: string } } {
   return typeof session?.user?.id === "string" && session.user.id.length > 0;
 }
 

@@ -249,6 +249,7 @@ export interface DaemonServer {
 export function startServer(config: DaemonConfig): DaemonServer {
   const vault = new VaultState(config.autoLockMs);
   const handlers = buildHandlers(vault, config);
+  const textDecoder = new TextDecoder();
 
   vault.setAutoLockCallback(() => {
     console.log("[vaultd] Auto-locked after inactivity");
@@ -274,7 +275,8 @@ export function startServer(config: DaemonConfig): DaemonServer {
       },
       async data(socket, data) {
         const prev = connectionBuffers.get(socket) ?? "";
-        const accumulated = prev + new TextDecoder().decode(data);
+        const chunk = Uint8Array.from(data);
+        const accumulated = prev + textDecoder.decode(chunk);
 
         // Messages are newline-delimited JSON
         const lines = accumulated.split("\n");

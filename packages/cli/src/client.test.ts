@@ -3,6 +3,10 @@ import { signInWithEmail, splitCombinedSetCookieHeader } from "./client";
 
 const originalFetch = globalThis.fetch;
 
+function setFetchMock(fetchMock: unknown): void {
+  globalThis.fetch = fetchMock as typeof fetch;
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -39,7 +43,7 @@ describe("splitCombinedSetCookieHeader", () => {
           }),
         }),
     );
-    globalThis.fetch = fetchMock as typeof fetch;
+    setFetchMock(fetchMock);
 
     const result = await signInWithEmail("http://127.0.0.1:8787", "user@example.com", "password");
 
@@ -66,7 +70,7 @@ describe("splitCombinedSetCookieHeader", () => {
         status: 200,
       });
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    setFetchMock(fetchMock);
 
     const result = await signInWithEmail("http://127.0.0.1:8787", "user@example.com", "password");
 

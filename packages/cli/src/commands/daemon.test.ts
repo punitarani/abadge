@@ -1,15 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { resolveCurrentCliCommand } from "./daemon";
 
 describe("resolveCurrentCliCommand", () => {
   test("uses the script path when running from TypeScript", () => {
-    expect(resolveCurrentCliCommand("packages/cli/bin/abadge.ts", "/usr/local/bin/bun")).toEqual({
+    const entrypoint = resolve(import.meta.dir, "../../bin/abadge.ts");
+
+    expect(resolveCurrentCliCommand(entrypoint, "/usr/local/bin/bun")).toEqual({
       command: "/usr/local/bin/bun",
-      args: [
-        "/Users/punit/.codex/worktrees/35f1/abadge/packages/cli/bin/abadge.ts",
-        "daemon",
-        "serve",
-      ],
+      args: [entrypoint, "daemon", "serve"],
     });
   });
 
