@@ -45,20 +45,21 @@ const encryptionModes = [
     keySize: "256-bit",
     nonce: "96-bit random IV per operation",
     description:
-      "Server-side encryption for credentials that remote agents need to access. Decryption happens only after authentication, permission verification, policy evaluation, and audit logging. Designed for automation workflows where the user may be offline.",
+      "Server-side encryption for credentials that remote agents need to access. Decryption happens only after authentication, permission verification, capability enforcement, and audit logging. Designed for automation workflows where the user may be offline.",
     properties: [
       "Decryption gated behind full authorization chain",
       "Every decrypt is audit-logged before returning",
       "Remote agents can only access this mode",
-      "Supports external connector fetch instead of decrypt",
+      "Key version tracking for future rotation support",
     ],
   },
 ];
 
-type CellStatus = "allowed" | "no-zk-reveal" | "remote-no-zk" | "remote-reveal-only";
+type CellStatus = "allowed" | "zk-only" | "no-zk-reveal" | "remote-no-zk" | "remote-reveal-only";
 
 const statusLabels: Record<CellStatus, string> = {
   allowed: "Allowed",
+  "zk-only": "ZK items only",
   "no-zk-reveal": "Cannot reveal ZK",
   "remote-no-zk": "Remote cannot access ZK",
   "remote-reveal-only": "Remote: reveal only",
@@ -76,7 +77,7 @@ const capabilityMatrix: {
     capability: "read_ciphertext",
     description: "Encrypted blob for local daemon decryption",
     localZK: "allowed",
-    localServer: "allowed",
+    localServer: "zk-only",
     remoteZK: "remote-no-zk",
     remoteServer: "remote-reveal-only",
   },
@@ -112,7 +113,7 @@ const trustTiers = [
     name: "Local daemon",
     trust: "Strongest",
     description:
-      "Root key held in process memory only. Unix socket with 0600 permissions. Protects against network attackers and server compromise. Sodium memzero on lock.",
+      "Root key held in process memory only. Unix socket with 0600 permissions. Protects against network attackers and server compromise. Best-effort key zeroing on lock.",
     boundary: "Process memory boundary",
   },
   {
