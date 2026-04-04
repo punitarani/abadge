@@ -234,7 +234,7 @@ const views: SurfaceView[] = [
               {'"curl -sS -H \\"Authorization: Bearer $ABADGE_SECRET\\" \\'}
             </ShellLine>
             <ShellLine indent={2} tone="blue">
-              {"https://registry.npmjs.org/-/whoami\""}
+              {'https://registry.npmjs.org/-/whoami"'}
             </ShellLine>
           </>
         ),
@@ -357,7 +357,9 @@ const views: SurfaceView[] = [
               <span className="text-[#4f7df7]">"env"</span>
             </ShellLine>
             <ShellLine>{`);`}</ShellLine>
-            <ShellLine tone="muted">returns zero-knowledge blobs for local injection flows</ShellLine>
+            <ShellLine tone="muted">
+              returns zero-knowledge blobs for local injection flows
+            </ShellLine>
           </>
         ),
       },
