@@ -83,31 +83,32 @@ const createAgent = (input: CreateAgentInput) =>
     const bootstrap = yield* buildBootstrapToken(input, authMethod);
 
     yield* Effect.tryPromise(() =>
-      ctx.db.insert(agentRecords).values({
-        id,
-        userId: ctx.identity.userId,
-        kind: input.kind,
-        locality,
-        authMethod,
-        name: input.name,
-        secretHash: legacyKey.secretHash,
-        secretPrefix: legacyKey.keyPrefix,
-        publicKey: input.publicKey ?? null,
-        metadata: input.metadata ?? {},
+      ctx.db.transaction(async (tx) => {
+        await tx.insert(agentRecords).values({
+          id,
+          userId: ctx.identity.userId,
+          kind: input.kind,
+          locality,
+          authMethod,
+          name: input.name,
+          secretHash: legacyKey.secretHash,
+          secretPrefix: legacyKey.keyPrefix,
+          publicKey: input.publicKey ?? null,
+          metadata: input.metadata ?? {},
+        });
+
+        if (bootstrap.bootstrapHash && bootstrap.bootstrapExpiresAt) {
+          await tx.insert(agentEnrollmentTokens).values({
+            id: crypto.randomUUID(),
+            agentId: id,
+            userId: ctx.identity.userId,
+            createdBy: ctx.identity.userId,
+            tokenHash: bootstrap.bootstrapHash,
+            expiresAt: bootstrap.bootstrapExpiresAt,
+          });
+        }
       }),
     );
-    if (bootstrap.bootstrapHash && bootstrap.bootstrapExpiresAt) {
-      yield* Effect.tryPromise(() =>
-        ctx.db.insert(agentEnrollmentTokens).values({
-          id: crypto.randomUUID(),
-          agentId: id,
-          userId: ctx.identity.userId,
-          createdBy: ctx.identity.userId,
-          tokenHash: bootstrap.bootstrapHash,
-          expiresAt: bootstrap.bootstrapExpiresAt,
-        }),
-      );
-    }
 
     yield* logSessionAudit({
       userId: ctx.identity.userId,
