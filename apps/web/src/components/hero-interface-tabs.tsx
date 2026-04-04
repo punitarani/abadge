@@ -60,7 +60,7 @@ function ShellLine({
 }) {
   return (
     <div
-      className={`min-w-max text-[13px] leading-[1.75] md:text-[14px] ${lineClass(tone)}`}
+      className={`w-full whitespace-pre-wrap break-words text-[12px] leading-[1.55] md:text-[13px] xl:min-w-max xl:whitespace-nowrap xl:text-[14px] ${lineClass(tone)}`}
       style={{ paddingLeft: `${indent * 24}px` }}
     >
       {prompt ? <span className="mr-2 font-bold text-[#111827]">{prompt}</span> : null}
@@ -95,7 +95,7 @@ function CopyCommandLine({
       type="button"
       onClick={() => void handleCopy()}
       title="Click to copy"
-      className="-mx-2 inline-flex min-w-max items-center gap-2.5 rounded-[0.8rem] px-2 py-1 text-left transition hover:bg-[#f6f9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7e5ff]"
+      className="-mx-2 inline-flex max-w-full items-center gap-2.5 rounded-[0.8rem] px-2 py-1 text-left transition hover:bg-[#f6f9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d7e5ff]"
     >
       <span
         className={`inline-flex h-5 w-5 items-center justify-center rounded-[0.45rem] border ${
@@ -110,7 +110,9 @@ function CopyCommandLine({
           <Copy className="h-3.25 w-3.25" strokeWidth={2.1} />
         )}
       </span>
-      <span className={`text-[13px] leading-[1.75] md:text-[14px] ${lineClass(tone)}`}>
+      <span
+        className={`whitespace-pre-wrap break-words text-[12px] leading-[1.55] md:text-[13px] xl:whitespace-nowrap xl:text-[14px] ${lineClass(tone)}`}
+      >
         {children}
       </span>
     </button>
@@ -154,7 +156,7 @@ function SurfaceSectionBlock({
         </span>
         {detail ? <SectionBadge tone={detailTone}>{detail}</SectionBadge> : null}
       </div>
-      <div className="mt-3 overflow-x-auto [font-family:var(--font-landing-mono)]">{content}</div>
+      <div className="mt-2.5 overflow-x-auto [font-family:var(--font-landing-mono)]">{content}</div>
     </section>
   );
 }
@@ -189,33 +191,50 @@ const views: SurfaceView[] = [
           <>
             <ShellLine prompt="$">
               <span className="font-semibold text-[#111827]">abadge login</span>
-              <span> --api-url </span>
+              <span> {" \\"}</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>--api-url </span>
               <span className="text-[#4f7df7]">https://api.abadge.io</span>
             </ShellLine>
-            <ShellLine tone="muted">session stored in ~/.abadge/config.json (0600)</ShellLine>
             <ShellLine prompt="$">
               <span className="font-semibold text-[#111827]">abadge agent register</span>
-              <span> -n </span>
+              <span> {" \\"}</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>--name </span>
               <span className="text-[#4f7df7]">"claude-desktop"</span>
-              <span> -k </span>
+              <span> --kind </span>
               <span className="text-[#4f7df7]">local_cli</span>
             </ShellLine>
             <ShellLine prompt="$">
               <span className="font-semibold text-[#111827]">abadge permission create</span>
-              <span> --agent-id a1b2c3d4-... --item-id e5f6g7h8-...</span>
-              <span className="text-[#9aa3b2]"> {" -> "} </span>
-              <span className="text-[#4f7df7]">capability mount_env granted</span>
+              <span> {" \\"}</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>--agent-id </span>
+              <span className="text-[#4f7df7]">a1b2c3d4-...</span>
+              <span> --item-id </span>
+              <span className="text-[#4f7df7]">e5f6g7h8-...</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>--capability </span>
+              <span className="text-[#4f7df7]">mount_env</span>
             </ShellLine>
             <ShellLine prompt="$">
               <span className="font-semibold text-[#111827]">abadge run</span>
-              <span> --item e5f6g7h8-... -- sh -lc </span>
-              <span className="text-[#4f7df7]">
-                {
-                  "'curl -sS -H \"Authorization: Bearer $ABADGE_SECRET\" https://registry.npmjs.org/-/whoami'"
-                }
-              </span>
-              <span className="text-[#9aa3b2]"> {" -> "} </span>
-              <span className="text-[#2e9d4d]">{`{"username":"release-bot"}`}</span>
+              <span> {" \\"}</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>--item </span>
+              <span className="text-[#4f7df7]">e5f6g7h8-...</span>
+              <span> -- sh -lc</span>
+            </ShellLine>
+            <ShellLine indent={2} tone="blue">
+              {'"curl -sS -H \\"Authorization: Bearer $ABADGE_SECRET\\" \\'}
+            </ShellLine>
+            <ShellLine indent={2} tone="blue">
+              {"https://registry.npmjs.org/-/whoami\""}
             </ShellLine>
           </>
         ),
@@ -286,6 +305,7 @@ const views: SurfaceView[] = [
         <span className="flex flex-col">
           <span>Session tokens manage control-plane calls.</span>
           <span>Agent API keys perform access.* methods.</span>
+          <span>The same AbadgeClient class supports both personas.</span>
         </span>
       </Footnote>
     ),
@@ -304,7 +324,7 @@ const views: SurfaceView[] = [
         ),
       },
       {
-        label: "release-agent.ts",
+        label: "agent-access.ts",
         detail: "typed client",
         detailTone: "slate",
         content: (
@@ -318,15 +338,26 @@ const views: SurfaceView[] = [
             </ShellLine>
             <ShellLine>
               <span className="text-[#111827]">const client = new AbadgeClient</span>
-              <span>{`({ apiUrl, token });`}</span>
+              <span>{`({`}</span>
             </ShellLine>
+            <ShellLine indent={1}>
+              <span>{`apiUrl: `}</span>
+              <span className="text-[#4f7df7]">"https://api.abadge.io"</span>
+              <span>{`,`}</span>
+            </ShellLine>
+            <ShellLine indent={1}>{`token: agentApiKey,`}</ShellLine>
+            <ShellLine>{`});`}</ShellLine>
             <ShellLine>
-              <span className="text-[#111827]">const </span>
-              <span>{`{ agent }`}</span>
-              <span> = await client.</span>
-              <span className="text-[#4f7df7]">createAgent</span>
-              <span>{`({ kind: "local_mcp", name: "claude" });`}</span>
+              <span className="text-[#111827]">const mount = await client.</span>
+              <span className="text-[#4f7df7]">accessMount</span>
+              <span>{`(`}</span>
             </ShellLine>
+            <ShellLine indent={1}>{`itemId,`}</ShellLine>
+            <ShellLine indent={1}>
+              <span className="text-[#4f7df7]">"env"</span>
+            </ShellLine>
+            <ShellLine>{`);`}</ShellLine>
+            <ShellLine tone="muted">returns zero-knowledge blobs for local injection flows</ShellLine>
           </>
         ),
       },
@@ -397,7 +428,7 @@ const views: SurfaceView[] = [
 ];
 
 export function HeroInterfaceTabs() {
-  const [activeView, setActiveView] = useState<ViewId>("api");
+  const [activeView, setActiveView] = useState<ViewId>("cli");
   const active = views.find((view) => view.id === activeView) ?? views[0];
 
   if (!active) {
@@ -408,7 +439,7 @@ export function HeroInterfaceTabs() {
     <div className="relative w-full max-w-[46rem]">
       <div className="pointer-events-none absolute -inset-4 rounded-[1.25rem] bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.10),transparent_58%)] blur-3xl" />
 
-      <div className="relative flex h-[33rem] min-w-0 flex-col overflow-hidden rounded-[1rem] border border-[#d7dee8] bg-white/80 text-[#111827] shadow-[0_18px_44px_-24px_rgba(15,23,42,0.10),0_0_20px_-16px_rgba(59,130,246,0.10)] backdrop-blur-[12px] md:h-[36rem]">
+      <div className="relative flex h-[34rem] min-w-0 flex-col overflow-hidden rounded-[1rem] border border-[#d7dee8] bg-white/80 text-[#111827] shadow-[0_18px_44px_-24px_rgba(15,23,42,0.10),0_0_20px_-16px_rgba(59,130,246,0.10)] backdrop-blur-[12px] md:h-[40rem] xl:h-[36rem]">
         <div className="border-b border-[#eef2f7] px-6 pb-4 pt-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -447,7 +478,7 @@ export function HeroInterfaceTabs() {
         <div className="min-h-0 flex-1 px-6 py-6">
           <div className="flex h-full min-h-0 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {active.sections.map((section) => (
                   <SurfaceSectionBlock key={`${active.id}-${section.label}`} {...section} />
                 ))}
