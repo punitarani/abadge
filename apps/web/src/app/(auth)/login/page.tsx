@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import type { SocialProvider } from "@/lib/auth-client";
 import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
+import { normalizeRedirectPath } from "@/lib/redirect";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -19,7 +20,7 @@ function LoginPageContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
-  const redirectPath = searchParams.get("redirect") || "/items";
+  const redirectPath = normalizeRedirectPath(searchParams.get("redirect"));
 
   useEffect(() => {
     const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));

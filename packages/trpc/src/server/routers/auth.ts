@@ -92,6 +92,13 @@ function revokedAgentError(): ForbiddenError {
   });
 }
 
+function challengeUnavailableError(): NotFoundError {
+  return new NotFoundError({
+    code: "AGENT_NOT_FOUND",
+    message: "Agent challenge unavailable",
+  });
+}
+
 const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
   Effect.gen(function* () {
     if (!agent.enabled) {
@@ -430,17 +437,8 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .limit(1),
     )) as Array<OwnedAgentRow>;
 
-    if (!agent) {
-      return yield* Effect.fail(notFound());
-    }
-
-    if (!agent.publicKey) {
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "AGENT_NOT_ENROLLED",
-          message: "Agent is not enrolled",
-        }),
-      );
+    if (!agent?.publicKey) {
+      return yield* Effect.fail(challengeUnavailableError());
     }
 
     const challengeId = crypto.randomUUID();

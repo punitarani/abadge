@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { CliProfileConfig } from "@abadge/core";
+import type { CliProfileConfig } from "./config";
 import { mergeLoginConfig } from "./config";
 
 const existingConfig: CliProfileConfig = {

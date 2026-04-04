@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { signEd25519 } from "@abadge/crypto/shared";
 import { AbadgeClient } from "@abadge/sdk";
 import type { McpConfig } from "./config.js";
 
@@ -8,29 +9,6 @@ let cachedSessionClient: AbadgeClient | null = null;
 let cachedSessionKey: string | null = null;
 let cachedSessionExpiresAt = 0;
 let warnedLegacyToken = false;
-
-function parseJwk(serialized: string): unknown {
-  return JSON.parse(serialized);
-}
-
-function textToBytes(value: string): ArrayBuffer {
-  const bytes = new TextEncoder().encode(value);
-  const cloned = new Uint8Array(bytes.length);
-  cloned.set(bytes);
-  return cloned.buffer;
-}
-
-async function signWithPrivateKey(privateKey: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "jwk",
-    parseJwk(privateKey) as never,
-    { name: "Ed25519" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("Ed25519", key, textToBytes(message));
-  return Buffer.from(signature).toString("base64");
-}
 
 function expiresSoon(expiresAt: number): boolean {
   return expiresAt <= Date.now() + 30_000;
@@ -75,7 +53,7 @@ export async function getApiClient(config: McpConfig): Promise<AbadgeClient> {
   const privateKey = readFileSync(config.privateKeyPath, "utf-8");
   const anonymousClient = new AbadgeClient({ apiUrl: config.apiUrl });
   const challenge = await anonymousClient.createAgentChallenge({ agentId: config.agentId });
-  const signature = await signWithPrivateKey(privateKey, challenge.challenge);
+  const signature = await signEd25519(privateKey, challenge.challenge);
   const session = await anonymousClient.exchangeAgentSession({
     agentId: config.agentId,
     challengeId: challenge.challengeId,

@@ -118,23 +118,15 @@ async function loadOrProvisionReference(
 ): Promise<CliLocalAgentReference> {
   const slot = SLOT_BY_KIND[kind];
   const existing = getLocalAgentReference(config, slot);
-  if (existing) {
-    if (existsSync(existing.privateKeyPath)) {
-      return existing;
-    }
-
-    if (!(await hasOperatorSession())) {
-      throw new Error(
-        `${LABEL_BY_KIND[kind]} private key is missing. Run \`abadge login\` again to reprovision it.`,
-      );
-    }
-
-    return provisionLocalRuntimeAgent(kind, config);
+  if (existing?.privateKeyPath && existsSync(existing.privateKeyPath)) {
+    return existing;
   }
 
   if (!(await hasOperatorSession())) {
     throw new Error(
-      `${LABEL_BY_KIND[kind]} identity is not provisioned. Run \`abadge login\` first.`,
+      existing
+        ? `${LABEL_BY_KIND[kind]} private key is missing. Run \`abadge login\` again to reprovision it.`
+        : `${LABEL_BY_KIND[kind]} identity is not provisioned. Run \`abadge login\` first.`,
     );
   }
 

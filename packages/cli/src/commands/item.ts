@@ -158,23 +158,22 @@ export function createItemCommand(): Command {
 
       try {
         const payload = { v: 1, label, kind, tags: [] as string[], fields: { value } };
-
-        const result =
-          currentItem.storageMode === "zero_knowledge"
-            ? await (async () => {
-                const encrypted = await encryptPayload(payload);
-                return client.updateItem(id, {
-                  storageMode: "zero_knowledge",
-                  encryptedItemKey: encrypted.encryptedItemKey,
-                  ciphertext: encrypted.ciphertext,
-                  contentVersion: currentItem.contentVersion,
-                });
-              })()
-            : await client.updateItem(id, {
-                storageMode: "server_managed",
-                payload: { ...payload, kind: kind as ItemKind },
-                contentVersion: currentItem.contentVersion,
-              });
+        let result: Awaited<ReturnType<typeof client.updateItem>>;
+        if (currentItem.storageMode === "zero_knowledge") {
+          const encrypted = await encryptPayload(payload);
+          result = await client.updateItem(id, {
+            storageMode: "zero_knowledge",
+            encryptedItemKey: encrypted.encryptedItemKey,
+            ciphertext: encrypted.ciphertext,
+            contentVersion: currentItem.contentVersion,
+          });
+        } else {
+          result = await client.updateItem(id, {
+            storageMode: "server_managed",
+            payload: { ...payload, kind: kind as ItemKind },
+            contentVersion: currentItem.contentVersion,
+          });
+        }
 
         if (opts.json) {
           json(result);

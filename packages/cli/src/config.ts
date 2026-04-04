@@ -125,7 +125,7 @@ export function mergeLoginConfig(
   return {
     apiUrl,
     ...(operatorUserId ? { operatorUserId } : {}),
-    ...(existing?.profileName ? { profileName: existing.profileName } : {}),
+    profileName: existing?.profileName ?? "default",
     ...(shouldReuseLocalAgents(existing, apiUrl, operatorUserId)
       ? { localAgents: existing?.localAgents }
       : {}),
