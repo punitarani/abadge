@@ -34,15 +34,10 @@ function readLocalAgentReferences(parsed: Record<string, unknown>): {
     localAgents?.mcp && typeof localAgents.mcp === "object"
       ? (localAgents.mcp as Record<string, unknown>)
       : null;
-  const cliAgent =
-    localAgents?.cli && typeof localAgents.cli === "object"
-      ? (localAgents.cli as Record<string, unknown>)
-      : null;
 
   return {
-    agentId: readAgentField(mcpAgent, "agentId") ?? readAgentField(cliAgent, "agentId"),
-    privateKeyPath:
-      readAgentField(mcpAgent, "privateKeyPath") ?? readAgentField(cliAgent, "privateKeyPath"),
+    agentId: readAgentField(mcpAgent, "agentId"),
+    privateKeyPath: readAgentField(mcpAgent, "privateKeyPath"),
   };
 }
 
@@ -77,7 +72,7 @@ export function loadConfig(): McpConfig {
 
   if (!authToken && (!agentId || !privateKeyPath)) {
     throw new Error(
-      "Set ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH, or run `abadge login` to provision local agent metadata.",
+      "Set ABADGE_MCP_AGENT_ID and ABADGE_MCP_PRIVATE_KEY_PATH (or ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH), or run `abadge login` to provision local MCP metadata.",
     );
   }
 

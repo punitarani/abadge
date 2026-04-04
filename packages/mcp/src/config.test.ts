@@ -58,7 +58,7 @@ describe("loadConfig", () => {
     });
 
     expect(() => loadConfig()).toThrow(
-      "Set ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH, or run `abadge login` to provision local agent metadata.",
+      "Set ABADGE_MCP_AGENT_ID and ABADGE_MCP_PRIVATE_KEY_PATH (or ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH), or run `abadge login` to provision local MCP metadata.",
     );
 
     rmSync(home, { recursive: true, force: true });
@@ -80,6 +80,33 @@ describe("loadConfig", () => {
       apiUrl: "http://localhost:8787",
       authToken: "abl_legacy_token",
     });
+
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  test("fails closed when only the CLI local agent reference is persisted", () => {
+    const home = mkdtempSync(join(tmpdir(), "abadge-mcp-config-"));
+    process.env.HOME = home;
+    delete process.env.ABADGE_API_URL;
+    delete process.env.ABADGE_AUTH_TOKEN;
+    delete process.env.ABADGE_AGENT_ID;
+    delete process.env.ABADGE_PRIVATE_KEY_PATH;
+    delete process.env.ABADGE_MCP_AGENT_ID;
+    delete process.env.ABADGE_MCP_PRIVATE_KEY_PATH;
+
+    writeConfig(home, {
+      apiUrl: "http://localhost:8787",
+      localAgents: {
+        cli: {
+          agentId: "agent_cli",
+          privateKeyPath: "/tmp/cli.jwk",
+        },
+      },
+    });
+
+    expect(() => loadConfig()).toThrow(
+      "Set ABADGE_MCP_AGENT_ID and ABADGE_MCP_PRIVATE_KEY_PATH (or ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH), or run `abadge login` to provision local MCP metadata.",
+    );
 
     rmSync(home, { recursive: true, force: true });
   });

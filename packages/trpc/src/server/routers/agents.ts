@@ -7,6 +7,7 @@ import {
   AgentRotateResultSchema,
   API_KEY_PREFIX,
   agentLocalityForKind,
+  BadRequestError,
   type CreateAgentInput,
   CreateAgentSchema,
   ForbiddenError,
@@ -64,6 +65,16 @@ const createAgent = (input: CreateAgentInput) =>
     const ctx = yield* SessionRequestContextTag;
     const locality = agentLocalityForKind(input.kind);
     const authMethod = input.authMethod ?? "public_key_session";
+
+    if (authMethod === "legacy_api_key" && input.publicKey) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Legacy API-key agents cannot set a public key",
+        }),
+      );
+    }
+
     const id = crypto.randomUUID();
     const legacyKey =
       authMethod === "legacy_api_key"

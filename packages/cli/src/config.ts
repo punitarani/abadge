@@ -17,6 +17,20 @@ interface ParsedConfigState {
   legacyTokenDetected: boolean;
 }
 
+function shouldReuseLocalAgents(
+  existing: CliProfileConfig | null,
+  apiUrl: string,
+  operatorUserId: string | null,
+): boolean {
+  return Boolean(
+    existing?.localAgents &&
+      existing.apiUrl === apiUrl &&
+      existing.operatorUserId &&
+      operatorUserId &&
+      existing.operatorUserId === operatorUserId,
+  );
+}
+
 function parseLocalAgentReference(value: unknown): CliLocalAgentReference | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -33,18 +47,14 @@ function parseLocalAgentReference(value: unknown): CliLocalAgentReference | unde
   };
 }
 
-function parseConfig(raw: unknown): ParsedConfigState {
-  if (!raw || typeof raw !== "object") {
-    return { config: null, legacyTokenDetected: false };
-  }
+function hasLegacyToken(parsed: Record<string, unknown>): boolean {
+  return typeof parsed.token === "string" || typeof parsed.authToken === "string";
+}
 
-  const parsed = raw as Record<string, unknown>;
+function parseConfigRecord(parsed: Record<string, unknown>): CliProfileConfig | null {
   const apiUrl = typeof parsed.apiUrl === "string" ? parsed.apiUrl : null;
   if (!apiUrl) {
-    return {
-      config: null,
-      legacyTokenDetected: typeof parsed.token === "string" || typeof parsed.authToken === "string",
-    };
+    return null;
   }
 
   const localAgentsRaw =
@@ -55,12 +65,22 @@ function parseConfig(raw: unknown): ParsedConfigState {
   const mcp = parseLocalAgentReference(localAgentsRaw?.mcp);
 
   return {
-    config: {
-      apiUrl,
-      ...(typeof parsed.profileName === "string" ? { profileName: parsed.profileName } : {}),
-      ...(cli || mcp ? { localAgents: { ...(cli ? { cli } : {}), ...(mcp ? { mcp } : {}) } } : {}),
-    },
-    legacyTokenDetected: typeof parsed.token === "string" || typeof parsed.authToken === "string",
+    apiUrl,
+    ...(typeof parsed.operatorUserId === "string" ? { operatorUserId: parsed.operatorUserId } : {}),
+    ...(typeof parsed.profileName === "string" ? { profileName: parsed.profileName } : {}),
+    ...(cli || mcp ? { localAgents: { ...(cli ? { cli } : {}), ...(mcp ? { mcp } : {}) } } : {}),
+  };
+}
+
+function parseConfig(raw: unknown): ParsedConfigState {
+  if (!raw || typeof raw !== "object") {
+    return { config: null, legacyTokenDetected: false };
+  }
+
+  const parsed = raw as Record<string, unknown>;
+  return {
+    config: parseConfigRecord(parsed),
+    legacyTokenDetected: hasLegacyToken(parsed),
   };
 }
 
@@ -95,6 +115,21 @@ export function updateConfig(
   const next = updater(loadConfig() ?? { apiUrl: DEFAULT_API_URL });
   saveConfig(next);
   return next;
+}
+
+export function mergeLoginConfig(
+  apiUrl: string,
+  existing: CliProfileConfig | null,
+  operatorUserId: string | null,
+): CliProfileConfig {
+  return {
+    apiUrl,
+    ...(operatorUserId ? { operatorUserId } : {}),
+    ...(existing?.profileName ? { profileName: existing.profileName } : {}),
+    ...(shouldReuseLocalAgents(existing, apiUrl, operatorUserId)
+      ? { localAgents: existing?.localAgents }
+      : {}),
+  };
 }
 
 export function getLocalAgentReference(

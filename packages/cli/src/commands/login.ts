@@ -1,7 +1,13 @@
 import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
 import { Command } from "commander";
 import { ApiClient } from "../client";
-import { type CliProfileConfig, DEFAULT_API_URL, loadConfig, saveConfig } from "../config";
+import {
+  type CliProfileConfig,
+  DEFAULT_API_URL,
+  loadConfig,
+  mergeLoginConfig,
+  saveConfig,
+} from "../config";
 import { daemonSetOperatorSession } from "../daemon";
 import { error, success, warn } from "../output";
 import { ensureLocalRuntimeAgent } from "../runtime-agent";
@@ -162,14 +168,6 @@ async function tryOpenBrowser(url: string): Promise<boolean> {
   return false;
 }
 
-function nextConfig(apiUrl: string, existing: CliProfileConfig | null): CliProfileConfig {
-  return {
-    apiUrl,
-    ...(existing?.profileName ? { profileName: existing.profileName } : {}),
-    ...(existing?.localAgents ? { localAgents: existing.localAgents } : {}),
-  };
-}
-
 async function maybeOpenVerificationUrl(
   verificationUrl: string,
   openBrowser: boolean | undefined,
@@ -213,7 +211,7 @@ async function finishLogin(
   existing: CliProfileConfig | null,
 ): Promise<void> {
   const session = await lookupSession(apiUrl, accessToken);
-  const config = nextConfig(apiUrl, existing);
+  const config = mergeLoginConfig(apiUrl, existing, session.userId);
   saveConfig(config);
   await ensureDaemonRunning(apiUrl);
 

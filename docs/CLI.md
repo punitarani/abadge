@@ -29,6 +29,7 @@ It stores durable metadata only:
 ```json
 {
   "apiUrl": "http://localhost:8787",
+  "operatorUserId": "user_...",
   "localAgents": {
     "cli": {
       "agentId": "agent_...",
@@ -43,6 +44,8 @@ It stores durable metadata only:
 ```
 
 No human session bearer token is persisted in the config file.
+Saved local agent references are reused only for the same operator on the same API origin. A
+fresh login reprovisions them when either changes.
 
 The local daemon socket is `~/.abadge/vaultd.sock`.
 

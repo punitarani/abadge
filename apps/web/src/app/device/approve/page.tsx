@@ -10,6 +10,18 @@ function normalizeUserCode(value: string | null): string {
   return (value ?? "").trim().replace(/-/g, "").toUpperCase();
 }
 
+function getDecisionErrorMessage(
+  decision: "approve" | "deny",
+  response: { error?: { message?: string | null } | null } | undefined,
+): string {
+  return (
+    response?.error?.message ??
+    (decision === "approve"
+      ? "Could not approve this device request."
+      : "Could not deny this device request.")
+  );
+}
+
 function DeviceApprovalPageContent(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,10 +55,14 @@ function DeviceApprovalPageContent(): React.ReactElement {
     setSubmitting(decision);
 
     try {
-      if (decision === "approve") {
-        await authClient.device.approve({ userCode });
-      } else {
-        await authClient.device.deny({ userCode });
+      const response =
+        decision === "approve"
+          ? await authClient.device.approve({ userCode })
+          : await authClient.device.deny({ userCode });
+
+      if (response?.error) {
+        setError(getDecisionErrorMessage(decision, response));
+        return;
       }
 
       router.replace(decision === "approve" ? "/items" : "/device");

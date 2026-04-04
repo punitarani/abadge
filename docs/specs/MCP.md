@@ -25,7 +25,6 @@ Preferred runtime auth is keypair-backed:
 Legacy fallback remains available during migration:
 
 * `ABADGE_AUTH_TOKEN=abl_...`
-* stored legacy token material in older local config files
 
 The server prints a deprecation warning when the legacy token path is used.
 
@@ -50,7 +49,6 @@ Fallback config source:
 
 * `~/.abadge/config.json`
 * `localAgents.mcp`
-* `localAgents.cli` as a last local fallback
 
 ## Example configuration
 

@@ -16,6 +16,7 @@ Stored fields are durable metadata only:
 ```json
 {
   "apiUrl": "http://localhost:8787",
+  "operatorUserId": "user_...",
   "profileName": "default",
   "localAgents": {
     "cli": {
@@ -31,6 +32,8 @@ Stored fields are durable metadata only:
 ```
 
 The CLI does not persist a human bearer token in the config file.
+Stored local agent references are scoped to the current operator and API URL. The login flow
+reprovisions them when either changes.
 
 ## Daemon files
 

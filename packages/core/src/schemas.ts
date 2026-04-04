@@ -96,7 +96,7 @@ export const UpdateItemSchema = Schema.Union(
   ServerManagedUpdateItemSchema,
 );
 
-export const CreateAgentSchema = Schema.Struct({
+const CreateAgentSchemaBase = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
   authMethod: Schema.optional(PrincipalAuthMethodSchema),
@@ -104,6 +104,20 @@ export const CreateAgentSchema = Schema.Struct({
   issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
 });
+
+export const CreateAgentSchema = CreateAgentSchemaBase.pipe(
+  Schema.filter((input) => {
+    if (input.authMethod === "legacy_api_key" && input.publicKey) {
+      return "Legacy API-key agents cannot set a public key.";
+    }
+
+    if (input.authMethod === "legacy_api_key" && input.issueBootstrapToken === true) {
+      return "Legacy API-key agents cannot issue bootstrap tokens.";
+    }
+
+    return true;
+  }),
+);
 
 export const IssueAgentBootstrapTokenSchema = Schema.Struct({
   agentId: NonEmptyString,
@@ -272,6 +286,7 @@ export const CliLocalAgentReferenceSchema = Schema.Struct({
 
 export const CliProfileConfigSchema = Schema.Struct({
   apiUrl: NonEmptyString,
+  operatorUserId: Schema.optional(NonEmptyString),
   profileName: Schema.optional(NonEmptyString),
   localAgents: Schema.optional(
     Schema.Struct({

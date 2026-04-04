@@ -186,4 +186,26 @@ describe("schema validation", () => {
     expect(isValid(CreateAgentSchema, {})).toBe(false);
     expect(isValid(CreateAgentSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
   });
+
+  test("CreateAgentSchema rejects legacy agents with a public key", () => {
+    expect(
+      isValid(CreateAgentSchema, {
+        kind: "remote_agent",
+        name: "legacy-agent",
+        authMethod: "legacy_api_key",
+        publicKey: "jwk-public-key",
+      }),
+    ).toBe(false);
+  });
+
+  test("CreateAgentSchema allows legacy agents to disable bootstrap issuance explicitly", () => {
+    expect(
+      isValid(CreateAgentSchema, {
+        kind: "remote_agent",
+        name: "legacy-agent",
+        authMethod: "legacy_api_key",
+        issueBootstrapToken: false,
+      }),
+    ).toBe(true);
+  });
 });

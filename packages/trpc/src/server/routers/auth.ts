@@ -151,6 +151,18 @@ const ensureAgentEligibleForSessionExchange = (agent: OwnedAgentRow) =>
       return yield* rejectSessionExchange(agent, "revoked", "agent_revoked", revokedAgentError());
     }
 
+    if (agent.authMethod !== "public_key_session") {
+      return yield* rejectSessionExchange(
+        agent,
+        "denied",
+        "unsupported_auth_method",
+        new ForbiddenError({
+          code: "PERMISSION_DENIED",
+          message: "Agent does not support signed session exchange",
+        }),
+      );
+    }
+
     if (!agent.publicKey) {
       return yield* rejectSessionExchange(
         agent,
