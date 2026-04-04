@@ -77,7 +77,7 @@ Keypair-backed agents use the auth router lifecycle:
 | `auth.enroll` | `publicProcedure` | Redeem bootstrap token and upload an agent public key |
 | `auth.createChallenge` | `publicProcedure` | Create a short-lived signing challenge |
 | `auth.exchangeSession` | `publicProcedure` | Verify Ed25519 signature and mint an `abs_...` session |
-| `auth.revokeSession` | `publicProcedure` | Revoke an existing `abs_...` session |
+| `auth.revokeSession` | `sessionProcedure` | Revoke an existing `abs_...` session for the current operator |
 | `auth.recordLogin` | `sessionProcedure` | Audit successful CLI login |
 | `auth.logout` | `sessionProcedure` | Audit operator logout |
 

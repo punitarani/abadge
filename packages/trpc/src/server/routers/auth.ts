@@ -1,6 +1,10 @@
 import {
   AGENT_BOOTSTRAP_PREFIX,
+  AGENT_BOOTSTRAP_TTL_MS,
+  AGENT_CHALLENGE_PREFIX,
+  AGENT_CHALLENGE_TTL_MS,
   AGENT_SESSION_PREFIX,
+  AGENT_SESSION_TTL_MS,
   AgentBootstrapTokenResultSchema,
   AgentChallengeResultSchema,
   AgentEnrollmentResultSchema,
@@ -40,10 +44,6 @@ import {
 import { createTrpcRouter, publicProcedure, sessionProcedure } from "../init";
 import { serializeAgent } from "../serialize";
 
-const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
-const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
-const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
-
 type OwnedAgentRow = Pick<
   typeof agentRecords.$inferSelect,
   | "id"
@@ -61,12 +61,108 @@ type OwnedAgentRow = Pick<
   | "createdAt"
 >;
 
+interface ReturningIdRow {
+  id: string;
+}
+
+interface RevocableAgentSessionRow {
+  id: string;
+  userId: string;
+  agentId: string;
+}
+
 function notFound(): NotFoundError {
   return new NotFoundError({
     code: "AGENT_NOT_FOUND",
     message: "Agent not found",
   });
 }
+
+function disabledAgentError(): ForbiddenError {
+  return new ForbiddenError({
+    code: "PERMISSION_DENIED",
+    message: "Agent is disabled",
+  });
+}
+
+function revokedAgentError(): ForbiddenError {
+  return new ForbiddenError({
+    code: "AGENT_REVOKED",
+    message: "Agent is revoked",
+  });
+}
+
+const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
+  Effect.gen(function* () {
+    if (!agent.enabled) {
+      return yield* Effect.fail(disabledAgentError());
+    }
+
+    if (agent.revokedAt) {
+      return yield* Effect.fail(revokedAgentError());
+    }
+
+    if (agent.authMethod !== "public_key_session") {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "PERMISSION_DENIED",
+          message: "Agent does not support keypair enrollment",
+        }),
+      );
+    }
+
+    if (agent.publicKey) {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "AGENT_ALREADY_ENROLLED",
+          message: "Agent is already enrolled",
+        }),
+      );
+    }
+  });
+
+const rejectSessionExchange = (
+  agent: OwnedAgentRow,
+  result: "denied" | "expired" | "revoked",
+  reason: string,
+  error: ForbiddenError,
+) =>
+  Effect.gen(function* () {
+    const ctx = yield* BaseRequestContextTag;
+    yield* logBaseAudit({
+      userId: agent.userId,
+      agentId: agent.id,
+      eventType: "agent.session_reject",
+      result,
+      ipAddress: ctx.ipAddress,
+      meta: { reason },
+    });
+
+    return yield* Effect.fail(error);
+  });
+
+const ensureAgentEligibleForSessionExchange = (agent: OwnedAgentRow) =>
+  Effect.gen(function* () {
+    if (!agent.enabled) {
+      return yield* rejectSessionExchange(agent, "denied", "agent_disabled", disabledAgentError());
+    }
+
+    if (agent.revokedAt) {
+      return yield* rejectSessionExchange(agent, "revoked", "agent_revoked", revokedAgentError());
+    }
+
+    if (!agent.publicKey) {
+      return yield* rejectSessionExchange(
+        agent,
+        "denied",
+        "agent_not_enrolled",
+        new ForbiddenError({
+          code: "AGENT_NOT_ENROLLED",
+          message: "Agent is not enrolled",
+        }),
+      );
+    }
+  });
 
 const loadOwnedAgent = (agentId: string) =>
   Effect.gen(function* () {
@@ -227,42 +323,64 @@ const enrollAgent = (input: EnrollAgentInput) =>
     if (!agent) {
       return yield* Effect.fail(notFound());
     }
-
-    if (agent.authMethod !== "public_key_session") {
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "Agent does not support keypair enrollment",
-        }),
-      );
-    }
-
-    if (agent.publicKey) {
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "AGENT_ALREADY_ENROLLED",
-          message: "Agent is already enrolled",
-        }),
-      );
-    }
+    yield* ensureAgentEligibleForEnrollment(agent);
 
     const enrolledAt = new Date();
-    yield* tryAsync(() =>
-      ctx.db
-        .update(agentRecords)
-        .set({
-          publicKey: input.publicKey,
-          secretHash: null,
-          secretPrefix: null,
-        })
-        .where(eq(agentRecords.id, agent.id)),
+    const claimedEnrollment = yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        const [claimedBootstrap] = (await tx
+          .update(agentEnrollmentTokens)
+          .set({ usedAt: enrolledAt })
+          .where(
+            and(
+              eq(agentEnrollmentTokens.id, bootstrap.id),
+              eq(agentEnrollmentTokens.tokenHash, tokenHash),
+              isNull(agentEnrollmentTokens.usedAt),
+            ),
+          )
+          .returning({ id: agentEnrollmentTokens.id })) as ReturningIdRow[];
+
+        if (!claimedBootstrap) {
+          return false;
+        }
+
+        const [updatedAgent] = (await tx
+          .update(agentRecords)
+          .set({
+            publicKey: input.publicKey,
+            secretHash: null,
+            secretPrefix: null,
+          })
+          .where(
+            and(
+              eq(agentRecords.id, agent.id),
+              eq(agentRecords.userId, agent.userId),
+              eq(agentRecords.enabled, true),
+              isNull(agentRecords.revokedAt),
+              isNull(agentRecords.publicKey),
+            ),
+          )
+          .returning({ id: agentRecords.id })) as ReturningIdRow[];
+
+        if (!updatedAgent) {
+          throw new ForbiddenError({
+            code: "PERMISSION_DENIED",
+            message: "Agent is no longer eligible for enrollment",
+          });
+        }
+
+        return true;
+      }),
     );
-    yield* tryAsync(() =>
-      ctx.db
-        .update(agentEnrollmentTokens)
-        .set({ usedAt: enrolledAt })
-        .where(eq(agentEnrollmentTokens.id, bootstrap.id)),
-    );
+
+    if (!claimedEnrollment) {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "INVALID_BOOTSTRAP_TOKEN",
+          message: "Invalid or already used bootstrap token",
+        }),
+      );
+    }
 
     yield* logBaseAudit({
       userId: agent.userId,
@@ -314,7 +432,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
     }
 
     const challengeId = crypto.randomUUID();
-    const challenge = generateOpaqueToken("");
+    const challenge = generateOpaqueToken(AGENT_CHALLENGE_PREFIX);
     const challengeHash = yield* tryAsync(() => hashApiKey(challenge));
     const expiresAt = new Date(Date.now() + AGENT_CHALLENGE_TTL_MS);
 
@@ -345,57 +463,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     if (!agent) {
       return yield* Effect.fail(notFound());
     }
-
-    if (!agent.enabled) {
-      yield* logBaseAudit({
-        userId: agent.userId,
-        agentId: agent.id,
-        eventType: "agent.session_reject",
-        result: "denied",
-        ipAddress: ctx.ipAddress,
-        meta: { reason: "agent_disabled" },
-      });
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "Agent is disabled",
-        }),
-      );
-    }
-
-    if (agent.revokedAt) {
-      yield* logBaseAudit({
-        userId: agent.userId,
-        agentId: agent.id,
-        eventType: "agent.session_reject",
-        result: "revoked",
-        ipAddress: ctx.ipAddress,
-        meta: { reason: "agent_revoked" },
-      });
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "AGENT_REVOKED",
-          message: "Agent is revoked",
-        }),
-      );
-    }
-
-    if (!agent.publicKey) {
-      yield* logBaseAudit({
-        userId: agent.userId,
-        agentId: agent.id,
-        eventType: "agent.session_reject",
-        result: "denied",
-        ipAddress: ctx.ipAddress,
-        meta: { reason: "agent_not_enrolled" },
-      });
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "AGENT_NOT_ENROLLED",
-          message: "Agent is not enrolled",
-        }),
-      );
-    }
+    yield* ensureAgentEligibleForSessionExchange(agent);
 
     const challengeHash = yield* tryAsync(() => hashApiKey(input.challenge));
     const [challengeRecord] = (yield* tryAsync(() =>
@@ -471,22 +539,53 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     const expiresAt = new Date(issuedAt.getTime() + AGENT_SESSION_TTL_MS);
     const token = generateOpaqueToken(AGENT_SESSION_PREFIX);
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
+    const claimedChallenge = yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        const [claimed] = (await tx
+          .update(agentSessionChallenges)
+          .set({ usedAt: issuedAt })
+          .where(
+            and(
+              eq(agentSessionChallenges.id, challengeRecord.id),
+              eq(agentSessionChallenges.agentId, agent.id),
+              eq(agentSessionChallenges.challengeHash, challengeHash),
+              isNull(agentSessionChallenges.usedAt),
+            ),
+          )
+          .returning({ id: agentSessionChallenges.id })) as ReturningIdRow[];
 
-    yield* tryAsync(() =>
-      ctx.db
-        .update(agentSessionChallenges)
-        .set({ usedAt: issuedAt })
-        .where(eq(agentSessionChallenges.id, challengeRecord.id)),
-    );
-    yield* tryAsync(() =>
-      ctx.db.insert(agentSessions).values({
-        id: crypto.randomUUID(),
-        agentId: agent.id,
-        userId: agent.userId,
-        tokenHash,
-        expiresAt,
+        if (!claimed) {
+          return false;
+        }
+
+        await tx.insert(agentSessions).values({
+          id: crypto.randomUUID(),
+          agentId: agent.id,
+          userId: agent.userId,
+          tokenHash,
+          expiresAt,
+        });
+
+        return true;
       }),
     );
+
+    if (!claimedChallenge) {
+      yield* logBaseAudit({
+        userId: agent.userId,
+        agentId: agent.id,
+        eventType: "agent.session_reject",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason: "challenge_already_used" },
+      });
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "AGENT_CHALLENGE_NOT_FOUND",
+          message: "Invalid or already used agent challenge",
+        }),
+      );
+    }
 
     yield* logBaseAudit({
       userId: agent.userId,
@@ -507,11 +606,25 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
 
 const revokeAgentSession = (input: RevokeAgentSessionInput) =>
   Effect.gen(function* () {
-    const ctx = yield* BaseRequestContextTag;
+    const ctx = yield* SessionRequestContextTag;
     const tokenHash = yield* tryAsync(() => hashApiKey(input.token));
     const [sessionRecord] = (yield* tryAsync(() =>
-      ctx.db.select().from(agentSessions).where(eq(agentSessions.tokenHash, tokenHash)).limit(1),
-    )) as Array<typeof agentSessions.$inferSelect>;
+      ctx.db
+        .select({
+          id: agentSessions.id,
+          userId: agentSessions.userId,
+          agentId: agentSessions.agentId,
+        })
+        .from(agentSessions)
+        .where(
+          and(
+            eq(agentSessions.tokenHash, tokenHash),
+            eq(agentSessions.userId, ctx.identity.userId),
+            isNull(agentSessions.revokedAt),
+          ),
+        )
+        .limit(1),
+    )) as Array<RevocableAgentSessionRow>;
 
     if (!sessionRecord) {
       return { ok: true };
@@ -524,7 +637,7 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
         .where(eq(agentSessions.id, sessionRecord.id)),
     );
 
-    yield* logBaseAudit({
+    yield* logSessionAudit({
       userId: sessionRecord.userId,
       agentId: sessionRecord.agentId,
       eventType: "agent.session_revoke",
@@ -558,8 +671,8 @@ export const authRouter = createTrpcRouter({
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, exchangeAgentSession(input))),
-  revokeSession: publicProcedure
+  revokeSession: sessionProcedure
     .input(strictSchema(RevokeAgentSessionSchema))
     .output(strictSchema(SuccessResultSchema))
-    .mutation(({ ctx, input }) => runBaseEffect(ctx, revokeAgentSession(input))),
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgentSession(input))),
 });

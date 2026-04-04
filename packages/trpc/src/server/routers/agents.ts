@@ -1,5 +1,6 @@
 import {
   AGENT_BOOTSTRAP_PREFIX,
+  AGENT_BOOTSTRAP_TTL_MS,
   AgentListResultSchema,
   AgentRegistrationResultSchema,
   AgentResultSchema,
@@ -24,8 +25,6 @@ import { serializeAgent } from "../serialize";
 const AgentIdSchema = Schema.Struct({
   agentId: Schema.String.pipe(Schema.minLength(1)),
 });
-
-const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 
 const buildLegacyApiKey = (locality: "local" | "remote") =>
   Effect.gen(function* () {

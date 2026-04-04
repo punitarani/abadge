@@ -69,6 +69,11 @@ export const API_KEY_PREFIX = {
 
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
+export const AGENT_CHALLENGE_PREFIX = "abc_";
+
+export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
+export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
+export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind): AgentLocality {

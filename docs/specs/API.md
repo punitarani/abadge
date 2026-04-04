@@ -65,7 +65,7 @@ Keypair-backed agents use these tRPC procedures:
 | `auth.enroll` | public | Redeem bootstrap token and upload an agent public key |
 | `auth.createChallenge` | public | Create a short-lived signing challenge |
 | `auth.exchangeSession` | public | Verify the signature and mint an `abs_...` session |
-| `auth.revokeSession` | public | Revoke an active `abs_...` session |
+| `auth.revokeSession` | session | Revoke an active `abs_...` session for the current operator |
 | `auth.recordLogin` | session | Record `auth.login` audit event |
 | `auth.logout` | session | Record `auth.logout` audit event |
 
