@@ -1,5 +1,5 @@
 import { apiKeyClient } from "@better-auth/api-key/client";
-import { organizationClient } from "better-auth/client/plugins";
+import { deviceAuthorizationClient, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 export type SocialProvider = "github" | "google";
@@ -14,6 +14,6 @@ export function createBetterAuthClient(baseURL: string): any {
       credentials: "include",
     },
     // biome-ignore lint/suspicious/noExplicitAny: duplicate @better-auth/core resolutions cause nominal type mismatch
-    plugins: [organizationClient(), apiKeyClient()] as any[],
+    plugins: [organizationClient(), apiKeyClient(), deviceAuthorizationClient()] as any[],
   });
 }

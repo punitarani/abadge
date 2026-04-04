@@ -1,21 +1,12 @@
 import { createNodeTrpcClient, normalizeTrpcError } from "@abadge/trpc/client";
 import type { VaultMeta } from "./types";
 
-function createSessionClient(apiUrl: string, sessionCookie: string) {
-  return createNodeTrpcClient({
-    baseUrl: apiUrl,
-    headers: {
-      Cookie: sessionCookie,
-    },
-  });
-}
-
 /** Fetch vault metadata from the API. */
-export async function fetchVaultMeta(
-  apiUrl: string,
-  sessionCookie: string,
-): Promise<VaultMeta | null> {
-  const client = createSessionClient(apiUrl, sessionCookie);
+export async function fetchVaultMeta(apiUrl: string, authToken: string): Promise<VaultMeta | null> {
+  const client = createNodeTrpcClient({
+    baseUrl: apiUrl,
+    token: authToken,
+  });
 
   try {
     const data = await client.vault.get.query();
@@ -32,10 +23,13 @@ export async function fetchVaultMeta(
 /** Update wrapped root key on the API after password change. */
 export async function updateVaultPassword(
   apiUrl: string,
-  sessionCookie: string,
+  authToken: string,
   body: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown },
 ): Promise<void> {
-  const client = createSessionClient(apiUrl, sessionCookie);
+  const client = createNodeTrpcClient({
+    baseUrl: apiUrl,
+    token: authToken,
+  });
 
   try {
     await client.vault.changePassword.mutate({

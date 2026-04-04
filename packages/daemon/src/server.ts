@@ -11,6 +11,8 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
   MountExecResult,
+  OperatorSessionConfig,
+  OperatorSessionResult,
   RekeyItemResult,
   VaultStatus,
 } from "./types";
@@ -25,7 +27,6 @@ export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
     pidPath: partial.pidPath ?? defaultPidPath(),
     autoLockMs: partial.autoLockMs ?? DEFAULT_AUTO_LOCK_MS,
     apiUrl: partial.apiUrl ?? "",
-    sessionCookie: partial.sessionCookie ?? "",
   };
 }
 
@@ -41,158 +42,224 @@ function rpcOk(id: number | string, result: unknown): JsonRpcResponse {
 
 type RpcHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
-function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
+function buildHandlers(
+  vault: VaultState,
+  config: DaemonConfig,
+): { clearOperatorSession: () => void; handlers: Record<string, RpcHandler> } {
+  let operatorSession: OperatorSessionConfig | null = null;
+
+  function clearOperatorSession(): void {
+    operatorSession = null;
+  }
+
+  function getOperatorSession(): OperatorSessionConfig | null {
+    if (!operatorSession) {
+      return null;
+    }
+
+    if (operatorSession.expiresAt && new Date(operatorSession.expiresAt) <= new Date()) {
+      clearOperatorSession();
+      return null;
+    }
+
+    return operatorSession;
+  }
+
+  function requireOperatorToken(): string {
+    const session = getOperatorSession();
+    if (!session?.accessToken) {
+      throw { code: RPC_ERRORS.INVALID_REQUEST, message: "Operator session is not authenticated" };
+    }
+
+    return session.accessToken;
+  }
+
+  function operatorStatus(includeToken = false): OperatorSessionResult {
+    const session = getOperatorSession();
+    return {
+      authenticated: session !== null,
+      userId: session?.userId ?? null,
+      expiresAt: session?.expiresAt ?? null,
+      ...(includeToken && session ? { token: session.accessToken } : {}),
+    };
+  }
+
   return {
-    "vault.unlock": async (params) => {
-      const password = params.masterPassword as string | undefined;
-      if (!password) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "masterPassword is required" };
-      }
-      if (!vault.locked) {
-        throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
-      }
+    clearOperatorSession,
+    handlers: {
+      "auth.setSession": async (params) => {
+        const accessToken = params.accessToken as string | undefined;
+        const expiresAt = params.expiresAt as string | undefined;
+        const userId = params.userId as string | undefined;
+        if (!accessToken) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "accessToken is required" };
+        }
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
-      if (!meta) {
-        throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
-      }
+        operatorSession = { accessToken, expiresAt: expiresAt ?? null, userId: userId ?? null };
+        return operatorStatus();
+      },
 
-      try {
-        vault.unlock(password, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
-      }
+      "auth.clearSession": async () => {
+        clearOperatorSession();
+        return operatorStatus();
+      },
 
-      return { ok: true, keyVersion: vault.keyVersion };
-    },
+      "auth.status": async (): Promise<OperatorSessionResult> => operatorStatus(),
 
-    "vault.lock": async () => {
-      vault.lock();
-      return { ok: true };
-    },
+      "auth.token": async (): Promise<OperatorSessionResult> => operatorStatus(true),
 
-    "vault.status": async (): Promise<VaultStatus> => {
-      return { locked: vault.locked, keyVersion: vault.keyVersion };
-    },
+      "vault.unlock": async (params) => {
+        const password = params.masterPassword as string | undefined;
+        if (!password) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "masterPassword is required" };
+        }
+        if (!vault.locked) {
+          throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
+        }
 
-    "vault.changePassword": async (params) => {
-      const oldPassword = params.oldPassword as string | undefined;
-      const newPassword = params.newPassword as string | undefined;
-      if (!oldPassword || !newPassword) {
-        throw {
-          code: RPC_ERRORS.INVALID_PARAMS,
-          message: "oldPassword and newPassword are required",
-        };
-      }
-      requireUnlocked(vault);
+        const meta = await fetchVaultMeta(config.apiUrl, requireOperatorToken());
+        if (!meta) {
+          throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
+        }
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
-      if (!meta) {
-        throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
-      }
+        try {
+          vault.unlock(password, meta);
+        } catch {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
+        }
 
-      let result: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown };
-      try {
-        result = vault.changePassword(oldPassword, newPassword, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
-      }
+        return { ok: true, keyVersion: vault.keyVersion };
+      },
 
-      await updateVaultPassword(config.apiUrl, config.sessionCookie, result);
-      return { ok: true };
-    },
+      "vault.lock": async () => {
+        vault.lock();
+        clearOperatorSession();
+        return { ok: true };
+      },
 
-    "item.encrypt": async (params): Promise<EncryptResult> => {
-      const payload = params.payload;
-      if (payload === undefined) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
-      }
-      requireUnlocked(vault);
-      return vault.encrypt(payload);
-    },
+      "vault.status": async (): Promise<VaultStatus> => {
+        return { locked: vault.locked, keyVersion: vault.keyVersion };
+      },
 
-    "item.decrypt": async (params) => {
-      const encryptedItemKey = params.encryptedItemKey as string | undefined;
-      const ciphertext = params.ciphertext as string | undefined;
-      if (!encryptedItemKey || !ciphertext) {
-        throw {
-          code: RPC_ERRORS.INVALID_PARAMS,
-          message: "encryptedItemKey and ciphertext are required",
-        };
-      }
-      requireUnlocked(vault);
-      const payload = vault.decrypt(encryptedItemKey, ciphertext);
-      return { payload };
-    },
+      "vault.changePassword": async (params) => {
+        const oldPassword = params.oldPassword as string | undefined;
+        const newPassword = params.newPassword as string | undefined;
+        if (!oldPassword || !newPassword) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "oldPassword and newPassword are required",
+          };
+        }
+        requireUnlocked(vault);
 
-    "item.rekey": async (params): Promise<RekeyItemResult[]> => {
-      const items = params.items as Array<{ id: string; encryptedItemKey: string }> | undefined;
-      const oldRootKeyB64 = params.oldRootKey as string | undefined;
-      if (!items || !oldRootKeyB64) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items and oldRootKey are required" };
-      }
-      requireUnlocked(vault);
-      const oldRootKey = fromBase64(oldRootKeyB64);
-      const results = vault.rekey(items, oldRootKey);
-      oldRootKey.fill(0);
-      return results;
-    },
+        const meta = await fetchVaultMeta(config.apiUrl, requireOperatorToken());
+        if (!meta) {
+          throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
+        }
 
-    "exec.env": async (params): Promise<EnvExecResult> => {
-      const secretValue = params.secretValue as string | undefined;
-      const envVar = params.envVar as string | undefined;
-      const command = params.command as string | undefined;
-      const args = (params.args as string[]) ?? [];
-      if (!secretValue || !envVar || !command) {
-        throw {
-          code: RPC_ERRORS.INVALID_PARAMS,
-          message: "secretValue, envVar, and command are required",
-        };
-      }
+        let result: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown };
+        try {
+          result = vault.changePassword(oldPassword, newPassword, meta);
+        } catch {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
+        }
 
-      const proc = Bun.spawn([command, ...args], {
-        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
-        env: { ...process.env, [envVar]: secretValue },
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "inherit",
-      });
-      const exitCode = await proc.exited;
-      return { exitCode, signal: proc.signalCode ?? undefined };
-    },
+        await updateVaultPassword(config.apiUrl, requireOperatorToken(), result);
+        return { ok: true };
+      },
 
-    "exec.mount": async (params): Promise<MountExecResult> => {
-      const secretValue = params.secretValue as string | undefined;
-      const targetPath = params.path as string | undefined;
-      const mode = (params.mode as number) ?? 0o600;
-      if (!secretValue) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "secretValue is required" };
-      }
+      "item.encrypt": async (params): Promise<EncryptResult> => {
+        const payload = params.payload;
+        if (payload === undefined) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
+        }
+        requireUnlocked(vault);
+        return vault.encrypt(payload);
+      },
 
-      const suffix = crypto.getRandomValues(new Uint8Array(8));
-      const hex = Array.from(suffix, (b) => b.toString(16).padStart(2, "0")).join("");
-      const filePath = targetPath ?? join(tmpdir(), `abadge-secret-${hex}`);
+      "item.decrypt": async (params) => {
+        const encryptedItemKey = params.encryptedItemKey as string | undefined;
+        const ciphertext = params.ciphertext as string | undefined;
+        if (!encryptedItemKey || !ciphertext) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "encryptedItemKey and ciphertext are required",
+          };
+        }
+        requireUnlocked(vault);
+        const payload = vault.decrypt(encryptedItemKey, ciphertext);
+        return { payload };
+      },
 
-      writeFileSync(filePath, secretValue, { mode });
-      mountedFiles.add(filePath);
-      return { path: filePath };
-    },
+      "item.rekey": async (params): Promise<RekeyItemResult[]> => {
+        const items = params.items as Array<{ id: string; encryptedItemKey: string }> | undefined;
+        const oldRootKeyB64 = params.oldRootKey as string | undefined;
+        if (!items || !oldRootKeyB64) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items and oldRootKey are required" };
+        }
+        requireUnlocked(vault);
+        const oldRootKey = fromBase64(oldRootKeyB64);
+        const results = vault.rekey(items, oldRootKey);
+        oldRootKey.fill(0);
+        return results;
+      },
 
-    "exec.cleanup": async (params) => {
-      const path = params.path as string | undefined;
-      if (!path) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "path is required" };
-      }
-      if (!mountedFiles.has(path)) {
-        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "Path was not mounted by this daemon" };
-      }
-      mountedFiles.delete(path);
-      try {
-        rmSync(path);
-      } catch {
-        // File may already be cleaned up
-      }
-      return { ok: true };
+      "exec.env": async (params): Promise<EnvExecResult> => {
+        const secretValue = params.secretValue as string | undefined;
+        const envVar = params.envVar as string | undefined;
+        const command = params.command as string | undefined;
+        const args = (params.args as string[]) ?? [];
+        if (!secretValue || !envVar || !command) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "secretValue, envVar, and command are required",
+          };
+        }
+
+        const proc = Bun.spawn([command, ...args], {
+          // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
+          env: { ...process.env, [envVar]: secretValue },
+          stdout: "inherit",
+          stderr: "inherit",
+          stdin: "inherit",
+        });
+        const exitCode = await proc.exited;
+        return { exitCode, signal: proc.signalCode ?? undefined };
+      },
+
+      "exec.mount": async (params): Promise<MountExecResult> => {
+        const secretValue = params.secretValue as string | undefined;
+        const targetPath = params.path as string | undefined;
+        const mode = (params.mode as number) ?? 0o600;
+        if (!secretValue) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "secretValue is required" };
+        }
+
+        const suffix = crypto.getRandomValues(new Uint8Array(8));
+        const hex = Array.from(suffix, (b) => b.toString(16).padStart(2, "0")).join("");
+        const filePath = targetPath ?? join(tmpdir(), `abadge-secret-${hex}`);
+
+        writeFileSync(filePath, secretValue, { mode });
+        mountedFiles.add(filePath);
+        return { path: filePath };
+      },
+
+      "exec.cleanup": async (params) => {
+        const path = params.path as string | undefined;
+        if (!path) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "path is required" };
+        }
+        if (!mountedFiles.has(path)) {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "Path was not mounted by this daemon" };
+        }
+        mountedFiles.delete(path);
+        try {
+          rmSync(path);
+        } catch {
+          // File may already be cleaned up
+        }
+        return { ok: true };
+      },
     },
   };
 }
@@ -248,14 +315,15 @@ export interface DaemonServer {
  */
 export function startServer(config: DaemonConfig): DaemonServer {
   const vault = new VaultState(config.autoLockMs);
-  const handlers = buildHandlers(vault, config);
+  const { handlers, clearOperatorSession } = buildHandlers(vault, config);
   const textDecoder = new TextDecoder();
 
   vault.setAutoLockCallback(() => {
     console.log("[vaultd] Auto-locked after inactivity");
+    clearOperatorSession();
   });
 
-  mkdirSync(dirname(config.socketPath), { recursive: true });
+  mkdirSync(dirname(config.socketPath), { recursive: true, mode: 0o700 });
 
   // Clean up stale socket file
   try {
@@ -275,8 +343,7 @@ export function startServer(config: DaemonConfig): DaemonServer {
       },
       async data(socket, data) {
         const prev = connectionBuffers.get(socket) ?? "";
-        const chunk = Uint8Array.from(data);
-        const accumulated = prev + textDecoder.decode(chunk);
+        const accumulated = prev + textDecoder.decode(Uint8Array.from(data));
 
         // Messages are newline-delimited JSON
         const lines = accumulated.split("\n");

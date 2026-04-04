@@ -1,8 +1,6 @@
 import { CAPABILITIES, type Capability } from "@abadge/core";
-import type { CreatePermissionInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { SessionApiClient } from "../client";
-import { requireSessionConfig } from "../config";
+import { clearOperatorSessionIfExpired, createOperatorClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createPermissionCommand(): Command {
@@ -13,39 +11,31 @@ export function createPermissionCommand(): Command {
     .description("Create a new permission")
     .requiredOption("--agent-id <id>", "Agent ID")
     .requiredOption("--item-id <id>", "Item ID")
-    .requiredOption("--capability <cap>", "Capability")
-    .option("--expires-at <timestamp>", "Optional ISO timestamp expiry")
+    .option("--capability <cap>", "Capability", "mount_env")
     .option("--json", "Output as JSON")
     .action(
-      async (opts: {
-        agentId: string;
-        itemId: string;
-        capability: string;
-        expiresAt?: string;
-        json?: boolean;
-      }) => {
+      async (opts: { agentId: string; itemId: string; capability: string; json?: boolean }) => {
         if (!CAPABILITIES.includes(opts.capability as Capability)) {
           error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
           process.exit(1);
         }
-        const capability = opts.capability as Capability;
-
-        const client = new SessionApiClient(requireSessionConfig());
 
         try {
+          const client = await createOperatorClient();
           const result = await client.createPermission({
             agentId: opts.agentId,
             itemId: opts.itemId,
-            capability,
-            expiresAt: opts.expiresAt,
-          } satisfies CreatePermissionInput);
+            capability: opts.capability as Capability,
+          });
 
           if (opts.json) {
             json(result);
-          } else {
-            success(`Permission ${result.permission.id} created.`);
+            return;
           }
+
+          success("Permission created.");
         } catch (err) {
+          await clearOperatorSessionIfExpired(err);
           error(errorMessage(err, "Failed to create permission."));
           process.exit(1);
         }
@@ -55,19 +45,11 @@ export function createPermissionCommand(): Command {
   cmd
     .command("list")
     .description("List all permissions")
-    .option("--agent-id <id>", "Filter by agent")
-    .option("--item-id <id>", "Filter by item")
     .option("--json", "Output as JSON")
-    .action(async (opts: { agentId?: string; itemId?: string; json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
+    .action(async (opts: { json?: boolean }) => {
       try {
-        const permissions = (
-          await client.listPermissions({
-            agentId: opts.agentId,
-            itemId: opts.itemId,
-          })
-        ).permissions;
+        const client = await createOperatorClient();
+        const permissions = (await client.listPermissions()).permissions;
 
         if (opts.json) {
           json(permissions);
@@ -80,11 +62,11 @@ export function createPermissionCommand(): Command {
             Agent: permission.agentId,
             Item: permission.itemId,
             Capability: permission.capability,
-            Expires: permission.expiresAt ?? "-",
             Created: permission.createdAt,
           })),
         );
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to list permissions."));
         process.exit(1);
       }
@@ -95,12 +77,12 @@ export function createPermissionCommand(): Command {
     .description("Revoke a permission")
     .argument("<id>", "Permission ID")
     .action(async (id: string) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createOperatorClient();
         await client.revokePermission(id);
         success(`Permission ${id} revoked.`);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to revoke permission."));
         process.exit(1);
       }

@@ -27,7 +27,11 @@ async function decryptMountedPayload(
   ciphertext: string,
 ): Promise<string> {
   const result = await daemonDecrypt(encryptedItemKey, ciphertext);
-  return payloadToSecret(result.payload);
+  if (!result.ok || !result.data) {
+    throw new Error(result.error ?? "Vault is locked or decryption failed");
+  }
+
+  return payloadToSecret((result.data as { payload: unknown }).payload);
 }
 
 async function resolveMountedSecret(

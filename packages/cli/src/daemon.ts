@@ -1,50 +1,85 @@
-import type { EnvExecResult, MountExecResult, VaultStatus } from "@abadge/daemon";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
-  clearDaemonState,
   DaemonClient,
-  type DecryptResult,
-  type EncryptResult,
-  isDaemonRunning,
-  startDaemon,
-  stopDaemon,
+  type OperatorSessionConfig,
+  type OperatorSessionResult,
 } from "@abadge/daemon";
-import { requireSessionConfig } from "./config";
 
-async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): Promise<T> {
-  const client = new DaemonClient();
-  return run(client);
+export const SOCKET_PATH = join(homedir(), ".abadge", "vaultd.sock");
+
+interface DaemonResponse {
+  ok: boolean;
+  error?: string;
+  data?: unknown;
 }
 
-export async function daemonUnlock(
-  masterPassword: string,
-): Promise<{ ok: boolean; keyVersion: number }> {
-  return withDaemonClient((client) => client.unlock(masterPassword));
+const DAEMON_ERROR = "Cannot connect to daemon. Is it running? Try `abadge daemon start`.";
+
+async function withDaemon<T>(
+  operation: (client: DaemonClient) => Promise<T>,
+): Promise<DaemonResponse> {
+  const client = new DaemonClient(SOCKET_PATH);
+
+  try {
+    const data = await operation(client);
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : DAEMON_ERROR;
+    return { ok: false, error: message };
+  }
 }
 
-export async function daemonLock(): Promise<{ ok: boolean }> {
-  return withDaemonClient((client) => client.lock());
+export async function daemonStatus(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.status());
 }
 
-export async function daemonStatus(): Promise<VaultStatus> {
-  return withDaemonClient((client) => client.status());
+export async function daemonSetOperatorSession(
+  session: OperatorSessionConfig,
+): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.setOperatorSession(session));
+}
+
+export async function daemonClearOperatorSession(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.clearOperatorSession());
+}
+
+export async function daemonOperatorStatus(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.operatorStatus());
+}
+
+export async function daemonOperatorToken(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.operatorToken());
+}
+
+export async function daemonUnlock(masterPassword: string): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.unlock(masterPassword));
+}
+
+export async function daemonLock(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.lock());
+}
+
+export async function daemonVaultStatus(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.status());
 }
 
 export async function daemonChangePassword(
   oldPassword: string,
   newPassword: string,
-): Promise<{ ok: boolean }> {
-  return withDaemonClient((client) => client.changePassword(oldPassword, newPassword));
+): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.changePassword(oldPassword, newPassword));
 }
 
-export async function daemonEncrypt(payload: unknown): Promise<EncryptResult> {
-  return withDaemonClient((client) => client.encrypt(payload));
+export async function daemonEncrypt(payload: unknown): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.encrypt(payload));
 }
 
 export async function daemonDecrypt(
   encryptedItemKey: string,
   ciphertext: string,
-): Promise<DecryptResult> {
-  return withDaemonClient((client) => client.decrypt(encryptedItemKey, ciphertext));
+): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.decrypt(encryptedItemKey, ciphertext));
 }
 
 export async function daemonExecEnv(
@@ -52,34 +87,18 @@ export async function daemonExecEnv(
   envVar: string,
   command: string,
   args: string[],
-): Promise<EnvExecResult> {
-  return withDaemonClient((client) => client.execEnv(secretValue, envVar, command, args));
+): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.execEnv(secretValue, envVar, command, args));
 }
 
-export async function daemonExecMount(
-  secretValue: string,
-  path?: string,
-  mode?: number,
-): Promise<MountExecResult> {
-  return withDaemonClient((client) => client.execMount(secretValue, path, mode));
+export async function daemonExecMount(secretValue: string, path?: string): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.execMount(secretValue, path));
 }
 
-export function daemonProcessRunning(): boolean {
-  return isDaemonRunning();
-}
+export function readOperatorSession(response: DaemonResponse): OperatorSessionResult | null {
+  if (!response.ok || !response.data) {
+    return null;
+  }
 
-export function clearDaemonProcessState(): void {
-  clearDaemonState();
-}
-
-export function stopDaemonProcess(): boolean {
-  return stopDaemon();
-}
-
-export function serveDaemon(): void {
-  const config = requireSessionConfig();
-  startDaemon({
-    apiUrl: config.apiUrl,
-    sessionCookie: config.sessionCookie,
-  });
+  return response.data as OperatorSessionResult;
 }

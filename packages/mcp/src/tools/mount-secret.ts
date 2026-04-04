@@ -22,7 +22,7 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const client = getApiClient(config);
+  const client = await getApiClient(config);
   const secret = await resolveSecret(client, input.itemId, "file");
 
   const suffix = randomBytes(8).toString("hex");

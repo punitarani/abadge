@@ -1,47 +1,65 @@
 # CLI Reference
 
-The `abadge` CLI is the local operator interface for the control plane and the vault daemon.
+The `abadge` CLI has two auth personas:
+
+* **operator** commands use a Better Auth device-login session held only in the local daemon
+* **runtime** commands use a provisioned local agent keypair and short-lived `abs_...` sessions
 
 ## Installation
 
 ```bash
-# Development entrypoint
 bun run cli -- --help
-
-# Direct TypeScript entrypoint
 bun packages/cli/bin/abadge.ts --help
 ```
 
-### Compiled binary
+Standalone binary:
+
+```bash
+mkdir -p dist
+bun build --compile packages/cli/bin/abadge.ts --outfile dist/abadge
+./dist/abadge --help
+```
+
+Release dry-run:
 
 ```bash
 bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
 ```
 
-### Public installer
+Public installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
 ```
 
-See [`docs/release/cli.md`](./release/cli.md) for the release and installer flow.
+See [`docs/release/cli.md`](./release/cli.md) for the package-scoped release flow.
 
 ## Configuration
 
-Config lives at `~/.abadge/config.json`. The CLI stores a user session for control-plane commands
-and a local CLI agent key for principal-authenticated access commands:
+Config lives at `~/.abadge/config.json`.
+
+It stores durable metadata only:
 
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "sessionCookie": "...",
-  "principalId": "agt_...",
-  "principalSecret": "abg_..."
+  "operatorUserId": "user_...",
+  "localAgents": {
+    "cli": {
+      "agentId": "agent_...",
+      "privateKeyPath": "/Users/you/.abadge/agents/cli.ed25519.jwk"
+    },
+    "mcp": {
+      "agentId": "agent_...",
+      "privateKeyPath": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+    }
+  }
 }
 ```
 
-The config file is written with `0600` permissions. The session cookie and local CLI agent secret are
-stored in plaintext in that file, so treat it like an auth credential.
+No human session bearer token is persisted in the config file.
+Saved local agent references are reused only for the same operator on the same API origin. A
+fresh login reprovisions them when either changes.
 
 The local daemon socket is `~/.abadge/vaultd.sock`.
 
@@ -49,22 +67,33 @@ The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ### `abadge login`
 
-Interactive email/password login. Stores `apiUrl`, the Better Auth session cookie, and ensures a
-reusable local CLI agent exists for `run` and `mount`.
+Starts Better Auth device authorization.
+
+Flow:
+
+1. request device and user codes from `/api/auth/device/code`
+2. open the browser to the verification URL when possible
+3. poll `/api/auth/device/token`
+4. store the resulting operator session only in the daemon
+5. provision local `local_cli` and `local_mcp` keypair-backed agents when missing
 
 ```bash
+abadge login
 abadge login --api-url http://localhost:8787
-abadge login --api-url http://localhost:8787 --email user@example.com --password password123
+abadge login --no-open-browser
 ```
 
-Prefer the interactive password prompt. `--password` is supported for automation, but it exposes the
-password to shell history and process listings.
+### `abadge logout`
+
+Clears the daemon-held operator session.
+
+```bash
+abadge logout
+```
 
 ### `abadge daemon start`
 
-Starts the local daemon process if it is not already running. The CLI spawns the current `abadge`
-entrypoint in an internal daemon-serve mode, so the same command works in development and in a
-compiled binary.
+Starts the local daemon if it is not already running.
 
 ```bash
 abadge daemon start
@@ -80,7 +109,7 @@ abadge daemon status
 
 ### `abadge daemon stop`
 
-Stops the local daemon process and removes the live socket.
+Stops the local daemon and removes the live socket.
 
 ```bash
 abadge daemon stop
@@ -96,7 +125,7 @@ abadge vault unlock
 
 ### `abadge vault lock`
 
-Clears the unlocked vault state from the daemon.
+Clears the unlocked vault state and the daemon-held operator session.
 
 ```bash
 abadge vault lock
@@ -112,8 +141,7 @@ abadge vault status
 
 ### `abadge vault change-password`
 
-Prompts for the current password and the replacement password, then updates the wrapped vault key
-through the daemon and control plane.
+Changes the wrapped vault root key through the daemon and control plane.
 
 ```bash
 abadge vault change-password
@@ -121,24 +149,11 @@ abadge vault change-password
 
 ### `abadge item create`
 
-Creates a new item. Zero-knowledge items are encrypted locally through the daemon. Server-managed
-items are sent as payloads to the control plane.
+Interactive item creation. The CLI encrypts through the daemon and creates a zero-knowledge item.
 
 ```bash
 abadge item create
-abadge item create --label "OpenAI" --kind api_key --value sk-... --storage-mode zero_knowledge
-abadge item create --label "Deploy token" --kind token --value abc --storage-mode server_managed
 ```
-
-Flags:
-
-| Flag | Description |
-|------|-------------|
-| `--name`, `--label` | Item label |
-| `--kind` | Item kind |
-| `--value` | Secret value |
-| `--storage-mode` | `zero_knowledge` or `server_managed` |
-| `--json` | Print raw JSON |
 
 ### `abadge item list`
 
@@ -151,24 +166,24 @@ abadge item list --json
 
 ### `abadge item get <id>`
 
-Fetches one item. Use `--reveal` to decrypt a zero-knowledge item locally through the daemon.
+Fetches one item. For zero-knowledge items, the CLI attempts local daemon decryption.
 
 ```bash
 abadge item get <item-id>
-abadge item get <item-id> --reveal
 ```
 
 ### `abadge item update <id>`
 
-Updates an item interactively.
+Replaces an item body with optimistic concurrency.
 
 ```bash
 abadge item update <item-id>
+abadge item update <item-id> --json
 ```
 
 ### `abadge item delete <id>`
 
-Soft-deletes an item. Use `-f` or `--force` to skip confirmation.
+Soft-deletes an item.
 
 ```bash
 abadge item delete <item-id>
@@ -177,11 +192,18 @@ abadge item delete <item-id> --force
 
 ### `abadge agent register`
 
-Creates a new agent and prints the one-time API key.
+Registers a new agent.
+
+Defaults:
+
+* auth method: `public_key_session`
+* remote agents receive a one-time bootstrap token
+* legacy API keys are opt-in
 
 ```bash
-abadge agent register --name "dev laptop" --kind local_cli
-abadge agent register --name "ci bot" --kind remote_agent --description "deploy runner"
+abadge agent register --name "ci bot" --kind remote_agent
+abadge agent register --name "legacy worker" --kind remote_agent --legacy-api-key
+abadge agent register --name "dev laptop" --kind local_cli --json
 ```
 
 Flags:
@@ -191,7 +213,19 @@ Flags:
 | `--name, -n` | Agent display name |
 | `--kind, -k` | Agent kind |
 | `--description, -d` | Optional metadata description |
+| `--legacy-api-key` | Create a deprecated `abl_` / `abg_` API-key agent |
+| `--no-bootstrap-token` | Skip bootstrap-token issuance for keypair-backed agents |
 | `--json` | Print raw JSON |
+
+### `abadge agent enroll`
+
+Redeems a one-time bootstrap token, generates a local Ed25519 keypair, writes the private key with
+`0600` permissions, and uploads only the public key.
+
+```bash
+abadge agent enroll --bootstrap-token abe_...
+abadge agent enroll --bootstrap-token abe_... --private-key-path ~/.abadge/agents/remote.jwk
+```
 
 ### `abadge agent list`
 
@@ -204,11 +238,10 @@ abadge agent list --json
 
 ### `abadge agent rotate <id>`
 
-Rotates an agent API key and prints the new one-time key.
+Rotates a legacy agent API key only.
 
 ```bash
 abadge agent rotate <agent-id>
-abadge agent rotate <agent-id> --json
 ```
 
 ### `abadge agent revoke <id>`
@@ -221,22 +254,12 @@ abadge agent revoke <agent-id>
 
 ### `abadge permission create`
 
-Creates an explicit permission.
+Creates an explicit permission. The default capability is `mount_env`.
 
 ```bash
-abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
+abadge permission create --agent-id <agent-id> --item-id <item-id>
 abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
 ```
-
-Flags:
-
-| Flag | Description |
-|------|-------------|
-| `--agent-id` | Target agent |
-| `--item-id` | Target item |
-| `--capability` | Allowed capability |
-| `--expires-at` | Optional ISO timestamp expiry |
-| `--json` | Print raw JSON |
 
 ### `abadge permission list`
 
@@ -244,8 +267,6 @@ Lists permissions.
 
 ```bash
 abadge permission list
-abadge permission list --agent-id <agent-id>
-abadge permission list --item-id <item-id>
 abadge permission list --json
 ```
 
@@ -259,30 +280,23 @@ abadge permission revoke <permission-id>
 
 ### `abadge run`
 
-Resolves a secret value, injects it into a subprocess through the daemon, and exits with the child
-process exit code.
+Uses the local `local_cli` agent identity, exchanges a short-lived `abs_...` session, resolves the
+item through the access path, and injects the secret into a subprocess through the daemon.
 
 ```bash
 abadge run --item <item-id> -- npm run deploy
-abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 ```
 
-Notes:
-
-* defaults to `ABADGE_SECRET`
-* zero-knowledge items are decrypted locally through the daemon
-* server-managed items are fetched through the access router first
+The injected environment variable name is currently fixed to `ABADGE_SECRET`.
 
 ### `abadge mount`
 
-Resolves a secret and asks the daemon to mount it as a temporary file.
+Uses the local `local_cli` agent identity, exchanges a short-lived `abs_...` session, resolves the
+item through the access path, and asks the daemon to mount it as a temporary file.
 
 ```bash
 abadge mount --item <item-id>
-abadge mount --item <item-id> --path /tmp/my-secret.txt
 ```
-
-The daemon chooses the file path and the CLI prints it.
 
 ### `abadge audit`
 
@@ -290,23 +304,5 @@ Fetches the recent audit log.
 
 ```bash
 abadge audit
-abadge audit --limit 100
-abadge audit --cursor <cursor>
 abadge audit --json
 ```
-
-Flags:
-
-| Flag | Description |
-|------|-------------|
-| `--limit` | Maximum number of entries to return |
-| `--cursor` | Pagination cursor from a previous response |
-| `--json` | Print raw JSON |
-
-## Global options
-
-| Flag | Description |
-|------|-------------|
-| `--help, -h` | Show help |
-| `--version, -v` | Show version |
-| `--json` | Print machine-readable output on commands that support it |

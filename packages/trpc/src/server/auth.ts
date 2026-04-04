@@ -1,7 +1,7 @@
-import { UnauthorizedError } from "@abadge/core";
-import { verifyApiKey } from "@abadge/crypto/shared";
+import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
+import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull, or } from "@abadge/db";
-import { principals as agentRecords } from "@abadge/db/schema";
+import { principals as agentRecords, agentSessions, auditLog } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
@@ -50,10 +50,20 @@ interface VerifyApiKeyResult {
 
 type ActiveAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "secretHash"
+  "id" | "userId" | "locality" | "authMethod" | "secretHash"
 >;
 
 type MigratedAgent = Pick<
+  typeof agentRecords.$inferSelect,
+  "id" | "userId" | "locality" | "enabled" | "revokedAt"
+>;
+
+type ActiveAgentSession = Pick<
+  typeof agentSessions.$inferSelect,
+  "id" | "agentId" | "userId" | "expiresAt"
+>;
+
+type AgentSessionAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
   "id" | "userId" | "locality" | "enabled" | "revokedAt"
 >;
@@ -93,6 +103,33 @@ function toAgentIdentity(
   };
 }
 
+function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
+  void ctx.db
+    .update(agentSessions)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(agentSessions.id, sessionId))
+    .execute();
+}
+
+function auditAgentSessionReject(
+  ctx: BaseRequestContext,
+  input: {
+    userId: string;
+    agentId: string;
+    result: "denied" | "expired" | "revoked";
+    reason: string;
+  },
+): void {
+  void ctx.db.insert(auditLog).values({
+    userId: input.userId,
+    principalId: input.agentId,
+    eventType: "agent.session_reject",
+    result: input.result,
+    meta: { reason: input.reason },
+    ipAddress: ctx.ipAddress ?? null,
+  });
+}
+
 const verifyLocalAgentIdentity = (
   ctx: BaseRequestContext,
   token: string,
@@ -105,6 +142,7 @@ const verifyLocalAgentIdentity = (
           id: agentRecords.id,
           userId: agentRecords.userId,
           locality: agentRecords.locality,
+          authMethod: agentRecords.authMethod,
           secretHash: agentRecords.secretHash,
         })
         .from(agentRecords)
@@ -119,6 +157,10 @@ const verifyLocalAgentIdentity = (
     )) as Array<ActiveAgentCandidate>;
 
     for (const agent of activeCandidates) {
+      if (agent.authMethod !== "legacy_api_key") {
+        continue;
+      }
+
       const secretHash = agent.secretHash;
       if (!secretHash) {
         continue;
@@ -188,6 +230,97 @@ const verifyLegacyAgentIdentity = (
     };
   });
 
+const verifyAgentSessionIdentity = (
+  ctx: BaseRequestContext,
+  token: string,
+): Effect.Effect<AgentIdentity | null, Error | UnauthorizedError> =>
+  Effect.gen(function* () {
+    if (!token.startsWith(AGENT_SESSION_PREFIX)) {
+      return null;
+    }
+
+    const tokenHash = yield* tryAsync(() => hashApiKey(token));
+    const [sessionRecord] = (yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: agentSessions.id,
+          agentId: agentSessions.agentId,
+          userId: agentSessions.userId,
+          expiresAt: agentSessions.expiresAt,
+        })
+        .from(agentSessions)
+        .where(and(eq(agentSessions.tokenHash, tokenHash), isNull(agentSessions.revokedAt)))
+        .limit(1),
+    )) as Array<ActiveAgentSession>;
+
+    if (!sessionRecord) {
+      return yield* Effect.fail(unauthorized("Invalid agent session"));
+    }
+
+    if (sessionRecord.expiresAt <= new Date()) {
+      auditAgentSessionReject(ctx, {
+        userId: sessionRecord.userId,
+        agentId: sessionRecord.agentId,
+        result: "expired",
+        reason: "session_expired",
+      });
+      return yield* Effect.fail(unauthorized("Expired agent session"));
+    }
+
+    const [agent] = (yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: agentRecords.id,
+          userId: agentRecords.userId,
+          locality: agentRecords.locality,
+          enabled: agentRecords.enabled,
+          revokedAt: agentRecords.revokedAt,
+        })
+        .from(agentRecords)
+        .where(
+          and(
+            eq(agentRecords.id, sessionRecord.agentId),
+            eq(agentRecords.userId, sessionRecord.userId),
+          ),
+        )
+        .limit(1),
+    )) as Array<AgentSessionAgentCandidate>;
+
+    if (!agent) {
+      auditAgentSessionReject(ctx, {
+        userId: sessionRecord.userId,
+        agentId: sessionRecord.agentId,
+        result: "denied",
+        reason: "session_agent_not_found",
+      });
+      return yield* Effect.fail(unauthorized("Invalid agent session"));
+    }
+
+    if (!agent.enabled) {
+      auditAgentSessionReject(ctx, {
+        userId: agent.userId,
+        agentId: agent.id,
+        result: "denied",
+        reason: "session_agent_disabled",
+      });
+      return yield* Effect.fail(unauthorized("Invalid agent session"));
+    }
+
+    if (agent.revokedAt) {
+      auditAgentSessionReject(ctx, {
+        userId: agent.userId,
+        agentId: agent.id,
+        result: "revoked",
+        reason: "session_agent_revoked",
+      });
+      return yield* Effect.fail(unauthorized("Invalid agent session"));
+    }
+
+    touchAgent(ctx, agent.id);
+    touchAgentSession(ctx, sessionRecord.id);
+    return toAgentIdentity(agent);
+  });
+
 export const resolveSessionIdentity = (
   ctx: BaseRequestContext,
 ): Effect.Effect<SessionIdentity, Error | UnauthorizedError> =>
@@ -245,6 +378,11 @@ export const resolveAgentIdentity = (
 ): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
   Effect.gen(function* () {
     const token = yield* getBearerToken(ctx);
+    const sessionIdentity = yield* verifyAgentSessionIdentity(ctx, token);
+    if (sessionIdentity) {
+      return sessionIdentity;
+    }
+
     const agentIdentity = yield* verifyLocalAgentIdentity(ctx, token);
     if (agentIdentity) {
       return agentIdentity;

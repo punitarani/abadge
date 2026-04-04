@@ -1,154 +1,145 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { startDaemon, stopDaemon } from "@abadge/daemon";
 import { Command } from "commander";
-import { requireSessionConfig } from "../config";
-import {
-  clearDaemonProcessState,
-  daemonProcessRunning,
-  daemonStatus,
-  serveDaemon,
-  stopDaemonProcess,
-} from "../daemon";
-import { error, errorMessage, success } from "../output";
+import { DEFAULT_API_URL, loadConfig, requireConfig } from "../config";
+import { daemonStatus, SOCKET_PATH } from "../daemon";
+import { error, success } from "../output";
 
-const READY_POLL_INTERVAL_MS = 100;
-const READY_MAX_ATTEMPTS = 30;
+export function createDaemonCommand(): Command {
+  const cmd = new Command("daemon").description("Manage local daemon");
 
-function isPidRunning(pid: number | undefined): boolean {
-  if (!pid) {
-    return false;
-  }
+  cmd.command("start").description("Start the daemon").action(daemonStart);
 
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  cmd.command("stop").description("Stop the daemon").action(daemonStop);
+
+  cmd.command("status").description("Show daemon status").action(daemonStatusCmd);
+
+  return cmd;
 }
 
-async function waitForDaemonReady(
-  childPid: number | undefined,
-): Promise<"ready" | "exited" | "timeout"> {
-  for (let attempt = 0; attempt < READY_MAX_ATTEMPTS; attempt += 1) {
-    if (daemonProcessRunning()) {
-      try {
-        await daemonStatus();
-        return "ready";
-      } catch {
-        // Socket exists but the daemon is not fully responding yet.
-      }
-    }
-
-    if (!isPidRunning(childPid) && !daemonProcessRunning()) {
-      return "exited";
-    }
-
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, READY_POLL_INTERVAL_MS));
-  }
-
-  return "timeout";
-}
-
-export function resolveCurrentCliCommand(
-  entrypoint: string | undefined = process.argv[1],
-  execPath: string = process.execPath,
-): { command: string; args: string[] } {
-  if (entrypoint?.endsWith(".ts")) {
-    return {
-      command: execPath,
-      args: [resolve(entrypoint), "daemon", "serve"],
-    };
-  }
-
-  return {
-    command: execPath,
-    args: [entrypoint ?? execPath, "daemon", "serve"],
-  };
+export function createDaemonServeCommand(): Command {
+  return new Command("__daemon-serve")
+    .requiredOption("--api-url <url>", "API URL")
+    .action(async (opts: { apiUrl: string }) => {
+      startDaemon({ apiUrl: opts.apiUrl });
+      await new Promise(() => {});
+    });
 }
 
 async function daemonStart(): Promise<void> {
-  requireSessionConfig();
+  const config = requireConfig();
+  const outcome = await ensureDaemonRunning(config.apiUrl);
+  if (outcome === "already_running") {
+    success("Daemon is already running.");
+  }
+}
 
-  if (daemonProcessRunning()) {
+export async function ensureDaemonRunning(apiUrl: string): Promise<"started" | "already_running"> {
+  if (existsSync(SOCKET_PATH)) {
     try {
-      await daemonStatus();
-      success("Daemon is already running.");
-      return;
+      const res = await daemonStatus();
+      if (res.ok) {
+        return "already_running";
+      }
     } catch {
-      clearDaemonProcessState();
+      // Socket exists but daemon is dead — proceed to start
     }
   }
 
-  const current = resolveCurrentCliCommand();
-  const child = spawn(current.command, current.args, {
+  const command = resolveDaemonCommand();
+  const child = spawn(command.executable, [...command.args, "--api-url", apiUrl], {
     detached: true,
     stdio: "ignore",
   });
   child.unref();
 
-  const readyState = await waitForDaemonReady(child.pid);
-  if (readyState === "ready") {
-    success(`Daemon started (pid ${child.pid ?? "unknown"}).`);
-    return;
-  }
-
-  if (readyState === "exited") {
-    clearDaemonProcessState();
-    error("Daemon exited before it became ready. Check `abadge daemon status`.");
+  const ready = await waitForDaemonReady();
+  if (!ready) {
+    if (child.pid) {
+      try {
+        process.kill(child.pid, "SIGTERM");
+      } catch {
+        // Child may already have exited.
+      }
+    }
+    error("Daemon failed to become ready.");
     process.exit(1);
   }
 
-  if (child.pid) {
-    try {
-      process.kill(child.pid, "SIGTERM");
-    } catch {
-      // Child may already be gone.
-    }
-  }
-
-  clearDaemonProcessState();
-  error("Daemon failed to become ready in time.");
-  process.exit(1);
+  success(`Daemon started (pid ${child.pid}).`);
+  return "started";
 }
 
 async function daemonStop(): Promise<void> {
-  if (!stopDaemonProcess()) {
-    success("Daemon is already stopped.");
-    return;
+  const stopped = stopDaemon();
+  if (!stopped) {
+    error("Daemon is not running.");
+    process.exit(1);
   }
 
   success("Daemon stopped.");
 }
 
 async function daemonStatusCmd(): Promise<void> {
-  if (!daemonProcessRunning()) {
+  try {
+    const res = await daemonStatus();
+    if (res.ok) {
+      console.log("Daemon: running");
+      const data = res.data as Record<string, unknown> | undefined;
+      if (data) {
+        for (const [k, v] of Object.entries(data)) {
+          console.log(`  ${k}: ${String(v)}`);
+        }
+      }
+    } else {
+      error(`Daemon error: ${res.error ?? "unknown"}`);
+    }
+  } catch {
     error("Daemon is not running.");
     process.exit(1);
   }
+}
 
-  try {
-    const status = await daemonStatus();
-    console.log("Daemon: running");
-    console.log(`  locked: ${String(status.locked)}`);
-    console.log(`  keyVersion: ${String(status.keyVersion)}`);
-  } catch (err) {
-    error(errorMessage(err, "Daemon is running but not responding correctly."));
-    process.exit(1);
+interface DaemonCommandTarget {
+  executable: string;
+  args: string[];
+}
+
+export function resolveDaemonCommand(
+  entrypoint: string | undefined = process.argv[1],
+  execPath: string = process.execPath,
+): DaemonCommandTarget {
+  if (entrypoint && (entrypoint.endsWith(".ts") || entrypoint.endsWith(".js"))) {
+    return {
+      executable: execPath,
+      args: [entrypoint, "__daemon-serve"],
+    };
   }
+
+  return {
+    executable: execPath,
+    args: [entrypoint ?? execPath, "__daemon-serve"],
+  };
 }
 
-export function createDaemonCommand(): Command {
-  const cmd = new Command("daemon").description("Manage local daemon");
-
-  cmd.command("start").description("Start the daemon").action(daemonStart);
-  cmd.command("stop").description("Stop the daemon").action(daemonStop);
-  cmd.command("status").description("Show daemon status").action(daemonStatusCmd);
-  cmd.addCommand(createDaemonServeCommand(), { hidden: true });
-
-  return cmd;
+export function resolveDaemonApiUrl(): string {
+  return loadConfig()?.apiUrl ?? DEFAULT_API_URL;
 }
 
-export function createDaemonServeCommand(): Command {
-  return new Command("serve").description("Run the daemon process").action(serveDaemon);
+async function waitForDaemonReady(): Promise<boolean> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const status = await daemonStatus();
+      if (status.ok) {
+        return true;
+      }
+    } catch {
+      // Daemon not ready yet.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return false;
 }
