@@ -40,6 +40,9 @@ and a local CLI agent key for principal-authenticated access commands:
 }
 ```
 
+The config file is written with `0600` permissions. The session cookie and local CLI agent secret are
+stored in plaintext in that file, so treat it like an auth credential.
+
 The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ## Commands
@@ -53,6 +56,9 @@ reusable local CLI agent exists for `run` and `mount`.
 abadge login --api-url http://localhost:8787
 abadge login --api-url http://localhost:8787 --email user@example.com --password password123
 ```
+
+Prefer the interactive password prompt. `--password` is supported for automation, but it exposes the
+password to shell history and process listings.
 
 ### `abadge daemon start`
 
@@ -284,8 +290,18 @@ Fetches the recent audit log.
 
 ```bash
 abadge audit
+abadge audit --limit 100
+abadge audit --cursor <cursor>
 abadge audit --json
 ```
+
+Flags:
+
+| Flag | Description |
+|------|-------------|
+| `--limit` | Maximum number of entries to return |
+| `--cursor` | Pagination cursor from a previous response |
+| `--json` | Print raw JSON |
 
 ## Global options
 

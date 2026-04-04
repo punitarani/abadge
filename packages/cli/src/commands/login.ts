@@ -140,13 +140,13 @@ async function ensureLocalCliAgent(
   existingAgentKey?: string,
 ): Promise<LocalCliAgentResult> {
   const existingAgent = await getExistingLocalCliAgent(client, existingAgentId, sessionUserId);
-  if (!existingAgent) {
-    return createLocalCliAgent(client);
-  }
-
   const reusedAgent = await reuseExistingAgentKey(apiUrl, sessionUserId, existingAgentKey);
   if (reusedAgent) {
     return reusedAgent;
+  }
+
+  if (!existingAgent) {
+    return createLocalCliAgent(client);
   }
 
   const rotatedAgent = await rotateExistingAgent(client, existingAgent.id);

@@ -29,8 +29,6 @@ export async function daemonStatus(): Promise<VaultStatus> {
   return withDaemonClient((client) => client.status());
 }
 
-export const daemonVaultStatus = daemonStatus;
-
 export async function daemonChangePassword(
   oldPassword: string,
   newPassword: string,

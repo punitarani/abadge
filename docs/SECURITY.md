@@ -129,6 +129,18 @@ Current limits:
 | agent secret | hash + prefix only |
 | audit log | metadata only, no secret values |
 
+## CLI local storage
+
+The local CLI stores operator auth state in `~/.abadge/config.json` with `0600` file permissions.
+
+Stored fields:
+
+* `sessionCookie` for session-authenticated control-plane commands
+* `principalSecret` for local agent-authenticated access commands
+
+Both values are stored in plaintext on disk by design for the current local CLI flow. A stolen config
+file gives the attacker whatever session and local-agent access those credentials still allow.
+
 ## What the server does not do
 
 The current worker will not:

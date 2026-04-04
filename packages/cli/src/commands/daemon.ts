@@ -138,10 +138,6 @@ async function daemonStatusCmd(): Promise<void> {
   }
 }
 
-async function daemonServe(): Promise<void> {
-  serveDaemon();
-}
-
 export function createDaemonCommand(): Command {
   const cmd = new Command("daemon").description("Manage local daemon");
 
@@ -154,7 +150,5 @@ export function createDaemonCommand(): Command {
 }
 
 export function createDaemonServeCommand(): Command {
-  return new Command("serve").description("Run the daemon process").action(async () => {
-    await daemonServe();
-  });
+  return new Command("serve").description("Run the daemon process").action(serveDaemon);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@abadge/sdk",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Official TypeScript SDK for the abadge zero-knowledge vault API",
   "license": "MIT",
   "homepage": "https://github.com/punitarani/abadge#readme",

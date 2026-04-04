@@ -210,7 +210,7 @@ main() {
 
   asset_name="$(asset_archive_name_for_version_target "$version" "$asset_target")"
   tmpdir="$(mktemp -d)"
-  trap "rm -rf '$tmpdir'" EXIT
+  trap "rm -rf \"$tmpdir\"" EXIT
 
   asset_path="$tmpdir/$asset_name"
   checksum_path="$tmpdir/SHA256SUMS"
