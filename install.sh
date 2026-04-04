@@ -155,6 +155,7 @@ semver_sort_key() {
 
 latest_cli_version_from_releases_json() {
   local releases_json best_version best_key version key
+  local LC_ALL=C
   releases_json="$1"
   best_version=""
   best_key=""

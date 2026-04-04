@@ -50,18 +50,20 @@ async function waitForDaemonReady(
   return "timeout";
 }
 
-function resolveCurrentCliCommand(): { command: string; args: string[] } {
-  const entrypoint = process.argv[1];
+export function resolveCurrentCliCommand(
+  entrypoint: string | undefined = process.argv[1],
+  execPath: string = process.execPath,
+): { command: string; args: string[] } {
   if (entrypoint?.endsWith(".ts")) {
     return {
-      command: process.execPath,
+      command: execPath,
       args: [resolve(entrypoint), "daemon", "serve"],
     };
   }
 
   return {
-    command: process.execPath,
-    args: ["daemon", "serve"],
+    command: execPath,
+    args: [entrypoint ?? execPath, "daemon", "serve"],
   };
 }
 

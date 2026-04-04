@@ -64,7 +64,6 @@ export function saveConfig(config: CliConfig): void {
         sessionCookie: normalized.sessionCookie,
         principalId: normalized.principalId,
         principalSecret: normalized.principalSecret,
-        authToken: normalized.principalSecret,
       },
       null,
       2,

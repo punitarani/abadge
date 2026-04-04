@@ -297,6 +297,35 @@ interface SessionResponse {
   user?: { id: string; email: string };
 }
 
+function hasVerifiedSessionUser(session: SessionResponse | undefined): boolean {
+  return typeof session?.user?.id === "string" && session.user.id.length > 0;
+}
+
+async function fetchVerifiedSession(
+  baseUrl: string,
+  sessionCookie: string,
+): Promise<SessionResponse> {
+  const sessionRes = await fetch(`${baseUrl}/api/auth/get-session`, {
+    headers: {
+      Accept: "application/json",
+      Cookie: sessionCookie,
+    },
+  });
+
+  if (!sessionRes.ok) {
+    throw new Error(
+      `Authenticated successfully but failed to verify session (${sessionRes.status}).`,
+    );
+  }
+
+  const session = (await sessionRes.json()) as SessionResponse;
+  if (!hasVerifiedSessionUser(session)) {
+    throw new Error("Authenticated successfully but could not verify the session.");
+  }
+
+  return session;
+}
+
 function getErrorMessage(body: unknown, fallback: string): string {
   if (!body || typeof body !== "object") {
     return fallback;
@@ -328,29 +357,18 @@ export async function signInWithEmail(
     body: JSON.stringify({ email, password }),
   });
 
+  const responseBody = (await res.json().catch(() => undefined)) as SessionResponse | undefined;
+
   if (!res.ok) {
-    const errorBody = (await res.json().catch(() => undefined)) as unknown;
+    const errorBody = responseBody as unknown;
     throw new Error(getErrorMessage(errorBody, `Login failed (${res.status})`));
   }
 
   const sessionCookie = toCookieHeader(getSetCookieHeaders(res.headers));
-  const sessionRes = await fetch(`${baseUrl}/api/auth/get-session`, {
-    headers: {
-      Accept: "application/json",
-      Cookie: sessionCookie,
-    },
-  });
-
-  if (!sessionRes.ok) {
-    throw new Error(
-      `Authenticated successfully but failed to verify session (${sessionRes.status}).`,
-    );
+  if (hasVerifiedSessionUser(responseBody)) {
+    return { sessionCookie, session: responseBody };
   }
 
-  const session = (await sessionRes.json()) as SessionResponse;
-  if (!session.user?.id) {
-    throw new Error("Authenticated successfully but could not verify the session.");
-  }
-
+  const session = await fetchVerifiedSession(baseUrl, sessionCookie);
   return { sessionCookie, session };
 }
