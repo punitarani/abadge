@@ -138,9 +138,15 @@ export default function HomePage() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <Link
+            href="/security"
+            className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
+          >
+            Security
+          </Link>
           <a
             href="https://docs.abadge.io"
-            className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
+            className="border border-black bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
           >
             Docs
           </a>
