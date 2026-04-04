@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { startDaemon, stopDaemon } from "@abadge/daemon";
 import { Command } from "commander";
-import { requireConfig } from "../config";
+import { DEFAULT_API_URL, loadConfig, requireConfig } from "../config";
 import { daemonStatus, SOCKET_PATH } from "../daemon";
 import { error, success } from "../output";
 
@@ -21,36 +21,37 @@ export function createDaemonCommand(): Command {
 export function createDaemonServeCommand(): Command {
   return new Command("__daemon-serve")
     .requiredOption("--api-url <url>", "API URL")
-    .requiredOption("--token <token>", "Auth token")
-    .action(async (opts: { apiUrl: string; token: string }) => {
-      startDaemon({ apiUrl: opts.apiUrl, authToken: opts.token });
+    .action(async (opts: { apiUrl: string }) => {
+      startDaemon({ apiUrl: opts.apiUrl });
       await new Promise(() => {});
     });
 }
 
 async function daemonStart(): Promise<void> {
+  const config = requireConfig();
+  const outcome = await ensureDaemonRunning(config.apiUrl);
+  if (outcome === "already_running") {
+    success("Daemon is already running.");
+  }
+}
+
+export async function ensureDaemonRunning(apiUrl: string): Promise<"started" | "already_running"> {
   if (existsSync(SOCKET_PATH)) {
     try {
       const res = await daemonStatus();
       if (res.ok) {
-        success("Daemon is already running.");
-        return;
+        return "already_running";
       }
     } catch {
       // Socket exists but daemon is dead — proceed to start
     }
   }
 
-  const config = requireConfig();
   const command = resolveDaemonCommand();
-  const child = spawn(
-    command.executable,
-    [...command.args, "--api-url", config.apiUrl, "--token", config.token],
-    {
-      detached: true,
-      stdio: "ignore",
-    },
-  );
+  const child = spawn(command.executable, [...command.args, "--api-url", apiUrl], {
+    detached: true,
+    stdio: "ignore",
+  });
   child.unref();
 
   const ready = await waitForDaemonReady();
@@ -67,6 +68,7 @@ async function daemonStart(): Promise<void> {
   }
 
   success(`Daemon started (pid ${child.pid}).`);
+  return "started";
 }
 
 async function daemonStop(): Promise<void> {
@@ -117,6 +119,10 @@ function resolveDaemonCommand(): DaemonCommandTarget {
     executable: process.execPath,
     args: ["__daemon-serve"],
   };
+}
+
+export function resolveDaemonApiUrl(): string {
+  return loadConfig()?.apiUrl ?? DEFAULT_API_URL;
 }
 
 async function waitForDaemonReady(): Promise<boolean> {

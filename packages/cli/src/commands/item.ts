@@ -1,7 +1,7 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
+import type { ItemResult } from "@abadge/sdk";
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requireConfig } from "../config";
+import { clearOperatorSessionIfExpired, createOperatorClient } from "../client";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
@@ -28,9 +28,6 @@ export function createItemCommand(): Command {
     .command("create")
     .description("Create a new vault item")
     .action(async () => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       const label = await prompt("Label: ");
       const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
       const value = await prompt("Value (secret): ", true);
@@ -46,6 +43,7 @@ export function createItemCommand(): Command {
       }
 
       try {
+        const client = await createOperatorClient();
         const encrypted = await encryptPayload({ v: 1, label, kind, tags: [], fields: { value } });
         const result = await client.createItem({
           storageMode: "zero_knowledge",
@@ -55,6 +53,7 @@ export function createItemCommand(): Command {
         success("Item created.");
         json(result);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to create item."));
         process.exit(1);
       }
@@ -65,10 +64,8 @@ export function createItemCommand(): Command {
     .description("List all vault items")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         const items = (await client.listItems()).items;
 
         if (opts.json) {
@@ -77,15 +74,16 @@ export function createItemCommand(): Command {
         }
 
         table(
-          items.map((i) => ({
-            ID: i.id,
-            Storage: i.storageMode,
-            Crypto: String(i.cryptoVersion),
-            Version: String(i.contentVersion),
-            Created: i.createdAt,
+          items.map((item) => ({
+            ID: item.id,
+            Storage: item.storageMode,
+            Crypto: String(item.cryptoVersion),
+            Version: String(item.contentVersion),
+            Created: item.createdAt,
           })),
         );
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to list items."));
         process.exit(1);
       }
@@ -96,10 +94,8 @@ export function createItemCommand(): Command {
     .description("Get a vault item")
     .argument("<id>", "Item ID")
     .action(async (id: string) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         const item = (await client.getItem(id)).item;
 
         if (item.storageMode === "zero_knowledge") {
@@ -114,14 +110,15 @@ export function createItemCommand(): Command {
             }
             error("Vault is locked or decryption failed. Run `abadge vault unlock` first.");
             json(item);
+            return;
           } catch {
             error("Cannot decrypt — daemon unavailable. Showing encrypted item.");
-            json(item);
           }
-        } else {
-          json(item);
         }
+
+        json(item);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to get item."));
         process.exit(1);
       }
@@ -133,13 +130,14 @@ export function createItemCommand(): Command {
     .argument("<id>", "Item ID")
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
+      let client: Awaited<ReturnType<typeof createOperatorClient>>;
+      let currentItem: ItemResult["item"];
 
-      let currentItem: Awaited<ReturnType<typeof client.getItem>>["item"];
       try {
+        client = await createOperatorClient();
         currentItem = (await client.getItem(id)).item;
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to fetch item."));
         process.exit(1);
       }
@@ -160,8 +158,7 @@ export function createItemCommand(): Command {
 
       try {
         const payload = { v: 1, label, kind, tags: [] as string[], fields: { value } };
-        let result: { ok: boolean; contentVersion: number };
-
+        let result: Awaited<ReturnType<typeof client.updateItem>>;
         if (currentItem.storageMode === "zero_knowledge") {
           const encrypted = await encryptPayload(payload);
           result = await client.updateItem(id, {
@@ -180,10 +177,12 @@ export function createItemCommand(): Command {
 
         if (opts.json) {
           json(result);
-        } else {
-          success(`Item ${id} updated (version ${result.contentVersion}).`);
+          return;
         }
+
+        success(`Item ${id} updated (version ${result.contentVersion}).`);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to update item."));
         process.exit(1);
       }
@@ -203,13 +202,12 @@ export function createItemCommand(): Command {
         }
       }
 
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         await client.deleteItem(id);
         success(`Item ${id} deleted.`);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to delete item."));
         process.exit(1);
       }

@@ -106,7 +106,9 @@
         "abadge": "./bin/abadge.ts",
       },
       "dependencies": {
+        "@abadge/auth": "workspace:*",
         "@abadge/core": "workspace:*",
+        "@abadge/crypto": "workspace:*",
         "@abadge/daemon": "workspace:*",
         "@abadge/sdk": "workspace:*",
         "commander": "^13.1.0",
@@ -191,6 +193,7 @@
         "abadge-mcp": "./src/index.ts",
       },
       "dependencies": {
+        "@abadge/crypto": "workspace:*",
         "@abadge/daemon": "workspace:*",
         "@abadge/sdk": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.12.0",
@@ -205,6 +208,7 @@
       "name": "@abadge/sdk",
       "version": "0.1.0",
       "dependencies": {
+        "@abadge/core": "workspace:*",
         "@trpc/client": "^11.0.0",
       },
       "devDependencies": {

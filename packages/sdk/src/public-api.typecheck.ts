@@ -15,7 +15,7 @@ type _AgentCreateInput = Assert<CreateAgentInput["kind"] extends string ? true :
 type _PermissionFilters = Assert<
   PermissionFilters["agentId"] extends string | undefined ? true : false
 >;
-type _AgentWithKeyUsesApiKey = Assert<AgentWithKey["apiKey"] extends string ? true : false>;
+type _AgentWithKeyUsesApiKey = Assert<AgentWithKey["apiKey"] extends string | null ? true : false>;
 type _PermissionCreateInput = Assert<
   CreatePermissionInput["agentId"] extends string ? true : false
 >;

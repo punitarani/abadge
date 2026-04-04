@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@abadge/auth": "workspace:*",
     "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
     "@abadge/daemon": "workspace:*",
     "@abadge/sdk": "workspace:*",
     "commander": "^13.1.0"

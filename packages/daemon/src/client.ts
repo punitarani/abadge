@@ -7,6 +7,8 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
   MountExecResult,
+  OperatorSessionConfig,
+  OperatorSessionResult,
   RekeyItemResult,
   VaultStatus,
 } from "./types";
@@ -71,6 +73,25 @@ export class DaemonClient {
       ok: boolean;
       keyVersion: number;
     };
+  }
+
+  async setOperatorSession(session: OperatorSessionConfig): Promise<OperatorSessionResult> {
+    return (await this.send(
+      "auth.setSession",
+      session as unknown as Record<string, unknown>,
+    )) as OperatorSessionResult;
+  }
+
+  async clearOperatorSession(): Promise<OperatorSessionResult> {
+    return (await this.send("auth.clearSession")) as OperatorSessionResult;
+  }
+
+  async operatorStatus(): Promise<OperatorSessionResult> {
+    return (await this.send("auth.status")) as OperatorSessionResult;
+  }
+
+  async operatorToken(): Promise<OperatorSessionResult> {
+    return (await this.send("auth.token")) as OperatorSessionResult;
   }
 
   /** Lock the vault, zeroing the root key. */
