@@ -2,6 +2,16 @@
   "name": "@abadge/sdk",
   "version": "0.0.1",
   "description": "Official TypeScript SDK for the abadge zero-knowledge vault API",
+  "license": "MIT",
+  "homepage": "https://github.com/punitarani/abadge#readme",
+  "bugs": {
+    "url": "https://github.com/punitarani/abadge/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/punitarani/abadge.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "exports": {
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
@@ -9,6 +19,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit"
