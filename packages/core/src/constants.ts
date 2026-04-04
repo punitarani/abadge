@@ -18,6 +18,9 @@ export type AgentKind = (typeof AGENT_KINDS)[number];
 export const AGENT_LOCALITIES = ["local", "remote"] as const;
 export type AgentLocality = (typeof AGENT_LOCALITIES)[number];
 
+export const PRINCIPAL_AUTH_METHODS = ["public_key_session", "legacy_api_key"] as const;
+export type PrincipalAuthMethod = (typeof PRINCIPAL_AUTH_METHODS)[number];
+
 export const CAPABILITIES = [
   "read_ciphertext",
   "reveal_plaintext",
@@ -36,9 +39,16 @@ export const AUDIT_EVENT_TYPES = [
   "item.read",
   "item.update",
   "item.delete",
+  "auth.login",
+  "auth.logout",
   "agent.create",
+  "agent.bootstrap_issue",
+  "agent.enroll",
   "agent.rotate",
   "agent.revoke",
+  "agent.session_issue",
+  "agent.session_reject",
+  "agent.session_revoke",
   "permission.create",
   "permission.revoke",
   "access.ciphertext",
@@ -56,6 +66,9 @@ export const API_KEY_PREFIX = {
   remote: "abg_",
   local: "abl_",
 } as const;
+
+export const AGENT_SESSION_PREFIX = "abs_";
+export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind): AgentLocality {
@@ -81,6 +94,13 @@ export type ErrorCode =
   | "ITEM_NOT_FOUND"
   | "AGENT_NOT_FOUND"
   | "AGENT_REVOKED"
+  | "AGENT_NOT_ENROLLED"
+  | "AGENT_ALREADY_ENROLLED"
+  | "AGENT_CHALLENGE_NOT_FOUND"
+  | "AGENT_CHALLENGE_EXPIRED"
+  | "AGENT_SESSION_NOT_FOUND"
+  | "INVALID_BOOTSTRAP_TOKEN"
+  | "BOOTSTRAP_TOKEN_EXPIRED"
   | "PERMISSION_NOT_FOUND"
   | "PERMISSION_DENIED"
   | "PERMISSION_EXPIRED"

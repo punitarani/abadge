@@ -4,6 +4,7 @@ import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand, createDaemonServeCommand } from "./commands/daemon";
 import { createItemCommand } from "./commands/item";
 import { createLoginCommand } from "./commands/login";
+import { createLogoutCommand } from "./commands/logout";
 import { createMountCommand } from "./commands/mount";
 import { createPermissionCommand } from "./commands/permission";
 import { createRunCommand } from "./commands/run";
@@ -15,6 +16,7 @@ const program = new Command()
   .version("0.1.0", "-v, --version");
 
 program.addCommand(createLoginCommand());
+program.addCommand(createLogoutCommand());
 program.addCommand(createDaemonCommand());
 program.addCommand(createVaultCommand());
 program.addCommand(createItemCommand());

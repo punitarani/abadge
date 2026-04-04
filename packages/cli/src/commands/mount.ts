@@ -1,8 +1,8 @@
 import { Command } from "commander";
-import { ApiClient } from "../client";
 import { requireConfig } from "../config";
 import { daemonExecMount } from "../daemon";
 import { error, errorMessage, success } from "../output";
+import { createRuntimeClient } from "../runtime-agent";
 import { resolveSecretValue } from "../secret";
 
 export function createMountCommand(): Command {
@@ -11,7 +11,7 @@ export function createMountCommand(): Command {
     .requiredOption("--item <id>", "Item ID")
     .action(async (opts: { item: string }) => {
       try {
-        const client = new ApiClient(requireConfig());
+        const client = await createRuntimeClient("local_cli", requireConfig());
         const secretValue = await resolveSecretValue(client, opts.item, "file");
         const res = await daemonExecMount(secretValue);
         if (!res.ok) {
@@ -22,9 +22,10 @@ export function createMountCommand(): Command {
         const data = res.data as { path?: string } | undefined;
         if (data?.path) {
           success(`Mounted at: ${data.path}`);
-        } else {
-          success("Item mounted.");
+          return;
         }
+
+        success("Item mounted.");
       } catch (err) {
         error(errorMessage(err, "Failed to communicate with daemon."));
         process.exit(1);

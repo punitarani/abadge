@@ -1,7 +1,6 @@
 import { CAPABILITIES, type Capability } from "@abadge/core";
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requireConfig } from "../config";
+import { clearOperatorSessionIfExpired, createOperatorClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createPermissionCommand(): Command {
@@ -20,24 +19,23 @@ export function createPermissionCommand(): Command {
           error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
           process.exit(1);
         }
-        const capability = opts.capability as Capability;
-
-        const config = requireConfig();
-        const client = new ApiClient(config);
 
         try {
+          const client = await createOperatorClient();
           const result = await client.createPermission({
             agentId: opts.agentId,
             itemId: opts.itemId,
-            capability,
+            capability: opts.capability as Capability,
           });
 
           if (opts.json) {
             json(result);
-          } else {
-            success("Permission created.");
+            return;
           }
+
+          success("Permission created.");
         } catch (err) {
+          await clearOperatorSessionIfExpired(err);
           error(errorMessage(err, "Failed to create permission."));
           process.exit(1);
         }
@@ -49,10 +47,8 @@ export function createPermissionCommand(): Command {
     .description("List all permissions")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         const permissions = (await client.listPermissions()).permissions;
 
         if (opts.json) {
@@ -70,6 +66,7 @@ export function createPermissionCommand(): Command {
           })),
         );
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to list permissions."));
         process.exit(1);
       }
@@ -80,13 +77,12 @@ export function createPermissionCommand(): Command {
     .description("Revoke a permission")
     .argument("<id>", "Permission ID")
     .action(async (id: string) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         await client.revokePermission(id);
         success(`Permission ${id} revoked.`);
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to revoke permission."));
         process.exit(1);
       }

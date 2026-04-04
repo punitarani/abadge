@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,15 @@ import type { SocialProvider } from "@/lib/auth-client";
 import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
+  const redirectPath = searchParams.get("redirect") || "/items";
 
   useEffect(() => {
     const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));
@@ -39,7 +41,7 @@ export default function LoginPage() {
       if (signInError) {
         setError(signInError.message ?? "Sign in failed");
       } else {
-        router.push("/items");
+        router.push(redirectPath);
       }
     } catch {
       setError("An unexpected error occurred");
@@ -56,7 +58,7 @@ export default function LoginPage() {
       const currentURL = new URL(window.location.href);
       const { error: socialError } = await authClient.signIn.social({
         provider,
-        callbackURL: `${currentURL.origin}/items`,
+        callbackURL: `${currentURL.origin}${redirectPath}`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
@@ -126,5 +128,24 @@ export default function LoginPage() {
         </p>
       </div>
     </AuthShell>
+  );
+}
+
+function LoginPageFallback(): React.ReactElement {
+  return (
+    <AuthShell>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+        <p className="text-sm text-muted-foreground">Loading sign-in options...</p>
+      </div>
+    </AuthShell>
+  );
+}
+
+export default function LoginPage(): React.ReactElement {
+  return (
+    <Suspense fallback={<LoginPageFallback />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

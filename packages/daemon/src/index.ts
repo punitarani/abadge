@@ -8,6 +8,8 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   MountExecResult,
+  OperatorSessionConfig,
+  OperatorSessionResult,
   RekeyItemResult,
   VaultStatus,
 } from "./types";

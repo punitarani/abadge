@@ -29,11 +29,19 @@ export default function NewAgentPage(): React.ReactElement {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [registration, setRegistration] = useState<{
+    apiKey: string | null;
+    bootstrapToken: string | null;
+    bootstrapExpiresAt: string | null;
+  } | null>(null);
   const createAgent = useMutation(
     trpc.agents.create.mutationOptions({
       onSuccess: async (result) => {
-        setApiKey(result.apiKey);
+        setRegistration({
+          apiKey: result.apiKey,
+          bootstrapToken: result.bootstrapToken,
+          bootstrapExpiresAt: result.bootstrapExpiresAt,
+        });
         await queryClient.invalidateQueries({
           queryKey: dashboardQueryKeys.agents(),
         });
@@ -58,18 +66,27 @@ export default function NewAgentPage(): React.ReactElement {
     }
   }
 
-  if (apiKey) {
+  if (registration) {
     return (
       <div className="max-w-lg space-y-6">
         <div>
           <h1 className="text-lg font-semibold">Agent registered</h1>
           <p className="text-sm text-muted-foreground">
-            Copy the API key below. It will not be shown again.
+            Copy the credential below. It will not be shown again.
           </p>
         </div>
 
         <div className="space-y-4 rounded-lg border border-border p-5">
-          <SecretDisplay value={apiKey} />
+          <SecretDisplay value={registration.apiKey ?? registration.bootstrapToken ?? ""} />
+
+          {registration.bootstrapToken ? (
+            <p className="text-sm text-muted-foreground">
+              This bootstrap token can be redeemed exactly once to enroll the agent keypair.
+              {registration.bootstrapExpiresAt
+                ? ` Expires at ${registration.bootstrapExpiresAt}.`
+                : ""}
+            </p>
+          ) : null}
 
           <Button onClick={() => router.push("/agents")} className="w-full" size="sm">
             Done
@@ -84,7 +101,8 @@ export default function NewAgentPage(): React.ReactElement {
       <div>
         <h1 className="text-lg font-semibold">Register agent</h1>
         <p className="text-sm text-muted-foreground">
-          Create a new agent or service identity and get an API key
+          Create a new agent or service identity. Remote agents use one-time enrollment tokens by
+          default.
         </p>
       </div>
 

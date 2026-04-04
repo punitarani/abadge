@@ -15,6 +15,7 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
+    "@abadge/crypto": "workspace:*",
     "@abadge/daemon": "workspace:*",
     "@abadge/sdk": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",

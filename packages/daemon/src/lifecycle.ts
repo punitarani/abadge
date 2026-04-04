@@ -26,7 +26,7 @@ function readPid(pidPath: string): number | null {
 }
 
 function writePid(pidPath: string): void {
-  mkdirSync(dirname(pidPath), { recursive: true });
+  mkdirSync(dirname(pidPath), { recursive: true, mode: 0o700 });
   // biome-ignore lint/style/noRestrictedGlobals: daemon requires process.pid
   writeFileSync(pidPath, String(process.pid), { mode: 0o600 });
 }

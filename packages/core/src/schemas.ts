@@ -5,6 +5,7 @@ import {
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
+  PRINCIPAL_AUTH_METHODS,
   STORAGE_MODES,
 } from "./constants";
 
@@ -17,6 +18,7 @@ const NullableIsoDateString = Schema.NullOr(IsoDateString);
 export const StorageModeSchema = Schema.Literal(...STORAGE_MODES);
 export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
 export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
+export const PrincipalAuthMethodSchema = Schema.Literal(...PRINCIPAL_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
@@ -97,7 +99,34 @@ export const UpdateItemSchema = Schema.Union(
 export const CreateAgentSchema = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
+  authMethod: Schema.optional(PrincipalAuthMethodSchema),
+  publicKey: Schema.optional(NonEmptyString),
+  issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
+});
+
+export const IssueAgentBootstrapTokenSchema = Schema.Struct({
+  agentId: NonEmptyString,
+});
+
+export const EnrollAgentSchema = Schema.Struct({
+  bootstrapToken: NonEmptyString,
+  publicKey: NonEmptyString,
+});
+
+export const CreateAgentChallengeSchema = Schema.Struct({
+  agentId: NonEmptyString,
+});
+
+export const ExchangeAgentSessionSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  challengeId: NonEmptyString,
+  challenge: NonEmptyString,
+  signature: NonEmptyString,
+});
+
+export const RevokeAgentSessionSchema = Schema.Struct({
+  token: NonEmptyString,
 });
 
 export const CreatePermissionSchema = Schema.Struct({
@@ -183,7 +212,9 @@ export const AgentSchema = Schema.Struct({
   userId: NonEmptyString,
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
+  authMethod: PrincipalAuthMethodSchema,
   name: NonEmptyString,
+  publicKeyConfigured: Schema.Boolean,
   keyPrefix: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
   revokedAt: Schema.NullOr(IsoDateString),
@@ -192,14 +223,68 @@ export const AgentSchema = Schema.Struct({
   createdAt: IsoDateString,
 });
 
-export const AgentWithKeySchema = Schema.Struct({
+export const AgentRegistrationResultSchema = Schema.Struct({
   agent: AgentSchema,
-  apiKey: NonEmptyString,
+  apiKey: Schema.NullOr(Schema.String),
+  bootstrapToken: Schema.NullOr(Schema.String),
+  bootstrapExpiresAt: Schema.NullOr(IsoDateString),
 });
+
+export const AgentWithKeySchema = AgentRegistrationResultSchema;
 
 export const AgentRotateResultSchema = Schema.Struct({
   apiKey: NonEmptyString,
   keyPrefix: NonEmptyString,
+});
+
+export const AgentBootstrapTokenResultSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  bootstrapToken: NonEmptyString,
+  expiresAt: IsoDateString,
+});
+
+export const AgentEnrollmentResultSchema = Schema.Struct({
+  agent: AgentSchema,
+  enrolledAt: IsoDateString,
+});
+
+export const AgentChallengeResultSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  challengeId: NonEmptyString,
+  challenge: NonEmptyString,
+  expiresAt: IsoDateString,
+});
+
+export const AgentSessionSchema = Schema.Struct({
+  token: NonEmptyString,
+  expiresAt: IsoDateString,
+});
+
+export const AgentSessionResultSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  session: AgentSessionSchema,
+});
+
+export const CliLocalAgentReferenceSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  privateKeyPath: NonEmptyString,
+});
+
+export const CliProfileConfigSchema = Schema.Struct({
+  apiUrl: NonEmptyString,
+  profileName: Schema.optional(NonEmptyString),
+  localAgents: Schema.optional(
+    Schema.Struct({
+      cli: Schema.optional(CliLocalAgentReferenceSchema),
+      mcp: Schema.optional(CliLocalAgentReferenceSchema),
+    }),
+  ),
+});
+
+export const DaemonOperatorSessionSchema = Schema.Struct({
+  authenticated: Schema.Boolean,
+  userId: Schema.NullOr(Schema.String),
+  expiresAt: Schema.NullOr(IsoDateString),
 });
 
 export const PermissionSchema = Schema.Struct({
