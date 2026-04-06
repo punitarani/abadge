@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build",
     "deploy": "opennextjs-cloudflare build && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
   },
   "dependencies": {
@@ -31,6 +33,9 @@
     "lucide-react": "latest"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^10.3.4",
+    "@storybook/addon-docs": "^10.3.4",
+    "@storybook/nextjs-vite": "^10.3.4",
     "@opennextjs/cloudflare": "latest",
     "@tanstack/react-query-devtools": "^5.66.0",
     "wrangler": "latest",
@@ -38,6 +43,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "storybook": "^10.3.4",
     "typescript": "^5.7.0"
   }
 }

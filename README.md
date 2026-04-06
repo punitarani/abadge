@@ -162,6 +162,8 @@ bun run lint          # Check for lint errors
 bun run lint:fix      # Auto-fix lint errors
 bun run format        # Format code
 bun run typecheck     # Type check all packages
+bun run storybook     # Start Storybook for the web UI components
+bun run storybook:build # Build the Storybook static site
 bun run db:generate   # Generate migration from schema
 bun run db:migrate    # Run pending migrations
 bun run db:push       # Push schema directly to database
