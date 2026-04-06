@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import {
@@ -39,6 +42,14 @@ function runInstallerFunction(command: string, env: Record<string, string> = {})
   }
 
   return decoder.decode(proc.stdout).trim();
+}
+
+function mergedStringEnv(env: Record<string, string> = {}): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({ ...process.env, ...env }).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }
 
 describe("release registry", () => {
@@ -105,5 +116,71 @@ describe("installer helpers", () => {
     expect(
       runInstallerFunction('asset_archive_name_for_version_target "1.2.3" "linux-x64-baseline"'),
     ).toBe("abadge-cli-v1.2.3-linux-x64-baseline.tar.gz");
+  });
+
+  test("stdin execution installs the CLI without tripping over BASH_SOURCE", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "abadge-install-test-"));
+
+    try {
+      const version = "1.2.3";
+      const assetTarget = runInstallerFunction("detect_asset_target");
+      const assetBaseName = runInstallerFunction(
+        `asset_base_name_for_version_target "${version}" "${assetTarget}"`,
+      );
+      const assetArchiveName = runInstallerFunction(
+        `asset_archive_name_for_version_target "${version}" "${assetTarget}"`,
+      );
+      const assetDir = join(tempRoot, assetBaseName);
+      const binaryPath = join(assetDir, "abadge");
+      const archivePath = join(tempRoot, assetArchiveName);
+      const installDir = join(tempRoot, "bin");
+
+      mkdirSync(assetDir, { recursive: true });
+      mkdirSync(installDir, { recursive: true });
+      writeFileSync(binaryPath, "#!/usr/bin/env bash\necho abadge-test-build\n");
+      chmodSync(binaryPath, 0o755);
+
+      const tarProc = Bun.spawnSync(["tar", "-czf", archivePath, "-C", tempRoot, assetBaseName], {
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const decoder = new TextDecoder();
+      expect(tarProc.exitCode).toBe(0);
+
+      const checksum = createHash("sha256").update(readFileSync(archivePath)).digest("hex");
+      writeFileSync(join(tempRoot, "SHA256SUMS"), `${checksum}  ${assetArchiveName}\n`);
+
+      const installProc = Bun.spawnSync(
+        ["bash", "-lc", `cat "${join(repoRoot, "install.sh")}" | bash`],
+        {
+          cwd: repoRoot,
+          env: mergedStringEnv({
+            ABADGE_INSTALL_BASE_URL: `file://${tempRoot}`,
+            ABADGE_INSTALL_DIR: installDir,
+            ABADGE_VERSION: version,
+            PATH: `${installDir}:${process.env.PATH ?? ""}`,
+          }),
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+
+      expect(installProc.exitCode).toBe(0);
+      expect(decoder.decode(installProc.stderr)).toBe("");
+      expect(readFileSync(join(installDir, "abadge"), "utf8")).toContain("abadge-test-build");
+
+      const installedBinaryProc = Bun.spawnSync([join(installDir, "abadge")], {
+        cwd: repoRoot,
+        env: mergedStringEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(installedBinaryProc.exitCode).toBe(0);
+      expect(decoder.decode(installedBinaryProc.stdout).trim()).toBe("abadge-test-build");
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
