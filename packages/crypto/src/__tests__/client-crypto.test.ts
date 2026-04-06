@@ -15,7 +15,7 @@ import {
   wrapRootKey,
   zeroKey,
 } from "../client/keys";
-import { generateSalt, toBase64 } from "../shared/encoding";
+import { fromBase64, generateSalt, toBase64 } from "../shared/encoding";
 import type { KDFParams } from "../shared/types";
 
 // Use fast KDF params for tests
@@ -124,8 +124,9 @@ describe("Item encryption", () => {
     const plaintext = serializeItemPayload({ v: 1, label: "test", kind: "opaque", fields: {} });
 
     const encrypted = encryptItem(plaintext, rk);
-    // Flip a byte in the ciphertext
-    const tampered = { ...encrypted, ciphertext: `${encrypted.ciphertext.slice(0, -2)}AA` };
+    const tamperedCiphertext = fromBase64(encrypted.ciphertext);
+    tamperedCiphertext[tamperedCiphertext.length - 1] ^= 0x01;
+    const tampered = { ...encrypted, ciphertext: toBase64(tamperedCiphertext) };
     expect(() => decryptItem(tampered, rk)).toThrow();
   });
 
