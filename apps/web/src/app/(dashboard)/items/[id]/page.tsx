@@ -15,7 +15,7 @@ export default function ItemDetailPage(): React.ReactElement {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { rootKey } = useVault();
+  const { requestUnlock } = useVault();
   const [revealedValue, setRevealedValue] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [error, setError] = useState("");
@@ -27,17 +27,24 @@ export default function ItemDetailPage(): React.ReactElement {
   const item = itemQuery.data?.item ?? null;
 
   async function handleReveal(): Promise<void> {
-    if (!item || !rootKey) return;
+    if (!item) return;
 
     if (item.storageMode === "zero_knowledge") {
       if (!item.encryptedItemKey || !item.ciphertext) {
         setError("Missing encrypted data");
         return;
       }
+      let key: Uint8Array;
+      try {
+        key = await requestUnlock();
+      } catch {
+        setError("Master password required");
+        return;
+      }
       setRevealing(true);
       setError("");
       try {
-        const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, rootKey);
+        const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, key);
         setRevealedValue(JSON.stringify(plaintext, null, 2));
       } catch {
         setError("Failed to decrypt item");
