@@ -45,7 +45,7 @@ export default function ItemsPage(): React.ReactElement {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Items</h1>
@@ -60,7 +60,7 @@ export default function ItemsPage(): React.ReactElement {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead>ID</TableHead>
               <TableHead>Storage</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Updated</TableHead>
@@ -93,8 +93,11 @@ export default function ItemsPage(): React.ReactElement {
               items.map((item: ItemSummary) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">
-                    <Link href={`/items/${item.id}`} className="text-foreground hover:underline">
-                      {item.id.slice(0, 8)}...
+                    <Link
+                      href={`/items/${item.id}`}
+                      className="font-mono text-foreground hover:underline"
+                    >
+                      {item.id.slice(0, 13)}…
                     </Link>
                   </TableCell>
                   <TableCell>

@@ -26,6 +26,15 @@
       ],
       "outputs": [".next/**", ".open-next/**", "dist/**"]
     },
+    "build:workers": {
+      "env": [
+        "ABADGE_API_URL",
+        "ABADGE_APP_URL",
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_APP_URL"
+      ],
+      "outputs": [".next/**", ".open-next/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

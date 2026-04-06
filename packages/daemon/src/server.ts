@@ -274,7 +274,7 @@ export function startServer(config: DaemonConfig): DaemonServer {
       },
       async data(socket, data) {
         const prev = connectionBuffers.get(socket) ?? "";
-        const accumulated = prev + new TextDecoder().decode(data);
+        const accumulated = prev + data.toString("utf8");
 
         // Messages are newline-delimited JSON
         const lines = accumulated.split("\n");

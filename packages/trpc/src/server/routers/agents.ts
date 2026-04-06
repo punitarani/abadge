@@ -33,6 +33,7 @@ const createAgent = (input: CreateAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const locality = agentLocalityForKind(input.kind);
+    const authMethod = "legacy_api_key" as const;
     const prefix = API_KEY_PREFIX[locality];
     const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
 
@@ -43,9 +44,11 @@ const createAgent = (input: CreateAgentInput) =>
         userId: ctx.identity.userId,
         kind: input.kind,
         locality,
+        authMethod,
         name: input.name,
         secretHash: hash,
         secretPrefix: keyPrefix,
+        publicKey: null,
         metadata: input.metadata ?? {},
       }),
     );
@@ -64,6 +67,7 @@ const createAgent = (input: CreateAgentInput) =>
         userId: ctx.identity.userId,
         kind: input.kind,
         locality,
+        authMethod,
         name: input.name,
         secretHash: hash,
         secretPrefix: keyPrefix,

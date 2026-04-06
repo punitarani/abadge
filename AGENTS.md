@@ -8,7 +8,7 @@ This repo builds abadge: an agent credential firewall. Users store secrets, defi
 
 1. Preserve the product model: users store secrets, register agents, create per-credential permissions with policies, approve sensitive requests, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
-3. Preserve the security model: encrypted credentials, hashed agent API keys, explicit permission checks, policy evaluation, delivery mode enforcement, immutable access logging.
+3. Preserve the security model: encrypted credentials, hashed legacy agent API keys, short-lived agent session tokens, explicit permission checks, policy evaluation, delivery mode enforcement, immutable access logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
 5. When docs and code disagree, code wins. Then fix the docs.
 
@@ -54,7 +54,7 @@ Owns:
 * dashboard CRUD endpoints (credentials, agents, permissions, policies, approvals, connectors, automatic permissions, agent groups)
 * agent credential access endpoint with policy evaluation
 * AES-256-GCM encryption/decryption of credential values and connector configs
-* agent auth via API key hash lookup and broker session token verification
+* agent auth via short-lived agent session verification first, then legacy API key hash lookup for migration paths
 * permission enforcement (explicit permissions + automatic permission fallback)
 * policy evaluation (pure function, per-access)
 * approval workflows (create on policy trigger, approve/deny by owner)
@@ -198,12 +198,14 @@ Does not own:
 ## Data model summary
 
 * `user` owns `credentials` (encrypted values, unique name per user)
-* `user` owns `agents` (Better Auth API keys, hashed, prefix `abg_`)
+* `user` owns `agents` (auth method, optional public key for signed sessions, optional hashed legacy API key material)
 * `agent_credential_permissions` is the explicit permission table (composite PK on agent+credential, optional policy attachment, delivery mode constraints, expiration)
 * `auto_grants` define pattern-matching rules that automatically allow agents to access matching credentials
 * `policies` define access rules (delivery mode, environment, sensitivity, destination, TTL)
 * `approvals` track pending access requests (24h TTL, approve/deny by credential owner)
-* `broker_sessions` provide short-lived scoped access tokens (prefix `abs_`, max 24h TTL)
+* `agent_enrollment_tokens` provide one-time bootstrap enrollment for remote keypair-backed agents
+* `agent_session_challenges` store short-lived signed challenge material for agent session exchange
+* `agent_sessions` provide short-lived scoped access tokens (prefix `abs_`, 15-minute default TTL)
 * `connectors` configure external vault integrations (configs encrypted at rest)
 * `agent_groups` organize agents into named collections
 * `access_log` is append-only (includes delivery mode, outcome, session tracking, no FK constraints)
@@ -219,14 +221,14 @@ Does not own:
 
 ### Agent registration
 
-* create via Better Auth API key system
-* key is SHA-256 hashed before storage
-* store hash + prefix (`abg_`)
-* show full key once, never retrievable again
+* default to `public_key_session` agents for local runtimes and new remote agents
+* allow explicit legacy API-key registration only for migration paths
+* hash legacy API keys before storage and show the full key once, never retrievable again
+* issue bootstrap tokens for unenrolled remote public-key agents when requested
 
 ### Agent credential access
 
-* authenticate bearer token (session token first by `abs_` prefix, then API key)
+* authenticate bearer token (agent session first by `abs_` prefix, then legacy API key)
 * resolve agent
 * resolve credential for same user
 * check explicit permission or matching automatic permission
@@ -375,6 +377,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | `docs/MCP.md` | AI agent integrators | MCP tool reference and security model |
 | `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, delivery modes |
 | `docs/DEVELOPMENT.md` | New contributors | Setup, commands, package structure, how to add features |
+| `docs/CI.md` | Maintainers | CI behavior and optional tooling (e.g. Turborepo remote cache env) |
 
 ## Expected review posture
 

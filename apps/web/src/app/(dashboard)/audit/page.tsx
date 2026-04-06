@@ -114,7 +114,7 @@ export default function AuditPage(): React.ReactElement {
   }
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold">Audit log</h1>
         <p className="text-sm text-muted-foreground">Every access attempt is recorded</p>
@@ -122,7 +122,7 @@ export default function AuditPage(): React.ReactElement {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Event type</label>
+          <p className="text-xs font-medium text-muted-foreground">Event type</p>
           <Select value={eventTypeFilter} onValueChange={handleEventTypeFilterChange}>
             <SelectTrigger className="w-[160px] h-[28px] text-xs">
               <SelectValue />
@@ -139,7 +139,7 @@ export default function AuditPage(): React.ReactElement {
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Result</label>
+          <p className="text-xs font-medium text-muted-foreground">Result</p>
           <Select value={resultFilter} onValueChange={handleResultFilterChange}>
             <SelectTrigger className="w-[140px] h-[28px] text-xs">
               <SelectValue />
@@ -208,11 +208,11 @@ export default function AuditPage(): React.ReactElement {
                   <TableCell>
                     <Badge variant={resultBadgeVariant(log.result)}>{log.result}</Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {log.agentId?.slice(0, 8) ?? "\u2014"}
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {log.agentId ? `${log.agentId.slice(0, 13)}…` : "\u2014"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {log.itemId?.slice(0, 8) ?? "\u2014"}
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {log.itemId ? `${log.itemId.slice(0, 13)}…` : "\u2014"}
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground text-xs font-mono">
                     {log.meta ? JSON.stringify(log.meta) : "\u2014"}

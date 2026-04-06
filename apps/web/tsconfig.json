@@ -7,6 +7,6 @@
     "allowJs": true,
     "incremental": true
   },
-  "include": ["src", "next-env.d.ts", ".next/types/**/*.ts"],
+  "include": ["src", ".storybook/**/*.ts", ".storybook/**/*.tsx", "next-env.d.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

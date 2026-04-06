@@ -30,9 +30,6 @@
       "correctness": {
         "useExhaustiveDependencies": "warn"
       },
-      "a11y": {
-        "noLabelWithoutControl": "off"
-      },
       "suspicious": {
         "noExplicitAny": "warn"
       }

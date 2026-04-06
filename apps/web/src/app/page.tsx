@@ -1,28 +1,14 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
-import Image from "next/image";
 import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
-
-const landingSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-landing-sans",
-});
-
-const landingMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-landing-mono",
-});
-
-const landingCondensed = IBM_Plex_Sans_Condensed({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-landing-condensed",
-});
+import {
+  LandingFooter,
+  LandingHeader,
+  landingCondensed,
+  landingRootClassName,
+} from "@/components/landing";
 
 const operatingPrinciples = [
   {
@@ -93,59 +79,7 @@ const productTracks = [
     label: "03.INTERFACES",
     title: "Meet agents and developers where they already work",
     description:
-      "One control plane across dashboard, tRPC, TypeScript SDK, CLI, and MCP, not separate access paths with separate policies.",
-  },
-];
-
-const interfaceExamples = [
-  {
-    name: "CLI",
-    body: `# create a zero-knowledge item
-$ abadge item create
-
-# register an agent and save the one-time key
-$ abadge agent register \\
-  --name "deploy bot" \\
-  --kind remote_agent
-
-# create one explicit permission
-$ abadge permission create \\
-  --agent-id <agent-id> \\
-  --item-id <item-id> \\
-  --capability reveal_plaintext
-
-# run locally with the daemon path
-$ abadge run \\
-  --item <item-id> \\
-  -- npm run deploy`,
-  },
-  {
-    name: "SDK",
-    body: `const client = new AbadgeClient({ apiUrl, token });
-
-const { items } = await client.listItems();
-const mount = await client.accessMount(items[0].id, "env");`,
-  },
-  {
-    name: "tRPC",
-    body: `const trpc = createNodeTrpcClient({ baseUrl, token });
-
-await trpc.access.mount.mutate({
-  itemId: "<item-id>",
-  mountType: "env",
-});`,
-  },
-  {
-    name: "MCP",
-    body: `{
-  "tool": "run_with_secret",
-  "input": {
-    "itemId": "<item-id>",
-    "command": "npm",
-    "args": ["run", "deploy"],
-    "envVarName": "GITHUB_TOKEN"
-  }
-}`,
+      "One control plane across dashboard, API, TypeScript SDK, CLI, and MCP, not separate access paths with separate policies.",
   },
 ];
 
@@ -179,35 +113,12 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div
-      id="top"
-      className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
-    >
-      <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-        </Link>
-
-        <div className="flex items-center gap-3">
-          <a
-            href="https://docs.abadge.io"
-            className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-          >
-            Docs
-          </a>
-          <Link
-            href="/login"
-            className="border border-black bg-black px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
+    <div id="top" className={landingRootClassName}>
+      <LandingHeader currentPage="home" />
 
       <main>
-        <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-          <div className="flex flex-col justify-center border-black bg-white p-6 lg:border-r lg:p-12">
+        <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <div className="flex min-w-0 flex-col justify-center border-black bg-white p-6 lg:border-r lg:p-12">
             <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.28em] text-[#0047FF]">
               Status: Alpha
             </div>
@@ -218,8 +129,7 @@ export default function HomePage() {
             </h1>
             <p className="mt-5 max-w-xl text-sm leading-[1.65] font-medium text-zinc-600 md:text-base">
               Store native credentials or connect existing secret systems. Allow agents scoped
-              access at request time and keep every attempt auditable across tRPC, CLI, SDK, and
-              MCP.
+              access at request time and keep every attempt auditable across API, CLI, SDK, and MCP.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -238,7 +148,7 @@ export default function HomePage() {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
-              {["Access", "Connect", "SDK", "CLI", "tRPC", "MCP", "Audit"].map((tag) => (
+              {["Access", "Connect", "SDK", "CLI", "API", "MCP", "Audit"].map((tag) => (
                 <span
                   key={tag}
                   className="border border-black bg-zinc-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500"
@@ -254,8 +164,8 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="flex items-center justify-center bg-zinc-50 p-6 lg:p-12">
-            <HeroInterfaceTabs examples={interfaceExamples} />
+          <div className="flex min-w-0 items-center justify-center bg-zinc-50 p-6 lg:p-12">
+            <HeroInterfaceTabs />
           </div>
         </section>
 
@@ -442,38 +352,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="bg-white p-8">
-        <div className="mx-auto flex max-w-[96rem] flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="order-2 max-w-xs md:order-1">
-            <div className="mb-1 inline-flex items-center gap-2">
-              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-            </div>
-            <span className="mb-4 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Credential control plane for AI agents
-            </span>
-          </div>
-
-          <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
-            <a
-              href="https://github.com/punitarani/abadge"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              GitHub
-            </a>
-            <a
-              href="https://docs.abadge.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              Docs
-            </a>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }

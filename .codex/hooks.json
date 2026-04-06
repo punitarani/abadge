@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run format && bun run lint:fix && bun run typecheck",
+            "timeout": 120,
+            "statusMessage": "Formatting, linting, and type checking..."
+          }
+        ]
+      }
+    ]
+  }
+}

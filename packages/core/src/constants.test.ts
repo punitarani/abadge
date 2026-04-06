@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { Either, Schema } from "effect";
 import {
+  AGENT_BOOTSTRAP_PREFIX,
+  AGENT_BOOTSTRAP_TTL_MS,
+  AGENT_CHALLENGE_PREFIX,
+  AGENT_CHALLENGE_TTL_MS,
   AGENT_KINDS,
+  AGENT_SESSION_PREFIX,
+  AGENT_SESSION_TTL_MS,
   API_KEY_PREFIX,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
@@ -105,6 +111,20 @@ describe("API_KEY_PREFIX", () => {
   test("local prefix is abl_", () => expect(API_KEY_PREFIX.local).toBe("abl_"));
 });
 
+describe("agent auth constants", () => {
+  test("uses distinct token prefixes", () => {
+    expect(AGENT_BOOTSTRAP_PREFIX).toBe("abe_");
+    expect(AGENT_CHALLENGE_PREFIX).toBe("abc_");
+    expect(AGENT_SESSION_PREFIX).toBe("abs_");
+  });
+
+  test("uses expected auth ttl windows", () => {
+    expect(AGENT_BOOTSTRAP_TTL_MS).toBe(10 * 60 * 1000);
+    expect(AGENT_CHALLENGE_TTL_MS).toBe(60 * 1000);
+    expect(AGENT_SESSION_TTL_MS).toBe(15 * 60 * 1000);
+  });
+});
+
 describe("schema validation", () => {
   test("VaultBootstrapSchema requires all fields", () => {
     expect(isValid(VaultBootstrapSchema, {})).toBe(false);
@@ -165,5 +185,27 @@ describe("schema validation", () => {
   test("CreateAgentSchema requires name and kind", () => {
     expect(isValid(CreateAgentSchema, {})).toBe(false);
     expect(isValid(CreateAgentSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
+  });
+
+  test("CreateAgentSchema rejects legacy agents with a public key", () => {
+    expect(
+      isValid(CreateAgentSchema, {
+        kind: "remote_agent",
+        name: "legacy-agent",
+        authMethod: "legacy_api_key",
+        publicKey: "jwk-public-key",
+      }),
+    ).toBe(false);
+  });
+
+  test("CreateAgentSchema allows legacy agents to disable bootstrap issuance explicitly", () => {
+    expect(
+      isValid(CreateAgentSchema, {
+        kind: "remote_agent",
+        name: "legacy-agent",
+        authMethod: "legacy_api_key",
+        issueBootstrapToken: false,
+      }),
+    ).toBe(true);
   });
 });

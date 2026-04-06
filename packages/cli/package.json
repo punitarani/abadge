@@ -1,6 +1,6 @@
 {
   "name": "@abadge/cli",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "bin": {
@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@abadge/auth": "workspace:*",
     "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
     "@abadge/daemon": "workspace:*",
     "@abadge/sdk": "workspace:*",
     "@abadge/trpc": "workspace:*",
