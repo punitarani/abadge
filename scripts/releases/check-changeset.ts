@@ -1,13 +1,14 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { getImpactedReleasePackages, repoRoot } from "./registry";
+import { getImpactedReleasePackages, releasePackages, repoRoot } from "./registry";
 
 const CLI_PACKAGE_NAME = "@abadge/cli";
 const CLI_PACKAGE_VERSION_SOURCE = join(repoRoot, "packages/cli/package.json");
 const CHANGESET_DIR = join(repoRoot, ".changeset");
 const CHANGESET_FILE_PATTERN = /^\.changeset\/(?!README\.md$)[^/]+\.md$/;
 const CHANGESET_ENTRY_PATTERN = /^(?:"([^"]+)"|([^:\s]+)):\s*(major|minor|patch)$/;
+const RELEASE_PACKAGE_NAMES = new Set(releasePackages.map((pkg) => pkg.packageName));
 
 export type ChangesetReleaseType = "major" | "minor" | "patch";
 
@@ -108,6 +109,20 @@ export function validateCliChangesetsForInitialPatchTrain(
   );
 }
 
+export function validateChangesetsTargetReleasePackages(
+  changesets: readonly ParsedChangeset[],
+): string[] {
+  return changesets.flatMap((changeset) =>
+    changeset.releases.flatMap((release) =>
+      RELEASE_PACKAGE_NAMES.has(release.name)
+        ? []
+        : [
+            `${changeset.path}: ${release.name} is not a release-managed package. Add it to scripts/releases/registry.ts before creating changesets for it.`,
+          ],
+    ),
+  );
+}
+
 function runGit(command: readonly string[]): string {
   const proc = Bun.spawnSync(command, {
     stdout: "pipe",
@@ -149,7 +164,10 @@ function getChangedChangesetFiles(changedFiles: readonly string[]): string[] {
 }
 
 function validateChangesets(changesets: readonly ParsedChangeset[]): void {
-  const errors = validateCliChangesetsForInitialPatchTrain(changesets, readCliVersion());
+  const errors = [
+    ...validateChangesetsTargetReleasePackages(changesets),
+    ...validateCliChangesetsForInitialPatchTrain(changesets, readCliVersion()),
+  ];
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));
   }
