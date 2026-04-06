@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import process from "node:process";
-import { parseChangesetDocument, validateInitialPatchTrainChangesets } from "./releases/changesets";
+import {
+  isInitialCliPatchTrain,
+  type ParsedChangeset,
+  validateCliChangesetsForInitialPatchTrain,
+} from "./releases/check-changeset";
 import {
   buildGitHubBinaryAssetBaseName,
   buildGitHubBinaryTag,
@@ -82,35 +86,49 @@ describe("github binary naming", () => {
 });
 
 describe("changeset validation", () => {
-  test("rejects non-patch changesets while a release package is on 0.0.x", () => {
-    const changeset = parseChangesetDocument(
-      ["---", '"@abadge/cli": minor', "---", "", "Ship the CLI."].join("\n"),
-      ".changeset/example.md",
-    );
+  function changeset(path: string, releases: ParsedChangeset["releases"]): ParsedChangeset {
+    return { path, releases };
+  }
 
+  test("rejects non-patch changesets while a release package is on 0.0.x", () => {
     expect(
-      validateInitialPatchTrainChangesets([changeset], new Map([["@abadge/cli", "0.0.1"]])),
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/example.md", [{ name: "@abadge/cli", type: "minor" }])],
+        "0.0.1",
+      ),
     ).toEqual([
       ".changeset/example.md: @abadge/cli is currently 0.0.1, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace minor with patch to avoid skipping straight to 0.1.0.",
     ]);
   });
 
   test("allows patch changesets on 0.0.x and minor changesets after 0.0.x", () => {
-    const patchChangeset = parseChangesetDocument(
-      ["---", '"@abadge/cli": patch', "---", "", "Ship the CLI."].join("\n"),
-      ".changeset/patch.md",
-    );
-    const minorChangeset = parseChangesetDocument(
-      ["---", '"@abadge/cli": minor', "---", "", "Ship the CLI."].join("\n"),
-      ".changeset/minor.md",
-    );
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/patch.md", [{ name: "@abadge/cli", type: "patch" }])],
+        "0.0.2",
+      ),
+    ).toEqual([]);
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/minor.md", [{ name: "@abadge/cli", type: "minor" }])],
+        "0.1.0",
+      ),
+    ).toEqual([]);
+  });
 
+  test("ignores changesets that do not target the cli package", () => {
     expect(
-      validateInitialPatchTrainChangesets([patchChangeset], new Map([["@abadge/cli", "0.0.2"]])),
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/sdk.md", [{ name: "@abadge/sdk", type: "minor" }])],
+        "0.0.1",
+      ),
     ).toEqual([]);
-    expect(
-      validateInitialPatchTrainChangesets([minorChangeset], new Map([["@abadge/cli", "0.1.0"]])),
-    ).toEqual([]);
+  });
+
+  test("detects the initial cli patch train from semver versions", () => {
+    expect(isInitialCliPatchTrain("0.0.1")).toBe(true);
+    expect(isInitialCliPatchTrain("0.0.2")).toBe(true);
+    expect(isInitialCliPatchTrain("0.1.0")).toBe(false);
   });
 });
 
