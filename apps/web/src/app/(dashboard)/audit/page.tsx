@@ -122,7 +122,7 @@ export default function AuditPage(): React.ReactElement {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Event type</label>
+          <p className="text-xs font-medium text-muted-foreground">Event type</p>
           <Select value={eventTypeFilter} onValueChange={handleEventTypeFilterChange}>
             <SelectTrigger className="w-[160px] h-[28px] text-xs">
               <SelectValue />
@@ -139,7 +139,7 @@ export default function AuditPage(): React.ReactElement {
         </div>
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Result</label>
+          <p className="text-xs font-medium text-muted-foreground">Result</p>
           <Select value={resultFilter} onValueChange={handleResultFilterChange}>
             <SelectTrigger className="w-[140px] h-[28px] text-xs">
               <SelectValue />

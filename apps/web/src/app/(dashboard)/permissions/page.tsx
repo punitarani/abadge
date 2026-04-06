@@ -187,7 +187,7 @@ export default function PermissionsPage(): React.ReactElement {
         ) : null}
         <div className="grid grid-cols-3 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Agent</label>
+            <p className="text-xs font-medium text-muted-foreground">Agent</p>
             <SearchableSelect
               options={activeAgentOptions}
               value={selectedAgent}
@@ -199,7 +199,7 @@ export default function PermissionsPage(): React.ReactElement {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Item</label>
+            <p className="text-xs font-medium text-muted-foreground">Item</p>
             <SearchableSelect
               options={itemOptions}
               value={selectedItem}
@@ -211,7 +211,7 @@ export default function PermissionsPage(): React.ReactElement {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Capability</label>
+            <p className="text-xs font-medium text-muted-foreground">Capability</p>
             <Select
               value={selectedCapability}
               onValueChange={(value) => setSelectedCapability(value as Capability)}
@@ -242,7 +242,7 @@ export default function PermissionsPage(): React.ReactElement {
 
       <div className="flex gap-3">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Filter by agent</label>
+          <p className="text-xs font-medium text-muted-foreground">Filter by agent</p>
           <SearchableSelect
             options={agentFilterOptions}
             value={filterAgent}
@@ -252,7 +252,7 @@ export default function PermissionsPage(): React.ReactElement {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Filter by item</label>
+          <p className="text-xs font-medium text-muted-foreground">Filter by item</p>
           <SearchableSelect
             options={itemFilterOptions}
             value={filterItem}
