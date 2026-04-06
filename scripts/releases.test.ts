@@ -5,6 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import {
+  isInitialCliPatchTrain,
+  type ParsedChangeset,
+  validateChangesetsTargetReleasePackages,
+  validateCliChangesetsForInitialPatchTrain,
+} from "./releases/check-changeset";
+import {
   buildGitHubBinaryAssetBaseName,
   buildGitHubBinaryTag,
   defaultOutDirForPackage,
@@ -88,6 +94,71 @@ describe("github binary naming", () => {
     expect(defaultOutDirForPackage(cliReleasePackage, "1.2.3")).toBe(
       join(repoRoot, "dist", "releases", "cli", "1.2.3"),
     );
+  });
+});
+
+describe("changeset validation", () => {
+  function changeset(path: string, releases: ParsedChangeset["releases"]): ParsedChangeset {
+    return { path, releases };
+  }
+
+  test("rejects non-patch changesets while a release package is on 0.0.x", () => {
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/example.md", [{ name: "@abadge/cli", type: "minor" }])],
+        "0.0.1",
+      ),
+    ).toEqual([
+      ".changeset/example.md: @abadge/cli is currently 0.0.1, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace minor with patch.",
+    ]);
+  });
+
+  test("allows patch changesets on 0.0.x and minor changesets after 0.0.x", () => {
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/patch.md", [{ name: "@abadge/cli", type: "patch" }])],
+        "0.0.2",
+      ),
+    ).toEqual([]);
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/minor.md", [{ name: "@abadge/cli", type: "minor" }])],
+        "0.1.0",
+      ),
+    ).toEqual([]);
+  });
+
+  test("patch-train validation ignores changesets that do not target the cli package", () => {
+    expect(
+      validateCliChangesetsForInitialPatchTrain(
+        [changeset(".changeset/sdk.md", [{ name: "@abadge/sdk", type: "minor" }])],
+        "0.0.1",
+      ),
+    ).toEqual([]);
+  });
+
+  test("detects the initial cli patch train from semver versions", () => {
+    expect(isInitialCliPatchTrain("0.0.1")).toBe(true);
+    expect(isInitialCliPatchTrain("0.0.2")).toBe(true);
+    expect(isInitialCliPatchTrain("0.1.0")).toBe(false);
+  });
+
+  test("rejects changesets for packages outside the release registry", () => {
+    expect(
+      validateChangesetsTargetReleasePackages([
+        changeset(".changeset/mcp.md", [{ name: "@abadge/mcp", type: "minor" }]),
+      ]),
+    ).toEqual([
+      ".changeset/mcp.md: @abadge/mcp is not a release-managed package. Add it to scripts/releases/registry.ts before creating changesets for it.",
+    ]);
+  });
+
+  test("allows changesets for packages that are in the release registry", () => {
+    expect(
+      validateChangesetsTargetReleasePackages([
+        changeset(".changeset/cli.md", [{ name: "@abadge/cli", type: "patch" }]),
+      ]),
+    ).toEqual([]);
   });
 });
 
