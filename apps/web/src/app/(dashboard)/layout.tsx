@@ -1,7 +1,7 @@
 "use client";
 
-import Script from "next/script";
 import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
