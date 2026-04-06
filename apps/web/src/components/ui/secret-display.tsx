@@ -23,7 +23,7 @@ export function SecretDisplay({
 
   return (
     <div className="space-y-4">
-      <div className="bg-neutral-50 border border-border rounded-md p-3 flex items-start justify-between gap-3">
+      <div className="bg-muted border border-border rounded-md p-3 flex items-start justify-between gap-3">
         <code className="text-sm font-mono break-all flex-1">{value}</code>
         <Button
           variant="outline"

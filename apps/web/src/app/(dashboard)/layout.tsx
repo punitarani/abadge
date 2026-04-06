@@ -245,8 +245,8 @@ function DashboardShell({ children }: { children: React.ReactNode }): React.Reac
                   className={cn(
                     "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
                     pathname.startsWith(item.href)
-                      ? "bg-neutral-100 text-foreground font-medium"
-                      : "text-muted-foreground hover:bg-neutral-50 hover:text-foreground",
+                      ? "bg-accent text-foreground font-medium"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
                   {item.label}
@@ -260,14 +260,14 @@ function DashboardShell({ children }: { children: React.ReactNode }): React.Reac
           <button
             type="button"
             onClick={() => lockVault()}
-            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-neutral-50 hover:text-foreground"
+            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Lock vault
           </button>
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-neutral-50 hover:text-foreground"
+            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Sign out
           </button>
