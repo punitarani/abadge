@@ -34,10 +34,13 @@ export function MasterPasswordModal({
   const [loading, setLoading] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState("");
   const pendingKeyRef = useRef<Uint8Array | null>(null);
+  const prevOpenRef = useRef(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: vaultExists excluded — adding it reruns this effect when handleBootstrap calls onVaultExistsChange, resetting state mid-submit
   useEffect(() => {
-    if (!open) return;
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = open;
+    if (!open || wasOpen) return; // only initialize on false → true transition
+
     setPassword("");
     setConfirmPassword("");
     setError("");
@@ -60,7 +63,7 @@ export function MasterPasswordModal({
           setStep("unlock");
         });
     }
-  }, [open, checkVaultExists, onVaultExistsChange]);
+  }, [open, vaultExists, checkVaultExists, onVaultExistsChange]);
 
   async function handleUnlock(e: React.FormEvent): Promise<void> {
     e.preventDefault();
