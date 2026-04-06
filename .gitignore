@@ -43,6 +43,7 @@ drizzle/
 
 # ide
 .idea
+.remember
 
 # tools
 .playwright-cli
