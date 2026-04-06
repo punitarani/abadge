@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3000",
     "build": "next build",
+    "build:workers": "opennextjs-cloudflare build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
-    "deploy": "opennextjs-cloudflare build && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
+    "deploy": "bun run build:workers && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@abadge/auth": "workspace:*",

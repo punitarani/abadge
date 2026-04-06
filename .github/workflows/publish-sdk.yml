@@ -13,6 +13,11 @@ concurrency:
   group: publish-sdk-${{ github.ref_name }}
   cancel-in-progress: false
 
+env:
+  CI: "1"
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+
 jobs:
   publish:
     name: Publish @abadge/sdk
@@ -65,10 +70,10 @@ jobs:
           fi
 
       - name: Typecheck SDK
-        run: bun run --filter=@abadge/sdk typecheck
+        run: bunx turbo run typecheck --filter=@abadge/sdk
 
       - name: Build SDK
-        run: bun run --filter=@abadge/sdk build
+        run: bunx turbo run build --filter=@abadge/sdk
 
       - name: Validate npm package contents
         working-directory: packages/sdk
