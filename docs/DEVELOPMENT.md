@@ -120,6 +120,9 @@ Extract a pure presentational component first, then write stories against that c
 | `bun run storybook` | Start Storybook for `apps/web` |
 | `bun run storybook:build` | Build the `apps/web` Storybook |
 | `bun test` | Run tests |
+| `bun run changeset` | Create a changeset |
+| `bun run release:cli:dry-run` | Build CLI release artifacts locally |
+| `bun run release:publish -- --dry-run --package cli` | Dry-run the generic release publisher |
 
 ## Releasing `@abadge/sdk`
 
@@ -179,6 +182,19 @@ Do not add a parallel REST route.
 1. add a command in `packages/cli/src/commands/`
 2. register it in `packages/cli/src/index.ts`
 3. update `docs/CLI.md`
+
+## Release model
+
+Changesets live at the repo root in `/.changeset/`.
+
+Releases are package-scoped, not repo-scoped. A package only becomes releasable when it is added to
+[`scripts/releases/registry.ts`](../scripts/releases/registry.ts). Today that registry contains only
+the CLI package.
+
+Release docs:
+
+* [`docs/release/overview.md`](./release/overview.md)
+* [`docs/release/cli.md`](./release/cli.md)
 
 ## Adding a new MCP tool
 

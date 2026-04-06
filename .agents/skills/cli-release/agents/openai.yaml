@@ -1,0 +1,4 @@
+interface:
+  display_name: "CLI Release"
+  short_description: "Prepare and validate CLI releases"
+  default_prompt: "Use $cli-release to validate the abadge CLI release, dry-run artifacts, and prep the PR."

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type DaemonServer, resolveConfig, startServer } from "./server";
 import type { DaemonConfig } from "./types";
@@ -26,7 +26,7 @@ function readPid(pidPath: string): number | null {
 }
 
 function writePid(pidPath: string): void {
-  mkdirSync(dirname(pidPath), { recursive: true });
+  mkdirSync(dirname(pidPath), { recursive: true, mode: 0o700 });
   // biome-ignore lint/style/noRestrictedGlobals: daemon requires process.pid
   writeFileSync(pidPath, String(process.pid), { mode: 0o600 });
 }
@@ -39,6 +39,28 @@ function removePid(pidPath: string): void {
   }
 }
 
+function hasSocket(socketPath: string): boolean {
+  try {
+    return statSync(socketPath).isSocket();
+  } catch {
+    return false;
+  }
+}
+
+function removeSocket(socketPath: string): void {
+  try {
+    unlinkSync(socketPath);
+  } catch {
+    // Already removed
+  }
+}
+
+export function clearDaemonState(partial: Partial<DaemonConfig> = {}): void {
+  const config = resolveConfig(partial);
+  removePid(config.pidPath);
+  removeSocket(config.socketPath);
+}
+
 /**
  * Start the vaultd daemon.
  * Throws if another daemon is already running.
@@ -47,17 +69,21 @@ export function startDaemon(partial: Partial<DaemonConfig> = {}): DaemonServer {
   const config = resolveConfig(partial);
 
   const existingPid = readPid(config.pidPath);
-  if (existingPid !== null && isProcessRunning(existingPid)) {
+  if (existingPid !== null && isProcessRunning(existingPid) && hasSocket(config.socketPath)) {
     throw new Error(`Daemon already running with PID ${existingPid}`);
   }
 
-  if (existingPid !== null) {
-    removePid(config.pidPath);
-  }
+  clearDaemonState(config);
 
   writePid(config.pidPath);
 
-  const server = startServer(config);
+  let server: DaemonServer;
+  try {
+    server = startServer(config);
+  } catch (error) {
+    clearDaemonState(config);
+    throw error;
+  }
 
   const cleanup = (): void => {
     server.close();
@@ -92,19 +118,19 @@ export function stopDaemon(partial: Partial<DaemonConfig> = {}): boolean {
   const config = resolveConfig(partial);
   const pid = readPid(config.pidPath);
 
-  if (pid === null || !isProcessRunning(pid)) {
-    removePid(config.pidPath);
+  if (pid === null || !isProcessRunning(pid) || !hasSocket(config.socketPath)) {
+    clearDaemonState(config);
     return false;
   }
 
   // biome-ignore lint/style/noRestrictedGlobals: daemon requires process.kill for lifecycle
   process.kill(pid, "SIGTERM");
-  removePid(config.pidPath);
+  clearDaemonState(config);
   return true;
 }
 
 export function isDaemonRunning(partial: Partial<DaemonConfig> = {}): boolean {
   const config = resolveConfig(partial);
   const pid = readPid(config.pidPath);
-  return pid !== null && isProcessRunning(pid);
+  return pid !== null && isProcessRunning(pid) && hasSocket(config.socketPath);
 }

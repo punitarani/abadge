@@ -1,4 +1,5 @@
 export { generateApiKey, hashApiKey, verifyApiKey } from "./api-keys";
+export { generateEd25519KeyPair, generateOpaqueToken, signEd25519, verifyEd25519 } from "./ed25519";
 export {
   formatRecoveryKey,
   fromBase32,

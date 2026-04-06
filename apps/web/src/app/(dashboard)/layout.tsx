@@ -1,37 +1,26 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import Script from "next/script";
 import { useEffect, useState } from "react";
+import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 import { useVault, VaultProvider } from "@/lib/vault-context";
 
-const navSections = [
-  {
-    label: "Vault",
-    items: [{ href: "/items", label: "Items" }],
-  },
-  {
-    label: "Access",
-    items: [
-      { href: "/agents", label: "Agents" },
-      { href: "/permissions", label: "Permissions" },
-    ],
-  },
-  {
-    label: "Observability",
-    items: [{ href: "/audit", label: "Audit log" }],
-  },
-  {
-    label: "Account",
-    items: [{ href: "/settings", label: "Settings" }],
-  },
-];
+declare global {
+  interface Window {
+    uj: {
+      init: (projectId: string, options: Record<string, unknown>) => void;
+      identify: (user: Record<string, string | undefined>) => void;
+    };
+    $ujq: unknown[];
+  }
+}
 
 function VaultGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const { isUnlocked, vaultExists, unlockVault, bootstrapVault, checkVaultExists } = useVault();
@@ -208,77 +197,13 @@ function VaultGate({ children }: { children: React.ReactNode }): React.ReactElem
 }
 
 function DashboardShell({ children }: { children: React.ReactNode }): React.ReactElement {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { lockVault } = useVault();
-
-  async function handleSignOut(): Promise<void> {
-    lockVault();
-    await authClient.signOut();
-    router.push("/login");
-  }
-
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 border-r border-border flex flex-col">
-        <div className="px-4 h-14 flex items-center border-b border-border">
-          <Link href="/items" className="text-sm font-semibold tracking-tight">
-            abadge
-          </Link>
-        </div>
-
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
-          {navSections.map((section, i) => (
-            <div key={section.label}>
-              <div
-                className={cn(
-                  "px-2 pb-2 text-xs font-semibold text-muted-foreground",
-                  i === 0 ? "pt-1" : "pt-4",
-                )}
-              >
-                {section.label}
-              </div>
-              {section.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                    pathname.startsWith(item.href)
-                      ? "bg-neutral-100 text-foreground font-medium"
-                      : "text-muted-foreground hover:bg-neutral-50 hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        <div className="border-t border-border px-2 py-3 space-y-0.5">
-          <button
-            type="button"
-            onClick={() => lockVault()}
-            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-neutral-50 hover:text-foreground"
-          >
-            Lock vault
-          </button>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="flex w-full items-center rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-neutral-50 hover:text-foreground"
-          >
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      <main className="flex-1 min-w-0">
-        <div className="h-14 border-b border-border" />
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
         <div className="px-8 py-6">{children}</div>
-      </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
@@ -291,6 +216,16 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
       router.push("/login");
     }
   }, [isPending, session, router]);
+
+  useEffect(() => {
+    if (session?.user) {
+      window.uj.identify({
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+      });
+    }
+  }, [session?.user]);
 
   if (isPending || !session) {
     return (
@@ -305,6 +240,12 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
       <VaultGate>
         <DashboardShell>{children}</DashboardShell>
       </VaultGate>
+      <Script id="userjot-loader" strategy="afterInteractive">
+        {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
+      </Script>
+      <Script id="userjot-init" strategy="afterInteractive">
+        {`window.uj.init('cmnkcclu80xvr0io6ha14686u',{widget:true,position:'right',theme:'auto'});`}
+      </Script>
     </VaultProvider>
   );
 }

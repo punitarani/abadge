@@ -1,5 +1,5 @@
 export { DaemonClient } from "./client";
-export { isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
+export { clearDaemonState, isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
 export type {
   DaemonConfig,
   DecryptResult,
@@ -8,6 +8,8 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   MountExecResult,
+  OperatorSessionConfig,
+  OperatorSessionResult,
   RekeyItemResult,
   VaultStatus,
 } from "./types";

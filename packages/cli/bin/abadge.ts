@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
 import { main } from "../src/index";
 
-main(process.argv.slice(2));
+void main(process.argv.slice(2)).catch((err) => {
+  console.error(err instanceof Error ? err.message : "Unexpected CLI failure");
+  process.exit(1);
+});
