@@ -9,7 +9,7 @@ import {
 } from "@abadge/core";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  buildAuditAgentNameMap,
+  buildAuditItemLabelMap,
+  resolveAuditDisplayValue,
+} from "@/lib/audit-display";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import {
   type AuditEventTypeFilter,
@@ -35,6 +40,7 @@ import {
 } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
+import { useVault } from "@/lib/vault-context";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -58,6 +64,7 @@ const COLUMN_COUNT = 6;
 export default function AuditPage(): React.ReactElement {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([]);
+  const { rootKey } = useVault();
   const [{ eventType: eventTypeFilter, result: resultFilter }, setAuditFilters] =
     useQueryStates(auditFilterParsers);
   const limit = 50;
@@ -72,6 +79,30 @@ export default function AuditPage(): React.ReactElement {
     queryFn: () => browserTrpcClient.audit.list.query(input),
   });
   const logs = auditQuery.data?.entries ?? [];
+  const itemIds = useMemo<string[]>(
+    () =>
+      Array.from(
+        new Set<string>(logs.flatMap((log: AuditEntry) => (log.itemId ? [log.itemId] : []))),
+      ).sort(),
+    [logs],
+  );
+  const agentsQuery = useQuery({
+    queryKey: dashboardQueryKeys.agents(),
+    queryFn: () => browserTrpcClient.agents.list.query(),
+  });
+  const itemDisplayQuery = useQuery({
+    queryKey: dashboardQueryKeys.itemDisplay(itemIds),
+    queryFn: () => browserTrpcClient.items.resolveDisplay.query({ itemIds }),
+    enabled: itemIds.length > 0,
+  });
+  const agentNames = useMemo(
+    () => buildAuditAgentNameMap(agentsQuery.data?.agents ?? []),
+    [agentsQuery.data?.agents],
+  );
+  const itemLabels = useMemo(
+    () => buildAuditItemLabelMap(itemDisplayQuery.data?.items ?? [], rootKey),
+    [itemDisplayQuery.data?.items, rootKey],
+  );
   const nextCursor = auditQuery.data?.nextCursor ?? null;
   const hasMore = Boolean(nextCursor);
 
@@ -197,28 +228,45 @@ export default function AuditPage(): React.ReactElement {
                 </TableCell>
               </TableRow>
             ) : (
-              logs.map((log: AuditEntry) => (
-                <TableRow key={log.id}>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {formatRelativeTime(log.occurredAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{log.eventType}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={resultBadgeVariant(log.result)}>{log.result}</Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
-                    {log.agentId ? `${log.agentId.slice(0, 13)}…` : "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
-                    {log.itemId ? `${log.itemId.slice(0, 13)}…` : "\u2014"}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground text-xs font-mono">
-                    {log.meta ? JSON.stringify(log.meta) : "\u2014"}
-                  </TableCell>
-                </TableRow>
-              ))
+              logs.map((log: AuditEntry) => {
+                const agentDisplay = resolveAuditDisplayValue(log.agentId, agentNames);
+                const itemDisplay = resolveAuditDisplayValue(log.itemId, itemLabels);
+
+                return (
+                  <TableRow key={log.id}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatRelativeTime(log.occurredAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{log.eventType}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={resultBadgeVariant(log.result)}>{log.result}</Badge>
+                    </TableCell>
+                    <TableCell
+                      className={
+                        agentDisplay.resolved
+                          ? "text-sm text-foreground"
+                          : "font-mono text-sm text-muted-foreground"
+                      }
+                    >
+                      {agentDisplay.text}
+                    </TableCell>
+                    <TableCell
+                      className={
+                        itemDisplay.resolved
+                          ? "text-sm text-foreground"
+                          : "font-mono text-sm text-muted-foreground"
+                      }
+                    >
+                      {itemDisplay.text}
+                    </TableCell>
+                    <TableCell className="max-w-xs truncate text-muted-foreground text-xs font-mono">
+                      {log.meta ? JSON.stringify(log.meta) : "\u2014"}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

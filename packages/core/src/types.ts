@@ -28,6 +28,9 @@ import type {
   ExchangeAgentSessionSchema,
   IssueAgentBootstrapTokenSchema,
   ItemDetailSchema,
+  ItemDisplayEntrySchema,
+  ItemDisplayListResultSchema,
+  ItemDisplayQuerySchema,
   ItemListResultSchema,
   ItemPayloadSchema,
   ItemResultSchema,
@@ -66,6 +69,8 @@ export type CreateItemInput = TypeOf<typeof CreateItemSchema>;
 export type UpdateItemInput = TypeOf<typeof UpdateItemSchema>;
 export type ItemSummary = TypeOf<typeof ItemSummarySchema>;
 export type ItemDetail = TypeOf<typeof ItemDetailSchema>;
+export type ItemDisplayQuery = TypeOf<typeof ItemDisplayQuerySchema>;
+export type ItemDisplayEntry = TypeOf<typeof ItemDisplayEntrySchema>;
 
 export type CreateAgentInput = TypeOf<typeof CreateAgentSchema>;
 export type Agent = TypeOf<typeof AgentSchema>;
@@ -98,6 +103,7 @@ export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
 export type VaultResult = TypeOf<typeof VaultResultSchema>;
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
+export type ItemDisplayListResult = TypeOf<typeof ItemDisplayListResultSchema>;
 export type AgentResult = TypeOf<typeof AgentResultSchema>;
 export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
 export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
