@@ -1,11 +1,8 @@
 "use client";
 
 import { zeroKey } from "@abadge/crypto";
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import {
-  bootstrapVault as bootstrapVaultCrypto,
-  unlockVault as unlockVaultCrypto,
-} from "./crypto-client";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { MasterPasswordModal } from "@/components/master-password-modal";
 import { browserTrpcClient } from "./trpc-browser";
 
 interface VaultContextValue {
@@ -13,10 +10,10 @@ interface VaultContextValue {
   rootKey: Uint8Array | null;
   /** null = unknown, true = exists, false = needs bootstrap */
   vaultExists: boolean | null;
-  unlockVault: (masterPassword: string) => Promise<void>;
   lockVault: () => void;
-  bootstrapVault: (masterPassword: string) => Promise<{ recoveryKey: string }>;
   checkVaultExists: () => Promise<boolean>;
+  /** Request the root key, prompting for master password if needed. */
+  requestUnlock: () => Promise<Uint8Array>;
 }
 
 const VaultContext = createContext<VaultContextValue | null>(null);
@@ -24,11 +21,11 @@ const VaultContext = createContext<VaultContextValue | null>(null);
 export function VaultProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [rootKey, setRootKey] = useState<Uint8Array | null>(null);
   const [vaultExists, setVaultExists] = useState<boolean | null>(null);
-
-  const unlockVault = useCallback(async (masterPassword: string): Promise<void> => {
-    const key = await unlockVaultCrypto(masterPassword);
-    setRootKey(key);
-  }, []);
+  const [modalOpen, setModalOpen] = useState(false);
+  const pendingUnlock = useRef<{
+    resolve: (key: Uint8Array) => void;
+    reject: (err: Error) => void;
+  } | null>(null);
 
   const lockVault = useCallback((): void => {
     if (rootKey) {
@@ -36,16 +33,6 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     }
     setRootKey(null);
   }, [rootKey]);
-
-  const bootstrapVault = useCallback(
-    async (masterPassword: string): Promise<{ recoveryKey: string }> => {
-      const { rootKey: key, recoveryKey } = await bootstrapVaultCrypto(masterPassword);
-      setRootKey(key);
-      setVaultExists(true);
-      return { recoveryKey };
-    },
-    [],
-  );
 
   const checkVaultExists = useCallback(async (): Promise<boolean> => {
     try {
@@ -68,20 +55,58 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     }
   }, []);
 
+  const requestUnlock = useCallback((): Promise<Uint8Array> => {
+    if (rootKey !== null) {
+      return Promise.resolve(rootKey);
+    }
+    // Reject any already-pending caller before overwriting the slot.
+    if (pendingUnlock.current) {
+      pendingUnlock.current.reject(new Error("Superseded by a newer unlock request"));
+    }
+    return new Promise<Uint8Array>((resolve, reject) => {
+      pendingUnlock.current = { resolve, reject };
+      setModalOpen(true);
+    });
+  }, [rootKey]);
+
+  const handleUnlockSuccess = useCallback((key: Uint8Array): void => {
+    setRootKey(key);
+    setModalOpen(false);
+    pendingUnlock.current?.resolve(key);
+    pendingUnlock.current = null;
+  }, []);
+
+  const handleModalCancel = useCallback((): void => {
+    setModalOpen(false);
+    pendingUnlock.current?.reject(new Error("User cancelled vault unlock"));
+    pendingUnlock.current = null;
+  }, []);
+
   const value = useMemo<VaultContextValue>(
     () => ({
       isUnlocked: rootKey !== null,
       rootKey,
       vaultExists,
-      unlockVault,
       lockVault,
-      bootstrapVault,
       checkVaultExists,
+      requestUnlock,
     }),
-    [rootKey, vaultExists, unlockVault, lockVault, bootstrapVault, checkVaultExists],
+    [rootKey, vaultExists, lockVault, checkVaultExists, requestUnlock],
   );
 
-  return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;
+  return (
+    <VaultContext.Provider value={value}>
+      {children}
+      <MasterPasswordModal
+        open={modalOpen}
+        vaultExists={vaultExists}
+        checkVaultExists={checkVaultExists}
+        onSuccess={handleUnlockSuccess}
+        onCancel={handleModalCancel}
+        onVaultExistsChange={setVaultExists}
+      />
+    </VaultContext.Provider>
+  );
 }
 
 export function useVault(): VaultContextValue {
