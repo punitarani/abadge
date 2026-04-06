@@ -73,7 +73,7 @@ jobs:
       - run: bun run test
 
   build-api:
-    name: Build API Worker
+    name: API Server (Workers)
     runs-on: ubuntu-latest
     needs: [typecheck]
     steps:
@@ -86,7 +86,7 @@ jobs:
         run: bun run build
 
   build-cli:
-    name: Build CLI Binary
+    name: CLI (Binary)
     runs-on: ubuntu-latest
     needs: [typecheck]
     steps:
@@ -99,7 +99,7 @@ jobs:
         run: bun run build
 
   build-web:
-    name: Build Web Worker Bundle
+    name: Web App (Workers)
     runs-on: ubuntu-latest
     needs: [typecheck]
     env:
