@@ -23,24 +23,41 @@ import { cn } from "@/lib/utils";
 
 let activeOverlayCount = 0;
 
-function setUserJotWidgetEnabled(enabled: boolean): void {
-  if (typeof window === "undefined") {
+const USERJOT_HOST_SELECTOR = "[data-userjot-widget-container]";
+const USERJOT_WIDGET_SELECTOR = "[data-userjot-widget]";
+const USERJOT_DEFAULT_Z_INDEX = "999999999";
+const USERJOT_OVERLAY_Z_INDEX = "40";
+
+function setUserJotOverlayState(overlayOpen: boolean): void {
+  if (typeof document === "undefined") {
     return;
   }
 
-  const uj = (
-    window as Window & {
-      uj?: {
-        hideWidget?: () => void;
-        setWidgetEnabled?: (enabled: boolean) => void;
-      };
-    }
-  ).uj;
+  if (overlayOpen) {
+    document.body.setAttribute("data-dashboard-overlay-open", "true");
+  } else {
+    document.body.removeAttribute("data-dashboard-overlay-open");
+  }
 
-  uj?.setWidgetEnabled?.(enabled);
+  const host = document.querySelector<HTMLElement>(USERJOT_HOST_SELECTOR);
+  if (!host) {
+    return;
+  }
 
-  if (!enabled) {
-    uj?.hideWidget?.();
+  const zIndex = overlayOpen ? USERJOT_OVERLAY_Z_INDEX : USERJOT_DEFAULT_Z_INDEX;
+  host.style.setProperty("z-index", zIndex, "important");
+
+  const widget = host.shadowRoot?.querySelector<HTMLElement>(USERJOT_WIDGET_SELECTOR);
+  if (!widget) {
+    return;
+  }
+
+  widget.style.setProperty("z-index", zIndex, "important");
+
+  if (overlayOpen) {
+    widget.style.setProperty("pointer-events", "none", "important");
+  } else {
+    widget.style.removeProperty("pointer-events");
   }
 }
 
@@ -87,13 +104,23 @@ export function ResponsiveOverlay({
     }
 
     activeOverlayCount += 1;
-    setUserJotWidgetEnabled(false);
+    setUserJotOverlayState(true);
+
+    const observer = new MutationObserver(() => {
+      setUserJotOverlayState(true);
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
 
     return () => {
+      observer.disconnect();
       activeOverlayCount = Math.max(0, activeOverlayCount - 1);
 
       if (activeOverlayCount === 0) {
-        setUserJotWidgetEnabled(true);
+        setUserJotOverlayState(false);
       }
     };
   }, [open]);
