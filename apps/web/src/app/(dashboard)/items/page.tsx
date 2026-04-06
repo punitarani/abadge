@@ -93,8 +93,11 @@ export default function ItemsPage(): React.ReactElement {
               items.map((item: ItemSummary) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">
-                    <Link href={`/items/${item.id}`} className="text-foreground hover:underline">
-                      {item.id.slice(0, 8)}...
+                    <Link
+                      href={`/items/${item.id}`}
+                      className="font-mono text-foreground hover:underline"
+                    >
+                      {item.id.slice(0, 13)}…
                     </Link>
                   </TableCell>
                   <TableCell>

@@ -41,8 +41,11 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   use_without_reveal: "Use without reveal",
 };
 
-function formatItemId(id: string): string {
-  return `${id.slice(0, 8)}...`;
+function formatItemLabel(id: string, storageMode?: string): string {
+  const prefix =
+    storageMode === "zero_knowledge" ? "ZK" : storageMode === "server_managed" ? "Srv" : null;
+  const shortId = `${id.slice(0, 13)}…`;
+  return prefix ? `${prefix} · ${shortId}` : shortId;
 }
 
 export default function PermissionsPage(): React.ReactElement {
@@ -98,6 +101,11 @@ export default function PermissionsPage(): React.ReactElement {
     [agents],
   );
 
+  const itemMap = useMemo<Map<string, ItemSummary>>(
+    () => new Map(items.map((item: ItemSummary) => [item.id, item])),
+    [items],
+  );
+
   const activeAgentOptions = useMemo<SearchableSelectOption[]>(
     () =>
       agents
@@ -114,7 +122,10 @@ export default function PermissionsPage(): React.ReactElement {
           (a: ItemSummary, b: ItemSummary) =>
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
         )
-        .map((item: ItemSummary) => ({ value: item.id, label: formatItemId(item.id) })),
+        .map((item: ItemSummary) => ({
+          value: item.id,
+          label: formatItemLabel(item.id, item.storageMode),
+        })),
     [items],
   );
 
@@ -136,7 +147,10 @@ export default function PermissionsPage(): React.ReactElement {
             (a: ItemSummary, b: ItemSummary) =>
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           )
-          .map((item: ItemSummary) => ({ value: item.id, label: formatItemId(item.id) })),
+          .map((item: ItemSummary) => ({
+            value: item.id,
+            label: formatItemLabel(item.id, item.storageMode),
+          })),
       ),
     [items],
   );
@@ -258,7 +272,7 @@ export default function PermissionsPage(): React.ReactElement {
             value={filterItem}
             onValueChange={(value) => void setPermissionFilters({ item: value })}
             searchPlaceholder="Search items..."
-            triggerClassName="h-[28px] w-[200px] text-xs"
+            triggerClassName="h-[28px] w-[220px] text-xs"
           />
         </div>
       </div>
@@ -306,7 +320,10 @@ export default function PermissionsPage(): React.ReactElement {
                     {agentNames.get(permission.agentId) ?? permission.agentId}
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
-                    {formatItemId(permission.itemId)}
+                    {formatItemLabel(
+                      permission.itemId,
+                      itemMap.get(permission.itemId)?.storageMode,
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">

@@ -209,10 +209,10 @@ export default function AuditPage(): React.ReactElement {
                     <Badge variant={resultBadgeVariant(log.result)}>{log.result}</Badge>
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
-                    {log.agentId ? `${log.agentId.slice(0, 8)}...` : "\u2014"}
+                    {log.agentId ? `${log.agentId.slice(0, 13)}…` : "\u2014"}
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
-                    {log.itemId ? `${log.itemId.slice(0, 8)}...` : "\u2014"}
+                    {log.itemId ? `${log.itemId.slice(0, 13)}…` : "\u2014"}
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground text-xs font-mono">
                     {log.meta ? JSON.stringify(log.meta) : "\u2014"}
