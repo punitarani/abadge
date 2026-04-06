@@ -58,7 +58,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="none" {...props}>
+    <Sidebar collapsible="none" className="h-svh!" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
