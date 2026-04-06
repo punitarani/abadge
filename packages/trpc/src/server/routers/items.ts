@@ -161,37 +161,41 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
     const displayItems = yield* Effect.tryPromise(() =>
       Promise.all(
         result.map(async (item) => {
-          if (item.storageMode === "server_managed") {
-            if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+          try {
+            if (item.storageMode === "server_managed") {
+              if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+                return null;
+              }
+
+              const decrypted = await serverDecrypt(
+                {
+                  ciphertext: item.serverCiphertext,
+                  iv: item.serverIv,
+                  keyVersion: item.serverKeyVersion,
+                },
+                ctx.env.ENCRYPTION_KEY,
+              );
+
+              return {
+                itemId: item.id,
+                storageMode: "server_managed" as const,
+                label: decodeServerManagedPayload(item.id, decrypted).label,
+              };
+            }
+
+            if (!item.encryptedItemKey || !item.ciphertext) {
               return null;
             }
 
-            const decrypted = await serverDecrypt(
-              {
-                ciphertext: item.serverCiphertext,
-                iv: item.serverIv,
-                keyVersion: item.serverKeyVersion,
-              },
-              ctx.env.ENCRYPTION_KEY,
-            );
-
             return {
               itemId: item.id,
-              storageMode: "server_managed" as const,
-              label: decodeServerManagedPayload(item.id, decrypted).label,
+              storageMode: "zero_knowledge" as const,
+              encryptedItemKey: item.encryptedItemKey,
+              ciphertext: item.ciphertext,
             };
-          }
-
-          if (!item.encryptedItemKey || !item.ciphertext) {
+          } catch {
             return null;
           }
-
-          return {
-            itemId: item.id,
-            storageMode: "zero_knowledge" as const,
-            encryptedItemKey: item.encryptedItemKey,
-            ciphertext: item.ciphertext,
-          };
         }),
       ),
     );
