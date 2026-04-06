@@ -7,7 +7,7 @@ on:
 
 env:
   CI: "1"
-  # Remote cache (optional): set repo var TURBO_TEAM + secret TURBO_TOKEN — see docs/DEVELOPMENT.md
+  # Remote cache (optional): set repo var TURBO_TEAM + secret TURBO_TOKEN — see docs/CI.md
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
 

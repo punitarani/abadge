@@ -377,6 +377,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | `docs/MCP.md` | AI agent integrators | MCP tool reference and security model |
 | `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, delivery modes |
 | `docs/DEVELOPMENT.md` | New contributors | Setup, commands, package structure, how to add features |
+| `docs/CI.md` | Maintainers | CI behavior and optional tooling (e.g. Turborepo remote cache env) |
 
 ## Expected review posture
 
