@@ -37,7 +37,6 @@ const cliPlatforms = [
   { id: "darwin-x64", bunTarget: "bun-darwin-x64" },
   { id: "darwin-arm64", bunTarget: "bun-darwin-arm64" },
   { id: "linux-x64-baseline", bunTarget: "bun-linux-x64-baseline" },
-  // Bun does not expose a distinct baseline-vs-modern ARM64 target today.
   { id: "linux-arm64-baseline", bunTarget: "bun-linux-arm64" },
   { id: "linux-x64-musl", bunTarget: "bun-linux-x64-musl" },
   { id: "linux-arm64-musl", bunTarget: "bun-linux-arm64-musl" },
@@ -59,6 +58,7 @@ export const releasePackages = [
       "install.sh",
       "scripts/releases/",
       ".github/workflows/release.yml",
+      "README.md",
       "docs/CLI.md",
       "docs/DEVELOPMENT.md",
       "docs/ARCHITECTURE.md",

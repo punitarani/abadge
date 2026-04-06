@@ -22,17 +22,6 @@ CLI release identity is package-scoped:
 * archive: `abadge-cli-vX.Y.Z-<target>.tar.gz`
 * checksum file: `SHA256SUMS`
 
-This matches the SDK's package-scoped tag convention:
-
-* SDK: `sdk-vX.Y.Z`
-* CLI: `cli-vX.Y.Z`
-
-The difference is the trigger:
-
-* SDK publishing is triggered by pushing a `sdk-vX.Y.Z` tag
-* CLI publishing is triggered from the versioned `main` release flow, which then creates the
-  `cli-vX.Y.Z` GitHub Release tag
-
 ## Files that matter
 
 * registry: [`scripts/releases/registry.ts`](../../scripts/releases/registry.ts)

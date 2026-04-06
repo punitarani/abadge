@@ -1,4 +1,4 @@
-import type { DaemonOperatorSession, Vault } from "@abadge/core";
+import type { Vault } from "@abadge/core";
 import type { KDFParams } from "@abadge/crypto";
 
 /** Daemon configuration. */
@@ -11,12 +11,8 @@ export interface DaemonConfig {
   autoLockMs: number;
   /** API base URL for fetching vault metadata. */
   apiUrl: string;
-}
-
-export interface OperatorSessionConfig {
-  accessToken: string;
-  expiresAt?: string | null;
-  userId?: string | null;
+  /** Better Auth session cookie for human-authenticated vault routes. */
+  sessionCookie: string;
 }
 
 /** Vault metadata fetched from the API. */
@@ -78,10 +74,6 @@ export interface MountExecResult {
 export interface EnvExecResult {
   exitCode: number;
   signal?: string;
-}
-
-export interface OperatorSessionResult extends DaemonOperatorSession {
-  token?: string;
 }
 
 /** Result of item.rekey for a single item. */

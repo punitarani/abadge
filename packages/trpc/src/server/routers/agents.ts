@@ -1,22 +1,18 @@
 import {
-  AGENT_BOOTSTRAP_PREFIX,
-  AGENT_BOOTSTRAP_TTL_MS,
   AgentListResultSchema,
-  AgentRegistrationResultSchema,
   AgentResultSchema,
   AgentRotateResultSchema,
+  AgentWithKeySchema,
   API_KEY_PREFIX,
   agentLocalityForKind,
-  BadRequestError,
   type CreateAgentInput,
   CreateAgentSchema,
-  ForbiddenError,
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
-import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
+import { generateApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
-import { agentEnrollmentTokens, principals as agentRecords } from "@abadge/db/schema";
+import { principals as agentRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import {
@@ -33,86 +29,27 @@ const AgentIdSchema = Schema.Struct({
   agentId: Schema.String.pipe(Schema.minLength(1)),
 });
 
-const buildLegacyApiKey = (locality: "local" | "remote") =>
-  Effect.gen(function* () {
-    const generatedKey = yield* Effect.tryPromise(() => generateApiKey(API_KEY_PREFIX[locality]));
-    return {
-      apiKey: generatedKey.key,
-      keyPrefix: generatedKey.prefix,
-      secretHash: generatedKey.hash,
-    };
-  });
-
-const buildBootstrapToken = (input: CreateAgentInput, authMethod: CreateAgentInput["authMethod"]) =>
-  Effect.gen(function* () {
-    if (
-      authMethod !== "public_key_session" ||
-      input.publicKey ||
-      input.issueBootstrapToken === false
-    ) {
-      return {
-        bootstrapToken: null,
-        bootstrapHash: null,
-        bootstrapExpiresAt: null,
-      };
-    }
-
-    const bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
-    const bootstrapHash = yield* Effect.tryPromise(() => hashApiKey(bootstrapToken));
-    return {
-      bootstrapToken,
-      bootstrapHash,
-      bootstrapExpiresAt: new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS),
-    };
-  });
-
 const createAgent = (input: CreateAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const locality = agentLocalityForKind(input.kind);
-    const authMethod = input.authMethod ?? "public_key_session";
-
-    if (authMethod === "legacy_api_key" && input.publicKey) {
-      return yield* Effect.fail(
-        new BadRequestError({
-          code: "BAD_REQUEST",
-          message: "Legacy API-key agents cannot set a public key",
-        }),
-      );
-    }
+    const authMethod = "legacy_api_key" as const;
+    const prefix = API_KEY_PREFIX[locality];
+    const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
 
     const id = crypto.randomUUID();
-    const legacyKey =
-      authMethod === "legacy_api_key"
-        ? yield* buildLegacyApiKey(locality)
-        : { apiKey: null, keyPrefix: null, secretHash: null };
-    const bootstrap = yield* buildBootstrapToken(input, authMethod);
-
     yield* Effect.tryPromise(() =>
-      ctx.db.transaction(async (tx) => {
-        await tx.insert(agentRecords).values({
-          id,
-          userId: ctx.identity.userId,
-          kind: input.kind,
-          locality,
-          authMethod,
-          name: input.name,
-          secretHash: legacyKey.secretHash,
-          secretPrefix: legacyKey.keyPrefix,
-          publicKey: input.publicKey ?? null,
-          metadata: input.metadata ?? {},
-        });
-
-        if (bootstrap.bootstrapHash && bootstrap.bootstrapExpiresAt) {
-          await tx.insert(agentEnrollmentTokens).values({
-            id: crypto.randomUUID(),
-            agentId: id,
-            userId: ctx.identity.userId,
-            createdBy: ctx.identity.userId,
-            tokenHash: bootstrap.bootstrapHash,
-            expiresAt: bootstrap.bootstrapExpiresAt,
-          });
-        }
+      ctx.db.insert(agentRecords).values({
+        id,
+        userId: ctx.identity.userId,
+        kind: input.kind,
+        locality,
+        authMethod,
+        name: input.name,
+        secretHash: hash,
+        secretPrefix: keyPrefix,
+        publicKey: null,
+        metadata: input.metadata ?? {},
       }),
     );
 
@@ -132,18 +69,16 @@ const createAgent = (input: CreateAgentInput) =>
         locality,
         authMethod,
         name: input.name,
-        publicKey: input.publicKey ?? null,
-        secretHash: legacyKey.secretHash,
-        secretPrefix: legacyKey.keyPrefix,
+        secretHash: hash,
+        secretPrefix: keyPrefix,
+        publicKey: null,
         enabled: true,
         revokedAt: null,
         lastUsedAt: null,
         metadata: input.metadata ?? {},
         createdAt: new Date(),
       }),
-      apiKey: legacyKey.apiKey,
-      bootstrapToken: bootstrap.bootstrapToken,
-      bootstrapExpiresAt: bootstrap.bootstrapExpiresAt?.toISOString() ?? null,
+      apiKey: key,
     };
   });
 
@@ -223,15 +158,6 @@ const rotateAgent = (agentId: string) =>
       );
     }
 
-    if (agent.authMethod !== "legacy_api_key") {
-      return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "Only legacy API-key agents can be rotated",
-        }),
-      );
-    }
-
     const prefix = API_KEY_PREFIX[agent.locality as "local" | "remote"];
     const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
 
@@ -303,7 +229,7 @@ const revokeAgent = (agentId: string) =>
 export const agentsRouter = createTrpcRouter({
   create: sessionProcedure
     .input(strictSchema(CreateAgentSchema))
-    .output(strictSchema(AgentRegistrationResultSchema))
+    .output(strictSchema(AgentWithKeySchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgent(input))),
   list: sessionProcedure
     .output(strictSchema(AgentListResultSchema))

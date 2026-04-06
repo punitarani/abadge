@@ -4,13 +4,6 @@
 
 Releases are package-scoped, not repo-scoped.
 
-This release documentation covers the CLI GitHub Release pipeline.
-
-The SDK uses a separate npm publish workflow triggered by `sdk-vX.Y.Z` tags in
-[`/.github/workflows/publish-sdk.yml`](../../.github/workflows/publish-sdk.yml). The CLI mirrors
-that package-scoped naming with `cli-vX.Y.Z`, but the CLI tags are created by the CLI publish flow
-after versioning on `main` instead of being the workflow trigger.
-
 Key terms:
 
 * **Changeset**: version bump input in `/.changeset/*.md`

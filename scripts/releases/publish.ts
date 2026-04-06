@@ -169,6 +169,7 @@ async function createGitHubRelease(
 }
 
 async function buildGitHubBinaryTarget(
+  _releasePackage: ReleasePackage,
   target: GitHubBinaryTarget,
   version: string,
   outDir: string,
@@ -274,7 +275,7 @@ async function publishReleasePackage(
       continue;
     }
 
-    const assets = await buildGitHubBinaryTarget(target, version, targetOutDir);
+    const assets = await buildGitHubBinaryTarget(releasePackage, target, version, targetOutDir);
 
     if (options.dryRun) {
       console.log(

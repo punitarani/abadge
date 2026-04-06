@@ -155,7 +155,6 @@ semver_sort_key() {
 
 latest_cli_version_from_releases_json() {
   local releases_json best_version best_key version key
-  local LC_ALL=C
   releases_json="$1"
   best_version=""
   best_key=""
@@ -210,7 +209,7 @@ main() {
 
   asset_name="$(asset_archive_name_for_version_target "$version" "$asset_target")"
   tmpdir="$(mktemp -d)"
-  trap "rm -rf \"$tmpdir\"" EXIT
+  trap "rm -rf '$tmpdir'" EXIT
 
   asset_path="$tmpdir/$asset_name"
   checksum_path="$tmpdir/SHA256SUMS"

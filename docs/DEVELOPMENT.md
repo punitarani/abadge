@@ -89,16 +89,6 @@ bun run api:dev:worker
 bun run api:clean:worker
 ```
 
-Component development lives in Storybook under `apps/web/.storybook`.
-
-```bash
-bun run storybook
-bun run storybook:build
-```
-
-When a dashboard page needs story coverage, do not import the App Router `page.tsx` file directly.
-Extract a pure presentational component first, then write stories against that component.
-
 ## Commands
 
 | Command | Description |
@@ -117,35 +107,10 @@ Extract a pure presentational component first, then write stories against that c
 | `bun run db:reset` | Reset the schema locally |
 | `bun run cli -- --help` | Run the CLI |
 | `bun run mcp` | Start the MCP server |
-| `bun run storybook` | Start Storybook for `apps/web` |
-| `bun run storybook:build` | Build the `apps/web` Storybook |
 | `bun test` | Run tests |
 | `bun run changeset` | Create a changeset |
 | `bun run release:cli:dry-run` | Build CLI release artifacts locally |
 | `bun run release:publish -- --dry-run --package cli` | Dry-run the generic release publisher |
-
-## Releasing `@abadge/sdk`
-
-SDK publishing is isolated to `.github/workflows/publish-sdk.yml`. It does not use Doppler or
-`DOPPLER_TOKEN`; npm publishing is authenticated through GitHub Actions OIDC trusted publishing.
-
-Before the first release, configure npm trusted publishing for package `@abadge/sdk` to trust this
-repository and the workflow filename `publish-sdk.yml` (npm expects the filename only, not the
-full `.github/workflows/...` path).
-
-Release flow:
-
-```bash
-# 1. Bump packages/sdk/package.json version and merge that change to main
-
-# 2. Create a matching release tag from main
-git tag sdk-v0.1.0
-git push origin sdk-v0.1.0
-```
-
-The workflow only runs for tags matching `sdk-vX.Y.Z`. It verifies that the tag version matches
-`packages/sdk/package.json` and that the tagged commit is reachable from `origin/main` before
-publishing `@abadge/sdk` to npm.
 
 ## Package structure
 

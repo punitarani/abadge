@@ -1,25 +1,18 @@
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
-  AgentBootstrapTokenResult,
-  AgentChallengeResult,
-  AgentEnrollmentResult,
   AgentListResult,
-  AgentRegistrationResult,
+  AgentResult,
   AgentRotateResult,
-  AgentSessionResult,
+  AgentWithKey,
   AuditFilters,
   AuditListResult,
   BootstrapVaultInput,
   ChangePasswordInput,
   CiphertextAccessResponse,
-  CreateAgentChallengeInput,
   CreateAgentInput,
   CreateItemInput,
   CreatePermissionInput,
-  EnrollAgentInput,
-  ExchangeAgentSessionInput,
-  IssueAgentBootstrapTokenInput,
   ItemListResult,
   ItemResult,
   MountAccessResponse,
@@ -27,7 +20,6 @@ import type {
   PermissionListResult,
   PermissionResult,
   RevealAccessResponse,
-  RevokeAgentSessionInput,
   RotateKeyInput,
   SetupRecoveryInput,
   SuccessResult,
@@ -44,14 +36,8 @@ import type {
 export interface AbadgeClientConfig {
   /** API endpoint URL (no trailing slash). */
   apiUrl: string;
-  /**
-   * Optional bearer credential.
-   *
-   * Use a human session token for operator flows, an `abl_` / `abg_` API key
-   * during migration, or an `abs_` short-lived agent session token for runtime
-   * access. Public auth lifecycle endpoints do not require a token.
-   */
-  token?: string;
+  /** Session token (user) or agent API key (prefixed `abl_` or `abg_`). */
+  token: string;
 }
 
 interface TrpcMutation<TInput, TOutput> {
@@ -67,15 +53,6 @@ interface TrpcQueryWithoutInput<TOutput> {
 }
 
 interface SdkTrpcClient {
-  auth: {
-    recordLogin: TrpcMutation<void, SuccessResult>;
-    logout: TrpcMutation<void, SuccessResult>;
-    issueBootstrapToken: TrpcMutation<IssueAgentBootstrapTokenInput, AgentBootstrapTokenResult>;
-    enroll: TrpcMutation<EnrollAgentInput, AgentEnrollmentResult>;
-    createChallenge: TrpcMutation<CreateAgentChallengeInput, AgentChallengeResult>;
-    exchangeSession: TrpcMutation<ExchangeAgentSessionInput, AgentSessionResult>;
-    revokeSession: TrpcMutation<RevokeAgentSessionInput, SuccessResult>;
-  };
   vault: {
     bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
     get: TrpcQueryWithoutInput<VaultResult>;
@@ -94,8 +71,9 @@ interface SdkTrpcClient {
     delete: TrpcMutation<{ itemId: string }, SuccessResult>;
   };
   agents: {
-    create: TrpcMutation<CreateAgentInput, AgentRegistrationResult>;
+    create: TrpcMutation<CreateAgentInput, AgentWithKey>;
     list: TrpcQueryWithoutInput<AgentListResult>;
+    self: TrpcQueryWithoutInput<AgentResult>;
     rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
@@ -269,16 +247,16 @@ export class AbadgeClient {
   }
 
   /**
-   * Register a new agent and receive either a legacy API key or bootstrap token.
+   * Register a new agent and receive a one-time API key.
    *
-   * Legacy API keys are shown exactly once. Keypair-backed agents can return
-   * a one-time bootstrap token for out-of-band enrollment.
+   * The API key is shown exactly once in the response and is never retrievable again.
+   * Store it securely immediately after creation.
    *
    * @param data - Agent kind, name, and optional metadata
-   * @returns The created agent and its bootstrap material
+   * @returns The created agent and its one-time API key
    * @throws {AbadgeApiError} VALIDATION_ERROR
    */
-  async createAgent(data: CreateAgentInput): Promise<AgentRegistrationResult> {
+  async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
     return this.call(() => this.client.agents.create.mutate(data), "Failed to create agent");
   }
 
@@ -289,6 +267,10 @@ export class AbadgeClient {
    */
   async listAgents(): Promise<AgentListResult> {
     return this.call(() => this.client.agents.list.query(), "Failed to list agents");
+  }
+
+  async getCurrentAgent(): Promise<AgentResult> {
+    return this.call(() => this.client.agents.self.query(), "Failed to fetch agent");
   }
 
   /**
@@ -420,51 +402,6 @@ export class AbadgeClient {
    */
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
-  }
-
-  async recordLogin(): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.auth.recordLogin.mutate(undefined),
-      "Failed to record login",
-    );
-  }
-
-  async logout(): Promise<SuccessResult> {
-    return this.call(() => this.client.auth.logout.mutate(undefined), "Failed to log out");
-  }
-
-  async issueAgentBootstrapToken(
-    input: IssueAgentBootstrapTokenInput,
-  ): Promise<AgentBootstrapTokenResult> {
-    return this.call(
-      () => this.client.auth.issueBootstrapToken.mutate(input),
-      "Failed to issue bootstrap token",
-    );
-  }
-
-  async enrollAgent(input: EnrollAgentInput): Promise<AgentEnrollmentResult> {
-    return this.call(() => this.client.auth.enroll.mutate(input), "Failed to enroll agent");
-  }
-
-  async createAgentChallenge(input: CreateAgentChallengeInput): Promise<AgentChallengeResult> {
-    return this.call(
-      () => this.client.auth.createChallenge.mutate(input),
-      "Failed to create agent challenge",
-    );
-  }
-
-  async exchangeAgentSession(input: ExchangeAgentSessionInput): Promise<AgentSessionResult> {
-    return this.call(
-      () => this.client.auth.exchangeSession.mutate(input),
-      "Failed to exchange agent session",
-    );
-  }
-
-  async revokeAgentSession(input: RevokeAgentSessionInput): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.auth.revokeSession.mutate(input),
-      "Failed to revoke agent session",
-    );
   }
 
   private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {

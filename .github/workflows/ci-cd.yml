@@ -62,7 +62,7 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      - run: bunx turbo run typecheck
+      - run: bun run typecheck
 
   test:
     name: Test
@@ -73,7 +73,7 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      - run: bunx turbo run test
+      - run: bun run test
 
   build-api:
     name: API Server (Workers)
@@ -97,7 +97,7 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      - run: bunx turbo run build --filter=@abadge/cli
+      - run: bun run --cwd packages/cli build
 
   build-web:
     name: Web App (Workers)

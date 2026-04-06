@@ -1,264 +1,211 @@
-import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
+import { hostname } from "node:os";
+import { AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import {
-  type CliProfileConfig,
-  DEFAULT_API_URL,
-  loadConfig,
-  mergeLoginConfig,
-  saveConfig,
-} from "../config";
-import { daemonSetOperatorSession } from "../daemon";
-import { error, success, warn } from "../output";
-import { ensureLocalRuntimeAgent } from "../runtime-agent";
-import { ensureDaemonRunning } from "./daemon";
+import { ApiClient, SessionApiClient, signInWithEmail } from "../client";
+import { loadConfig, saveConfig } from "../config";
+import { error, errorMessage, success } from "../output";
+import { prompt } from "../prompt";
 
-interface DeviceCodeResponse {
-  device_code?: string;
-  user_code?: string;
-  verification_uri?: string;
-  verification_uri_complete?: string;
-  interval?: number;
+interface AgentRecord {
+  id: string;
+  userId: string;
+  kind: string;
+  locality: string;
+  name: string;
+  enabled: boolean;
+  revokedAt: string | null;
 }
 
-interface DeviceTokenResponse {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
+interface AgentRegistration {
+  agent: AgentRecord;
+  apiKey: string;
 }
 
-interface SessionLookupResponse {
-  user?: {
-    id?: string | null;
-  } | null;
-  session?: {
-    expiresAt?: string | null;
-    userId?: string | null;
-  } | null;
+type LocalCliAgentResult = {
+  agentId: string;
+  apiKey: string;
+  action: "reused" | "rotated" | "created";
+};
+
+function isNotFoundError(error: unknown): error is AbadgeApiError {
+  return error instanceof AbadgeApiError && error.statusCode === 404;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function isUnauthorizedError(error: unknown): error is AbadgeApiError {
+  return error instanceof AbadgeApiError && error.statusCode === 401;
 }
 
-async function requestDeviceCode(apiUrl: string): Promise<Required<DeviceCodeResponse>> {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/auth/device/code`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      client_id: DEVICE_AUTH_CLIENT_ID,
-      scope: "openid profile email",
-    }),
-  });
-  const data = (await response.json().catch(() => ({}))) as DeviceCodeResponse & {
-    error?: string;
-    error_description?: string;
-  };
+function isReusableLocalCliAgent(agent: AgentRecord, sessionUserId: string): boolean {
+  return (
+    agent.userId === sessionUserId &&
+    agent.kind === "local_cli" &&
+    agent.locality === "local" &&
+    agent.enabled &&
+    agent.revokedAt == null
+  );
+}
 
-  if (!response.ok || !data.device_code || !data.user_code || !data.verification_uri) {
-    throw new Error(
-      data.error_description ??
-        data.error ??
-        `Failed to start device authorization (${response.status})`,
-    );
+async function getExistingLocalCliAgent(
+  client: SessionApiClient,
+  existingAgentId: string | undefined,
+  sessionUserId: string,
+): Promise<AgentRecord | null> {
+  if (!existingAgentId) {
+    return null;
   }
 
-  return {
-    device_code: data.device_code,
-    user_code: data.user_code,
-    verification_uri: data.verification_uri,
-    verification_uri_complete: data.verification_uri_complete ?? data.verification_uri,
-    interval: data.interval ?? 5,
-  };
-}
-
-async function pollForAccessToken(
-  apiUrl: string,
-  deviceCode: string,
-  initialIntervalSeconds: number,
-): Promise<string> {
-  let pollingIntervalSeconds = Math.max(initialIntervalSeconds, 1);
-
-  while (true) {
-    await sleep(pollingIntervalSeconds * 1000);
-
-    const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/auth/device/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        device_code: deviceCode,
-        client_id: DEVICE_AUTH_CLIENT_ID,
-      }),
-    });
-    const data = (await response.json().catch(() => ({}))) as DeviceTokenResponse;
-
-    if (response.ok && data.access_token) {
-      return data.access_token;
-    }
-
-    switch (data.error) {
-      case "authorization_pending":
-        continue;
-      case "slow_down":
-        pollingIntervalSeconds += 5;
-        continue;
-      case "access_denied":
-        throw new Error("Device authorization was denied.");
-      case "expired_token":
-        throw new Error("The device code expired. Run `abadge login` again.");
-      default:
-        throw new Error(
-          data.error_description ??
-            data.error ??
-            `Failed to complete device authorization (${response.status})`,
-        );
-    }
-  }
-}
-
-async function lookupSession(
-  apiUrl: string,
-  accessToken: string,
-): Promise<{ userId: string | null; expiresAt: string | null }> {
-  const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/auth/get-session`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-  const data = (await response.json().catch(() => ({}))) as SessionLookupResponse;
-
-  if (!response.ok) {
-    return { userId: null, expiresAt: null };
-  }
-
-  return {
-    userId: data.user?.id ?? data.session?.userId ?? null,
-    expiresAt: data.session?.expiresAt ?? null,
-  };
-}
-
-async function tryOpenBrowser(url: string): Promise<boolean> {
-  const commands =
-    process.platform === "darwin"
-      ? [["open", url]]
-      : process.platform === "win32"
-        ? [["cmd", "/c", "start", "", url]]
-        : [["xdg-open", url]];
-
-  for (const command of commands) {
-    try {
-      const proc = Bun.spawn(command, {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      const exitCode = await proc.exited;
-      if (exitCode === 0) {
-        return true;
-      }
-    } catch {
-      // Try the next launcher.
-    }
-  }
-
-  return false;
-}
-
-async function maybeOpenVerificationUrl(
-  verificationUrl: string,
-  openBrowser: boolean | undefined,
-): Promise<void> {
-  if (openBrowser === false) {
-    return;
-  }
-
-  const opened = await tryOpenBrowser(verificationUrl);
-  if (!opened) {
-    warn("Could not open a browser automatically. Open the verification URL manually.");
-  }
-}
-
-async function recordLoginAudit(apiUrl: string, accessToken: string): Promise<void> {
   try {
-    const operatorClient = new ApiClient({ apiUrl, token: accessToken });
-    await operatorClient.recordLogin();
-  } catch {
-    warn("Logged in, but login audit recording failed.");
-  }
-}
-
-async function provisionLocalAgents(config: CliProfileConfig): Promise<void> {
-  for (const kind of ["local_cli", "local_mcp"] as const) {
-    try {
-      await ensureLocalRuntimeAgent(kind, config);
-    } catch (provisionError) {
-      warn(
-        provisionError instanceof Error
-          ? provisionError.message
-          : `Logged in, but ${kind} provisioning failed.`,
-      );
+    const agent = (await client.getAgent(existingAgentId)).agent as AgentRecord;
+    return isReusableLocalCliAgent(agent, sessionUserId) ? agent : null;
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      return null;
     }
+    throw err;
   }
 }
 
-async function finishLogin(
+async function reuseExistingAgentKey(
   apiUrl: string,
-  accessToken: string,
-  existing: CliProfileConfig | null,
-): Promise<void> {
-  const session = await lookupSession(apiUrl, accessToken);
-  const config = mergeLoginConfig(apiUrl, existing, session.userId);
-  saveConfig(config);
-  await ensureDaemonRunning(apiUrl);
-
-  const daemonSession = await daemonSetOperatorSession({
-    accessToken,
-    userId: session.userId,
-    expiresAt: session.expiresAt,
-  });
-  if (!daemonSession.ok) {
-    throw new Error(daemonSession.error ?? "Failed to store operator session in daemon");
+  sessionUserId: string,
+  existingAgentKey: string | undefined,
+): Promise<LocalCliAgentResult | null> {
+  if (!existingAgentKey) {
+    return null;
   }
 
-  await recordLoginAudit(apiUrl, accessToken);
-  await provisionLocalAgents(config);
+  try {
+    const currentAgent = (
+      await new ApiClient({
+        apiUrl,
+        principalSecret: existingAgentKey,
+      }).getCurrentAgent()
+    ).agent as AgentRecord;
+
+    if (!isReusableLocalCliAgent(currentAgent, sessionUserId)) {
+      return null;
+    }
+
+    return {
+      agentId: currentAgent.id,
+      apiKey: existingAgentKey,
+      action: "reused",
+    };
+  } catch (err) {
+    if (isUnauthorizedError(err)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
-async function runLogin(
+async function rotateExistingAgent(
+  client: SessionApiClient,
+  agentId: string,
+): Promise<LocalCliAgentResult | null> {
+  try {
+    const rotated = await client.rotateAgent(agentId);
+    return {
+      agentId,
+      apiKey: rotated.apiKey,
+      action: "rotated",
+    };
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function createLocalCliAgent(client: SessionApiClient): Promise<LocalCliAgentResult> {
+  const deviceName = hostname().trim() || "local-machine";
+  const result = (await client.createAgent({
+    kind: "local_cli",
+    name: `cli-${deviceName}`,
+    metadata: {
+      hostname: deviceName,
+      platform: process.platform,
+    },
+  })) as AgentRegistration;
+
+  return { agentId: result.agent.id, apiKey: result.apiKey, action: "created" };
+}
+
+async function ensureLocalCliAgent(
   apiUrl: string,
-  existing: CliProfileConfig | null,
-  openBrowser: boolean | undefined,
-): Promise<void> {
-  const device = await requestDeviceCode(apiUrl);
+  sessionUserId: string,
+  client: SessionApiClient,
+  existingAgentId?: string,
+  existingAgentKey?: string,
+): Promise<LocalCliAgentResult> {
+  const existingAgent = await getExistingLocalCliAgent(client, existingAgentId, sessionUserId);
+  if (!existingAgent) {
+    return createLocalCliAgent(client);
+  }
 
-  console.log(`Verification URL: ${device.verification_uri}`);
-  console.log(`User code: ${device.user_code}`);
+  const reusedAgent = await reuseExistingAgentKey(apiUrl, sessionUserId, existingAgentKey);
+  if (reusedAgent) {
+    return reusedAgent;
+  }
 
-  await maybeOpenVerificationUrl(device.verification_uri_complete, openBrowser);
+  const rotatedAgent = await rotateExistingAgent(client, existingAgent.id);
+  if (rotatedAgent) {
+    return rotatedAgent;
+  }
 
-  console.log("Waiting for authorization...");
-  const accessToken = await pollForAccessToken(apiUrl, device.device_code, device.interval);
-  await finishLogin(apiUrl, accessToken, existing);
+  return createLocalCliAgent(client);
 }
 
 export function createLoginCommand(): Command {
   return new Command("login")
-    .description("Authenticate with abadge using browser-based device authorization")
+    .description("Authenticate with abadge")
     .option("--api-url <url>", "API base URL")
-    .option("--no-open-browser", "Do not try to open the browser automatically")
-    .action(async (opts: { apiUrl?: string; openBrowser?: boolean }) => {
+    .option("--email <email>", "Email address")
+    .option("--password <password>", "Password")
+    .action(async (opts: { apiUrl?: string; email?: string; password?: string }) => {
       const existing = loadConfig();
-      const apiUrl = opts.apiUrl ?? existing?.apiUrl ?? DEFAULT_API_URL;
+      const apiUrl =
+        opts.apiUrl ?? existing?.apiUrl ?? process.env.ABADGE_API_URL ?? "https://api.abadge.io";
+      const email = opts.email ?? (await prompt("Email: "));
+      const password = opts.password ?? (await prompt("Password: ", true));
+
+      if (!email || !password) {
+        error("Email and password are required.");
+        process.exit(1);
+      }
 
       try {
-        await runLogin(apiUrl, existing, opts.openBrowser);
+        const { sessionCookie, session } = await signInWithEmail(apiUrl, email, password);
+        const sessionUserId = session.user?.id;
+        if (!sessionUserId) {
+          throw new Error("Authenticated successfully but could not determine the session user.");
+        }
+
+        const sessionClient = new SessionApiClient({ apiUrl, sessionCookie });
+        const agent = await ensureLocalCliAgent(
+          apiUrl,
+          sessionUserId,
+          sessionClient,
+          existing?.principalId,
+          existing?.principalSecret,
+        );
+
+        saveConfig({
+          apiUrl,
+          sessionCookie,
+          principalId: agent.agentId,
+          principalSecret: agent.apiKey,
+        });
+
         success("Logged in successfully.");
-      } catch (loginError) {
-        error(loginError instanceof Error ? loginError.message : "Login failed.");
+        if (agent.action === "created") {
+          success(`Registered local CLI agent ${agent.agentId}.`);
+        } else if (agent.action === "rotated") {
+          success(`Refreshed local CLI agent ${agent.agentId}.`);
+        }
+      } catch (err) {
+        error(errorMessage(err, "Failed to log in."));
         process.exit(1);
       }
     });

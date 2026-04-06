@@ -2,10 +2,9 @@ import { Command } from "commander";
 import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
 import { createAuditCommand } from "./commands/audit";
-import { createDaemonCommand, createDaemonServeCommand } from "./commands/daemon";
+import { createDaemonCommand } from "./commands/daemon";
 import { createItemCommand } from "./commands/item";
 import { createLoginCommand } from "./commands/login";
-import { createLogoutCommand } from "./commands/logout";
 import { createMountCommand } from "./commands/mount";
 import { createPermissionCommand } from "./commands/permission";
 import { createRunCommand } from "./commands/run";
@@ -17,7 +16,6 @@ const program = new Command()
   .version(packageJson.version, "-v, --version");
 
 program.addCommand(createLoginCommand());
-program.addCommand(createLogoutCommand());
 program.addCommand(createDaemonCommand());
 program.addCommand(createVaultCommand());
 program.addCommand(createItemCommand());
@@ -26,7 +24,6 @@ program.addCommand(createPermissionCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createMountCommand());
 program.addCommand(createAuditCommand());
-program.addCommand(createDaemonServeCommand(), { hidden: true });
 
 export { program };
 
