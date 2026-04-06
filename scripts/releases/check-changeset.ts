@@ -102,7 +102,7 @@ export function validateCliChangesetsForInitialPatchTrain(
     changeset.releases.flatMap((release) =>
       release.name === CLI_PACKAGE_NAME && release.type !== "patch"
         ? [
-            `${changeset.path}: ${CLI_PACKAGE_NAME} is currently ${cliVersion}, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace ${release.type} with patch to avoid skipping straight to 0.1.0.`,
+            `${changeset.path}: ${CLI_PACKAGE_NAME} is currently ${cliVersion}, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace ${release.type} with patch.`,
           ]
         : [],
     ),
