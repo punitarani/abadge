@@ -1,28 +1,14 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
-import Image from "next/image";
 import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
-
-const landingSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-landing-sans",
-});
-
-const landingMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-landing-mono",
-});
-
-const landingCondensed = IBM_Plex_Sans_Condensed({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-landing-condensed",
-});
+import {
+  LandingFooter,
+  LandingHeader,
+  landingCondensed,
+  landingRootClassName,
+} from "@/components/landing";
 
 const operatingPrinciples = [
   {
@@ -127,31 +113,8 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div
-      id="top"
-      className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
-    >
-      <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-        </Link>
-
-        <div className="flex items-center gap-3">
-          <a
-            href="https://docs.abadge.io"
-            className="text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]"
-          >
-            Docs
-          </a>
-          <Link
-            href="/login"
-            className="border border-black bg-black px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
+    <div id="top" className={landingRootClassName}>
+      <LandingHeader currentPage="home" />
 
       <main>
         <section className="grid min-h-[32rem] border-b border-black lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -389,38 +352,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="bg-white p-8">
-        <div className="mx-auto flex max-w-[96rem] flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="order-2 max-w-xs md:order-1">
-            <div className="mb-1 inline-flex items-center gap-2">
-              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-            </div>
-            <span className="mb-4 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Credential control plane for AI agents
-            </span>
-          </div>
-
-          <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
-            <a
-              href="https://github.com/punitarani/abadge"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              GitHub
-            </a>
-            <a
-              href="https://docs.abadge.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              Docs
-            </a>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }
