@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -13,7 +12,7 @@ export function AuthShell({ children }: AuthShellProps) {
         <header className="flex h-20 items-center">
           <div className="flex w-full items-center gap-4">
             <Link href="/" className="inline-flex items-center gap-1.5">
-              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
+              <img src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
               <span className="text-xl font-bold tracking-[-0.04em] text-foreground">abadge</span>
             </Link>
             <div className="hidden h-px flex-1 bg-border/80 sm:block" />

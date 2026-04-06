@@ -52,6 +52,6 @@ export const CustomWarning: Story = {
 export const WithoutWarning: Story = {
   args: {
     value: "connector://doppler/abadge/prod/openai",
-    warning: undefined,
+    warning: "",
   },
 };
