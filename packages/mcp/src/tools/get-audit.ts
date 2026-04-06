@@ -16,7 +16,7 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const client = getApiClient(config);
+  const client = await getApiClient(config);
 
   try {
     const response = await client.getAudit({

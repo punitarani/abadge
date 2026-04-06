@@ -2,7 +2,7 @@ import type { Database } from "@abadge/db";
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { openAPI, organization } from "better-auth/plugins";
+import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
 
 export interface AuthEnv {
   ABADGE_API_URL: string;
@@ -32,6 +32,8 @@ export function getTrustedOrigins(env: AuthOriginsEnv): string[] {
   return [...new Set(origins)];
 }
 
+export const DEVICE_AUTH_CLIENT_ID = "abadge-cli";
+
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createAuth(db: Database, env: AuthEnv): any {
   return betterAuth({
@@ -57,7 +59,12 @@ export function createAuth(db: Database, env: AuthEnv): any {
         creatorRole: "owner",
       }),
       openAPI(),
+      bearer(),
       apiKey(),
+      deviceAuthorization({
+        verificationUri: `${env.ABADGE_APP_URL.replace(/\/$/, "")}/device`,
+        validateClient: async (clientId) => clientId === DEVICE_AUTH_CLIENT_ID,
+      }),
     ],
   });
 }

@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requireConfig } from "../config";
+import { clearOperatorSessionIfExpired, createOperatorClient } from "../client";
 import { error, errorMessage, json, table } from "../output";
 
 export function createAuditCommand(): Command {
@@ -8,10 +7,8 @@ export function createAuditCommand(): Command {
     .description("View access audit log")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const config = requireConfig();
-      const client = new ApiClient(config);
-
       try {
+        const client = await createOperatorClient();
         const entries = (await client.getAudit()).entries;
 
         if (opts.json) {
@@ -20,17 +17,18 @@ export function createAuditCommand(): Command {
         }
 
         table(
-          entries.map((e) => ({
-            ID: String(e.id),
-            Agent: e.agentId ?? "-",
-            Item: e.itemId ?? "-",
-            Event: e.eventType,
-            Outcome: e.result,
-            Mode: e.deliveryMode ?? "-",
-            Time: e.occurredAt,
+          entries.map((entry) => ({
+            ID: String(entry.id),
+            Agent: entry.agentId ?? "-",
+            Item: entry.itemId ?? "-",
+            Event: entry.eventType,
+            Outcome: entry.result,
+            Mode: entry.deliveryMode ?? "-",
+            Time: entry.occurredAt,
           })),
         );
       } catch (err) {
+        await clearOperatorSessionIfExpired(err);
         error(errorMessage(err, "Failed to fetch audit log."));
         process.exit(1);
       }

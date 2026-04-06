@@ -197,6 +197,7 @@ const views: SurfaceView[] = [
               <span>--api-url </span>
               <span className="text-[#4f7df7]">https://api.abadge.io</span>
             </ShellLine>
+            <ShellLine tone="muted">operator session stored only in local daemon memory</ShellLine>
             <ShellLine prompt="$">
               <span className="font-semibold text-[#111827]">abadge agent register</span>
               <span> {" \\"}</span>
@@ -258,6 +259,12 @@ const views: SurfaceView[] = [
         detailTone: "blue",
         content: (
           <>
+            <CopyCommandLine command={`abadge login`}>
+              <span className="font-semibold text-[#111827]">abadge login</span>
+            </CopyCommandLine>
+            <ShellLine tone="muted">
+              provisions local_mcp metadata in ~/.abadge/config.json
+            </ShellLine>
             <CopyCommandLine command={`abadge agent register -n "claude-desktop" -k local_mcp`}>
               <span className="font-semibold text-[#111827]">abadge agent register</span>
               <span> -n </span>
@@ -285,8 +292,13 @@ const views: SurfaceView[] = [
               <span>{`,`}</span>
             </ShellLine>
             <ShellLine indent={3}>
-              <span>{`"ABADGE_AUTH_TOKEN": `}</span>
-              <span className="text-[#4f7df7]">"abl_••••••••"</span>
+              <span>{`"ABADGE_AGENT_ID": `}</span>
+              <span className="text-[#4f7df7]">"agent_..."</span>
+              <span>{`,`}</span>
+            </ShellLine>
+            <ShellLine indent={3}>
+              <span>{`"ABADGE_PRIVATE_KEY_PATH": `}</span>
+              <span className="text-[#4f7df7]">"~/.abadge/agents/mcp.ed25519.jwk"</span>
               <span>{` }`}</span>
             </ShellLine>
             <ShellLine indent={1}>{`}`}</ShellLine>
@@ -303,8 +315,8 @@ const views: SurfaceView[] = [
     footnote: (
       <Footnote>
         <span className="flex flex-col">
-          <span>Session tokens manage control-plane calls.</span>
-          <span>Agent API keys perform access.* methods.</span>
+          <span>Human sessions manage control-plane calls.</span>
+          <span>Local and remote agents use short-lived abs_ sessions.</span>
           <span>The same AbadgeClient class supports both personas.</span>
         </span>
       </Footnote>
@@ -345,7 +357,7 @@ const views: SurfaceView[] = [
               <span className="text-[#4f7df7]">"https://api.abadge.io"</span>
               <span>{`,`}</span>
             </ShellLine>
-            <ShellLine indent={1}>{`token: agentApiKey,`}</ShellLine>
+            <ShellLine indent={1}>{`token: agentSessionToken,`}</ShellLine>
             <ShellLine>{`});`}</ShellLine>
             <ShellLine>
               <span className="text-[#111827]">const mount = await client.</span>

@@ -1,6 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DaemonClient } from "@abadge/daemon";
+import {
+  DaemonClient,
+  type OperatorSessionConfig,
+  type OperatorSessionResult,
+} from "@abadge/daemon";
 
 export const SOCKET_PATH = join(homedir(), ".abadge", "vaultd.sock");
 
@@ -28,6 +32,24 @@ async function withDaemon<T>(
 
 export async function daemonStatus(): Promise<DaemonResponse> {
   return withDaemon(async (client) => client.status());
+}
+
+export async function daemonSetOperatorSession(
+  session: OperatorSessionConfig,
+): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.setOperatorSession(session));
+}
+
+export async function daemonClearOperatorSession(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.clearOperatorSession());
+}
+
+export async function daemonOperatorStatus(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.operatorStatus());
+}
+
+export async function daemonOperatorToken(): Promise<DaemonResponse> {
+  return withDaemon(async (client) => client.operatorToken());
 }
 
 export async function daemonUnlock(masterPassword: string): Promise<DaemonResponse> {
@@ -71,4 +93,12 @@ export async function daemonExecEnv(
 
 export async function daemonExecMount(secretValue: string, path?: string): Promise<DaemonResponse> {
   return withDaemon(async (client) => client.execMount(secretValue, path));
+}
+
+export function readOperatorSession(response: DaemonResponse): OperatorSessionResult | null {
+  if (!response.ok || !response.data) {
+    return null;
+  }
+
+  return response.data as OperatorSessionResult;
 }

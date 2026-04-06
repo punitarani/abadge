@@ -113,7 +113,7 @@ export default function ItemDetailPage(): React.ReactElement {
 
           {revealedValue !== null ? (
             <div className="space-y-3">
-              <pre className="bg-neutral-50 border border-border rounded-md p-3 text-sm font-mono whitespace-pre-wrap break-all">
+              <pre className="bg-muted border border-border rounded-md p-3 text-sm font-mono whitespace-pre-wrap break-all">
                 {revealedValue}
               </pre>
               <Button variant="outline" size="sm" onClick={() => setRevealedValue(null)}>

@@ -1,9 +1,15 @@
 import type { Schema } from "effect";
 import type {
+  AgentBootstrapTokenResultSchema,
+  AgentChallengeResultSchema,
+  AgentEnrollmentResultSchema,
   AgentListResultSchema,
+  AgentRegistrationResultSchema,
   AgentResultSchema,
   AgentRotateResultSchema,
   AgentSchema,
+  AgentSessionResultSchema,
+  AgentSessionSchema,
   AgentWithKeySchema,
   AuditEntrySchema,
   AuditListResultSchema,
@@ -11,9 +17,16 @@ import type {
   ChangePasswordSchema,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
+  CliLocalAgentReferenceSchema,
+  CliProfileConfigSchema,
+  CreateAgentChallengeSchema,
   CreateAgentSchema,
   CreateItemSchema,
   CreatePermissionSchema,
+  DaemonOperatorSessionSchema,
+  EnrollAgentSchema,
+  ExchangeAgentSessionSchema,
+  IssueAgentBootstrapTokenSchema,
   ItemDetailSchema,
   ItemListResultSchema,
   ItemPayloadSchema,
@@ -30,6 +43,7 @@ import type {
   RecoverySetupSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
+  RevokeAgentSessionSchema,
   RotateKeySchema,
   SuccessResultSchema,
   UpdateItemSchema,
@@ -56,7 +70,21 @@ export type ItemDetail = TypeOf<typeof ItemDetailSchema>;
 export type CreateAgentInput = TypeOf<typeof CreateAgentSchema>;
 export type Agent = TypeOf<typeof AgentSchema>;
 export type AgentWithKey = TypeOf<typeof AgentWithKeySchema>;
+export type AgentRegistrationResult = TypeOf<typeof AgentRegistrationResultSchema>;
 export type AgentRotateResult = TypeOf<typeof AgentRotateResultSchema>;
+export type IssueAgentBootstrapTokenInput = TypeOf<typeof IssueAgentBootstrapTokenSchema>;
+export type AgentBootstrapTokenResult = TypeOf<typeof AgentBootstrapTokenResultSchema>;
+export type EnrollAgentInput = TypeOf<typeof EnrollAgentSchema>;
+export type AgentEnrollmentResult = TypeOf<typeof AgentEnrollmentResultSchema>;
+export type CreateAgentChallengeInput = TypeOf<typeof CreateAgentChallengeSchema>;
+export type AgentChallengeResult = TypeOf<typeof AgentChallengeResultSchema>;
+export type ExchangeAgentSessionInput = TypeOf<typeof ExchangeAgentSessionSchema>;
+export type AgentSession = TypeOf<typeof AgentSessionSchema>;
+export type AgentSessionResult = TypeOf<typeof AgentSessionResultSchema>;
+export type RevokeAgentSessionInput = TypeOf<typeof RevokeAgentSessionSchema>;
+export type CliLocalAgentReference = TypeOf<typeof CliLocalAgentReferenceSchema>;
+export type CliProfileConfig = TypeOf<typeof CliProfileConfigSchema>;
+export type DaemonOperatorSession = TypeOf<typeof DaemonOperatorSessionSchema>;
 
 export type CreatePermissionInput = TypeOf<typeof CreatePermissionSchema>;
 export type Permission = TypeOf<typeof PermissionSchema>;
