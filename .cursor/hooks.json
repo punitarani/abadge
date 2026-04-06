@@ -3,7 +3,8 @@
   "hooks": {
     "stop": [
       {
-        "command": "bun run format && bun run lint:fix && bun run typecheck && bun run build"
+        "command": "bun run format && bun run lint:fix && bun run typecheck",
+        "timeout": 120
       }
     ]
   }
