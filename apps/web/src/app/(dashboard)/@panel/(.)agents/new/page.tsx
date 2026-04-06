@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
 
-export default function NewAgentPage(): React.ReactElement {
+export default function CreateAgentOverlayPage(): React.ReactElement {
   const router = useRouter();
-  return <CreateAgentPanel presentation="page" onClose={() => router.push("/agents")} />;
+
+  return <CreateAgentPanel presentation="overlay" onClose={() => router.replace("/agents")} />;
 }
