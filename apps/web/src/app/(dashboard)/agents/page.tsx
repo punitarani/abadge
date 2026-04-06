@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent } from "@abadge/core";
+import type { Agent, AgentKind } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
@@ -19,6 +19,13 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
+const AGENT_KIND_LABELS: Record<AgentKind, string> = {
+  device: "Device",
+  local_cli: "Local CLI",
+  local_mcp: "Local MCP",
+  remote_agent: "Remote agent",
+};
+
 function AgentRow({
   agent,
   onRotate,
@@ -36,7 +43,7 @@ function AgentRow({
     <TableRow>
       <TableCell className="font-medium">{agent.name}</TableCell>
       <TableCell>
-        <Badge variant="secondary">{agent.kind}</Badge>
+        <Badge variant="secondary">{AGENT_KIND_LABELS[agent.kind] ?? agent.kind}</Badge>
       </TableCell>
       <TableCell className="text-muted-foreground">{agent.locality}</TableCell>
       <TableCell>
@@ -129,7 +136,7 @@ export default function AgentsPage(): React.ReactElement {
   }
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Agents</h1>

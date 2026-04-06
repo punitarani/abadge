@@ -26,35 +26,38 @@ export default function ItemDetailPage(): React.ReactElement {
   });
   const item = itemQuery.data?.item ?? null;
 
+  async function decryptItem(encryptedItemKey: string, ciphertext: string): Promise<string | null> {
+    let key: Uint8Array;
+    try {
+      key = await requestUnlock();
+    } catch {
+      setError("Master password required");
+      return null;
+    }
+    try {
+      const plaintext = decryptItemFromVault(encryptedItemKey, ciphertext, key);
+      return JSON.stringify(plaintext, null, 2);
+    } catch {
+      setError("Failed to decrypt item");
+      return null;
+    }
+  }
+
   async function handleReveal(): Promise<void> {
     if (!item) return;
-
-    if (item.storageMode === "zero_knowledge") {
-      if (!item.encryptedItemKey || !item.ciphertext) {
-        setError("Missing encrypted data");
-        return;
-      }
-      let key: Uint8Array;
-      try {
-        key = await requestUnlock();
-      } catch {
-        setError("Master password required");
-        return;
-      }
-      setRevealing(true);
-      setError("");
-      try {
-        const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, key);
-        setRevealedValue(JSON.stringify(plaintext, null, 2));
-      } catch {
-        setError("Failed to decrypt item");
-      } finally {
-        setRevealing(false);
-      }
-    } else {
-      // Server-managed: metadata only on dashboard; reveal is for agents via API
+    if (item.storageMode !== "zero_knowledge") {
       setError("Server-managed items can only be revealed by agents through the API");
+      return;
     }
+    if (!item.encryptedItemKey || !item.ciphertext) {
+      setError("Missing encrypted data");
+      return;
+    }
+    setRevealing(true);
+    setError("");
+    const value = await decryptItem(item.encryptedItemKey, item.ciphertext);
+    setRevealing(false);
+    if (value !== null) setRevealedValue(value);
   }
 
   if (itemQuery.isPending) {
@@ -74,7 +77,7 @@ export default function ItemDetailPage(): React.ReactElement {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
