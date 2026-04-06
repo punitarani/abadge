@@ -13,7 +13,6 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { getClientErrorMessage } from "@/lib/trpc-browser";
 import { useVault } from "@/lib/vault-context";
 
-
 type StorageMode = "zero_knowledge" | "server_managed";
 
 export default function CreateItemPage(): React.ReactElement {
