@@ -45,7 +45,7 @@ export default function ItemsPage(): React.ReactElement {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Items</h1>
@@ -60,7 +60,7 @@ export default function ItemsPage(): React.ReactElement {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead>ID</TableHead>
               <TableHead>Storage</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Updated</TableHead>
