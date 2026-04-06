@@ -35,6 +35,7 @@ export function MasterPasswordModal({
   const [recoveryKey, setRecoveryKey] = useState("");
   const pendingKeyRef = useRef<Uint8Array | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: vaultExists excluded — adding it reruns this effect when handleBootstrap calls onVaultExistsChange, resetting state mid-submit
   useEffect(() => {
     if (!open) return;
     setPassword("");
