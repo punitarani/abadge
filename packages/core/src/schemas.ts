@@ -195,6 +195,30 @@ export const ItemSummarySchema = Schema.Struct({
   updatedAt: IsoDateString,
 });
 
+export const ItemDisplayQuerySchema = Schema.Struct({
+  itemIds: Schema.Array(NonEmptyString).pipe(
+    Schema.filter((itemIds) => itemIds.length <= 100 || "itemIds must contain at most 100 IDs"),
+  ),
+});
+
+export const ZeroKnowledgeItemDisplaySchema = Schema.Struct({
+  itemId: NonEmptyString,
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+});
+
+export const ServerManagedItemDisplaySchema = Schema.Struct({
+  itemId: NonEmptyString,
+  storageMode: Schema.Literal("server_managed"),
+  label: NonEmptyString,
+});
+
+export const ItemDisplayEntrySchema = Schema.Union(
+  ZeroKnowledgeItemDisplaySchema,
+  ServerManagedItemDisplaySchema,
+);
+
 const ItemDetailBaseFields = {
   id: NonEmptyString,
   storageMode: StorageModeSchema,
@@ -380,6 +404,10 @@ export const ItemResultSchema = Schema.Struct({
 
 export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
+});
+
+export const ItemDisplayListResultSchema = Schema.Struct({
+  items: Schema.Array(ItemDisplayEntrySchema),
 });
 
 export const AgentResultSchema = Schema.Struct({

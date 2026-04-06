@@ -3,6 +3,9 @@ import {
   type CreateItemInput,
   CreateItemSchema,
   IdResultSchema,
+  ItemDisplayListResultSchema,
+  type ItemDisplayQuery,
+  ItemDisplayQuerySchema,
   ItemListResultSchema,
   ItemResultSchema,
   ItemVersionResultSchema,
@@ -11,13 +14,14 @@ import {
   type UpdateItemInput,
   UpdateItemSchema,
 } from "@abadge/core";
-import { serverEncrypt } from "@abadge/crypto/server";
-import { and, desc, eq, isNull } from "@abadge/db";
+import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
+import { and, desc, eq, inArray, isNull } from "@abadge/db";
 import { items, vaults } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
 import { createTrpcRouter, sessionProcedure } from "../init";
+import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
 const loadOwnedItem = (itemId: string) =>
@@ -123,6 +127,79 @@ const listItems = Effect.gen(function* () {
 
   return { items: result.map(serializeItemSummary) };
 });
+
+export const resolveItemDisplay = (input: ItemDisplayQuery) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    const itemIds = [...new Set(input.itemIds)];
+
+    if (itemIds.length === 0) {
+      return { items: [] };
+    }
+
+    const result = yield* Effect.tryPromise(() =>
+      ctx.db
+        .select({
+          id: items.id,
+          storageMode: items.storageMode,
+          encryptedItemKey: items.encryptedItemKey,
+          ciphertext: items.ciphertext,
+          serverCiphertext: items.serverCiphertext,
+          serverIv: items.serverIv,
+          serverKeyVersion: items.serverKeyVersion,
+        })
+        .from(items)
+        .where(
+          and(
+            eq(items.userId, ctx.identity.userId),
+            isNull(items.deletedAt),
+            inArray(items.id, itemIds),
+          ),
+        ),
+    );
+
+    const displayItems = yield* Effect.tryPromise(() =>
+      Promise.all(
+        result.map(async (item) => {
+          if (item.storageMode === "server_managed") {
+            if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+              return null;
+            }
+
+            const decrypted = await serverDecrypt(
+              {
+                ciphertext: item.serverCiphertext,
+                iv: item.serverIv,
+                keyVersion: item.serverKeyVersion,
+              },
+              ctx.env.ENCRYPTION_KEY,
+            );
+
+            return {
+              itemId: item.id,
+              storageMode: "server_managed" as const,
+              label: decodeServerManagedPayload(item.id, decrypted).label,
+            };
+          }
+
+          if (!item.encryptedItemKey || !item.ciphertext) {
+            return null;
+          }
+
+          return {
+            itemId: item.id,
+            storageMode: "zero_knowledge" as const,
+            encryptedItemKey: item.encryptedItemKey,
+            ciphertext: item.ciphertext,
+          };
+        }),
+      ),
+    );
+
+    return {
+      items: displayItems.filter((item): item is NonNullable<typeof item> => item !== null),
+    };
+  });
 
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -234,6 +311,10 @@ export const itemsRouter = createTrpcRouter({
   list: sessionProcedure
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
+  resolveDisplay: sessionProcedure
+    .input(strictSchema(ItemDisplayQuerySchema))
+    .output(strictSchema(ItemDisplayListResultSchema))
+    .query(({ ctx, input }) => runSessionEffect(ctx, resolveItemDisplay(input))),
   get: sessionProcedure
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))
