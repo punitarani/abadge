@@ -1,4 +1,10 @@
 import process from "node:process";
+import {
+  getReleasePackageVersions,
+  isChangesetFile,
+  readPendingChangesets,
+  validateInitialPatchTrainChangesets,
+} from "./changesets";
 import { getImpactedReleasePackages } from "./registry";
 
 function getArgValue(argv: readonly string[], flag: string): string | undefined {
@@ -31,8 +37,8 @@ function getChangedFiles(baseRef: string): string[] {
     .filter(Boolean);
 }
 
-function hasChangeset(changedFiles: readonly string[]): boolean {
-  return changedFiles.some((file) => /^\.changeset\/[^/]+\.md$/.test(file));
+function getChangedChangesetFiles(changedFiles: readonly string[]): string[] {
+  return changedFiles.filter((file) => isChangesetFile(file));
 }
 
 async function main(argv = process.argv.slice(2)): Promise<void> {
@@ -43,8 +49,21 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
 
   const changedFiles = getChangedFiles(baseRef);
   const impactedPackages = getImpactedReleasePackages(changedFiles);
+  const changedChangesetFiles = new Set(getChangedChangesetFiles(changedFiles));
 
-  if (impactedPackages.length === 0 || hasChangeset(changedFiles)) {
+  if (changedChangesetFiles.size > 0) {
+    const packageVersions = await getReleasePackageVersions();
+    const changedChangesets = (await readPendingChangesets()).filter((changeset) =>
+      changedChangesetFiles.has(changeset.path),
+    );
+    const errors = validateInitialPatchTrainChangesets(changedChangesets, packageVersions);
+
+    if (errors.length > 0) {
+      throw new Error(errors.join("\n"));
+    }
+  }
+
+  if (impactedPackages.length === 0 || changedChangesetFiles.size > 0) {
     return;
   }
 

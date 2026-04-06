@@ -156,6 +156,9 @@ Releases are package-scoped, not repo-scoped. A package only becomes releasable 
 [`scripts/releases/registry.ts`](../scripts/releases/registry.ts). Today that registry contains only
 the CLI package.
 
+While the CLI is still on the initial `0.0.x` train, use `patch` changesets only. A `minor`
+changeset from `0.0.1` would jump straight to `0.1.0`.
+
 Release docs:
 
 * [`docs/release/overview.md`](./release/overview.md)

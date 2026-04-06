@@ -39,6 +39,8 @@ Its target is:
 
 1. Change release-surface files.
 2. Add a changeset in `/.changeset/`.
+   Use `patch` while `@abadge/cli` is still on `0.0.x`, so the next version after `0.0.1` is
+   `0.0.2` instead of `0.1.0`.
 3. Merge to `main`.
 4. [`.github/workflows/release.yml`](../../.github/workflows/release.yml) runs Changesets.
 5. Changesets opens or updates the version PR.
@@ -51,6 +53,7 @@ Its target is:
 Before merge:
 
 * [`scripts/releases/check-changeset.ts`](../../scripts/releases/check-changeset.ts) blocks release-surface changes without a changeset
+* changed CLI changesets are rejected unless they use `patch` while the package is still on `0.0.x`
 
 Before publish:
 

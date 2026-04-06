@@ -33,6 +33,8 @@ CLI release identity is package-scoped:
 
 1. Change CLI release-surface files.
 2. Add a changeset.
+   While the CLI version is still `0.0.x`, use `patch` so the version train stays on `0.0.2`,
+   `0.0.3`, and so on until we intentionally promote it.
 3. Merge to `main`.
 4. Merge the Changesets version PR.
 5. GitHub Actions runs `bun run release:publish`.
