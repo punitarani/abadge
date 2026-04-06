@@ -220,7 +220,9 @@ export function MasterPasswordModal({
           {step === "recovery" && (
             <div className="space-y-6">
               <div className="space-y-1">
-                <Dialog.Title className="text-base font-semibold">Save your recovery key</Dialog.Title>
+                <Dialog.Title className="text-base font-semibold">
+                  Save your recovery key
+                </Dialog.Title>
                 <Dialog.Description className="text-sm text-muted-foreground">
                   Store this key somewhere safe. It is the only way to recover your vault if you
                   forget your master password.
