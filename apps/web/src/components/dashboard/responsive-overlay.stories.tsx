@@ -67,6 +67,6 @@ export const DesktopSheet: Story = {
   render: () => <OverlayStoryFrame />,
 };
 
-export const MobileDrawer: Story = {
+export const MobileDialog: Story = {
   render: () => <OverlayStoryFrame forceMobile />,
 };

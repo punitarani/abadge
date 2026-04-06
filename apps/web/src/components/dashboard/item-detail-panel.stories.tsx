@@ -43,7 +43,6 @@ function ZeroKnowledgeStory(): React.ReactElement {
         item={zeroKnowledgeItem}
         revealedValue={revealedValue}
         revealing={false}
-        error=""
         onReveal={() => setRevealedValue('{\n  "value": "super-secret-value"\n}')}
         onHide={() => setRevealedValue(null)}
       />
@@ -62,7 +61,6 @@ export const ServerManaged: Story = {
         item={serverManagedItem}
         revealedValue={null}
         revealing={false}
-        error=""
         onReveal={() => undefined}
         onHide={() => undefined}
       />

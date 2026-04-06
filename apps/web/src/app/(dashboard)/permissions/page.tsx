@@ -4,6 +4,7 @@ import type { Agent, Capability, ItemSummary, Permission } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
 import { useMemo } from "react";
+import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -109,7 +110,12 @@ export default function PermissionsPage(): React.ReactElement {
       return;
     }
 
-    await revokePermission.mutateAsync({ permissionId });
+    try {
+      await revokePermission.mutateAsync({ permissionId });
+      toast.success("Permission revoked.");
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to revoke permission"));
+    }
   }
 
   const filtered = permissions.filter((permission: Permission) => {

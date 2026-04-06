@@ -17,3 +17,12 @@ export const permissionFilterParsers = {
   item: parseAsString.withDefault("all"),
   create: parseAsBoolean.withDefault(false),
 };
+
+export const itemPanelParsers = {
+  create: parseAsBoolean.withDefault(false),
+  item: parseAsString,
+};
+
+export const agentPanelParsers = {
+  create: parseAsBoolean.withDefault(false),
+};

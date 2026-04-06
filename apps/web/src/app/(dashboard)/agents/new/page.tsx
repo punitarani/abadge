@@ -1,9 +1,5 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useRouter } from "next/navigation";
-import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
-
-export default function NewAgentPage(): React.ReactElement {
-  const router = useRouter();
-  return <CreateAgentPanel presentation="page" onClose={() => router.push("/agents")} />;
+export default function NewAgentPage(): never {
+  redirect("/agents?create=true");
 }

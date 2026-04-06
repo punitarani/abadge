@@ -2,8 +2,10 @@
 
 import type { Agent, AgentKind } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
+import { useQueryStates } from "nuqs";
 import { useState } from "react";
+import { toast } from "sonner";
+import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SecretDisplay } from "@/components/ui/secret-display";
@@ -16,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { agentPanelParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -97,6 +100,7 @@ function AgentRow({
 export default function AgentsPage(): React.ReactElement {
   const queryClient = useQueryClient();
   const [rotatedApiKey, setRotatedApiKey] = useState<string | null>(null);
+  const [{ create: createPanelOpen }, setAgentPanelState] = useQueryStates(agentPanelParsers);
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.agents(),
     queryFn: () => browserTrpcClient.agents.list.query(),
@@ -124,7 +128,12 @@ export default function AgentsPage(): React.ReactElement {
   const agents = agentsQuery.data?.agents ?? [];
 
   async function handleRotate(agentId: string): Promise<void> {
-    await rotateAgent.mutateAsync({ agentId });
+    try {
+      await rotateAgent.mutateAsync({ agentId });
+      toast.success("Agent key rotated.");
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to rotate key"));
+    }
   }
 
   async function handleRevoke(agentId: string): Promise<void> {
@@ -132,7 +141,12 @@ export default function AgentsPage(): React.ReactElement {
       return;
     }
 
-    await revokeAgent.mutateAsync({ agentId });
+    try {
+      await revokeAgent.mutateAsync({ agentId });
+      toast.success("Agent revoked.");
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to revoke agent"));
+    }
   }
 
   return (
@@ -144,8 +158,13 @@ export default function AgentsPage(): React.ReactElement {
             Agents and services that can access your vault
           </p>
         </div>
-        <Button size="sm" asChild>
-          <Link href="/agents/new">Register agent</Link>
+        <Button
+          size="sm"
+          onClick={() => {
+            void setAgentPanelState({ create: true });
+          }}
+        >
+          Register agent
         </Button>
       </div>
 
@@ -197,9 +216,15 @@ export default function AgentsPage(): React.ReactElement {
                   <div className="space-y-2">
                     <div className="font-medium text-foreground">No agents registered</div>
                     <div>
-                      <Link href="/agents/new" className="text-link hover:underline">
+                      <button
+                        type="button"
+                        className="text-link hover:underline"
+                        onClick={() => {
+                          void setAgentPanelState({ create: true });
+                        }}
+                      >
                         Register your first agent
-                      </Link>
+                      </button>
                     </div>
                   </div>
                 </TableCell>
@@ -218,6 +243,13 @@ export default function AgentsPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+
+      <CreateAgentPanel
+        open={createPanelOpen}
+        onClose={() => {
+          void setAgentPanelState({ create: null });
+        }}
+      />
     </div>
   );
 }

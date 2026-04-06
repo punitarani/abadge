@@ -3,7 +3,7 @@
 import type { ItemDetail } from "@abadge/core";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { DashboardPanelPage } from "@/components/dashboard/dashboard-panel-page";
+import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ interface ItemDetailPanelViewProps {
   item: ItemDetail;
   revealedValue: string | null;
   revealing: boolean;
-  error: string;
   onReveal: () => void;
   onHide: () => void;
 }
@@ -30,7 +29,6 @@ export function ItemDetailPanelView({
   item,
   revealedValue,
   revealing,
-  error,
   onReveal,
   onHide,
 }: ItemDetailPanelViewProps): React.ReactElement {
@@ -63,12 +61,6 @@ export function ItemDetailPanelView({
               Decrypt the item in your browser when you need to inspect it.
             </p>
           </div>
-
-          {error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {error}
-            </div>
-          ) : null}
 
           {revealedValue !== null ? (
             <div className="flex flex-col gap-3">
@@ -104,21 +96,18 @@ export function ItemDetailPanelView({
 
 interface ItemDetailPanelProps {
   itemId: string;
-  presentation: "overlay" | "page";
+  open: boolean;
   onClose: () => void;
-  open?: boolean;
 }
 
 export function ItemDetailPanel({
   itemId,
-  presentation,
   onClose,
-  open = true,
+  open,
 }: ItemDetailPanelProps): React.ReactElement {
   const { requestUnlock } = useVault();
   const [revealedValue, setRevealedValue] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
-  const [error, setError] = useState("");
   const itemQuery = useQuery({
     queryKey: dashboardQueryKeys.item(itemId),
     queryFn: () => browserTrpcClient.items.get.query({ itemId }),
@@ -132,7 +121,7 @@ export function ItemDetailPanel({
     try {
       key = await requestUnlock();
     } catch {
-      setError("Master password required");
+      toast.error("Master password required.");
       return null;
     }
 
@@ -140,7 +129,7 @@ export function ItemDetailPanel({
       const plaintext = decryptItemFromVault(encryptedItemKey, ciphertext, key);
       return JSON.stringify(plaintext, null, 2);
     } catch {
-      setError("Failed to decrypt item");
+      toast.error("Failed to decrypt item.");
       return null;
     }
   }
@@ -151,17 +140,16 @@ export function ItemDetailPanel({
     }
 
     if (item.storageMode !== "zero_knowledge") {
-      setError("Server-managed items can only be revealed by agents through the API");
+      toast.error("Server-managed items can only be revealed by agents through the API.");
       return;
     }
 
     if (!item.encryptedItemKey || !item.ciphertext) {
-      setError("Missing encrypted data");
+      toast.error("Missing encrypted data.");
       return;
     }
 
     setRevealing(true);
-    setError("");
     const value = await decryptItem(item.encryptedItemKey, item.ciphertext);
     setRevealing(false);
 
@@ -174,20 +162,13 @@ export function ItemDetailPanel({
   const description = item
     ? `Created ${formatRelativeTime(item.createdAt)}`
     : "Inspect storage metadata and reveal zero-knowledge items.";
-  const headerAction =
-    presentation === "page" ? (
+  const footer = (
+    <div className="flex justify-end">
       <Button variant="outline" size="sm" onClick={onClose}>
-        Back
+        Close
       </Button>
-    ) : null;
-  const footer =
-    presentation === "overlay" ? (
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-    ) : undefined;
+    </div>
+  );
 
   let content: React.ReactNode;
 
@@ -207,44 +188,28 @@ export function ItemDetailPanel({
         item={item}
         revealedValue={revealedValue}
         revealing={revealing}
-        error={error}
         onReveal={() => void handleReveal()}
         onHide={() => {
-          setError("");
           setRevealedValue(null);
         }}
       />
     );
   }
 
-  if (presentation === "overlay") {
-    return (
-      <ResponsiveOverlay
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            onClose();
-          }
-        }}
-        title={title}
-        description={description}
-        footer={footer}
-        contentClassName="sm:max-w-3xl"
-      >
-        {content}
-      </ResponsiveOverlay>
-    );
-  }
-
   return (
-    <DashboardPanelPage
+    <ResponsiveOverlay
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
       title={title}
       description={description}
-      headerAction={headerAction}
       footer={footer}
-      maxWidthClassName="max-w-3xl"
+      contentClassName="sm:max-w-3xl"
     >
       {content}
-    </DashboardPanelPage>
+    </ResponsiveOverlay>
   );
 }

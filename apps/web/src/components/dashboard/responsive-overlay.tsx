@@ -1,10 +1,48 @@
 "use client";
 
 import type * as React from "react";
-import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from "@/components/ui/drawer";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
+
+let activeOverlayCount = 0;
+
+function setUserJotWidgetEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const uj = (
+    window as Window & {
+      uj?: {
+        hideWidget?: () => void;
+        setWidgetEnabled?: (enabled: boolean) => void;
+      };
+    }
+  ).uj;
+
+  uj?.setWidgetEnabled?.(enabled);
+
+  if (!enabled) {
+    uj?.hideWidget?.();
+  }
+}
 
 interface ResponsiveOverlayProps {
   open: boolean;
@@ -21,30 +59,10 @@ interface ResponsiveOverlayProps {
 }
 
 function OverlayFrame({
-  title,
-  description,
   children,
-  footer,
   bodyClassName,
-  paddingClassName = "p-5",
-}: Pick<
-  ResponsiveOverlayProps,
-  "title" | "description" | "children" | "footer" | "bodyClassName"
-> & {
-  paddingClassName?: string;
-}): React.ReactElement {
-  return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className={cn("flex flex-col gap-1.5 border-b border-border p-4", paddingClassName)}>
-        <div className="pr-10">
-          <div className="font-semibold text-foreground">{title}</div>
-          <div className="text-sm text-muted-foreground">{description}</div>
-        </div>
-      </div>
-      <div className={cn("min-h-0 flex-1 overflow-y-auto p-5", bodyClassName)}>{children}</div>
-      {footer ? <div className="border-t border-border p-4">{footer}</div> : null}
-    </div>
-  );
+}: Pick<ResponsiveOverlayProps, "children" | "bodyClassName">): React.ReactElement {
+  return <div className={cn("min-h-0 flex-1 overflow-y-auto p-5", bodyClassName)}>{children}</div>;
 }
 
 export function ResponsiveOverlay({
@@ -63,23 +81,43 @@ export function ResponsiveOverlay({
   const detectedIsMobile = useIsMobile();
   const isMobile = forceMobile ?? detectedIsMobile;
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    activeOverlayCount += 1;
+    setUserJotWidgetEnabled(false);
+
+    return () => {
+      activeOverlayCount = Math.max(0, activeOverlayCount - 1);
+
+      if (activeOverlayCount === 0) {
+        setUserJotWidgetEnabled(true);
+      }
+    };
+  }, [open]);
+
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange} direction="bottom">
-        <DrawerContent className={cn("max-h-[85vh] p-0", contentClassName)}>
-          <DrawerTitle className="sr-only">{title}</DrawerTitle>
-          <DrawerDescription className="sr-only">{description}</DrawerDescription>
-          <OverlayFrame
-            title={title}
-            description={description}
-            footer={footer}
-            bodyClassName={bodyClassName}
-            paddingClassName="px-5 pb-4 pt-2"
-          >
-            {children}
-          </OverlayFrame>
-        </DrawerContent>
-      </Drawer>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          variant="bottom-sheet"
+          showCloseButton={showCloseButton}
+          className={cn("flex h-auto max-h-[85vh] flex-col", contentClassName)}
+        >
+          <DialogHeader className="border-b border-border px-5 pb-4 pt-5 text-left">
+            <DialogTitle className="pr-10">{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+          </DialogHeader>
+          <OverlayFrame bodyClassName={bodyClassName}>{children}</OverlayFrame>
+          {footer ? (
+            <DialogFooter className="sticky bottom-0 border-t border-border bg-background p-4 sm:flex-row">
+              {footer}
+            </DialogFooter>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     );
   }
 
@@ -88,18 +126,16 @@ export function ResponsiveOverlay({
       <SheetContent
         side={side}
         showCloseButton={showCloseButton}
-        className={cn("w-full p-0 sm:max-w-2xl", contentClassName)}
+        className={cn("flex w-full flex-col p-0 sm:max-w-2xl", contentClassName)}
       >
-        <SheetTitle className="sr-only">{title}</SheetTitle>
-        <SheetDescription className="sr-only">{description}</SheetDescription>
-        <OverlayFrame
-          title={title}
-          description={description}
-          footer={footer}
-          bodyClassName={bodyClassName}
-        >
-          {children}
-        </OverlayFrame>
+        <SheetHeader className="border-b border-border">
+          <SheetTitle className="pr-10">{title}</SheetTitle>
+          <SheetDescription>{description}</SheetDescription>
+        </SheetHeader>
+        <OverlayFrame bodyClassName={bodyClassName}>{children}</OverlayFrame>
+        {footer ? (
+          <SheetFooter className="border-t border-border bg-background p-4">{footer}</SheetFooter>
+        ) : null}
       </SheetContent>
     </Sheet>
   );

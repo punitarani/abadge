@@ -25,7 +25,7 @@ const itemOptions = [
   { value: "item-2", label: "Srv · c07e1999-a7eb…" },
 ];
 
-function PermissionStory({ initialError = "" }: { initialError?: string }): React.ReactElement {
+function PermissionStory(): React.ReactElement {
   const [selectedAgent, setSelectedAgent] = useState(agentOptions[0]?.value ?? "");
   const [selectedItem, setSelectedItem] = useState(itemOptions[0]?.value ?? "");
   const [selectedCapability, setSelectedCapability] = useState<Capability>("mount_env");
@@ -37,7 +37,6 @@ function PermissionStory({ initialError = "" }: { initialError?: string }): Reac
         selectedAgent={selectedAgent}
         selectedItem={selectedItem}
         selectedCapability={selectedCapability}
-        error={initialError}
         optionsLoading={false}
         agentOptions={agentOptions}
         itemOptions={itemOptions}
@@ -58,8 +57,4 @@ function PermissionStory({ initialError = "" }: { initialError?: string }): Reac
 
 export const Default: Story = {
   render: () => <PermissionStory />,
-};
-
-export const ErrorState: Story = {
-  render: () => <PermissionStory initialError="Failed to create permission" />,
 };

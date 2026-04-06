@@ -2,7 +2,10 @@
 
 import type { ItemSummary } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
+import { useQueryStates } from "nuqs";
+import { toast } from "sonner";
+import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
+import { ItemDetailPanel } from "@/components/dashboard/item-detail-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +17,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { itemPanelParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
 export default function ItemsPage(): React.ReactElement {
   const queryClient = useQueryClient();
+  const [{ create: createPanelOpen, item: activeItemId }, setItemPanelState] =
+    useQueryStates(itemPanelParsers);
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.items(),
     queryFn: () => browserTrpcClient.items.list.query(),
@@ -41,7 +47,12 @@ export default function ItemsPage(): React.ReactElement {
       return;
     }
 
-    await deleteItem.mutateAsync({ itemId });
+    try {
+      await deleteItem.mutateAsync({ itemId });
+      toast.success("Item deleted.");
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to delete item"));
+    }
   }
 
   return (
@@ -51,8 +62,13 @@ export default function ItemsPage(): React.ReactElement {
           <h1 className="text-lg font-semibold">Items</h1>
           <p className="text-sm text-muted-foreground">Secrets stored in your vault</p>
         </div>
-        <Button size="sm" asChild>
-          <Link href="/items/new">Create item</Link>
+        <Button
+          size="sm"
+          onClick={() => {
+            void setItemPanelState({ create: true });
+          }}
+        >
+          Create item
         </Button>
       </div>
 
@@ -93,12 +109,15 @@ export default function ItemsPage(): React.ReactElement {
               items.map((item: ItemSummary) => (
                 <TableRow key={item.id}>
                   <TableCell className="font-medium">
-                    <Link
-                      href={`/items/${item.id}`}
+                    <button
+                      type="button"
                       className="font-mono text-foreground hover:underline"
+                      onClick={() => {
+                        void setItemPanelState({ item: item.id });
+                      }}
                     >
                       {item.id.slice(0, 13)}…
-                    </Link>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -115,8 +134,14 @@ export default function ItemsPage(): React.ReactElement {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/items/${item.id}`}>View</Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          void setItemPanelState({ item: item.id });
+                        }}
+                      >
+                        View
                       </Button>
                       <Button
                         variant="destructive"
@@ -134,6 +159,23 @@ export default function ItemsPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+
+      <CreateItemPanel
+        open={createPanelOpen}
+        onClose={() => {
+          void setItemPanelState({ create: null });
+        }}
+      />
+
+      {activeItemId ? (
+        <ItemDetailPanel
+          itemId={activeItemId}
+          open
+          onClose={() => {
+            void setItemPanelState({ item: null });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

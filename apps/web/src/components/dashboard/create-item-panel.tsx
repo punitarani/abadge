@@ -4,7 +4,7 @@ import { useTRPC } from "@abadge/trpc/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
-import { DashboardPanelPage } from "@/components/dashboard/dashboard-panel-page";
+import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,6 @@ interface CreateItemPanelViewProps {
   name: string;
   value: string;
   storageMode: StorageMode;
-  error: string;
   onNameChange: (value: string) => void;
   onValueChange: (value: string) => void;
   onStorageModeChange: (value: StorageMode) => void;
@@ -34,7 +33,6 @@ export function CreateItemPanelView({
   name,
   value,
   storageMode,
-  error,
   onNameChange,
   onValueChange,
   onStorageModeChange,
@@ -42,12 +40,6 @@ export function CreateItemPanelView({
 }: CreateItemPanelViewProps): React.ReactElement {
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="item-name">Name</Label>
         <Input
@@ -105,16 +97,11 @@ export function CreateItemPanelView({
 }
 
 interface CreateItemPanelProps {
-  presentation: "overlay" | "page";
+  open: boolean;
   onClose: () => void;
-  open?: boolean;
 }
 
-export function CreateItemPanel({
-  presentation,
-  onClose,
-  open = true,
-}: CreateItemPanelProps): React.ReactElement {
+export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.ReactElement {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -124,13 +111,13 @@ export function CreateItemPanel({
   const [value, setValue] = useState("");
   const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
   const createItem = useMutation(
     trpc.items.create.mutationOptions({
       onSuccess: async () => {
         await queryClient.invalidateQueries({
           queryKey: dashboardQueryKeys.items(),
         });
+        toast.success("Item created.");
         router.push("/items");
       },
     }),
@@ -139,7 +126,6 @@ export function CreateItemPanel({
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setCreating(true);
-    setError("");
 
     try {
       let body:
@@ -165,7 +151,7 @@ export function CreateItemPanel({
         try {
           key = await requestUnlock();
         } catch {
-          setError("Master password required");
+          toast.error("Master password required.");
           return;
         }
 
@@ -185,7 +171,7 @@ export function CreateItemPanel({
 
       await createItem.mutateAsync(body);
     } catch (mutationError) {
-      setError(getClientErrorMessage(mutationError, "Failed to create item"));
+      toast.error(getClientErrorMessage(mutationError, "Failed to create item"));
     } finally {
       setCreating(false);
     }
@@ -208,7 +194,6 @@ export function CreateItemPanel({
       name={name}
       value={value}
       storageMode={storageMode}
-      error={error}
       onNameChange={setName}
       onValueChange={setValue}
       onStorageModeChange={setStorageMode}
@@ -216,32 +201,19 @@ export function CreateItemPanel({
     />
   );
 
-  if (presentation === "overlay") {
-    return (
-      <ResponsiveOverlay
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            onClose();
-          }
-        }}
-        title="Create item"
-        description="Add a secret to your vault."
-        footer={footer}
-      >
-        {content}
-      </ResponsiveOverlay>
-    );
-  }
-
   return (
-    <DashboardPanelPage
+    <ResponsiveOverlay
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
       title="Create item"
       description="Add a secret to your vault."
       footer={footer}
-      maxWidthClassName="max-w-lg"
     >
       {content}
-    </DashboardPanelPage>
+    </ResponsiveOverlay>
   );
 }

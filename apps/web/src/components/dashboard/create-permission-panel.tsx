@@ -3,6 +3,7 @@
 import { type Agent, CAPABILITIES, type Capability, type ItemSummary } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
@@ -36,7 +37,6 @@ interface CreatePermissionPanelViewProps {
   selectedAgent: string;
   selectedItem: string;
   selectedCapability: Capability;
-  error: string;
   optionsLoading: boolean;
   agentOptions: SearchableSelectOption[];
   itemOptions: SearchableSelectOption[];
@@ -51,7 +51,6 @@ export function CreatePermissionPanelView({
   selectedAgent,
   selectedItem,
   selectedCapability,
-  error,
   optionsLoading,
   agentOptions,
   itemOptions,
@@ -62,13 +61,7 @@ export function CreatePermissionPanelView({
 }: CreatePermissionPanelViewProps): React.ReactElement {
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <LabelLike>Agent</LabelLike>
           <SearchableSelect
@@ -134,7 +127,6 @@ export function CreatePermissionPanel({
   const [selectedAgent, setSelectedAgent] = useState("");
   const [selectedItem, setSelectedItem] = useState("");
   const [selectedCapability, setSelectedCapability] = useState<Capability>("mount_env");
-  const [error, setError] = useState("");
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.agents(),
@@ -151,10 +143,10 @@ export function CreatePermissionPanel({
       setSelectedAgent("");
       setSelectedItem("");
       setSelectedCapability("mount_env");
-      setError("");
       await queryClient.invalidateQueries({
         queryKey: dashboardQueryKeys.permissions(),
       });
+      toast.success("Permission created.");
       handleClose();
     },
   });
@@ -190,7 +182,6 @@ export function CreatePermissionPanel({
     setSelectedAgent("");
     setSelectedItem("");
     setSelectedCapability("mount_env");
-    setError("");
     onClose();
   }
 
@@ -208,14 +199,14 @@ export function CreatePermissionPanel({
         capability: selectedCapability,
       });
     } catch (mutationError) {
-      setError(getClientErrorMessage(mutationError, "Failed to create permission"));
+      toast.error(getClientErrorMessage(mutationError, "Failed to create permission"));
     }
   }
 
   const queryError = agentsQuery.error ?? itemsQuery.error;
-  const errorMessage = queryError
+  const queryErrorMessage = queryError
     ? getClientErrorMessage(queryError, "Failed to load form options")
-    : error;
+    : "";
   const footer = (
     <div className="flex justify-end gap-2">
       <Button type="button" variant="outline" size="sm" onClick={handleClose}>
@@ -250,14 +241,21 @@ export function CreatePermissionPanel({
         selectedAgent={selectedAgent}
         selectedItem={selectedItem}
         selectedCapability={selectedCapability}
-        error={errorMessage}
         optionsLoading={optionsLoading}
         agentOptions={activeAgentOptions}
         itemOptions={itemOptions}
         onAgentChange={setSelectedAgent}
         onItemChange={setSelectedItem}
         onCapabilityChange={setSelectedCapability}
-        onSubmit={handleSubmit}
+        onSubmit={(event) => {
+          if (queryErrorMessage) {
+            event.preventDefault();
+            toast.error(queryErrorMessage);
+            return;
+          }
+
+          void handleSubmit(event);
+        }}
       />
     </ResponsiveOverlay>
   );

@@ -18,31 +18,18 @@ declare global {
   }
 }
 
-function DashboardShell({
-  children,
-  panel,
-}: {
-  children: React.ReactNode;
-  panel: React.ReactNode;
-}): React.ReactElement {
+function DashboardShell({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
         <div className="px-8 py-6">{children}</div>
-        {panel}
       </SidebarInset>
     </SidebarProvider>
   );
 }
 
-function AuthenticatedDashboard({
-  children,
-  panel,
-}: {
-  children: React.ReactNode;
-  panel: React.ReactNode;
-}): React.ReactElement {
+function AuthenticatedDashboard({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
 
@@ -72,7 +59,7 @@ function AuthenticatedDashboard({
 
   return (
     <VaultProvider>
-      <DashboardShell panel={panel}>{children}</DashboardShell>
+      <DashboardShell>{children}</DashboardShell>
       <Script id="userjot-loader" strategy="afterInteractive">
         {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
       </Script>
@@ -85,10 +72,8 @@ function AuthenticatedDashboard({
 
 export default function DashboardLayout({
   children,
-  panel,
 }: {
   children: React.ReactNode;
-  panel: React.ReactNode;
 }): React.ReactElement {
-  return <AuthenticatedDashboard panel={panel}>{children}</AuthenticatedDashboard>;
+  return <AuthenticatedDashboard>{children}</AuthenticatedDashboard>;
 }

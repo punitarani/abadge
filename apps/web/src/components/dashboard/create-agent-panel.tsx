@@ -4,7 +4,7 @@ import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import { useTRPC } from "@abadge/trpc/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { DashboardPanelPage } from "@/components/dashboard/dashboard-panel-page";
+import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,6 @@ type CreateAgentPanelViewProps =
       name: string;
       kind: AgentKind;
       description: string;
-      error: string;
       onNameChange: (value: string) => void;
       onKindChange: (value: AgentKind) => void;
       onDescriptionChange: (value: string) => void;
@@ -69,11 +68,6 @@ export function CreateAgentPanelView(props: CreateAgentPanelViewProps): React.Re
 
   return (
     <form id={props.formId} onSubmit={props.onSubmit} className="flex flex-col gap-4">
-      {props.error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {props.error}
-        </div>
-      ) : null}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="agent-name">Name</Label>
         <Input
@@ -117,16 +111,11 @@ export function CreateAgentPanelView(props: CreateAgentPanelViewProps): React.Re
 }
 
 interface CreateAgentPanelProps {
-  presentation: "overlay" | "page";
+  open: boolean;
   onClose: () => void;
-  open?: boolean;
 }
 
-export function CreateAgentPanel({
-  presentation,
-  onClose,
-  open = true,
-}: CreateAgentPanelProps): React.ReactElement {
+export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): React.ReactElement {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const formId = useId();
@@ -134,7 +123,6 @@ export function CreateAgentPanel({
   const [kind, setKind] = useState<AgentKind>("remote_agent");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [registration, setRegistration] = useState<AgentRegistrationState | null>(null);
   const createAgent = useMutation(
     trpc.agents.create.mutationOptions({
@@ -147,6 +135,7 @@ export function CreateAgentPanel({
         await queryClient.invalidateQueries({
           queryKey: dashboardQueryKeys.agents(),
         });
+        toast.success("Agent registered.");
       },
     }),
   );
@@ -154,7 +143,6 @@ export function CreateAgentPanel({
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setLoading(true);
-    setError("");
 
     try {
       await createAgent.mutateAsync({
@@ -163,7 +151,7 @@ export function CreateAgentPanel({
         metadata: description.trim() ? { description: description.trim() } : {},
       });
     } catch (mutationError) {
-      setError(getClientErrorMessage(mutationError, "Failed to register agent"));
+      toast.error(getClientErrorMessage(mutationError, "Failed to register agent"));
     } finally {
       setLoading(false);
     }
@@ -201,7 +189,6 @@ export function CreateAgentPanel({
       name={name}
       kind={kind}
       description={description}
-      error={error}
       onNameChange={setName}
       onKindChange={setKind}
       onDescriptionChange={setDescription}
@@ -209,32 +196,19 @@ export function CreateAgentPanel({
     />
   );
 
-  if (presentation === "overlay") {
-    return (
-      <ResponsiveOverlay
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            onClose();
-          }
-        }}
-        title={title}
-        description={descriptionText}
-        footer={footer}
-      >
-        {content}
-      </ResponsiveOverlay>
-    );
-  }
-
   return (
-    <DashboardPanelPage
+    <ResponsiveOverlay
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
       title={title}
       description={descriptionText}
       footer={footer}
-      maxWidthClassName="max-w-lg"
     >
       {content}
-    </DashboardPanelPage>
+    </ResponsiveOverlay>
   );
 }

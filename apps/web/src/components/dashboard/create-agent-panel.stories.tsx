@@ -51,7 +51,6 @@ function AgentFormStory({ loading = false }: { loading?: boolean }): React.React
         name={name}
         kind={kind}
         description={description}
-        error=""
         onNameChange={setName}
         onKindChange={setKind}
         onDescriptionChange={setDescription}

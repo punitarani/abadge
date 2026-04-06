@@ -14,7 +14,7 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-function CreateItemStory({ initialError = "" }: { initialError?: string }): React.ReactElement {
+function CreateItemStory(): React.ReactElement {
   const [name, setName] = useState("github-deploy-key");
   const [value, setValue] = useState("super-secret-value");
   const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
@@ -26,7 +26,6 @@ function CreateItemStory({ initialError = "" }: { initialError?: string }): Reac
         name={name}
         value={value}
         storageMode={storageMode}
-        error={initialError}
         onNameChange={setName}
         onValueChange={setValue}
         onStorageModeChange={setStorageMode}
@@ -44,8 +43,4 @@ function CreateItemStory({ initialError = "" }: { initialError?: string }): Reac
 
 export const Default: Story = {
   render: () => <CreateItemStory />,
-};
-
-export const ErrorState: Story = {
-  render: () => <CreateItemStory initialError="Master password required" />,
 };
