@@ -241,6 +241,6 @@ main() {
 }
 
 # `curl | bash` executes from stdin, where BASH_SOURCE is unset under `set -u`.
-if [ "${BASH_SOURCE[0]-$0}" = "$0" ]; then
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
   main "$@"
 fi
