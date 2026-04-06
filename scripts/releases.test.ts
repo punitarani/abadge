@@ -98,7 +98,7 @@ describe("changeset validation", () => {
         "0.0.1",
       ),
     ).toEqual([
-      ".changeset/example.md: @abadge/cli is currently 0.0.1, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace minor with patch to avoid skipping straight to 0.1.0.",
+      ".changeset/example.md: @abadge/cli is currently 0.0.1, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace minor with patch.",
     ]);
   });
 
