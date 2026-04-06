@@ -66,7 +66,6 @@ export default function CreateItemPage(): React.ReactElement {
           key = await requestUnlock();
         } catch {
           setError("Master password required");
-          setCreating(false);
           return;
         }
         const payload = { v: 1, label: name, kind: "opaque" as const, tags: [], fields: { value } };

@@ -3,7 +3,6 @@
 import { zeroKey } from "@abadge/crypto";
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { MasterPasswordModal } from "@/components/master-password-modal";
-import { unlockVault as unlockVaultCrypto } from "./crypto-client";
 import { browserTrpcClient } from "./trpc-browser";
 
 interface VaultContextValue {
@@ -11,9 +10,7 @@ interface VaultContextValue {
   rootKey: Uint8Array | null;
   /** null = unknown, true = exists, false = needs bootstrap */
   vaultExists: boolean | null;
-  unlockVault: (masterPassword: string) => Promise<void>;
   lockVault: () => void;
-  bootstrapVault: (masterPassword: string) => Promise<{ recoveryKey: string }>;
   checkVaultExists: () => Promise<boolean>;
   /** Request the root key, prompting for master password if needed. */
   requestUnlock: () => Promise<Uint8Array>;
@@ -30,28 +27,12 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     reject: (err: Error) => void;
   } | null>(null);
 
-  const unlockVault = useCallback(async (masterPassword: string): Promise<void> => {
-    const key = await unlockVaultCrypto(masterPassword);
-    setRootKey(key);
-  }, []);
-
   const lockVault = useCallback((): void => {
     if (rootKey) {
       zeroKey(rootKey);
     }
     setRootKey(null);
   }, [rootKey]);
-
-  const bootstrapVault = useCallback(
-    async (masterPassword: string): Promise<{ recoveryKey: string }> => {
-      const { bootstrapVault: bootstrapVaultCrypto } = await import("./crypto-client");
-      const { rootKey: key, recoveryKey } = await bootstrapVaultCrypto(masterPassword);
-      setRootKey(key);
-      setVaultExists(true);
-      return { recoveryKey };
-    },
-    [],
-  );
 
   const checkVaultExists = useCallback(async (): Promise<boolean> => {
     try {
@@ -78,6 +59,10 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     if (rootKey !== null) {
       return Promise.resolve(rootKey);
     }
+    // Reject any already-pending caller before overwriting the slot.
+    if (pendingUnlock.current) {
+      pendingUnlock.current.reject(new Error("Superseded by a newer unlock request"));
+    }
     return new Promise<Uint8Array>((resolve, reject) => {
       pendingUnlock.current = { resolve, reject };
       setModalOpen(true);
@@ -102,13 +87,11 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       isUnlocked: rootKey !== null,
       rootKey,
       vaultExists,
-      unlockVault,
       lockVault,
-      bootstrapVault,
       checkVaultExists,
       requestUnlock,
     }),
-    [rootKey, vaultExists, unlockVault, lockVault, bootstrapVault, checkVaultExists, requestUnlock],
+    [rootKey, vaultExists, lockVault, checkVaultExists, requestUnlock],
   );
 
   return (

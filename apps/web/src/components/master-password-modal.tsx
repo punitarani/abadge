@@ -59,9 +59,7 @@ export function MasterPasswordModal({
           setStep("unlock");
         });
     }
-    // Only re-run when modal opens (open flips true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, checkVaultExists, onVaultExistsChange]);
 
   async function handleUnlock(e: React.FormEvent): Promise<void> {
     e.preventDefault();
