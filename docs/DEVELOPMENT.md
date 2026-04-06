@@ -89,6 +89,16 @@ bun run api:dev:worker
 bun run api:clean:worker
 ```
 
+Component development lives in Storybook under `apps/web/.storybook`.
+
+```bash
+bun run storybook
+bun run storybook:build
+```
+
+When a dashboard page needs story coverage, do not import the App Router `page.tsx` file directly.
+Extract a pure presentational component first, then write stories against that component.
+
 ## Commands
 
 | Command | Description |
@@ -107,6 +117,8 @@ bun run api:clean:worker
 | `bun run db:reset` | Reset the schema locally |
 | `bun run cli -- --help` | Run the CLI |
 | `bun run mcp` | Start the MCP server |
+| `bun run storybook` | Start Storybook for `apps/web` |
+| `bun run storybook:build` | Build the `apps/web` Storybook |
 | `bun test` | Run tests |
 | `bun run changeset` | Create a changeset |
 | `bun run release:cli:dry-run` | Build CLI release artifacts locally |
