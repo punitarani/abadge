@@ -1,26 +1,13 @@
 import { ArrowUpRight, CheckCircle2 } from "lucide-react";
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
-import Image from "next/image";
 import Link from "next/link";
 
-const landingSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-landing-sans",
-});
-
-const landingMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-landing-mono",
-});
-
-const landingCondensed = IBM_Plex_Sans_Condensed({
-  subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-landing-condensed",
-});
+import {
+  LandingFooter,
+  LandingHeader,
+  landingCondensed,
+  landingRootClassName,
+} from "@/components/landing";
 
 const encryptionModes = [
   {
@@ -45,20 +32,21 @@ const encryptionModes = [
     keySize: "256-bit",
     nonce: "96-bit random IV per operation",
     description:
-      "Server-side encryption for credentials that remote agents need to access. Decryption happens only after authentication, permission verification, policy evaluation, and audit logging. Designed for automation workflows where the user may be offline.",
+      "Server-side encryption for credentials that remote agents need to access. Decryption happens only after authentication, permission verification, and capability enforcement. On allowed paths, the server decrypts before writing the audit record; denied attempts are audited without decrypting. Designed for automation workflows where the user may be offline.",
     properties: [
       "Decryption gated behind full authorization chain",
-      "Every decrypt is audit-logged before returning",
+      "Successful decrypts are audit-logged after decryption (before the response returns)",
       "Remote agents can only access this mode",
-      "Supports external connector fetch instead of decrypt",
+      "Key version tracking for future rotation support",
     ],
   },
 ];
 
-type CellStatus = "allowed" | "no-zk-reveal" | "remote-no-zk" | "remote-reveal-only";
+type CellStatus = "allowed" | "zk-only" | "no-zk-reveal" | "remote-no-zk" | "remote-reveal-only";
 
 const statusLabels: Record<CellStatus, string> = {
   allowed: "Allowed",
+  "zk-only": "ZK items only",
   "no-zk-reveal": "Cannot reveal ZK",
   "remote-no-zk": "Remote cannot access ZK",
   "remote-reveal-only": "Remote: reveal only",
@@ -76,7 +64,7 @@ const capabilityMatrix: {
     capability: "read_ciphertext",
     description: "Encrypted blob for local daemon decryption",
     localZK: "allowed",
-    localServer: "allowed",
+    localServer: "zk-only",
     remoteZK: "remote-no-zk",
     remoteServer: "remote-reveal-only",
   },
@@ -112,7 +100,7 @@ const trustTiers = [
     name: "Local daemon",
     trust: "Strongest",
     description:
-      "Root key held in process memory only. Unix socket with 0600 permissions. Protects against network attackers and server compromise. Sodium memzero on lock.",
+      "Root key held in process memory only. Unix socket with 0600 permissions. Protects against network attackers and server compromise. zeroKey() on lock (best-effort in JS runtimes).",
     boundary: "Process memory boundary",
   },
   {
@@ -251,37 +239,8 @@ export const metadata: Metadata = {
 
 export default function SecurityPage() {
   return (
-    <div
-      className={`${landingSans.variable} ${landingMono.variable} min-h-screen bg-white text-black selection:bg-[#0047FF] selection:text-white [font-family:var(--font-landing-sans)]`}
-    >
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
-        <Link href="/" className="inline-flex items-center gap-2">
-          <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-          <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-        </Link>
-
-        <div className="flex items-center gap-3">
-          <Link
-            href="/security"
-            className="text-[11px] font-bold uppercase tracking-widest text-[#0047FF]"
-          >
-            Security
-          </Link>
-          <a
-            href="https://docs.abadge.io"
-            className="border border-black bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-black transition-colors hover:border-[#0047FF] hover:bg-zinc-100"
-          >
-            Docs
-          </a>
-          <Link
-            href="/login"
-            className="border border-black bg-black px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.05em] text-white transition-colors hover:border-[#0047FF] hover:bg-[#0047FF]"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
+    <div className={landingRootClassName}>
+      <LandingHeader currentPage="security" />
 
       <main>
         {/* ── Hero ── */}
@@ -576,8 +535,8 @@ export default function SecurityPage() {
                   "Verify explicit permission for the exact capability",
                   "Reject expired permissions",
                   "Enforce locality and storage-mode constraints",
-                  "Audit the attempt",
                   "Decrypt only if capability and storage mode permit",
+                  "Audit the attempt",
                 ].map((step, i) => (
                   <div key={step} className="flex items-center gap-4 px-6 py-4">
                     <span className="text-[1.1rem] font-bold text-[#0047FF] [font-family:var(--font-landing-mono)]">
@@ -751,39 +710,7 @@ export default function SecurityPage() {
         </section>
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="bg-white p-8">
-        <div className="mx-auto flex max-w-[96rem] flex-col gap-8 md:flex-row md:items-start md:justify-between">
-          <div className="order-2 max-w-xs md:order-1">
-            <div className="mb-1 inline-flex items-center gap-2">
-              <Image src="/abadge-logo-black.svg" alt="abadge logo" width={24} height={24} />
-              <span className="text-xl font-bold tracking-[-0.04em]">abadge</span>
-            </div>
-            <span className="mb-4 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400">
-              Credential control plane for AI agents
-            </span>
-          </div>
-
-          <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
-            <a
-              href="https://github.com/punitarani/abadge"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              GitHub
-            </a>
-            <a
-              href="https://docs.abadge.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-[#0047FF]"
-            >
-              Docs
-            </a>
-          </div>
-        </div>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }
