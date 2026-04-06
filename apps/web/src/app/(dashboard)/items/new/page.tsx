@@ -13,13 +13,14 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { getClientErrorMessage } from "@/lib/trpc-browser";
 import { useVault } from "@/lib/vault-context";
 
+
 type StorageMode = "zero_knowledge" | "server_managed";
 
 export default function CreateItemPage(): React.ReactElement {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { rootKey } = useVault();
+  const { requestUnlock } = useVault();
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
   const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
@@ -60,13 +61,16 @@ export default function CreateItemPage(): React.ReactElement {
           };
 
       if (storageMode === "zero_knowledge") {
-        if (!rootKey) {
-          setError("Vault is locked");
+        let key: Uint8Array;
+        try {
+          key = await requestUnlock();
+        } catch {
+          setError("Master password required");
           setCreating(false);
           return;
         }
         const payload = { v: 1, label: name, kind: "opaque" as const, tags: [], fields: { value } };
-        const encrypted = encryptItemForVault(payload, rootKey);
+        const encrypted = encryptItemForVault(payload, key);
         body = {
           storageMode: "zero_knowledge",
           encryptedItemKey: encrypted.encryptedItemKey,
