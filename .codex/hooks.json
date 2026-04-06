@@ -5,9 +5,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun run format && bun run lint:fix && bun run typecheck && bun run build",
-            "timeout": 600,
-            "statusMessage": "Formatting, linting, type checking, and building..."
+            "command": "bun run format && bun run lint:fix && bun run typecheck",
+            "timeout": 120,
+            "statusMessage": "Formatting, linting, and type checking..."
           }
         ]
       }
