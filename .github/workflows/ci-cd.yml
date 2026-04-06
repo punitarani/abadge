@@ -72,8 +72,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run test
 
-  build:
-    name: Build Deploy Targets
+  build-api:
+    name: API Server (Workers)
     runs-on: ubuntu-latest
     needs: [typecheck]
     steps:
@@ -82,17 +82,36 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      - name: Build API worker
-        working-directory: apps/api
+      - working-directory: apps/api
         run: bun run build
-      - name: Build CLI binary
-        working-directory: packages/cli
+
+  build-cli:
+    name: CLI (Binary)
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - working-directory: packages/cli
         run: bun run build
-      - name: Build web worker bundle
-        working-directory: apps/web
-        env:
-          ABADGE_API_URL: ${{ vars.ABADGE_API_URL || 'https://api.abadge.io' }}
-          ABADGE_APP_URL: ${{ vars.ABADGE_APP_URL || 'https://abadge.io' }}
+
+  build-web:
+    name: Web App (Workers)
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    env:
+      ABADGE_API_URL: ${{ vars.ABADGE_API_URL || 'https://api.abadge.io' }}
+      ABADGE_APP_URL: ${{ vars.ABADGE_APP_URL || 'https://abadge.io' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - working-directory: apps/web
         run: bunx opennextjs-cloudflare build
 
   db-validate:
@@ -128,7 +147,7 @@ jobs:
   db-migrate:
     name: Run Production Migrations
     runs-on: ubuntu-latest
-    needs: [format, lint, typecheck, test, build, db-validate]
+    needs: [format, lint, typecheck, test, build-api, build-cli, build-web, db-validate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
