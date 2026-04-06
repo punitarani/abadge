@@ -12,6 +12,7 @@ import { useQueryStates } from "nuqs";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectContent,
@@ -39,6 +40,10 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   mount_file: "Mount as file",
   use_without_reveal: "Use without reveal",
 };
+
+function formatItemId(id: string): string {
+  return `${id.slice(0, 8)}...`;
+}
 
 export default function PermissionsPage(): React.ReactElement {
   const queryClient = useQueryClient();
@@ -93,6 +98,49 @@ export default function PermissionsPage(): React.ReactElement {
     [agents],
   );
 
+  const activeAgentOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      agents
+        .filter((a: Agent) => a.enabled && a.revokedAt === null)
+        .sort((a: Agent, b: Agent) => a.name.localeCompare(b.name))
+        .map((a: Agent) => ({ value: a.id, label: a.name })),
+    [agents],
+  );
+
+  const itemOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      items
+        .sort(
+          (a: ItemSummary, b: ItemSummary) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .map((item: ItemSummary) => ({ value: item.id, label: formatItemId(item.id) })),
+    [items],
+  );
+
+  const agentFilterOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      [{ value: "all", label: "All agents" }].concat(
+        agents
+          .sort((a: Agent, b: Agent) => a.name.localeCompare(b.name))
+          .map((a: Agent) => ({ value: a.id, label: a.name })),
+      ),
+    [agents],
+  );
+
+  const itemFilterOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      [{ value: "all", label: "All items" }].concat(
+        items
+          .sort(
+            (a: ItemSummary, b: ItemSummary) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          )
+          .map((item: ItemSummary) => ({ value: item.id, label: formatItemId(item.id) })),
+      ),
+    [items],
+  );
+
   async function handleCreatePermission(): Promise<void> {
     if (!selectedAgent || !selectedItem) {
       return;
@@ -124,59 +172,51 @@ export default function PermissionsPage(): React.ReactElement {
   });
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold">Permissions</h1>
         <p className="text-sm text-muted-foreground">Manage which agents can access which items</p>
       </div>
 
-      <div className="space-y-3 rounded-lg border border-border p-5">
+      <div className="space-y-4 rounded-lg border border-border p-5">
         <div className="text-sm font-semibold">Create permission</div>
         {error ? (
           <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         ) : null}
-        <div className="flex items-end gap-3">
-          <div className="flex-1 space-y-1">
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Agent</label>
-            <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select agent..." />
-              </SelectTrigger>
-              <SelectContent>
-                {agents
-                  .filter((agent: Agent) => agent.enabled && agent.revokedAt === null)
-                  .map((agent: Agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={activeAgentOptions}
+              value={selectedAgent}
+              onValueChange={setSelectedAgent}
+              placeholder="Select agent..."
+              searchPlaceholder="Search agents..."
+              emptyText="No agents found."
+              triggerClassName="w-full"
+            />
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Item</label>
-            <Select value={selectedItem} onValueChange={setSelectedItem}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select item..." />
-              </SelectTrigger>
-              <SelectContent>
-                {items.map((item: ItemSummary) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              options={itemOptions}
+              value={selectedItem}
+              onValueChange={setSelectedItem}
+              placeholder="Select item..."
+              searchPlaceholder="Search items..."
+              emptyText="No items found."
+              triggerClassName="w-full"
+            />
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Capability</label>
             <Select
               value={selectedCapability}
               onValueChange={(value) => setSelectedCapability(value as Capability)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -188,6 +228,8 @@ export default function PermissionsPage(): React.ReactElement {
               </SelectContent>
             </Select>
           </div>
+        </div>
+        <div className="flex justify-end">
           <Button
             size="sm"
             onClick={handleCreatePermission}
@@ -201,41 +243,23 @@ export default function PermissionsPage(): React.ReactElement {
       <div className="flex gap-3">
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Filter by agent</label>
-          <Select
+          <SearchableSelect
+            options={agentFilterOptions}
             value={filterAgent}
             onValueChange={(value) => void setPermissionFilters({ agent: value })}
-          >
-            <SelectTrigger className="h-[28px] w-[180px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All agents</SelectItem>
-              {agents.map((agent: Agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            searchPlaceholder="Search agents..."
+            triggerClassName="h-[28px] w-[200px] text-xs"
+          />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-medium text-muted-foreground">Filter by item</label>
-          <Select
+          <SearchableSelect
+            options={itemFilterOptions}
             value={filterItem}
             onValueChange={(value) => void setPermissionFilters({ item: value })}
-          >
-            <SelectTrigger className="h-[28px] w-[180px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All items</SelectItem>
-              {items.map((item: ItemSummary) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            searchPlaceholder="Search items..."
+            triggerClassName="h-[28px] w-[200px] text-xs"
+          />
         </div>
       </div>
 
@@ -281,7 +305,9 @@ export default function PermissionsPage(): React.ReactElement {
                   <TableCell className="font-medium">
                     {agentNames.get(permission.agentId) ?? permission.agentId}
                   </TableCell>
-                  <TableCell>{permission.itemId}</TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {formatItemId(permission.itemId)}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">
                       {CAPABILITY_LABELS[permission.capability] ?? permission.capability}
