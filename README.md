@@ -104,7 +104,7 @@ flowchart TD
 | [Overview](./docs/abadge.md) | What abadge is, who it's for, and how it works |
 | [Workflows & Flows](./docs/flow.md) | Mermaid diagrams for every workflow across all surfaces |
 | [Entities & Data Model](./docs/entities.md) | Database schema, entity relationships, lifecycle |
-| [Security Model](./docs/security.md) | Encryption, auth, authorization, threats, and trust boundaries |
+| [Security Model](./docs/SECURITY.md) | Encryption, auth, authorization, threats, and trust boundaries |
 | [Architecture](./docs/ARCHITECTURE.md) | System design and package structure |
 | [API Spec](./docs/specs/API.md) | tRPC procedures reference |
 | [CLI Spec](./docs/specs/CLI.md) | Command reference |

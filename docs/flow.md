@@ -333,8 +333,10 @@ flowchart TD
   ItemExists -->|No| Deny2["DENY\n(404 Not Found)"]
   ItemExists -->|Yes| PermCheck["Check permission\n(agent + item + capability)"]
 
-  PermCheck --> HasPerm{"Permission\nexists?"}
-  HasPerm -->|No| Deny3["DENY\n(403 Forbidden)"]
+  PermCheck --> HasPerm{"Explicit\npermission?"}
+  HasPerm -->|No| AutoGrant{"Auto-grant\nmatch?"}
+  AutoGrant -->|No| Deny3["DENY\n(403 Forbidden)"]
+  AutoGrant -->|Yes| Expired{"Permission\nexpired?"}
   HasPerm -->|Yes| Expired{"Permission\nexpired?"}
 
   Expired -->|Yes| Deny4["DENY\n(403 Expired)"]

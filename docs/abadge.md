@@ -155,7 +155,7 @@ abadge run --item <id> --env-var DB_PASSWORD -- ./deploy.sh
 |---|---|
 | [Workflows & Flows](./flow.md) | Visual diagrams of every workflow across all surfaces |
 | [Entities & Data Model](./entities.md) | Database schema, entity relationships, and data lifecycle |
-| [Security Model](./security.md) | Encryption, authentication, authorization, threat model |
+| [Security Model](./SECURITY.md) | Encryption, authentication, authorization, threat model |
 | [API Reference](./specs/API.md) | Every tRPC procedure with input/output schemas |
 | [CLI Reference](./specs/CLI.md) | All CLI commands and flags |
 | [MCP Reference](./specs/MCP.md) | MCP tools and security constraints |
