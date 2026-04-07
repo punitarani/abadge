@@ -1,206 +1,126 @@
 # abadge
 
-**Credential control plane for AI agents.**
+### Your agents need credentials. You need control.
 
-abadge lets teams store native encrypted credentials or connect existing secret systems, permission
-agents explicit access only when needed, enforce policy and approval checks at runtime, and audit
-every access attempt across the dashboard, API, CLI, SDK, and MCP server.
+abadge is a credential control plane for AI agents. Store secrets, permission exactly which agents can use them, choose how they're delivered, and audit every access -- all from one place.
 
-## What it does
+---
 
-* Stores native credentials as encrypted entries
-* References external secrets through connectors
-* Registers agents with unique API keys
-* Per-credential permissions for each agent
-* Evaluates policy and approval requirements at request time
-* Issues short-lived broker sessions for runtime access
-* Records allowed, denied, and pending approval access events
-* Exposes the same control plane through the dashboard, API, CLI, SDK, and MCP
+**The problem**: Agents are shipping to production. They call APIs, sign into services, and act on behalf of users. But credentials are still hardcoded in config, over-shared in environment variables, or buried in vaults with no per-agent scoping. When something goes wrong, there's no trace.
 
-## Why it exists
+**The fix**: abadge puts a policy-checked, audited gateway between every agent and every credential.
 
-Agents need credentials. Operators need control.
-
-abadge sits between them:
-
-* users keep ownership of credentials
-* agents only use what they were explicitly allowed
-* policy and approval rules are enforced before use
-* every access attempt is visible and attributable
-
-## Product wedge
-
-For v1, abadge should be understood as:
-
-* **Access** -- explicit permissions, policy checks, approvals, sessions, and audit
-* **Connect** -- native encrypted storage plus external secret references
-* **Interfaces** -- dashboard, CLI, SDK, MCP, and the control-plane tRPC API
-
-It is not positioned as a generic human password manager.
-
-## Product scope
-
-### Included in v1
-
-* Native credential CRUD
-* Agent registry
-* Per-credential permissions
-* Policies and approvals
-* Connector support
-* Short-lived broker sessions
-* Immutable access log
-* Web dashboard
-* CLI, SDK, and MCP surfaces
-* Organization support
-
-### Not included in v1
-
-* End-to-end zero-knowledge encryption
-* Background workflows
-* OAuth for agents
-* Webhooks
-* Browser extension
-
-## Core model
-
-Each credential is a named entry with:
-
-* `type` — `api_key`, `login`, `token`, `json_blob`, `pii`, or `other`
-* `value` — encrypted opaque string
-* `metadata` — optional JSON annotations
-
-Agents authenticate with a static API key issued once at registration or with a short-lived broker
-session token. Keys and session tokens are hashed before storage. Every access request is checked
-against explicit permissions, attached policy, delivery-mode constraints, and approval state before any
-decryption occurs.
+---
 
 ## How it works
 
-1. A user signs in to the dashboard or CLI.
-2. The user stores a native credential or configures an external reference.
-3. The user registers one or more agents.
-4. The user creates a permission for Agent X to access Credential Y and optionally attaches policy.
-5. The agent calls the API with an API key or session token.
-6. abadge verifies agent identity, ownership, permission, delivery mode, policy, and approval status.
-7. If allowed, abadge resolves the secret only for the requested delivery mode.
-8. abadge records the access attempt in the audit log.
+```
+Store → Permission → Deliver → Audit
+```
+
+1. **Store** credentials with zero-knowledge or server-managed encryption
+2. **Permission** each agent for exactly the credentials and capabilities it needs
+3. **Deliver** secrets through env injection, file mounts, or direct reveal -- LLMs never see raw secrets
+4. **Audit** every access attempt in an append-only log
+
+## Surfaces
+
+| | For | How |
+|---|---|---|
+| **Dashboard** | Operators | Web UI for managing credentials, agents, and permissions |
+| **CLI** | Developers | `abadge run` injects secrets into any command |
+| **MCP Server** | AI Agents | Tools that use secrets without exposing them to the model |
+| **SDK** | Integrators | TypeScript client for programmatic access |
+| **API** | Everything | tRPC control plane on Cloudflare Workers |
+
+## Quick start
+
+```bash
+# Install
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+# Login
+abadge login
+
+# Store a secret
+abadge item create --label "prod-db" --kind login --storage-mode server_managed
+
+# Register an agent and grant access
+abadge agent register -n "deploy-bot"
+abadge permission create --agent-id <id> --item-id <id> --capability mount_env
+
+# Run with the secret injected
+abadge run --item <id> --env-var DB_PASSWORD -- ./deploy.sh
+```
+
+## Zero-knowledge option
+
+For maximum security, choose zero-knowledge storage. Your master password derives the encryption key locally -- the server stores only ciphertext and can never decrypt your secrets, even in a full breach.
+
+## Security highlights
+
+- AES-256-GCM (server-managed) and XChaCha20-Poly1305 (zero-knowledge) encryption at rest
+- API keys and session tokens hashed before storage, shown once
+- Ed25519 signed sessions with 15-minute TTL for agents
+- Per-agent, per-credential, per-capability permissions with optional expiry
+- MCP tools redact secrets from LLM-visible output
+- Append-only audit log for every access attempt (allowed and denied)
+- Rate limiting, secure headers, CORS, CSRF protection
 
 ## Architecture
 
-* **API:** Hono on Cloudflare Workers
-* **Dashboard:** Next.js App Router on Cloudflare Workers via OpenNext
-* **Database:** Postgres (PlanetScale in production, Docker locally)
-* **Connection layer:** Cloudflare Hyperdrive
-* **ORM:** Drizzle
-* **Auth:** Better Auth
-* **Validation:** Zod
-* **Monorepo:** Turborepo + Bun
-* **Formatting/Linting:** Biome
-
-## Repo layout
-
-```text
-apps/
-  api/      Hono API worker
-  web/      Next.js dashboard
-packages/
-  auth/     Better Auth config
-  broker/   local execution helpers
-  cli/      CLI commands, config, and compiled binary entrypoint
-  config/   shared TS config
-  core/     shared types, schemas, constants
-  crypto/   encryption and API-key helpers
-  daemon/   local vault daemon
-  db/       Drizzle schema, client, and migrations
-  env/      environment validation
-  mcp/      MCP server and tools
-  sdk/      TypeScript client
-  trpc/     canonical application router and clients
+```
+┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
+│ Dashboard  │  │    CLI     │  │    MCP     │  │   Agent    │
+└─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
+      │               │               │               │
+      │         ┌─────┴─────┐         │               │
+      │         │  Daemon   │         │               │
+      │         │ (ZK vault)│         │               │
+      │         └─────┬─────┘         │               │
+      │               │               │               │
+      └───────────────┼───────────────┼───────────────┘
+                      │               │
+               ┌──────┴───────────────┴──────┐
+               │  API (Hono + tRPC on CF)    │
+               └──────────────┬──────────────┘
+                              │
+                       ┌──────┴──────┐
+                       │ PostgreSQL  │
+                       └─────────────┘
 ```
 
-## CLI install
+## Documentation
 
-The CLI ships as a Unix binary through GitHub Releases.
+| Document | Description |
+|---|---|
+| [Overview](./docs/abadge.md) | What abadge is, who it's for, and how it works |
+| [Workflows & Flows](./docs/flow.md) | Mermaid diagrams for every workflow across all surfaces |
+| [Entities & Data Model](./docs/entities.md) | Database schema, entity relationships, lifecycle |
+| [Security Model](./docs/security.md) | Encryption, auth, authorization, threats, and trust boundaries |
+| [Architecture](./docs/ARCHITECTURE.md) | System design and package structure |
+| [API Spec](./docs/specs/API.md) | tRPC procedures reference |
+| [CLI Spec](./docs/specs/CLI.md) | Command reference |
+| [MCP Spec](./docs/specs/MCP.md) | MCP tool reference |
+| [SDK Spec](./docs/specs/SDK.md) | TypeScript client reference |
+| [Crypto Spec](./docs/ENVELOPE_SPEC.md) | Cryptographic envelope and key hierarchy |
+| [Threat Model](./docs/THREAT_MODEL.md) | Trust boundaries and breach analysis |
+| [Development](./docs/DEVELOPMENT.md) | Setup, commands, and contributing |
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
-```
+## Tech stack
 
-Release docs:
-
-* [`docs/release/overview.md`](./docs/release/overview.md)
-* [`docs/release/cli.md`](./docs/release/cli.md)
-
-## Security principles
-
-* AES-256-GCM encryption at rest for credential values and connector configs
-* API keys and session tokens shown once, then stored only as hashes
-* Explicit agent-to-credential access control
-* Policy and approval checks before decryption
-* Non-reveal delivery modes by default
-* Append-only audit logging
-* Session auth for dashboard users
-* Bearer auth for agents
-* Drizzle parameterized queries
-* Secure headers and rate limiting
-* CSRF protection via Better Auth
+Hono + tRPC on Cloudflare Workers, Next.js dashboard, PostgreSQL via Hyperdrive, Drizzle ORM, Better Auth, Zod, Turborepo + Bun.
 
 ## Development
 
-### Prerequisites
-
-* [Bun](https://bun.sh) >= 1.2
-* [Docker](https://docker.com)
-* [Doppler CLI](https://docs.doppler.com/docs/install-cli)
-
-### Quick start
-
 ```bash
-# Install dependencies
-bun install
-
-# Start local Postgres
-bun run docker:up
-
-# Configure Doppler for this repo
-doppler setup
-
-# Push schema to database
-bun run db:push
-
-# Start dev servers
-bun run dev
+bun install          # Install dependencies
+bun run docker:up    # Start local Postgres
+doppler setup        # Configure secrets
+bun run db:push      # Push schema
+bun run dev          # Start dev servers
 ```
-
-### Common commands
-
-```bash
-bun run dev           # Start all dev servers
-bun run build         # Build all apps
-bun run lint          # Check for lint errors
-bun run lint:fix      # Auto-fix lint errors
-bun run format        # Format code
-bun run typecheck     # Type check all packages
-bun run storybook     # Start Storybook for the web UI components
-bun run storybook:build # Build the Storybook static site
-bun run db:generate   # Generate migration from schema
-bun run db:migrate    # Run pending migrations
-bun run db:push       # Push schema directly to database
-bun run db:studio     # Open Drizzle Studio
-bun run db:reset      # Drop schema and re-run migrations
-bun test              # Run the test suite
-bun run docker:up     # Start Docker services
-bun run docker:down   # Stop Docker services
-bun run docker:reset  # Reset Docker volumes and restart
-```
-
-### Environment variables
-
-Repository commands that need application secrets run through Doppler. After installing the CLI,
-run `doppler setup` in the repo root. Doppler is the source of truth for local development;
-`bun run dev` regenerates `apps/api/.dev.vars` for the Worker from the active Doppler config.
 
 ## Status
 
-This repo is the implementation of the abadge MVP: a small, edge-deployed credential control plane
-built for user-controlled agent access.
+Active development. Building the credential control plane for the agent era.
