@@ -79,6 +79,8 @@ const createAgent = (input: CreateAgentInput) =>
         createdAt: new Date(),
       }),
       apiKey: key,
+      bootstrapToken: null,
+      bootstrapExpiresAt: null,
     };
   });
 

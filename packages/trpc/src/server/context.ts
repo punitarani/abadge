@@ -26,7 +26,7 @@ export interface BaseRequestContext {
 export interface SessionIdentity {
   kind: "session";
   userId: string;
-  authMethod?: "browser_session" | "bearer_session" | "operator_token";
+  authMethod: "browser_session" | "bearer_session" | "operator_token";
   operatorTokenId?: string;
   scopes?: OperatorTokenScope[];
 }

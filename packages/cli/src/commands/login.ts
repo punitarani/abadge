@@ -13,6 +13,7 @@ import {
 import { clearConfig, loadConfig, saveConfig } from "../config";
 import { daemonClearAuthSession, daemonSetAuthSession } from "../daemon";
 import { error, errorMessage, json, success, warn } from "../output";
+import { prompt } from "../prompt";
 import { ensureDaemonStarted } from "./daemon";
 
 interface AgentRecord {
@@ -318,20 +319,23 @@ async function startDeviceLogin(opts: LoginOptions): Promise<void> {
   saveConfig({ ...(loadConfig() ?? { apiUrl }), apiUrl });
   const device = await requestDeviceCode(apiUrl);
 
-  console.log("Open this URL to authorize the CLI:");
-  console.log(`  ${device.verificationUri}`);
-  console.log("");
-  console.log("Then enter this code:");
+  console.log("Your authorization code:");
   console.log(`  ${device.userCode}`);
+  console.log("");
+  console.log("Open this URL and enter the code above:");
+  console.log(`  ${device.verificationUri}`);
   console.log("");
 
   if (!opts.noOpenBrowser) {
-    const opened = await openBrowser(device.verificationUriComplete);
+    await prompt("Press Enter to open a browser...");
+    // Open the base verification URL — user types the code on the web page
+    const opened = await openBrowser(device.verificationUri);
     if (!opened) {
-      warn("Could not open a browser automatically. Use the URL and code above.");
+      warn("Could not open a browser. Navigate to the URL above.");
     }
   }
 
+  console.log("Waiting for you to approve in the browser...");
   const result = await pollUntilApproved(
     apiUrl,
     device.deviceCode,

@@ -251,7 +251,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "exec.mount": async (params): Promise<MountExecResult> => {
       const secretValue = params.secretValue as string | undefined;
       const targetPath = params.path as string | undefined;
-      const mode = (params.mode as number) ?? 0o600;
+      // mode is never accepted from the caller — always owner-read/write only
       if (!secretValue) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "secretValue is required" };
       }
@@ -260,7 +260,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       const hex = Array.from(suffix, (b) => b.toString(16).padStart(2, "0")).join("");
       const filePath = targetPath ?? join(tmpdir(), `abadge-secret-${hex}`);
 
-      writeFileSync(filePath, secretValue, { mode });
+      writeFileSync(filePath, secretValue, { mode: 0o600 });
       mountedFiles.add(filePath);
       return { path: filePath };
     },

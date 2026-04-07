@@ -80,6 +80,13 @@ export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const OPERATOR_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 export const OPERATOR_TOKEN_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** Map a session/operator token to the correct request header. */
+export function tokenToHeaders(token: string): Record<string, string> {
+  return token.startsWith(OPERATOR_TOKEN_PREFIX)
+    ? { "X-Abadge-Operator-Token": token }
+    : { Authorization: `Bearer ${token}` };
+}
+
 export const OPERATOR_TOKEN_SCOPES = [
   "items:read",
   "items:write",

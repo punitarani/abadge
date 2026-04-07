@@ -3,9 +3,20 @@
 import type { ItemSummary } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
+import { useState } from "react";
 import { toast } from "sonner";
 import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
 import { ItemDetailPanel } from "@/components/dashboard/item-detail-panel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +34,7 @@ import { formatRelativeTime } from "@/lib/utils";
 
 export default function ItemsPage(): React.ReactElement {
   const queryClient = useQueryClient();
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [{ create: createPanelOpen, item: activeItemId }, setItemPanelState] =
     useQueryStates(itemPanelParsers);
   const itemsQuery = useQuery({
@@ -42,16 +54,15 @@ export default function ItemsPage(): React.ReactElement {
   const items = itemsQuery.data?.items ?? [];
   const loading = itemsQuery.isPending;
 
-  async function handleDelete(itemId: string): Promise<void> {
-    if (!confirm("Delete this item? This cannot be undone.")) {
-      return;
-    }
-
+  async function handleConfirmDelete(): Promise<void> {
+    if (!itemToDelete) return;
     try {
-      await deleteItem.mutateAsync({ itemId });
+      await deleteItem.mutateAsync({ itemId: itemToDelete });
       toast.success("Item deleted.");
     } catch (error) {
       toast.error(getClientErrorMessage(error, "Failed to delete item"));
+    } finally {
+      setItemToDelete(null);
     }
   }
 
@@ -147,9 +158,9 @@ export default function ItemsPage(): React.ReactElement {
                         variant="destructive"
                         size="sm"
                         disabled={deleteItem.isPending}
-                        onClick={() => handleDelete(item.id)}
+                        onClick={() => setItemToDelete(item.id)}
                       >
-                        {deleteItem.isPending ? "Deleting..." : "Delete"}
+                        Delete
                       </Button>
                     </div>
                   </TableCell>
@@ -176,6 +187,29 @@ export default function ItemsPage(): React.ReactElement {
           }}
         />
       ) : null}
+
+      <AlertDialog
+        open={itemToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setItemToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the item and all associated permissions. This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void handleConfirmDelete()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

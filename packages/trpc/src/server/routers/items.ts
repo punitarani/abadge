@@ -158,46 +158,53 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
         ),
     );
 
-    const displayItems = yield* Effect.tryPromise(() =>
-      Promise.all(
-        result.map(async (item) => {
-          try {
-            if (item.storageMode === "server_managed") {
-              if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-                return null;
-              }
-
-              const decrypted = await serverDecrypt(
-                {
-                  ciphertext: item.serverCiphertext,
-                  iv: item.serverIv,
-                  keyVersion: item.serverKeyVersion,
-                },
-                ctx.env.ENCRYPTION_KEY,
-              );
-
-              return {
-                itemId: item.id,
-                storageMode: "server_managed" as const,
-                label: decodeServerManagedPayload(item.id, decrypted).label,
-              };
-            }
-
-            if (!item.encryptedItemKey || !item.ciphertext) {
-              return null;
-            }
-
-            return {
-              itemId: item.id,
-              storageMode: "zero_knowledge" as const,
-              encryptedItemKey: item.encryptedItemKey,
-              ciphertext: item.ciphertext,
-            };
-          } catch {
+    const resolveDisplayItem = async (
+      item: (typeof result)[number],
+    ): Promise<
+      | { itemId: string; storageMode: "server_managed"; label: string }
+      | {
+          itemId: string;
+          storageMode: "zero_knowledge";
+          encryptedItemKey: string;
+          ciphertext: string;
+        }
+      | null
+    > => {
+      try {
+        if (item.storageMode === "server_managed") {
+          if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
             return null;
           }
-        }),
-      ),
+          const decrypted = await serverDecrypt(
+            {
+              ciphertext: item.serverCiphertext,
+              iv: item.serverIv,
+              keyVersion: item.serverKeyVersion,
+            },
+            ctx.env.ENCRYPTION_KEY,
+          );
+          return {
+            itemId: item.id,
+            storageMode: "server_managed" as const,
+            label: decodeServerManagedPayload(item.id, decrypted).label,
+          };
+        }
+        if (!item.encryptedItemKey || !item.ciphertext) {
+          return null;
+        }
+        return {
+          itemId: item.id,
+          storageMode: "zero_knowledge" as const,
+          encryptedItemKey: item.encryptedItemKey,
+          ciphertext: item.ciphertext,
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    const displayItems = yield* Effect.tryPromise(() =>
+      Promise.all(result.map(resolveDisplayItem)),
     );
 
     return {

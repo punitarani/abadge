@@ -131,7 +131,7 @@ function serializeOperatorToken(row: OperatorTokenRow) {
   };
 }
 
-function forbidOperatorTokenMutation(
+function forbidOperatorTokenSelfManagement(
   authMethod: string | undefined,
 ): Effect.Effect<void, ForbiddenError> {
   if (authMethod !== "operator_token") {
@@ -292,6 +292,10 @@ const recordLogin = Effect.gen(function* () {
 
 const recordLogout = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
+  // Best-effort server-side session invalidation. Don't block the audit log on this.
+  yield* tryAsync(() =>
+    (ctx.auth.api.signOut({ headers: ctx.req.headers }) as Promise<unknown>).catch(() => undefined),
+  );
   yield* logSessionAudit({
     userId: ctx.identity.userId,
     eventType: "auth.logout",
@@ -305,9 +309,15 @@ const recordLogout = Effect.gen(function* () {
 const createOperatorToken = (input: CreateOperatorTokenInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    yield* forbidOperatorTokenMutation(ctx.identity.authMethod);
+    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
 
-    const expiresAt = resolveOperatorTokenExpiry(input.expiresAt);
+    const expiresAt = yield* Effect.try({
+      try: () => resolveOperatorTokenExpiry(input.expiresAt),
+      catch: (e) =>
+        e instanceof BadRequestError
+          ? e
+          : new BadRequestError({ code: "BAD_REQUEST", message: String(e) }),
+    });
     const token = generateOpaqueToken(OPERATOR_TOKEN_PREFIX);
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
     const id = crypto.randomUUID();
@@ -352,7 +362,7 @@ const createOperatorToken = (input: CreateOperatorTokenInput) =>
 
 const listOperatorTokens = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  yield* forbidOperatorTokenMutation(ctx.identity.authMethod);
+  yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
 
   const result = yield* tryAsync(() =>
     ctx.db
@@ -368,7 +378,7 @@ const listOperatorTokens = Effect.gen(function* () {
 const revokeOperatorToken = (input: RevokeOperatorTokenInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    yield* forbidOperatorTokenMutation(ctx.identity.authMethod);
+    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
 
     const [token] = (yield* tryAsync(() =>
       ctx.db

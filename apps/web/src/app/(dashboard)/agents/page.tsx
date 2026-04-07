@@ -6,6 +6,16 @@ import { useQueryStates } from "nuqs";
 import { useState } from "react";
 import { toast } from "sonner";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SecretDisplay } from "@/components/ui/secret-display";
@@ -100,6 +110,7 @@ function AgentRow({
 export default function AgentsPage(): React.ReactElement {
   const queryClient = useQueryClient();
   const [rotatedApiKey, setRotatedApiKey] = useState<string | null>(null);
+  const [agentToRevoke, setAgentToRevoke] = useState<string | null>(null);
   const [{ create: createPanelOpen }, setAgentPanelState] = useQueryStates(agentPanelParsers);
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.agents(),
@@ -136,16 +147,15 @@ export default function AgentsPage(): React.ReactElement {
     }
   }
 
-  async function handleRevoke(agentId: string): Promise<void> {
-    if (!confirm("Revoke this agent? Existing permissions will no longer work.")) {
-      return;
-    }
-
+  async function handleConfirmRevoke(): Promise<void> {
+    if (!agentToRevoke) return;
     try {
-      await revokeAgent.mutateAsync({ agentId });
+      await revokeAgent.mutateAsync({ agentId: agentToRevoke });
       toast.success("Agent revoked.");
     } catch (error) {
       toast.error(getClientErrorMessage(error, "Failed to revoke agent"));
+    } finally {
+      setAgentToRevoke(null);
     }
   }
 
@@ -235,7 +245,7 @@ export default function AgentsPage(): React.ReactElement {
                   key={agent.id}
                   agent={agent}
                   onRotate={handleRotate}
-                  onRevoke={handleRevoke}
+                  onRevoke={setAgentToRevoke}
                   mutating={rotateAgent.isPending || revokeAgent.isPending}
                 />
               ))
@@ -250,6 +260,28 @@ export default function AgentsPage(): React.ReactElement {
           void setAgentPanelState({ create: null });
         }}
       />
+
+      <AlertDialog
+        open={agentToRevoke !== null}
+        onOpenChange={(open) => {
+          if (!open) setAgentToRevoke(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this agent?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Existing permissions for this agent will no longer work. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void handleConfirmRevoke()}>
+              Revoke
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
