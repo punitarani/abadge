@@ -22,6 +22,7 @@ import type {
   CreateAgentChallengeSchema,
   CreateAgentSchema,
   CreateItemSchema,
+  CreateOperatorTokenSchema,
   CreatePermissionSchema,
   DaemonOperatorSessionSchema,
   EnrollAgentSchema,
@@ -40,6 +41,9 @@ import type {
   KeyVersionResultSchema,
   MountAccessResponseSchema,
   MountAccessSchema,
+  OperatorTokenCreateResultSchema,
+  OperatorTokenListResultSchema,
+  OperatorTokenSchema,
   PermissionListResultSchema,
   PermissionResultSchema,
   PermissionSchema,
@@ -47,6 +51,7 @@ import type {
   RevealAccessResponseSchema,
   RevealAccessSchema,
   RevokeAgentSessionSchema,
+  RevokeOperatorTokenSchema,
   RotateKeySchema,
   SuccessResultSchema,
   UpdateItemSchema,
@@ -87,6 +92,11 @@ export type ExchangeAgentSessionInput = TypeOf<typeof ExchangeAgentSessionSchema
 export type AgentSession = TypeOf<typeof AgentSessionSchema>;
 export type AgentSessionResult = TypeOf<typeof AgentSessionResultSchema>;
 export type RevokeAgentSessionInput = TypeOf<typeof RevokeAgentSessionSchema>;
+export type CreateOperatorTokenInput = TypeOf<typeof CreateOperatorTokenSchema>;
+export type RevokeOperatorTokenInput = TypeOf<typeof RevokeOperatorTokenSchema>;
+export type OperatorToken = TypeOf<typeof OperatorTokenSchema>;
+export type OperatorTokenCreateResult = TypeOf<typeof OperatorTokenCreateResultSchema>;
+export type OperatorTokenListResult = TypeOf<typeof OperatorTokenListResultSchema>;
 export type CliLocalAgentReference = TypeOf<typeof CliLocalAgentReferenceSchema>;
 export type CliProfileConfig = TypeOf<typeof CliProfileConfigSchema>;
 export type DaemonOperatorSession = TypeOf<typeof DaemonOperatorSessionSchema>;

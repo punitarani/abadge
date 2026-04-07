@@ -96,7 +96,7 @@ Validated end-to-end via `AbadgeClient` against local API:
 
 Validated with isolated home directory:
 
-* `abadge login --api-url --email --password`
+* `abadge login --api-url` with Better Auth device authorization
 * config write to `~/.abadge/config.json`
 * `abadge item list --json`
 * `abadge agent list --json`

@@ -4,22 +4,26 @@ import { createAgentCommand } from "./commands/agent";
 import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand } from "./commands/daemon";
 import { createItemCommand } from "./commands/item";
-import { createLoginCommand } from "./commands/login";
+import { createLoginCommand, createLogoutCommand } from "./commands/login";
 import { createMountCommand } from "./commands/mount";
 import { createPermissionCommand } from "./commands/permission";
 import { createRunCommand } from "./commands/run";
+import { createTokenCommand } from "./commands/token";
 import { createVaultCommand } from "./commands/vault";
 
 const program = new Command()
   .name("abadge")
   .description("Zero-knowledge credential vault CLI")
-  .version(packageJson.version, "-v, --version");
+  .version(packageJson.version, "-v, --version")
+  .option("--token-stdin", "Read an operator/session token from stdin for this command");
 
 program.addCommand(createLoginCommand());
+program.addCommand(createLogoutCommand());
 program.addCommand(createDaemonCommand());
 program.addCommand(createVaultCommand());
 program.addCommand(createItemCommand());
 program.addCommand(createAgentCommand());
+program.addCommand(createTokenCommand());
 program.addCommand(createPermissionCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createMountCommand());

@@ -12,7 +12,7 @@ import { principals as agentRecords, items, grants as permissionRecords } from "
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, sessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure } from "../init";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -226,15 +226,15 @@ const revokePermission = (permissionId: string) =>
   });
 
 export const permissionsRouter = createTrpcRouter({
-  create: sessionProcedure
+  create: scopedSessionProcedure("permissions:write")
     .input(strictSchema(CreatePermissionSchema))
     .output(strictSchema(PermissionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createPermission(input))),
-  list: sessionProcedure
+  list: scopedSessionProcedure("permissions:read")
     .input(strictSchema(PermissionListQuerySchema))
     .output(strictSchema(PermissionListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listPermissions(input))),
-  revoke: sessionProcedure
+  revoke: scopedSessionProcedure("permissions:write")
     .input(strictSchema(PermissionIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokePermission(input.permissionId))),

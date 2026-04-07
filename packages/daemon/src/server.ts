@@ -5,6 +5,10 @@ import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { defaultPidPath, defaultSocketPath } from "./paths";
 import type {
+  DaemonAuthHeaders,
+  DaemonAuthState,
+  DaemonAuthStatus,
+  DaemonAuthType,
   DaemonConfig,
   EncryptResult,
   EnvExecResult,
@@ -18,6 +22,7 @@ import { RPC_ERRORS } from "./types";
 import { VaultState } from "./vault-state";
 
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
+const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
 
 export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
   return {
@@ -25,7 +30,6 @@ export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
     pidPath: partial.pidPath ?? defaultPidPath(),
     autoLockMs: partial.autoLockMs ?? DEFAULT_AUTO_LOCK_MS,
     apiUrl: partial.apiUrl ?? "",
-    sessionCookie: partial.sessionCookie ?? "",
   };
 }
 
@@ -41,8 +45,91 @@ function rpcOk(id: number | string, result: unknown): JsonRpcResponse {
 
 type RpcHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
-function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
+function normalizeAuthType(type: unknown): DaemonAuthType | null {
+  return type === "better_auth_session" || type === "operator_token" ? type : null;
+}
+
+function isAuthExpired(auth: DaemonAuthState): boolean {
+  return new Date(auth.expiresAt).getTime() <= Date.now();
+}
+
+function authStatus(auth: DaemonAuthState | null): DaemonAuthStatus {
+  if (!auth || isAuthExpired(auth)) {
+    return { authenticated: false, type: null, expiresAt: null };
+  }
+
   return {
+    authenticated: true,
+    type: auth.type,
+    expiresAt: auth.expiresAt,
+  };
+}
+
+function buildAuthHeaders(auth: DaemonAuthState | null): DaemonAuthHeaders {
+  if (!auth || isAuthExpired(auth)) {
+    throw { code: RPC_ERRORS.AUTH_REQUIRED, message: "Not logged in. Run `abadge login` first." };
+  }
+
+  return {
+    type: auth.type,
+    expiresAt: auth.expiresAt,
+    headers:
+      auth.type === "operator_token"
+        ? { "X-Abadge-Operator-Token": auth.token }
+        : { Authorization: `Bearer ${auth.token}` },
+  };
+}
+
+function resolveAuthExpiry(expiresAt: unknown): string {
+  const now = Date.now();
+  const capped = now + MAX_AUTH_SESSION_MS;
+  const requested =
+    typeof expiresAt === "string" && expiresAt ? new Date(expiresAt).getTime() : capped;
+
+  if (!Number.isFinite(requested) || requested <= now) {
+    throw { code: RPC_ERRORS.INVALID_PARAMS, message: "expiresAt must be a future ISO timestamp" };
+  }
+
+  return new Date(Math.min(requested, capped)).toISOString();
+}
+
+function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
+  let auth: DaemonAuthState | null = null;
+
+  return {
+    "auth.setSession": async (params): Promise<DaemonAuthStatus> => {
+      const token = params.token as string | undefined;
+      const type = normalizeAuthType(params.type);
+      if (!token || !type) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "token and type are required",
+        };
+      }
+
+      auth = {
+        type,
+        token,
+        expiresAt: resolveAuthExpiry(params.expiresAt),
+      };
+
+      return authStatus(auth);
+    },
+
+    "auth.clearSession": async (): Promise<DaemonAuthStatus> => {
+      auth = null;
+      return authStatus(auth);
+    },
+
+    "auth.status": async (): Promise<DaemonAuthStatus> => {
+      return authStatus(auth);
+    },
+
+    "auth.getHeaders": async (): Promise<DaemonAuthHeaders> => {
+      const headers = buildAuthHeaders(auth);
+      return headers;
+    },
+
     "vault.unlock": async (params) => {
       const password = params.masterPassword as string | undefined;
       if (!password) {
@@ -52,7 +139,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
@@ -86,7 +173,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, config.sessionCookie);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -98,7 +185,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
       }
 
-      await updateVaultPassword(config.apiUrl, config.sessionCookie, result);
+      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, result);
       return { ok: true };
     },
 

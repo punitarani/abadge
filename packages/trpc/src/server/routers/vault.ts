@@ -19,7 +19,7 @@ import { items, vaults } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, sessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure } from "../init";
 import { serializeVault } from "../serialize";
 
 const bootstrapVault = (input: VaultBootstrapInput) =>
@@ -204,22 +204,22 @@ const rotateKey = (input: RotateKeyInput) =>
   });
 
 export const vaultRouter = createTrpcRouter({
-  bootstrap: sessionProcedure
+  bootstrap: scopedSessionProcedure("vault:write")
     .input(strictSchema(VaultBootstrapSchema))
     .output(strictSchema(IdResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, bootstrapVault(input))),
-  get: sessionProcedure
+  get: scopedSessionProcedure("vault:read")
     .output(strictSchema(VaultResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, getVault)),
-  changePassword: sessionProcedure
+  changePassword: scopedSessionProcedure("vault:write")
     .input(strictSchema(ChangePasswordSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, changePassword(input))),
-  setupRecovery: sessionProcedure
+  setupRecovery: scopedSessionProcedure("vault:write")
     .input(strictSchema(RecoverySetupSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, setupRecovery(input))),
-  rotateKey: sessionProcedure
+  rotateKey: scopedSessionProcedure("vault:write")
     .input(strictSchema(RotateKeySchema))
     .output(strictSchema(KeyVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateKey(input))),

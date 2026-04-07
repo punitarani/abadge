@@ -91,14 +91,15 @@ flowchart LR
 `packages/trpc` owns:
 
 * the canonical `appRouter`
-* `publicProcedure`, `sessionProcedure`, and `principalProcedure`
+* `publicProcedure`, `sessionProcedure`, `scopedSessionProcedure`, and `agentProcedure`
 * request-context creation
 * browser and node clients
 * server callers for tests and internal use
 * tRPC error normalization
 
-The application router is split into six domain routers:
+The application router is split into seven domain routers:
 
+* `auth`
 * `vault`
 * `items`
 * `agents`
@@ -122,8 +123,9 @@ Each tRPC request constructs context once:
 
 Procedure middleware then adds identity:
 
-* `sessionProcedure` resolves a user session or verified user token
-* `principalProcedure` resolves a agent token, including legacy fallback
+* `sessionProcedure` resolves browser sessions, Better Auth bearer sessions, or operator tokens
+* `scopedSessionProcedure` adds coarse scope checks only for operator-token callers
+* `agentProcedure` resolves an agent token, including legacy fallback
 
 ## Contract model
 
@@ -131,7 +133,7 @@ Procedure middleware then adds identity:
 
 * Effect Schema definitions
 * derived `Type` and encoded boundary types
-* constants for item kinds, capabilities, audit types, and localities
+* constants for item kinds, capabilities, audit types, localities, and operator-token scopes
 * tagged domain errors
 
 Every public procedure declares both input and output schemas. No custom transformer is used.
@@ -144,13 +146,14 @@ Every public procedure declares both input and output schemas. No custom transfo
 2. Hono middleware applies headers, CORS, and rate limiting
 3. tRPC builds request context
 4. `sessionProcedure` resolves the user identity
-5. Effect program runs domain logic
-6. response is encoded as JSON-safe data
+5. `scopedSessionProcedure` checks token scopes when the caller used `X-Abadge-Operator-Token`
+6. Effect program runs domain logic
+7. response is encoded as JSON-safe data
 
 ### Agent flow
 
 1. caller sends `Authorization: Bearer ...`
-2. `principalProcedure` resolves the agent identity
+2. `agentProcedure` resolves the agent identity
 3. permission and locality checks run before any decrypt path
 4. access attempt is appended to the audit log
 5. ciphertext or payload is returned based on capability and storage mode
@@ -171,6 +174,7 @@ Core persisted entities:
 * `agents`
 * `permissions`
 * `audit_log`
+* `operator_tokens`
 * Better Auth tables
 
 Current runtime logic depends on explicit permissions and does not use a background job system.

@@ -20,7 +20,7 @@ import { items, vaults } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, sessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
@@ -308,26 +308,26 @@ const UpdateItemInputEnvelopeSchema = Schema.Struct({
 });
 
 export const itemsRouter = createTrpcRouter({
-  create: sessionProcedure
+  create: scopedSessionProcedure("items:write")
     .input(strictSchema(CreateItemSchema))
     .output(strictSchema(IdResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createItem(input))),
-  list: sessionProcedure
+  list: scopedSessionProcedure("items:read")
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
-  resolveDisplay: sessionProcedure
+  resolveDisplay: scopedSessionProcedure("items:read")
     .input(strictSchema(ItemDisplayQuerySchema))
     .output(strictSchema(ItemDisplayListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, resolveItemDisplay(input))),
-  get: sessionProcedure
+  get: scopedSessionProcedure("items:read")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getItem(input.itemId))),
-  update: sessionProcedure
+  update: scopedSessionProcedure("items:write")
     .input(strictSchema(UpdateItemInputEnvelopeSchema))
     .output(strictSchema(ItemVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateItem(input.itemId, input.data))),
-  delete: sessionProcedure
+  delete: scopedSessionProcedure("items:write")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteItem(input.itemId))),

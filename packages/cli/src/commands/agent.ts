@@ -1,7 +1,6 @@
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import { Command } from "commander";
-import { SessionApiClient } from "../client";
-import { requireSessionConfig } from "../config";
+import { createSessionApiClient } from "../client";
 import { error, errorMessage, json, success, table, warn } from "../output";
 
 export function createAgentCommand(): Command {
@@ -21,9 +20,8 @@ export function createAgentCommand(): Command {
       }
       const kind = opts.kind as AgentKind;
 
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const result = await client.createAgent({
           name: opts.name,
           kind,
@@ -49,9 +47,8 @@ export function createAgentCommand(): Command {
     .description("List all agents")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const agents = (await client.listAgents()).agents;
 
         if (opts.json) {
@@ -81,9 +78,8 @@ export function createAgentCommand(): Command {
     .argument("<id>", "Agent ID")
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const result = await client.rotateAgent(id);
 
         if (opts.json) {
@@ -105,9 +101,8 @@ export function createAgentCommand(): Command {
     .description("Revoke an agent")
     .argument("<id>", "Agent ID")
     .action(async (id: string) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         await client.revokeAgent(id);
         success(`Agent ${id} revoked.`);
       } catch (err) {

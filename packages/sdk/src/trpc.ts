@@ -1,3 +1,4 @@
+import { OPERATOR_TOKEN_PREFIX } from "@abadge/core";
 import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AnyTRPCRouter } from "@trpc/server";
@@ -75,7 +76,11 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
         headers() {
           return {
             ...toHeaderRecord(options.headers),
-            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+            ...(options.token?.startsWith(OPERATOR_TOKEN_PREFIX)
+              ? { "X-Abadge-Operator-Token": options.token }
+              : options.token
+                ? { Authorization: `Bearer ${options.token}` }
+                : {}),
           };
         },
       }),

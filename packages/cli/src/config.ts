@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 export interface CliConfig {
   apiUrl: string;
-  sessionCookie?: string;
   principalId?: string;
   principalSecret?: string;
+  operatorUserId?: string;
   /** Legacy alias used by older CLI/MCP config readers. */
   authToken?: string;
 }
@@ -29,13 +29,13 @@ function normalizeConfig(config: Partial<CliConfig>): CliConfig | null {
 
   return {
     apiUrl,
-    sessionCookie:
-      typeof config.sessionCookie === "string" && config.sessionCookie
-        ? config.sessionCookie
-        : undefined,
     principalId:
       typeof config.principalId === "string" && config.principalId ? config.principalId : undefined,
     principalSecret,
+    operatorUserId:
+      typeof config.operatorUserId === "string" && config.operatorUserId
+        ? config.operatorUserId
+        : undefined,
     authToken: principalSecret,
   };
 }
@@ -61,9 +61,9 @@ export function saveConfig(config: CliConfig): void {
     JSON.stringify(
       {
         apiUrl: normalized.apiUrl,
-        sessionCookie: normalized.sessionCookie,
         principalId: normalized.principalId,
         principalSecret: normalized.principalSecret,
+        operatorUserId: normalized.operatorUserId,
         authToken: normalized.principalSecret,
       },
       null,
@@ -90,16 +90,7 @@ export function requireConfig(): CliConfig {
   return config;
 }
 
-export type SessionConfig = CliConfig & { sessionCookie: string };
-
-export function requireSessionConfig(): SessionConfig {
-  const config = requireConfig();
-  if (!config.sessionCookie) {
-    console.error("No session found. Run `abadge login` first.");
-    return process.exit(1) as never;
-  }
-  return { ...config, sessionCookie: config.sessionCookie };
-}
+export type SessionConfig = CliConfig & { sessionHeaders: Record<string, string> };
 
 export type PrincipalConfig = CliConfig & { principalId: string; principalSecret: string };
 

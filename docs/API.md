@@ -18,7 +18,7 @@ import { createNodeTrpcClient } from "@abadge/trpc/client";
 
 const client = createNodeTrpcClient({
   baseUrl: "http://localhost:8787",
-  token: process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
+  token: process.env.ABADGE_OPERATOR_TOKEN ?? process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
 });
 ```
 
@@ -54,8 +54,20 @@ Session-backed tRPC procedures accept:
 
 * Better Auth browser cookies
 * Better Auth bearer access tokens in `Authorization: Bearer ...`
+* operator automation tokens in `X-Abadge-Operator-Token: abo_...`
 
 The CLI stores the bearer token only in daemon memory.
+
+Operator automation tokens:
+
+* prefix: `abo_`
+* storage: hash + prefix only
+* default TTL: 24 hours
+* maximum TTL: 30 days
+* scopes: `items:read`, `items:write`, `agents:read`, `agents:write`, `permissions:read`,
+  `permissions:write`, `audit:read`, `vault:read`, `vault:write`
+* management: `auth.createOperatorToken`, `auth.listOperatorTokens`, `auth.revokeOperatorToken`
+* restriction: operator-token callers cannot manage operator tokens
 
 ### Agent auth
 
@@ -73,27 +85,68 @@ Keypair-backed agents use the auth router lifecycle:
 
 | Procedure | Auth | Description |
 |------|------|-------------|
-| `auth.issueBootstrapToken` | `sessionProcedure` | Issue a one-time `abe_...` bootstrap token |
+| `auth.issueBootstrapToken` | `scopedSessionProcedure("agents:write")` | Issue a one-time `abe_...` bootstrap token |
 | `auth.enroll` | `publicProcedure` | Redeem bootstrap token and upload an agent public key |
 | `auth.createChallenge` | `publicProcedure` | Create a short-lived signing challenge |
 | `auth.exchangeSession` | `publicProcedure` | Verify Ed25519 signature and mint an `abs_...` session |
-| `auth.revokeSession` | `sessionProcedure` | Revoke an existing `abs_...` session for the current operator |
+| `auth.revokeSession` | `scopedSessionProcedure("agents:write")` | Revoke an existing `abs_...` session for the current operator |
 | `auth.recordLogin` | `sessionProcedure` | Audit successful CLI login |
 | `auth.logout` | `sessionProcedure` | Audit operator logout |
+| `auth.createOperatorToken` | `sessionProcedure` | Create a scoped `abo_...` operator token |
+| `auth.listOperatorTokens` | `sessionProcedure` | List operator tokens for the current operator |
+| `auth.revokeOperatorToken` | `sessionProcedure` | Revoke an operator token for the current operator |
 
 ## Procedure tiers
 
 | Tier | Auth | Used by |
 |------|------|---------|
 | `publicProcedure` | none | agent enrollment and agent session exchange |
-| `sessionProcedure` | Better Auth session or bearer session token | dashboard, CLI management commands, SDK |
+| `sessionProcedure` | Better Auth cookie, bearer session, or operator token | dashboard, CLI management commands, SDK |
+| `scopedSessionProcedure` | session plus operator-token scope check | operator-token-compatible session procedures |
 | `agentProcedure` | agent bearer credential | local runtime agents, MCP, remote agents |
 
 ## Selected session procedures
 
-### `agents.create`
+### `auth.createOperatorToken`
 
 Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | yes | Token display name |
+| `scopes` | `OperatorTokenScope[]` | yes | One or more coarse scopes |
+| `expiresAt` | string | no | ISO expiry, capped at 30 days |
+
+Response:
+
+```ts
+{
+  token: "abo_...";
+  operatorToken: OperatorToken;
+}
+```
+
+`token` is shown once. Subsequent list calls return only metadata and prefix.
+
+### `auth.listOperatorTokens`
+
+Auth: `sessionProcedure`
+
+Response: `{ operatorTokens: OperatorToken[] }`
+
+### `auth.revokeOperatorToken`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `tokenId` | string | yes | Operator token ID |
+
+Response: `{ ok: true }`
+
+### `agents.create`
+
+Auth: `scopedSessionProcedure("agents:write")`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -123,7 +176,7 @@ Defaults:
 
 ### `agents.rotate`
 
-Auth: `sessionProcedure`
+Auth: `scopedSessionProcedure("agents:write")`
 
 Rotates a legacy API key only.
 
@@ -135,7 +188,7 @@ Response:
 
 ### `permissions.create`
 
-Auth: `sessionProcedure`
+Auth: `scopedSessionProcedure("permissions:write")`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -151,7 +204,7 @@ Current creation-time enforcement also rejects:
 
 ### `items.resolveDisplay`
 
-Auth: `sessionProcedure`
+Auth: `scopedSessionProcedure("items:read")`
 
 Resolves live dashboard display values for a bounded set of items without changing the
 zero-knowledge trust model.
@@ -229,6 +282,8 @@ Auth and agent lifecycle now emit these additional audit event types:
 
 * `auth.login`
 * `auth.logout`
+* `operator_token.create`
+* `operator_token.revoke`
 * `agent.bootstrap_issue`
 * `agent.enroll`
 * `agent.session_issue`

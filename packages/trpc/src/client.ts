@@ -1,3 +1,4 @@
+import { OPERATOR_TOKEN_PREFIX } from "@abadge/core";
 import type { QueryClientConfig } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientErrorLike } from "@trpc/client";
@@ -94,7 +95,11 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
         headers() {
           return {
             ...toHeaderRecord(options.headers),
-            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+            ...(options.token?.startsWith(OPERATOR_TOKEN_PREFIX)
+              ? { "X-Abadge-Operator-Token": options.token }
+              : options.token
+                ? { Authorization: `Bearer ${options.token}` }
+                : {}),
           };
         },
       }),

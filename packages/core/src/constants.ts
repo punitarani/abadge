@@ -41,6 +41,8 @@ export const AUDIT_EVENT_TYPES = [
   "item.delete",
   "auth.login",
   "auth.logout",
+  "operator_token.create",
+  "operator_token.revoke",
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
@@ -70,10 +72,26 @@ export const API_KEY_PREFIX = {
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 export const AGENT_CHALLENGE_PREFIX = "abc_";
+export const OPERATOR_TOKEN_PREFIX = "abo_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
 export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
+export const OPERATOR_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+export const OPERATOR_TOKEN_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export const OPERATOR_TOKEN_SCOPES = [
+  "items:read",
+  "items:write",
+  "agents:read",
+  "agents:write",
+  "permissions:read",
+  "permissions:write",
+  "audit:read",
+  "vault:read",
+  "vault:write",
+] as const;
+export type OperatorTokenScope = (typeof OPERATOR_TOKEN_SCOPES)[number];
 
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind): AgentLocality {

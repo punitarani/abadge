@@ -1,3 +1,4 @@
+import { ForbiddenError, type OperatorTokenScope } from "@abadge/core";
 import { initTRPC } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
@@ -33,6 +34,20 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
     throw toTrpcError(error);
   }
 });
+
+export const scopedSessionProcedure = (scope: OperatorTokenScope) =>
+  sessionProcedure.use(({ ctx, next }) => {
+    if (ctx.identity.authMethod === "operator_token" && !ctx.identity.scopes?.includes(scope)) {
+      throw toTrpcError(
+        new ForbiddenError({
+          code: "PERMISSION_DENIED",
+          message: `Operator token is missing required scope: ${scope}`,
+        }),
+      );
+    }
+
+    return next({ ctx });
+  });
 
 export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
