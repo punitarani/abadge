@@ -1,5 +1,5 @@
 import { AUDIT_EVENT_TYPES, AUDIT_RESULTS } from "@abadge/core";
-import { parseAsString, parseAsStringLiteral } from "nuqs";
+import { parseAsBoolean, parseAsString, parseAsStringLiteral } from "nuqs";
 
 const auditEventTypeFilters = ["all", ...AUDIT_EVENT_TYPES] as const;
 const auditResultFilters = ["all", ...AUDIT_RESULTS] as const;
@@ -15,4 +15,14 @@ export const auditFilterParsers = {
 export const permissionFilterParsers = {
   agent: parseAsString.withDefault("all"),
   item: parseAsString.withDefault("all"),
+  create: parseAsBoolean.withDefault(false),
+};
+
+export const itemPanelParsers = {
+  create: parseAsBoolean.withDefault(false),
+  item: parseAsString,
+};
+
+export const agentPanelParsers = {
+  create: parseAsBoolean.withDefault(false),
 };

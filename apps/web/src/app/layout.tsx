@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { Space_Grotesk } from "next/font/google";
+import { Toaster } from "@/components/ui/sonner";
 import { AppProviders } from "@/lib/trpc-provider";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={cn("font-sans", spaceGrotesk.variable)}>
       <body>
         <NuqsAdapter>
-          <AppProviders>{children}</AppProviders>
+          <AppProviders>
+            {children}
+            <Toaster />
+          </AppProviders>
         </NuqsAdapter>
       </body>
     </html>

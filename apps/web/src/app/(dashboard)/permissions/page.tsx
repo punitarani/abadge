@@ -1,25 +1,14 @@
 "use client";
 
-import {
-  type Agent,
-  CAPABILITIES,
-  type Capability,
-  type ItemSummary,
-  type Permission,
-} from "@abadge/core";
+import type { Agent, Capability, ItemSummary, Permission } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { toast } from "sonner";
+import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -50,12 +39,8 @@ function formatItemLabel(id: string, storageMode?: string): string {
 
 export default function PermissionsPage(): React.ReactElement {
   const queryClient = useQueryClient();
-  const [selectedAgent, setSelectedAgent] = useState("");
-  const [selectedItem, setSelectedItem] = useState("");
-  const [selectedCapability, setSelectedCapability] = useState<Capability>("mount_env");
-  const [{ agent: filterAgent, item: filterItem }, setPermissionFilters] =
+  const [{ agent: filterAgent, item: filterItem, create: createPanelOpen }, setPermissionFilters] =
     useQueryStates(permissionFilterParsers);
-  const [error, setError] = useState("");
 
   const permissionsQuery = useQuery({
     queryKey: dashboardQueryKeys.permissions(),
@@ -68,18 +53,6 @@ export default function PermissionsPage(): React.ReactElement {
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.items(),
     queryFn: () => browserTrpcClient.items.list.query(),
-  });
-  const createPermission = useMutation({
-    mutationFn: (input: { agentId: string; itemId: string; capability: Capability }) =>
-      browserTrpcClient.permissions.create.mutate(input),
-    onSuccess: async () => {
-      setSelectedAgent("");
-      setSelectedItem("");
-      setError("");
-      await queryClient.invalidateQueries({
-        queryKey: dashboardQueryKeys.permissions(),
-      });
-    },
   });
   const revokePermission = useMutation({
     mutationFn: ({ permissionId }: { permissionId: string }) =>
@@ -103,29 +76,6 @@ export default function PermissionsPage(): React.ReactElement {
 
   const itemMap = useMemo<Map<string, ItemSummary>>(
     () => new Map(items.map((item: ItemSummary) => [item.id, item])),
-    [items],
-  );
-
-  const activeAgentOptions = useMemo<SearchableSelectOption[]>(
-    () =>
-      agents
-        .filter((a: Agent) => a.enabled && a.revokedAt === null)
-        .sort((a: Agent, b: Agent) => a.name.localeCompare(b.name))
-        .map((a: Agent) => ({ value: a.id, label: a.name })),
-    [agents],
-  );
-
-  const itemOptions = useMemo<SearchableSelectOption[]>(
-    () =>
-      items
-        .sort(
-          (a: ItemSummary, b: ItemSummary) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        )
-        .map((item: ItemSummary) => ({
-          value: item.id,
-          label: formatItemLabel(item.id, item.storageMode),
-        })),
     [items],
   );
 
@@ -155,28 +105,17 @@ export default function PermissionsPage(): React.ReactElement {
     [items],
   );
 
-  async function handleCreatePermission(): Promise<void> {
-    if (!selectedAgent || !selectedItem) {
-      return;
-    }
-
-    try {
-      await createPermission.mutateAsync({
-        agentId: selectedAgent,
-        itemId: selectedItem,
-        capability: selectedCapability,
-      });
-    } catch (mutationError) {
-      setError(getClientErrorMessage(mutationError, "Failed to create permission"));
-    }
-  }
-
   async function handleRevoke(permissionId: string): Promise<void> {
     if (!confirm("Revoke this permission?")) {
       return;
     }
 
-    await revokePermission.mutateAsync({ permissionId });
+    try {
+      await revokePermission.mutateAsync({ permissionId });
+      toast.success("Permission revoked.");
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to revoke permission"));
+    }
   }
 
   const filtered = permissions.filter((permission: Permission) => {
@@ -187,71 +126,21 @@ export default function PermissionsPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold">Permissions</h1>
-        <p className="text-sm text-muted-foreground">Manage which agents can access which items</p>
-      </div>
-
-      <div className="space-y-4 rounded-lg border border-border p-5">
-        <div className="text-sm font-semibold">Create permission</div>
-        {error ? (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Agent</p>
-            <SearchableSelect
-              options={activeAgentOptions}
-              value={selectedAgent}
-              onValueChange={setSelectedAgent}
-              placeholder="Select agent..."
-              searchPlaceholder="Search agents..."
-              emptyText="No agents found."
-              triggerClassName="w-full"
-            />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Item</p>
-            <SearchableSelect
-              options={itemOptions}
-              value={selectedItem}
-              onValueChange={setSelectedItem}
-              placeholder="Select item..."
-              searchPlaceholder="Search items..."
-              emptyText="No items found."
-              triggerClassName="w-full"
-            />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Capability</p>
-            <Select
-              value={selectedCapability}
-              onValueChange={(value) => setSelectedCapability(value as Capability)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CAPABILITIES.map((capability) => (
-                  <SelectItem key={capability} value={capability}>
-                    {CAPABILITY_LABELS[capability]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Permissions</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage which agents can access which items
+          </p>
         </div>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            onClick={handleCreatePermission}
-            disabled={!selectedAgent || !selectedItem || createPermission.isPending}
-          >
-            {createPermission.isPending ? "Creating..." : "Create permission"}
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          onClick={() => {
+            void setPermissionFilters({ create: true });
+          }}
+        >
+          Create permission
+        </Button>
       </div>
 
       <div className="flex gap-3">
@@ -349,6 +238,13 @@ export default function PermissionsPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+
+      <CreatePermissionPanel
+        open={createPanelOpen}
+        onClose={() => {
+          void setPermissionFilters({ create: null });
+        }}
+      />
     </div>
   );
 }
