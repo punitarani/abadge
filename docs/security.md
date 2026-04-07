@@ -243,33 +243,43 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 
 ## Trust Boundaries
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Tier 1: Local Daemon (Strongest)                               │
-│  - Root key in memory only                                      │
-│  - Unix socket with 0600 permissions                            │
-│  - Auto-lock timeout                                            │
-│  - Protects against: network attackers, server compromise       │
-│  - Does NOT protect against: local root/admin attackers         │
-├─────────────────────────────────────────────────────────────────┤
-│  Tier 2: Browser (Convenient)                                   │
-│  - Root key in JS memory (lost on tab close)                    │
-│  - Vulnerable to XSS (catastrophic if exploited)               │
-│  - Vulnerable to malicious browser extensions                   │
-│  - For high-security: use CLI + daemon instead                  │
-├─────────────────────────────────────────────────────────────────┤
-│  Tier 3: Server (ZK protects ZK items)                          │
-│  - Cannot decrypt ZK items                                      │
-│  - CAN decrypt server-managed items (by design)                 │
-│  - Can observe access patterns and metadata                     │
-│  - Full breach exposes: SM plaintext + ZK ciphertext + KDF salt │
-├─────────────────────────────────────────────────────────────────┤
-│  Tier 4: Remote Agents (Most Restricted)                        │
-│  - Can only access server-managed items                         │
-│  - Only reveal_plaintext capability                             │
-│  - Scoped to explicitly granted permissions                     │
-│  - Compromise limited to granted items until revoked            │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+  columns 1
+
+  block:T1["Tier 1: Local Daemon (Strongest)"]
+    columns 1
+    T1a["Root key in memory only"]
+    T1b["Unix socket with 0600 permissions"]
+    T1c["Protects against: network attackers, server compromise"]
+    T1d["Does NOT protect against: local root/admin attackers"]
+  end
+
+  block:T2["Tier 2: Browser (Convenient)"]
+    columns 1
+    T2a["Root key in JS memory (lost on tab close)"]
+    T2b["Vulnerable to XSS (catastrophic if exploited)"]
+    T2c["For high-security: use CLI + daemon instead"]
+  end
+
+  block:T3["Tier 3: Server (ZK protects ZK items)"]
+    columns 1
+    T3a["Cannot decrypt ZK items"]
+    T3b["CAN decrypt server-managed items (by design)"]
+    T3c["Full breach exposes: SM plaintext + ZK ciphertext + KDF salt"]
+  end
+
+  block:T4["Tier 4: Remote Agents (Most Restricted)"]
+    columns 1
+    T4a["Only server-managed items, only reveal_plaintext"]
+    T4b["Scoped to explicitly granted permissions"]
+    T4c["Compromise limited to granted items until revoked"]
+  end
+
+  style T1 fill:#dfd,stroke:#3c3,stroke-width:3px
+  style T2 fill:#ffd,stroke:#cc3,stroke-width:2px
+  style T3 fill:#e8f4fd,stroke:#2196F3,stroke-width:2px
+  style T4 fill:#fdd,stroke:#c33,stroke-width:1px
 ```
 
 ## Server Breach Impact

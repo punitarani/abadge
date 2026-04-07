@@ -69,25 +69,32 @@ For maximum security, choose zero-knowledge storage. Your master password derive
 
 ## Architecture
 
-```
-┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
-│ Dashboard  │  │    CLI     │  │    MCP     │  │   Agent    │
-└─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘
-      │               │               │               │
-      │         ┌─────┴─────┐         │               │
-      │         │  Daemon   │         │               │
-      │         │ (ZK vault)│         │               │
-      │         └─────┬─────┘         │               │
-      │               │               │               │
-      └───────────────┼───────────────┼───────────────┘
-                      │               │
-               ┌──────┴───────────────┴──────┐
-               │  API (Hono + tRPC on CF)    │
-               └──────────────┬──────────────┘
-                              │
-                       ┌──────┴──────┐
-                       │ PostgreSQL  │
-                       └─────────────┘
+```mermaid
+flowchart TD
+  subgraph Surfaces
+    Dashboard["Dashboard"]
+    CLI["CLI"]
+    MCP["MCP Server"]
+    Agent["Remote Agent"]
+  end
+
+  subgraph Local["Local Runtime"]
+    Daemon["Vault Daemon\n(ZK crypto)"]
+  end
+
+  subgraph Edge["Cloudflare Edge"]
+    API["API\n(Hono + tRPC)"]
+  end
+
+  DB[(PostgreSQL)]
+
+  Dashboard --> API
+  CLI --> API
+  CLI --> Daemon
+  MCP --> API
+  MCP --> Daemon
+  Agent --> API
+  API --> DB
 ```
 
 ## Documentation

@@ -78,28 +78,39 @@ abadge exposes the same control plane through five interfaces:
 
 ## Architecture at a glance
 
-```
-┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  Dashboard  │  │     CLI     │  │     MCP     │  │ Remote Agent│
-└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
-       │                │                │                │
-       │         ┌──────┴──────┐         │                │
-       │         │ Local Daemon│         │                │
-       │         │  (ZK vault) │         │                │
-       │         └──────┬──────┘         │                │
-       │                │                │                │
-       └────────────────┼────────────────┼────────────────┘
-                        │                │
-                 ┌──────┴────────────────┴──────┐
-                 │   API  (Hono + tRPC on CF)   │
-                 │  ┌─────┐ ┌──────┐ ┌───────┐  │
-                 │  │Auth │ │Policy│ │ Audit │  │
-                 │  └─────┘ └──────┘ └───────┘  │
-                 └──────────────┬───────────────┘
-                                │
-                         ┌──────┴──────┐
-                         │  PostgreSQL │
-                         └─────────────┘
+```mermaid
+flowchart TD
+  subgraph Surfaces["Surfaces"]
+    Dashboard["Dashboard"]
+    CLI["CLI"]
+    MCP["MCP Server"]
+    Remote["Remote Agent"]
+  end
+
+  subgraph LocalRuntime["Local Runtime"]
+    Daemon["Vault Daemon\n(ZK crypto)"]
+  end
+
+  subgraph Edge["Cloudflare Edge"]
+    API["API\n(Hono + tRPC)"]
+    Auth["Better Auth"]
+    Policy["Permission\nCheck"]
+    Audit["Audit\nLogger"]
+  end
+
+  DB[(PostgreSQL)]
+
+  Dashboard --> API
+  CLI --> API
+  CLI --> Daemon
+  MCP --> API
+  MCP --> Daemon
+  Remote --> API
+
+  API --> Auth
+  API --> Policy
+  API --> Audit
+  API --> DB
 ```
 
 ## Technology
