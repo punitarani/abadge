@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This repo builds abadge: an agent credential firewall. Users store secrets, define access policies, and control how agents consume credentials -- with a full audit trail. Keep the codebase small, explicit, and security-first.
+This repo builds abadge: an agent credential firewall. Users store secrets in encrypted vaults, register agent principals, grant per-item capabilities, and control how agents consume secrets -- with a full audit trail and zero-knowledge encryption. Keep the codebase small, explicit, and security-first.
 
 ## Prime directives
 
-1. Preserve the product model: users store secrets, register agents, create per-credential permissions with policies, approve sensitive requests, and inspect a full audit trail.
+1. Preserve the product model: users store secrets in vaults, register agent principals, grant per-item capabilities, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
-3. Preserve the security model: encrypted credentials, hashed legacy agent API keys, short-lived agent session tokens, explicit permission checks, policy evaluation, delivery mode enforcement, immutable access logging.
+3. Preserve the security model: zero-knowledge vault encryption (client-side), server-managed encryption (AES-256-GCM), hashed legacy agent API keys, short-lived agent session tokens (prefix `abs_`), explicit grant checks, capability enforcement, immutable audit logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
 5. When docs and code disagree, code wins. Then fix the docs.
 
@@ -18,30 +18,34 @@ This repo builds abadge: an agent credential firewall. Users store secrets, defi
 * Turborepo
 * TypeScript strict mode
 * Hono on Cloudflare Workers
+* tRPC
 * Next.js App Router via OpenNext
 * Drizzle ORM
 * PlanetScale Postgres via Hyperdrive
 * Better Auth
-* Zod
+* Effect Schema
 * Biome
 
 ## Repo map
 
 ```text
 apps/
-  api/      API worker (control plane)
+  api/      API worker (Hono + tRPC on Cloudflare Workers)
   cli/      Distributable CLI binary (bun build --compile)
-  web/      dashboard
+  web/      Dashboard (Next.js App Router)
 packages/
   auth/     Better Auth setup (server + client)
-  broker/   local execution engine (env inject, file mount, session management, connectors)
+  broker/   tRPC client wrapper, env-inject, file-mount helpers (legacy; daemon supersedes for crypto)
   cli/      CLI tool library (commands, config, output)
   config/   shared tsconfig
-  core/     shared types, zod schemas, constants, error shapes
-  db/       schema and db client
+  core/     shared types, Effect Schema schemas, constants, error shapes
+  crypto/   cryptographic primitives (ZK vault, server-managed AES, API keys, Ed25519)
+  daemon/   local vaultd process (root key custody, encrypt/decrypt, subprocess injection via Unix socket)
+  db/       Drizzle schema and db client
   env/      environment validation (server, client, worker)
   mcp/      MCP server for AI agents
   sdk/      TypeScript SDK (@abadge/sdk)
+  trpc/     tRPC router definitions, middleware, server-side handlers
 ```
 
 ## What each layer owns
@@ -50,21 +54,16 @@ packages/
 
 Owns:
 
-* auth endpoints (Better Auth catch-all + social provider discovery)
-* dashboard CRUD endpoints (credentials, agents, permissions, policies, approvals, connectors, automatic permissions, agent groups)
-* agent credential access endpoint with policy evaluation
-* AES-256-GCM encryption/decryption of credential values and connector configs
-* agent auth via short-lived agent session verification first, then legacy API key hash lookup for migration paths
-* permission enforcement (explicit permissions + automatic permission fallback)
-* policy evaluation (pure function, per-access)
-* approval workflows (create on policy trigger, approve/deny by owner)
-* broker session management (create, list, revoke)
-* external connector secret fetching (HTTP connectors: Doppler, HashiCorp Vault, Infisical)
-* audit log writes (append-only, every access attempt)
-* rate limiting
+* Hono app with REST v1 routes and tRPC catch-all (`/trpc/*`)
+* Better Auth catch-all route (`/api/auth/*`)
+* REST routes: vault, items, agents, permissions, access, audit
+* rate limiting middleware (auth: 60/min, tRPC/v1: 100/min)
+* CORS via Better Auth trusted origins
+* health check endpoint
 
 Does not own:
 
+* tRPC handler logic (lives in `packages/trpc`)
 * UI
 * duplicated domain types already defined in `packages/core`
 * long-running workflows
@@ -73,34 +72,64 @@ Does not own:
 
 Owns:
 
-* dashboard UI
-* auth screens (email/password + social login)
-* forms and navigation
-* rendering one-time agent keys
-* policy and approval management views
-* audit views
+* dashboard UI (items, agents, permissions, audit, settings)
+* auth screens (login, register)
+* device code approval flow
+* item create/edit forms
+* agent registration forms
+* rendering one-time agent API keys
+* vault security page (password change, recovery key, key rotation)
 
 Does not own:
 
-* authorization policy
+* authorization logic
 * encryption logic
-* database access that bypasses API contracts unless explicitly designed that way
+* database access that bypasses API contracts
 
 ### packages/core
 
 Owns:
 
-* shared domain types (Credential, Agent, Permission, Policy, Approval, BrokerSession, Connector, AutoGrant, AgentGroup, AccessLogEntry, etc.)
-* zod schemas (CreateCredentialSchema, CreateAgentSchema, GrantPermissionSchema, AgentAccessRequestSchema, CreatePolicySchema, CreateSessionSchema, CreateConnectorSchema, CreateAutoGrantSchema, CreateAgentGroupSchema, etc.)
-* constants (credential types, delivery modes, environments, sensitivities, agent types, access outcomes, approval statuses, connector types, social providers, session statuses)
-* shared error shapes and error codes
+* shared domain types (ItemPayload, Agent, Permission, AuditEntry, Vault, etc.)
+* Effect Schema schemas (CreateItemSchema, CreateAgentSchema, CreatePermissionSchema, CiphertextAccessSchema, RevealAccessSchema, MountAccessSchema, AuditQuerySchema, VaultBootstrapSchema, etc.)
+* constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, PRINCIPAL_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, token prefixes and TTLs)
+* error shapes (BadRequestError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError, ConflictError, RateLimitError)
+
+### packages/crypto
+
+Owns:
+
+* client-side ZK crypto (@noble/ciphers, @noble/hashes): Argon2id KDF, XChaCha20-Poly1305 key wrapping, per-item DEK encrypt/decrypt, root key rotation (rekey)
+* server-side crypto (WebCrypto): AES-256-GCM encrypt/decrypt for server\_managed items
+* API key generation, SHA-256 hashing, constant-time verification
+* Ed25519 key pair generation, signing, verification (WebCrypto)
+* opaque token generation (bootstrap, challenge, session tokens)
+* base64url and base32 encoding/decoding
+* salt generation
+
+### packages/trpc
+
+Owns:
+
+* tRPC router: auth, vault, items, agents, permissions, access, audit
+* middleware: session procedure (user auth), agent procedure (agent auth)
+* Effect integration for resolving session/agent identity
+* server-side encryption/decryption dispatch (ZK passthrough vs server-managed AES-GCM)
+* grant/capability enforcement
+* audit log writes (append-only, every access attempt)
+* request context creation (DB, auth, env validation)
+
+Does not own:
+
+* HTTP routing (that's in `apps/api`)
+* client-side crypto (that's in `packages/crypto`)
 
 ### packages/db
 
 Owns:
 
-* schema (credentials, apikey, agent\_credential\_permissions, policies, approvals, broker\_sessions, connectors, auto\_grants, agent\_groups, agent\_group\_members, access\_log, auth tables, organization)
-* indexes (unique constraint on user+credential name, access log indexes on credential+timestamp and agent+timestamp)
+* schema (vaults, items, principals, grants, auditLog, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
+* indexes (vaults: unique user\_id; items: user\_id, vault\_id; grants: unique principal+item+capability; audit\_log: user\_id, principal\_id, item\_id, occurred\_at; agent\_sessions: token\_hash, agent\_id, user\_id, expires\_at)
 * database client factory
 * migrations config
 
@@ -110,6 +139,7 @@ Owns:
 
 * Better Auth server/client wiring
 * Social provider detection (Google, GitHub)
+* Device code flow
 * Trusted origin configuration
 
 ### packages/env
@@ -119,57 +149,72 @@ Owns:
 * environment variable validation schemas (server, client, worker)
 * shared env access helpers
 
+### packages/daemon
+
+Owns:
+
+* vaultd Unix domain socket IPC server (JSON-RPC 2.0 over newline-delimited messages)
+* in-memory VaultState (root key custody, auto-lock timer, encrypt/decrypt/rekey operations)
+* RPC methods: vault.unlock, vault.lock, vault.status, vault.changePassword, item.encrypt, item.decrypt, item.rekey, exec.env, exec.mount, exec.cleanup
+* subprocess secret injection (exec.env: env var injection via Bun.spawn)
+* temp file mounting (exec.mount: 0600 permissions, tracked for cleanup)
+* process lifecycle (PID file, signal handling, socket permissions)
+
+Does not own:
+
+* grant/capability checks (that's in the API/tRPC layer)
+* audit log storage (that's in the API/tRPC layer)
+* UI
+
 ### packages/broker
 
 Owns:
 
-* API client for abadge control plane
-* subprocess secret injection (`abadge run` -- env var injection)
-* temp file mounting (`abadge mount` -- 0600 permissions, auto-cleanup)
-* broker session lifecycle
-* connector interface and implementations (native, 1Password, AWS)
+* tRPC client wrapper for daemon (DaemonClient)
+* env-inject helper (runWithEnv)
+* file-mount helpers (mountSecret, cleanupMount)
 
 Does not own:
 
-* policy evaluation (that's in the API)
-* audit log storage (that's in the API)
-* UI
+* crypto operations (delegates to daemon)
+* grant checks (delegates to API)
 
 ### packages/cli
 
 Owns:
 
-* command parsing and routing (login, whoami, secret, agent, permission, run, mount, audit, approve, connector)
+* command parsing and routing (login, vault, item, agent, permission, run, mount, audit, daemon)
 * user config (~/.abadge/config.json)
 * terminal output formatting
-* interactive login flow
+* interactive login flow (device code)
 
 Does not own:
 
-* secret execution (delegates to broker)
-* policy decisions (delegates to API)
+* secret execution (delegates to daemon via broker)
+* grant decisions (delegates to API)
 
 ### packages/mcp
 
 Owns:
 
-* MCP server setup and tool registration
-* tool-specific input/output schemas
-* tools: list\_available\_credentials, request\_secret\_use, run\_with\_secret, fill\_login, mount\_secret\_file, request\_approval, get\_secret\_metadata, get\_audit\_context
-* policy-aware tool descriptions
+* MCP server setup and tool registration (stdio transport)
+* tools: list\_items, request\_access, run\_with\_secret, mount\_secret, get\_audit
+* daemon client integration for local decryption
+* API client for remote access
 
 Does not own:
 
-* secret execution (delegates to broker)
+* secret execution (delegates to daemon)
 * raw secret exposure to LLM (by design)
 
 ### packages/sdk
 
 Owns:
 
-* TypeScript API client (@abadge/sdk)
-* typed error classes (UnauthorizedError, ForbiddenError, NotFoundError, ApprovalRequiredError)
-* client-side schemas and types
+* TypeScript API client (@abadge/sdk, class AbadgeClient)
+* tRPC client wrapper for Node.js
+* typed error class (AbadgeApiError with statusCode + code)
+* public API surface covering vault, items, agents, permissions, access, audit
 
 Does not own:
 
@@ -178,82 +223,85 @@ Does not own:
 
 ## Non-negotiable invariants
 
-* No plaintext credential storage.
-* No plaintext API key storage.
-* No plaintext session token storage.
-* No credential read without an explicit agent-credential permission or matching automatic permission.
-* No cross-user credential access.
-* Every allowed and denied agent read must be logged.
-* No wildcard permissions for v1.
+* No plaintext secret storage. ZK items use client-side XChaCha20-Poly1305; server\_managed items use AES-256-GCM.
+* No plaintext API key storage. Keys are SHA-256 hashed; only the prefix is stored for lookup.
+* No plaintext session token storage. Agent session tokens are hashed before storage.
+* No item access without an explicit grant (principal + item + capability).
+* No cross-user item access. Items and principals are scoped to their owning user.
+* Every allowed and denied agent access attempt must be logged in audit\_log.
+* No wildcard grants for v1. Each grant is (principal, item, capability).
 * No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed.
 * No raw SQL unless Drizzle cannot express the query and the reason is documented inline.
-* Default delivery mode is NOT reveal (agent access defaults to env\_inject).
-* LLM agents should not receive raw secrets by default.
-* Every delivery mode change must be audited.
-* Broker sessions must have TTL (max 24 hours for v1).
-* Connector configs must be encrypted at rest.
 * Audit log is append-only with no foreign key constraints.
-* Policy evaluation must be a pure function with no side effects.
+* The server never sees root keys or plaintext for zero\_knowledge items. KDF and unwrapping happen client-side only (browser, CLI, daemon).
+* Daemon socket must be 0600. Mounted secret files must be 0600.
+* Agent session tokens have a 15-minute default TTL. Bootstrap tokens expire in 10 minutes. Challenges expire in 60 seconds.
 
 ## Data model summary
 
-* `user` owns `credentials` (encrypted values, unique name per user)
-* `user` owns `agents` (auth method, optional public key for signed sessions, optional hashed legacy API key material)
-* `agent_credential_permissions` is the explicit permission table (composite PK on agent+credential, optional policy attachment, delivery mode constraints, expiration)
-* `auto_grants` define pattern-matching rules that automatically allow agents to access matching credentials
-* `policies` define access rules (delivery mode, environment, sensitivity, destination, TTL)
-* `approvals` track pending access requests (24h TTL, approve/deny by credential owner)
-* `agent_enrollment_tokens` provide one-time bootstrap enrollment for remote keypair-backed agents
-* `agent_session_challenges` store short-lived signed challenge material for agent session exchange
-* `agent_sessions` provide short-lived scoped access tokens (prefix `abs_`, 15-minute default TTL)
-* `connectors` configure external vault integrations (configs encrypted at rest)
-* `agent_groups` organize agents into named collections
-* `access_log` is append-only (includes delivery mode, outcome, session tracking, no FK constraints)
+* `vaults` — one per user. Stores wrappedRootKey, kdfSalt, kdfParams (Argon2id), recoveryWrappedRootKey, keyVersion. Unique index on userId.
+* `items` — secrets. Two storage modes: `zero_knowledge` (encryptedItemKey, keyNonce, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt.
+* `principals` — agents/devices. Fields: kind (device, local\_cli, local\_mcp, remote\_agent), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
+* `grants` — explicit capability grants. Composite unique index on (principalId, itemId, capability). Optional expiresAt. References grantedBy user.
+* `auditLog` — append-only. Fields: userId, principalId, itemId, eventType, result (allowed/denied/expired/revoked), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
+* `agentEnrollmentTokens` — one-time bootstrap tokens for remote public-key agents. Hashed token, expiresAt (10 min), usedAt.
+* `agentSessionChallenges` — short-lived signed challenge material for session exchange. Hashed challenge, expiresAt (60s), usedAt.
+* `agentSessions` — short-lived access tokens (prefix `abs_`). Hashed token, expiresAt (15 min default), revokedAt, lastUsedAt.
+* `organization`, `member`, `invitation` — org structure (Better Auth).
+* `user`, `session`, `account`, `verification`, `deviceCode` — auth tables (Better Auth).
 
 ## Main flows to protect
 
-### Credential create/update
+### Item create (zero\_knowledge)
 
-* validate input with Zod schema
-* encrypt value with AES-256-GCM using random 12-byte IV
-* store ciphertext + IV only (base64-encoded)
-* never return encrypted value or IV in responses
+* validate input with Effect Schema (CreateItemSchema)
+* client derives KEK from password via Argon2id, unwraps root key
+* client generates random 32-byte per-item DEK
+* client encrypts payload with DEK (XChaCha20-Poly1305), wraps DEK with root key (XChaCha20-Poly1305)
+* client sends encryptedItemKey + ciphertext to API
+* API stores ciphertext — never sees plaintext or root key
+
+### Item create (server\_managed)
+
+* validate input with Effect Schema (CreateItemSchema)
+* client sends plaintext payload to API
+* API encrypts with AES-256-GCM using ENCRYPTION\_KEY and random 12-byte IV
+* API stores serverCiphertext + serverIv + serverKeyVersion
 
 ### Agent registration
 
-* default to `public_key_session` agents for local runtimes and new remote agents
-* allow explicit legacy API-key registration only for migration paths
-* hash legacy API keys before storage and show the full key once, never retrievable again
-* issue bootstrap tokens for unenrolled remote public-key agents when requested
+* validate with Effect Schema (CreateAgentSchema)
+* default authMethod: legacy\_api\_key produces an API key (shown once, SHA-256 hash stored)
+* public\_key\_session agents may provide a publicKey at creation or enroll later via bootstrap token
+* bootstrap tokens (prefix `abe_`) issued for unenrolled remote public-key agents, 10-minute TTL
 
-### Agent credential access
+### Agent session exchange (public\_key\_session)
 
-* authenticate bearer token (agent session first by `abs_` prefix, then legacy API key)
-* resolve agent
-* resolve credential for same user
-* check explicit permission or matching automatic permission
-* check permission expiration
-* evaluate attached policy (if any)
-* check delivery mode constraints (credential x permission x policy intersection)
-* if policy requires approval, check for existing valid approval or create new one
-* decrypt only for value-returning delivery modes (reveal, env\_inject, file\_mount)
-* for external credentials, fetch from connector instead of decrypting
-* append audit event for every outcome (allowed, denied, pending\_approval)
+* agent requests challenge (prefix `abc_`, 60s TTL)
+* agent signs challenge with Ed25519 private key
+* API verifies signature against stored public key
+* API issues session token (prefix `abs_`, 15-minute TTL)
 
-### Local broker injection
+### Agent item access
 
-* CLI/MCP requests secret access
-* broker gets authorized access from API
-* injects into subprocess env or temp file
+* authenticate bearer token: try agent session (by `abs_` prefix) first, then legacy API key hash lookup
+* resolve principal, verify enabled and not revoked
+* resolve item for same user, verify not deleted
+* check for matching grant (principalId + itemId + requested capability)
+* check grant expiration
+* for `read_ciphertext`: return encrypted blob (local agents only, ZK items only)
+* for `reveal_plaintext`: server decrypts server\_managed item, returns plaintext
+* for `mount_env` / `mount_file`: return data appropriate for local injection
+* append audit event for every outcome (allowed, denied, expired, revoked)
+
+### Local daemon injection
+
+* CLI/MCP sends `item.decrypt` RPC to daemon (Unix socket)
+* daemon holds root key in memory, decrypts item DEK, decrypts payload
+* CLI/MCP sends `exec.env` or `exec.mount` RPC
+* daemon injects secret into subprocess env or writes temp file (0600)
 * secret never persisted to disk long-term
-* LLM never sees raw secret
-
-### Broker session flow
-
-* agent authenticates with API key
-* creates short-lived session (TTL, scoped to credentials and delivery modes)
-* session token (prefix `abs_`) used for subsequent requests
-* session expires or is revoked
+* daemon auto-locks after 15 minutes of inactivity
 
 ## Working rules
 
@@ -310,7 +358,7 @@ bun test                      # Run test suite
 
 ## API rules
 
-* validate all external input with Zod
+* validate all external input with Effect Schema
 * keep auth and permission checks at the route boundary or dedicated middleware
 * never return encrypted fields unnecessarily
 * never decrypt unless the request is authorized
@@ -326,9 +374,9 @@ bun test                      # Run test suite
 ## Web rules
 
 * treat the dashboard as an operator surface, not marketing pages
-* keep flows obvious: credentials, agents, permissions, policies, approvals, audit
+* keep flows obvious: items, agents, permissions, audit, settings
 * show the one-time API key clearly and warn that it will not be shown again
-* do not reimplement backend policy in the client
+* do not reimplement backend authorization in the client
 
 ## What not to introduce casually
 
@@ -339,7 +387,6 @@ bun test                      # Run test suite
 * ORM bypasses
 * premature caching layers
 * generic plugin systems unrelated to the documented product
-* end-to-end encryption infrastructure without product requirements
 * key management services or HSM integration
 * background job infrastructure
 
@@ -354,7 +401,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 * **New CLI command or changed flags** -> update `docs/CLI.md`
 * **New MCP tool or changed tool behavior** -> update `docs/MCP.md`
 * **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md`
-* **Security model change** (new auth method, changed encryption, new policy rule type) -> update `docs/SECURITY.md`
+* **Security model change** (new auth method, changed encryption, new grant type) -> update `docs/SECURITY.md`
 * **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md`
 * **Changed invariant or working rule** -> update this file (`AGENTS.md`)
 
@@ -375,7 +422,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | `docs/API.md` | API consumers (CLI, SDK, integrations) | Every endpoint with method, path, auth, request/response |
 | `docs/CLI.md` | Developers using the CLI | Command reference with examples |
 | `docs/MCP.md` | AI agent integrators | MCP tool reference and security model |
-| `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, delivery modes |
+| `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, capabilities |
 | `docs/DEVELOPMENT.md` | New contributors | Setup, commands, package structure, how to add features |
 | `docs/CI.md` | Maintainers | CI behavior and optional tooling (e.g. Turborepo remote cache env) |
 
@@ -398,7 +445,7 @@ Flag:
 Default to the smallest change that preserves these invariants:
 
 * one database
-* explicit permissions
+* explicit grants
 * decrypt only on authorized read
 * log every attempt
 * keep the repo understandable in one pass
