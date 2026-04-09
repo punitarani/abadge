@@ -5,7 +5,9 @@ import { authRouter } from "./auth";
 
 function createBaseContext(rows: unknown[]): BaseRequestContext {
   return {
-    req: new Request("http://localhost/trpc/auth.createChallenge"),
+    req: new Request("http://localhost/trpc/auth.createChallenge", {
+      headers: new Headers({ Cookie: "session=mock" }),
+    }),
     resHeaders: new Headers(),
     env: {} as BaseRequestContext["env"],
     validatedEnv: {} as BaseRequestContext["validatedEnv"],
@@ -18,7 +20,14 @@ function createBaseContext(rows: unknown[]): BaseRequestContext {
         }),
       }),
     } as unknown as BaseRequestContext["db"],
-    auth: {} as BaseRequestContext["auth"],
+    auth: {
+      api: {
+        getSession: async () => ({
+          session: { userId: "user_123" },
+          user: { id: "user_123" },
+        }),
+      },
+    } as unknown as BaseRequestContext["auth"],
   };
 }
 
@@ -50,12 +59,11 @@ describe("auth.createChallenge", () => {
     });
   });
 
-  test("returns the same generic error when the agent is not enrolled", async () => {
+  test("rejects when the agent is not enrolled", async () => {
     const caller = createTrpcCallerFactory(authRouter)(createBaseContext([createAgentRow(null)]));
 
     await expect(caller.createChallenge({ agentId: "agent_123" })).rejects.toMatchObject({
-      code: "NOT_FOUND",
-      message: "Agent challenge unavailable",
+      message: "Agent must be enrolled before requesting a challenge",
     });
   });
 });

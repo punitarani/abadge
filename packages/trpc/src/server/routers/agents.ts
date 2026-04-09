@@ -45,6 +45,7 @@ const createAgent = (input: CreateAgentInput) =>
     let apiKey: string | null = null;
     let bootstrapToken: string | null = null;
     let bootstrapExpiresAt: string | null = null;
+    let bootstrapTokenHash: string | null = null;
 
     if (authMethod === "legacy_api_key") {
       const prefix = API_KEY_PREFIX[locality];
@@ -52,36 +53,20 @@ const createAgent = (input: CreateAgentInput) =>
       secretHash = generated.hash;
       secretPrefix = generated.prefix;
       apiKey = generated.key;
+    } else if (input.publicKey) {
+      publicKey = input.publicKey;
+    } else if (input.issueBootstrapToken) {
+      bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
+      bootstrapTokenHash = yield* Effect.tryPromise(() => hashApiKey(bootstrapToken as string));
+      bootstrapExpiresAt = new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS).toISOString();
     } else {
-      if (input.publicKey) {
-        publicKey = input.publicKey;
-      } else if (input.issueBootstrapToken) {
-        const token = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
-        const tokenHash = yield* Effect.tryPromise(() => hashApiKey(token));
-        const expiresAt = new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS);
-
-        yield* Effect.tryPromise(() =>
-          ctx.db.insert(agentEnrollmentTokens).values({
-            id: crypto.randomUUID(),
-            agentId: id,
-            userId: ctx.identity.userId,
-            createdBy: ctx.identity.userId,
-            tokenHash,
-            expiresAt,
-          }),
-        );
-
-        bootstrapToken = token;
-        bootstrapExpiresAt = expiresAt.toISOString();
-      } else {
-        return yield* Effect.fail(
-          new BadRequestError({
-            code: "PUBLIC_KEY_REQUIRED",
-            message:
-              "public_key_session agents require either a publicKey or issueBootstrapToken: true",
-          }),
-        );
-      }
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "PUBLIC_KEY_REQUIRED",
+          message:
+            "public_key_session agents require either a publicKey or issueBootstrapToken: true",
+        }),
+      );
     }
 
     yield* Effect.tryPromise(() =>
@@ -98,6 +83,19 @@ const createAgent = (input: CreateAgentInput) =>
         metadata: input.metadata ?? {},
       }),
     );
+
+    if (bootstrapToken && bootstrapTokenHash && bootstrapExpiresAt) {
+      yield* Effect.tryPromise(() =>
+        ctx.db.insert(agentEnrollmentTokens).values({
+          id: crypto.randomUUID(),
+          agentId: id,
+          userId: ctx.identity.userId,
+          createdBy: ctx.identity.userId,
+          tokenHash: bootstrapTokenHash as string,
+          expiresAt: new Date(bootstrapExpiresAt as string),
+        }),
+      );
+    }
 
     yield* logSessionAudit({
       userId: ctx.identity.userId,
