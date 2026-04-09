@@ -22,7 +22,6 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   reveal_plaintext: "Reveal plaintext",
   mount_env: "Mount as env var",
   mount_file: "Mount as file",
-  use_without_reveal: "Use without reveal",
 };
 
 function formatItemLabel(id: string, storageMode?: string): string {
