@@ -72,7 +72,8 @@ Lists stored item metadata (IDs, storage mode, timestamps). Never returns secret
 ### `run_with_secret`
 
 Runs a command with a secret injected as an environment variable. Returns only the exit code and a
-path to the output log file. The secret and command output are never returned to the model.
+path to the output log file. The secret and command output are never returned to the model. The log
+file is deleted automatically after 5 minutes.
 
 ### `mount_secret`
 
@@ -93,7 +94,8 @@ Fetches recent audit entries from the control plane.
 The MCP server treats the model as untrusted:
 
 * `list_items` returns metadata only
-* `run_with_secret` returns only exit code and log file path, never command output or secrets
+* `run_with_secret` returns only exit code and log file path, never command output or secrets; the
+  log file is removed after 5 minutes
 * `mount_secret` exposes a file path, not the secret
 * `release_mount` cleans up mounted files
 * there is no tool that returns raw secret bytes directly to the model

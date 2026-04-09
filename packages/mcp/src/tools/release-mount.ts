@@ -1,5 +1,5 @@
 import { tmpdir } from "node:os";
-import { dirname, basename as pathBasename } from "node:path";
+import { dirname, basename as pathBasename, sep } from "node:path";
 import { z } from "zod";
 import type { McpConfig } from "../config.js";
 import { activeMounts, releaseMount } from "./mount-secret.js";
@@ -18,10 +18,11 @@ export async function handler(
   _config: McpConfig,
 ): Promise<string> {
   const tmp = tmpdir();
+  const tmpRoot = tmp.endsWith(sep) ? tmp : `${tmp}${sep}`;
   const parentDir = dirname(input.path);
   const parentName = pathBasename(parentDir);
 
-  if (!parentDir.startsWith(tmp) || !parentName.startsWith("abadge-")) {
+  if (!parentDir.startsWith(tmpRoot) || !parentName.startsWith("abadge-")) {
     throw new Error(
       "Invalid mount path: must be under the system temp directory in an abadge-* folder",
     );

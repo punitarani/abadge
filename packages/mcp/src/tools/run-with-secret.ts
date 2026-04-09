@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { EventEmitter } from "node:events";
 import { createWriteStream } from "node:fs";
-import { chmod } from "node:fs/promises";
+import { chmod, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -13,7 +13,7 @@ import { resolveSecret } from "../resolve-secret.js";
 export const toolName = "run_with_secret";
 
 export const toolDescription =
-  "Run a command with a secret injected as an environment variable. Returns only the exit code and a path to the output log. The secret and command output are never returned to the model.";
+  "Run a command with a secret injected as an environment variable. Returns only the exit code and a path to the output log. The secret and command output are never returned to the model. The log file is auto-deleted after 5 minutes.";
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to inject"),
@@ -25,6 +25,8 @@ export const toolInputSchema = z.object({
     .describe("Environment variable name for the secret (defaults to ABADGE_SECRET)"),
   purpose: z.string().optional().describe("Why this credential is needed"),
 });
+
+const RUN_LOG_TTL_MS = 5 * 60 * 1000;
 
 function runCommand(
   command: string,
@@ -39,13 +41,22 @@ function runCommand(
     child.stdout?.pipe(logStream, { end: false });
     child.stderr?.pipe(logStream, { end: false });
 
+    let settled = false;
+    const finish = (exitCode: number): void => {
+      if (settled) return;
+      settled = true;
+      logStream.end(() => {
+        resolve({ exitCode });
+      });
+    };
+
     (child as unknown as EventEmitter).on("error", (err: Error) => {
-      logStream.write(`[spawn error] ${err.message}\n`, () => logStream.end());
-      resolve({ exitCode: 1 });
+      logStream.write(`[spawn error] ${err.message}\n`, () => {
+        finish(1);
+      });
     });
     (child as unknown as EventEmitter).on("close", (code: number | null) => {
-      logStream.end();
-      resolve({ exitCode: code ?? 1 });
+      finish(code ?? 1);
     });
   });
 }
@@ -65,6 +76,10 @@ export async function handler(
 
   const result = await runCommand(input.command, input.args ?? [], childEnv, logFile);
   await chmod(logFile, 0o600);
+
+  setTimeout(() => {
+    void unlink(logFile).catch(() => {});
+  }, RUN_LOG_TTL_MS);
 
   return JSON.stringify({ exitCode: result.exitCode, logFile });
 }

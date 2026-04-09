@@ -10,8 +10,10 @@ import * as runWithSecret from "./tools/run-with-secret.js";
 
 function hasErrorField(text: string): boolean {
   try {
-    const parsed = JSON.parse(text);
-    return parsed !== null && typeof parsed === "object" && "error" in parsed;
+    const parsed = JSON.parse(text) as Record<string, unknown> | null;
+    return (
+      parsed !== null && typeof parsed === "object" && "error" in parsed && Boolean(parsed.error)
+    );
   } catch {
     return false;
   }
