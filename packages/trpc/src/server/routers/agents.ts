@@ -1,18 +1,21 @@
 import {
+  AGENT_BOOTSTRAP_PREFIX,
+  AGENT_BOOTSTRAP_TTL_MS,
   AgentListResultSchema,
   AgentResultSchema,
   AgentRotateResultSchema,
   AgentWithKeySchema,
   API_KEY_PREFIX,
   agentLocalityForKind,
+  BadRequestError,
   type CreateAgentInput,
   CreateAgentSchema,
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
-import { generateApiKey } from "@abadge/crypto/shared";
+import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
-import { principals as agentRecords } from "@abadge/db/schema";
+import { agentEnrollmentTokens, principals as agentRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import {
@@ -33,11 +36,39 @@ const createAgent = (input: CreateAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const locality = agentLocalityForKind(input.kind);
-    const authMethod = "legacy_api_key" as const;
-    const prefix = API_KEY_PREFIX[locality];
-    const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
-
+    const authMethod = input.authMethod ?? "legacy_api_key";
     const id = crypto.randomUUID();
+
+    let secretHash: string | null = null;
+    let secretPrefix: string | null = null;
+    let publicKey: string | null = null;
+    let apiKey: string | null = null;
+    let bootstrapToken: string | null = null;
+    let bootstrapExpiresAt: string | null = null;
+    let bootstrapTokenHash: string | null = null;
+
+    if (authMethod === "legacy_api_key") {
+      const prefix = API_KEY_PREFIX[locality];
+      const generated = yield* Effect.tryPromise(() => generateApiKey(prefix));
+      secretHash = generated.hash;
+      secretPrefix = generated.prefix;
+      apiKey = generated.key;
+    } else if (input.publicKey) {
+      publicKey = input.publicKey;
+    } else if (input.issueBootstrapToken) {
+      bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
+      bootstrapTokenHash = yield* Effect.tryPromise(() => hashApiKey(bootstrapToken as string));
+      bootstrapExpiresAt = new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS).toISOString();
+    } else {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "PUBLIC_KEY_REQUIRED",
+          message:
+            "public_key_session agents require either a publicKey or issueBootstrapToken: true",
+        }),
+      );
+    }
+
     yield* Effect.tryPromise(() =>
       ctx.db.insert(agentRecords).values({
         id,
@@ -46,12 +77,25 @@ const createAgent = (input: CreateAgentInput) =>
         locality,
         authMethod,
         name: input.name,
-        secretHash: hash,
-        secretPrefix: keyPrefix,
-        publicKey: null,
+        secretHash,
+        secretPrefix,
+        publicKey,
         metadata: input.metadata ?? {},
       }),
     );
+
+    if (bootstrapToken && bootstrapTokenHash && bootstrapExpiresAt) {
+      yield* Effect.tryPromise(() =>
+        ctx.db.insert(agentEnrollmentTokens).values({
+          id: crypto.randomUUID(),
+          agentId: id,
+          userId: ctx.identity.userId,
+          createdBy: ctx.identity.userId,
+          tokenHash: bootstrapTokenHash as string,
+          expiresAt: new Date(bootstrapExpiresAt as string),
+        }),
+      );
+    }
 
     yield* logSessionAudit({
       userId: ctx.identity.userId,
@@ -69,18 +113,18 @@ const createAgent = (input: CreateAgentInput) =>
         locality,
         authMethod,
         name: input.name,
-        secretHash: hash,
-        secretPrefix: keyPrefix,
-        publicKey: null,
+        secretHash,
+        secretPrefix,
+        publicKey,
         enabled: true,
         revokedAt: null,
         lastUsedAt: null,
         metadata: input.metadata ?? {},
         createdAt: new Date(),
       }),
-      apiKey: key,
-      bootstrapToken: null,
-      bootstrapExpiresAt: null,
+      apiKey,
+      bootstrapToken,
+      bootstrapExpiresAt,
     };
   });
 

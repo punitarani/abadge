@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { defaultPidPath, defaultSocketPath } from "./paths";
@@ -256,9 +256,17 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "secretValue is required" };
       }
 
+      const tempPrefix = tmpdir();
       const suffix = crypto.getRandomValues(new Uint8Array(8));
       const hex = Array.from(suffix, (b) => b.toString(16).padStart(2, "0")).join("");
-      const filePath = targetPath ?? join(tmpdir(), `abadge-secret-${hex}`);
+      const filePath = targetPath ? resolve(targetPath) : join(tempPrefix, `abadge-secret-${hex}`);
+
+      if (!filePath.startsWith(`${tempPrefix}/`)) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: `Mount path must be under the system temp directory (${tempPrefix})`,
+        };
+      }
 
       writeFileSync(filePath, secretValue, { mode: 0o600 });
       mountedFiles.add(filePath);
