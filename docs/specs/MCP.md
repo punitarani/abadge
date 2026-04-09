@@ -72,20 +72,20 @@ Fallback config source:
 
 ### `list_items`
 
-Returns item metadata only.
-
-### `request_access`
-
-Checks whether the agent can use an item with the requested capability. Returns status only.
+Returns item metadata only (IDs, storage mode, timestamps).
 
 ### `run_with_secret`
 
-Uses the short-lived agent session to fetch authorized item material and inject it into a subprocess
-without returning the secret itself to the model.
+Runs a command with a secret injected as an environment variable. Returns only the exit code and a
+path to the output log file. The secret and command output are never returned to the model.
 
 ### `mount_secret`
 
-Resolves the item and returns a mounted file path only.
+Mounts a secret as a temporary file (0600). Returns only the file path. Auto-cleans after 5 minutes.
+
+### `release_mount`
+
+Releases a previously mounted secret file and its temporary directory immediately.
 
 ### `get_audit`
 
@@ -96,14 +96,14 @@ Fetches recent audit entries visible to the authenticated operator or local agen
 The MCP server is intentionally designed so the model sees:
 
 * item metadata
-* access decisions
-* subprocess output
+* exit codes and log file paths (not command output)
 * mounted file paths
 * audit metadata
 
 The model does not directly receive:
 
 * raw plaintext secret values
+* command stdout/stderr
 * decrypted zero-knowledge payloads
 * private-key material
 * bearer session tokens intended for operators

@@ -5,8 +5,19 @@ import { loadConfig, type McpConfig } from "./config.js";
 import * as getAudit from "./tools/get-audit.js";
 import * as listItems from "./tools/list-items.js";
 import * as mountSecret from "./tools/mount-secret.js";
-import * as requestAccess from "./tools/request-access.js";
+import * as releaseMount from "./tools/release-mount.js";
 import * as runWithSecret from "./tools/run-with-secret.js";
+
+function hasErrorField(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown> | null;
+    return (
+      parsed !== null && typeof parsed === "object" && "error" in parsed && Boolean(parsed.error)
+    );
+  } catch {
+    return false;
+  }
+}
 
 function safeCall(
   // biome-ignore lint/suspicious/noExplicitAny: tool handlers have varying input types
@@ -16,7 +27,10 @@ function safeCall(
   config: McpConfig,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   return handler(input, config)
-    .then((text) => ({ content: [{ type: "text" as const, text }] }))
+    .then((text) => ({
+      content: [{ type: "text" as const, text }],
+      ...(hasErrorField(text) ? { isError: true } : {}),
+    }))
     .catch((err: unknown) => {
       const message = err instanceof Error ? err.message : "Unknown error";
       return {
@@ -32,7 +46,7 @@ function shape(schema: { shape: Record<string, unknown> }): ZodRawShapeCompat {
   return schema.shape as ZodRawShapeCompat;
 }
 
-const tools = [listItems, requestAccess, runWithSecret, mountSecret, getAudit] as const;
+const tools = [listItems, runWithSecret, mountSecret, releaseMount, getAudit] as const;
 
 function registerTools(server: McpServer, config: McpConfig): void {
   for (const tool of tools) {
