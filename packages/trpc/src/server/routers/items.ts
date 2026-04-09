@@ -168,12 +168,12 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
           encryptedItemKey: string;
           ciphertext: string;
         }
-      | null
+      | { itemId: string; error: "decrypt_failed" }
     > => {
       try {
         if (item.storageMode === "server_managed") {
           if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-            return null;
+            return { itemId: item.id, error: "decrypt_failed" as const };
           }
           const decrypted = await serverDecrypt(
             {
@@ -190,7 +190,7 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
           };
         }
         if (!item.encryptedItemKey || !item.ciphertext) {
-          return null;
+          return { itemId: item.id, error: "decrypt_failed" as const };
         }
         return {
           itemId: item.id,
@@ -199,7 +199,7 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
           ciphertext: item.ciphertext,
         };
       } catch {
-        return null;
+        return { itemId: item.id, error: "decrypt_failed" as const };
       }
     };
 
@@ -207,9 +207,7 @@ export const resolveItemDisplay = (input: ItemDisplayQuery) =>
       Promise.all(result.map(resolveDisplayItem)),
     );
 
-    return {
-      items: displayItems.filter((item): item is NonNullable<typeof item> => item !== null),
-    };
+    return { items: displayItems };
   });
 
 const getItem = (itemId: string) =>

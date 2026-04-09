@@ -137,15 +137,20 @@ function auditAgentSessionReject(
     result: "denied" | "expired" | "revoked";
     reason: string;
   },
-): void {
-  void ctx.db.insert(auditLog).values({
-    userId: input.userId,
-    principalId: input.agentId,
-    eventType: "agent.session_reject",
-    result: input.result,
-    meta: { reason: input.reason },
-    ipAddress: ctx.ipAddress ?? null,
-  });
+): Effect.Effect<void, Error> {
+  return tryAsync(() =>
+    ctx.db
+      .insert(auditLog)
+      .values({
+        userId: input.userId,
+        principalId: input.agentId,
+        eventType: "agent.session_reject",
+        result: input.result,
+        meta: { reason: input.reason },
+        ipAddress: ctx.ipAddress ?? null,
+      })
+      .then(() => undefined),
+  );
 }
 
 const verifyLocalAgentIdentity = (
@@ -276,7 +281,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (sessionRecord.expiresAt <= new Date()) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
         result: "expired",
@@ -305,7 +310,7 @@ const verifyAgentSessionIdentity = (
     )) as Array<AgentSessionAgentCandidate>;
 
     if (!agent) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
         result: "denied",
@@ -315,7 +320,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (!agent.enabled) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: agent.userId,
         agentId: agent.id,
         result: "denied",
@@ -325,7 +330,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (agent.revokedAt) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: agent.userId,
         agentId: agent.id,
         result: "revoked",

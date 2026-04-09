@@ -292,10 +292,11 @@ const recordLogin = Effect.gen(function* () {
 
 const recordLogout = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  // Best-effort server-side session invalidation. Don't block the audit log on this.
-  yield* tryAsync(() =>
-    (ctx.auth.api.signOut({ headers: ctx.req.headers }) as Promise<unknown>).catch(() => undefined),
+  yield* Effect.catchAll(
+    tryAsync(() => ctx.auth.api.signOut({ headers: ctx.req.headers })),
+    () => Effect.void,
   );
+
   yield* logSessionAudit({
     userId: ctx.identity.userId,
     eventType: "auth.logout",

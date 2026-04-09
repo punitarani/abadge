@@ -228,9 +228,15 @@ export const ServerManagedItemDisplaySchema = Schema.Struct({
   label: NonEmptyString,
 });
 
+export const ItemDisplayErrorSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  error: Schema.Literal("decrypt_failed"),
+});
+
 export const ItemDisplayEntrySchema = Schema.Union(
   ZeroKnowledgeItemDisplaySchema,
   ServerManagedItemDisplaySchema,
+  ItemDisplayErrorSchema,
 );
 
 const ItemDetailBaseFields = {
