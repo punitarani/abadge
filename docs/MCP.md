@@ -67,19 +67,22 @@ For keypair-backed agents the MCP server:
 
 ### `list_items`
 
-Lists stored item metadata only.
-
-### `request_access`
-
-Checks whether the caller can use an item through a mount-style capability.
+Lists stored item metadata (IDs, storage mode, timestamps). Never returns secret values.
 
 ### `run_with_secret`
 
-Resolves an item and injects it into a subprocess without returning the secret to the model.
+Runs a command with a secret injected as an environment variable. Returns only the exit code and a
+path to the output log file. The secret and command output are never returned to the model.
 
 ### `mount_secret`
 
-Mounts an item into a temporary file and returns the file path only.
+Mounts a secret as a temporary file with restricted permissions (0600). Returns only the file path.
+Auto-cleans after 5 minutes, or call `release_mount` to clean up early.
+
+### `release_mount`
+
+Releases a previously mounted secret file, removing it and its temporary directory immediately.
+Accepts the file path returned by `mount_secret`.
 
 ### `get_audit`
 
@@ -90,9 +93,9 @@ Fetches recent audit entries from the control plane.
 The MCP server treats the model as untrusted:
 
 * `list_items` returns metadata only
-* `request_access` returns status only
-* `run_with_secret` exposes command output, not the secret
+* `run_with_secret` returns only exit code and log file path, never command output or secrets
 * `mount_secret` exposes a file path, not the secret
+* `release_mount` cleans up mounted files
 * there is no tool that returns raw secret bytes directly to the model
 
 For zero-knowledge items, the MCP server still delegates decrypt work to the local daemon.
