@@ -35,7 +35,6 @@ apps/
   web/      Dashboard (Next.js App Router)
 packages/
   auth/     Better Auth setup (server + client)
-  broker/   tRPC client wrapper, env-inject, file-mount helpers (legacy; daemon supersedes for crypto)
   cli/      CLI tool library (commands, config, output)
   config/   shared tsconfig
   core/     shared types, Effect Schema schemas, constants, error shapes
@@ -166,19 +165,6 @@ Does not own:
 * audit log storage (that's in the API/tRPC layer)
 * UI
 
-### packages/broker
-
-Owns:
-
-* tRPC client wrapper for daemon (DaemonClient)
-* env-inject helper (runWithEnv)
-* file-mount helpers (mountSecret, cleanupMount)
-
-Does not own:
-
-* crypto operations (delegates to daemon)
-* grant checks (delegates to API)
-
 ### packages/cli
 
 Owns:
@@ -190,7 +176,7 @@ Owns:
 
 Does not own:
 
-* secret execution (delegates to daemon via broker)
+* secret execution (delegates to daemon)
 * grant decisions (delegates to API)
 
 ### packages/mcp
