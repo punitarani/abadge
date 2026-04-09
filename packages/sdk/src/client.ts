@@ -1,3 +1,4 @@
+import type { ErrorCode } from "@abadge/core";
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
@@ -30,18 +31,46 @@ import type {
   VaultResult,
 } from "./types";
 
+// ---------------------------------------------------------------------------
+// Config types
+// ---------------------------------------------------------------------------
+
+/** Configuration for user-facing SDK clients (session token auth). */
+export interface AbadgeUserClientConfig {
+  /** API endpoint URL (no trailing slash). */
+  apiUrl: string;
+  /** User session token. */
+  sessionToken: string;
+}
+
+/** Configuration for agent SDK clients (API key or session token auth). */
+export interface AbadgeAgentClientConfig {
+  /** API endpoint URL (no trailing slash). */
+  apiUrl: string;
+  /** Agent API key (prefixed `abl_`, `abg_`) or session token (prefixed `abs_`). */
+  apiKey: string;
+}
+
 /**
- * Configuration for constructing an AbadgeClient.
+ * Backward-compatible config that accepts either persona.
  *
- * Both user session tokens and agent API keys are supported. The server
- * determines available operations based on the token type.
+ * @deprecated Prefer {@link AbadgeUserClientConfig} or {@link AbadgeAgentClientConfig}.
  */
 export interface AbadgeClientConfig {
   /** API endpoint URL (no trailing slash). */
   apiUrl: string;
-  /** Session token (user) or agent API key (prefixed `abl_` or `abg_`). */
+  /** Session token (user) or agent API key (prefixed `abl_`, `abg_`, `abs_`). */
   token: string;
 }
+
+// ---------------------------------------------------------------------------
+// SdkTrpcClient — locally declared proxy type
+// ---------------------------------------------------------------------------
+// WARNING: This interface is a local mirror of the server tRPC router shape.
+// It cannot import from @abadge/trpc to avoid circular workspace deps.
+// If the server router changes, this interface must be updated manually.
+// The public-api.typecheck.ts file contains build-time assertions that
+// catch drift for the most critical method signatures.
 
 interface TrpcMutation<TInput, TOutput> {
   mutate(input: TInput): Promise<TOutput>;
@@ -100,37 +129,55 @@ interface SdkTrpcClient {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Shared call() helper
+// ---------------------------------------------------------------------------
+
+async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw AbadgeApiError.fromUnknown(error, fallback);
+  }
+}
+
+function buildTrpcClient(apiUrl: string, token: string): SdkTrpcClient {
+  return createNodeTrpcClient({ baseUrl: apiUrl, token }) as unknown as SdkTrpcClient;
+}
+
+// ---------------------------------------------------------------------------
+// AbadgeUserClient — user session token operations
+// ---------------------------------------------------------------------------
+
 /**
- * Typed client for the abadge control plane API.
+ * SDK client for user-facing operations authenticated with a session token.
  *
- * Supports two personas with the same class: user clients (session token)
- * manage vault, items, agents, and permissions; agent clients (API key)
- * access secrets via `access*` methods. The server determines available
- * operations based on the token type.
- *
- * All methods throw {@link AbadgeApiError} on failure with a machine-readable `code`.
+ * Provides vault management, item CRUD, agent registration, permission
+ * management, and audit log access. All methods throw {@link AbadgeApiError}
+ * on failure with a typed {@link ErrorCode} code.
  *
  * @example
  * ```typescript
- * import { AbadgeClient } from "@abadge/sdk";
+ * import { AbadgeUserClient } from "@abadge/sdk";
  *
- * const client = new AbadgeClient({
+ * const client = new AbadgeUserClient({
  *   apiUrl: "https://api.abadge.dev",
- *   token: "session_token_or_api_key",
+ *   sessionToken: "user_session_token",
  * });
  *
  * const { agents } = await client.listAgents();
  * ```
  */
-export class AbadgeClient {
-  private readonly client: SdkTrpcClient;
+export class AbadgeUserClient {
+  /** @internal */
+  protected readonly client: SdkTrpcClient;
 
-  constructor(config: AbadgeClientConfig) {
-    this.client = createNodeTrpcClient({
-      baseUrl: config.apiUrl,
-      token: config.token,
-    }) as unknown as SdkTrpcClient;
+  constructor(config: AbadgeUserClientConfig | AbadgeClientConfig) {
+    const token = "sessionToken" in config ? config.sessionToken : config.token;
+    this.client = buildTrpcClient(config.apiUrl, token);
   }
+
+  // -- Vault ----------------------------------------------------------------
 
   /**
    * Initialize the user's vault. Called once after account creation.
@@ -140,7 +187,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VAULT_ALREADY_EXISTS
    */
   async bootstrapVault(data: BootstrapVaultInput): Promise<{ id: string }> {
-    return this.call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
+    return call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
   }
 
   /**
@@ -150,7 +197,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VAULT_NOT_FOUND
    */
   async getVault(): Promise<VaultResult> {
-    return this.call(() => this.client.vault.get.query(), "Failed to fetch vault");
+    return call(() => this.client.vault.get.query(), "Failed to fetch vault");
   }
 
   /**
@@ -160,10 +207,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VAULT_NOT_FOUND
    */
   async changePassword(data: ChangePasswordInput): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.vault.changePassword.mutate(data),
-      "Failed to change password",
-    );
+    return call(() => this.client.vault.changePassword.mutate(data), "Failed to change password");
   }
 
   /**
@@ -174,7 +218,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VAULT_NOT_FOUND
    */
   async rotateKey(data: RotateKeyInput): Promise<{ ok: boolean; keyVersion: number }> {
-    return this.call(() => this.client.vault.rotateKey.mutate(data), "Failed to rotate key");
+    return call(() => this.client.vault.rotateKey.mutate(data), "Failed to rotate key");
   }
 
   /**
@@ -184,11 +228,10 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VAULT_NOT_FOUND
    */
   async setupRecovery(data: SetupRecoveryInput): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.vault.setupRecovery.mutate(data),
-      "Failed to set up recovery",
-    );
+    return call(() => this.client.vault.setupRecovery.mutate(data), "Failed to set up recovery");
   }
+
+  // -- Items ----------------------------------------------------------------
 
   /**
    * Create a new encrypted item. Accepts either zero-knowledge (client-encrypted)
@@ -199,7 +242,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VALIDATION_ERROR
    */
   async createItem(data: CreateItemInput): Promise<{ id: string }> {
-    return this.call(() => this.client.items.create.mutate(data), "Failed to create item");
+    return call(() => this.client.items.create.mutate(data), "Failed to create item");
   }
 
   /**
@@ -208,7 +251,7 @@ export class AbadgeClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return this.call(() => this.client.items.list.query(), "Failed to list items");
+    return call(() => this.client.items.list.query(), "Failed to list items");
   }
 
   /**
@@ -219,7 +262,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} ITEM_NOT_FOUND
    */
   async getItem(id: string): Promise<ItemResult> {
-    return this.call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
+    return call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
   }
 
   /**
@@ -235,7 +278,7 @@ export class AbadgeClient {
     id: string,
     data: UpdateItemInput,
   ): Promise<{ ok: boolean; contentVersion: number }> {
-    return this.call(
+    return call(
       () => this.client.items.update.mutate({ itemId: id, data }),
       "Failed to update item",
     );
@@ -248,11 +291,10 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} ITEM_NOT_FOUND
    */
   async deleteItem(id: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.items.delete.mutate({ itemId: id }),
-      "Failed to delete item",
-    );
+    return call(() => this.client.items.delete.mutate({ itemId: id }), "Failed to delete item");
   }
+
+  // -- Agents ---------------------------------------------------------------
 
   /**
    * Register a new agent and receive a one-time API key.
@@ -265,7 +307,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} VALIDATION_ERROR
    */
   async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
-    return this.call(() => this.client.agents.create.mutate(data), "Failed to create agent");
+    return call(() => this.client.agents.create.mutate(data), "Failed to create agent");
   }
 
   /**
@@ -274,11 +316,7 @@ export class AbadgeClient {
    * @returns Array of agents (without API keys)
    */
   async listAgents(): Promise<AgentListResult> {
-    return this.call(() => this.client.agents.list.query(), "Failed to list agents");
-  }
-
-  async getCurrentAgent(): Promise<AgentResult> {
-    return this.call(() => this.client.agents.self.query(), "Failed to fetch agent");
+    return call(() => this.client.agents.list.query(), "Failed to list agents");
   }
 
   /**
@@ -290,10 +328,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} AGENT_NOT_FOUND
    */
   async rotateAgent(id: string): Promise<AgentRotateResult> {
-    return this.call(
-      () => this.client.agents.rotate.mutate({ agentId: id }),
-      "Failed to rotate agent",
-    );
+    return call(() => this.client.agents.rotate.mutate({ agentId: id }), "Failed to rotate agent");
   }
 
   /**
@@ -304,11 +339,10 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} AGENT_NOT_FOUND
    */
   async revokeAgent(id: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.agents.revoke.mutate({ agentId: id }),
-      "Failed to revoke agent",
-    );
+    return call(() => this.client.agents.revoke.mutate({ agentId: id }), "Failed to revoke agent");
   }
+
+  // -- Permissions ----------------------------------------------------------
 
   /**
    * Grant a capability to an agent for a specific item.
@@ -318,10 +352,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} AGENT_NOT_FOUND, ITEM_NOT_FOUND, INVALID_CAPABILITY
    */
   async createPermission(data: CreatePermissionInput): Promise<PermissionResult> {
-    return this.call(
-      () => this.client.permissions.create.mutate(data),
-      "Failed to create permission",
-    );
+    return call(() => this.client.permissions.create.mutate(data), "Failed to create permission");
   }
 
   /**
@@ -331,10 +362,7 @@ export class AbadgeClient {
    * @returns Array of permissions
    */
   async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
-    return this.call(
-      () => this.client.permissions.list.query(filters),
-      "Failed to list permissions",
-    );
+    return call(() => this.client.permissions.list.query(filters), "Failed to list permissions");
   }
 
   /**
@@ -344,11 +372,70 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} PERMISSION_NOT_FOUND
    */
   async revokePermission(id: string): Promise<SuccessResult> {
-    return this.call(
+    return call(
       () => this.client.permissions.revoke.mutate({ permissionId: id }),
       "Failed to revoke permission",
     );
   }
+
+  // -- Audit ----------------------------------------------------------------
+
+  /**
+   * Query the audit log with optional filters and cursor-based pagination.
+   *
+   * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
+   * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
+   */
+  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
+    return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AbadgeAgentClient — agent API key / session token operations
+// ---------------------------------------------------------------------------
+
+/**
+ * SDK client for agent-facing operations authenticated with an API key or
+ * session token (prefixed `abl_`, `abg_`, or `abs_`).
+ *
+ * Provides secret access methods and self-identification. All methods throw
+ * {@link AbadgeApiError} on failure with a typed {@link ErrorCode} code.
+ *
+ * @example
+ * ```typescript
+ * import { AbadgeAgentClient } from "@abadge/sdk";
+ *
+ * const agent = new AbadgeAgentClient({
+ *   apiUrl: "https://api.abadge.dev",
+ *   apiKey: "abl_xxxxxxxxxxxx",
+ * });
+ *
+ * const secret = await agent.accessReveal("item_id");
+ * ```
+ */
+export class AbadgeAgentClient {
+  /** @internal */
+  protected readonly client: SdkTrpcClient;
+
+  constructor(config: AbadgeAgentClientConfig | AbadgeClientConfig) {
+    const token = "apiKey" in config ? config.apiKey : config.token;
+    this.client = buildTrpcClient(config.apiUrl, token);
+  }
+
+  // -- Self -----------------------------------------------------------------
+
+  /**
+   * Retrieve the currently authenticated agent's own record.
+   *
+   * @returns The agent record
+   * @throws {AbadgeApiError} UNAUTHORIZED
+   */
+  async getCurrentAgent(): Promise<AgentResult> {
+    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
+  }
+
+  // -- Access ---------------------------------------------------------------
 
   /**
    * Read the encrypted blob of a zero-knowledge item for local decryption.
@@ -361,7 +448,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return this.call(
+    return call(
       () => this.client.access.ciphertext.mutate({ itemId }),
       "Failed to access ciphertext",
     );
@@ -379,7 +466,7 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return this.call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
+    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
   }
 
   /**
@@ -396,48 +483,97 @@ export class AbadgeClient {
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
-    return this.call(
+    return call(
+      () => this.client.access.mount.mutate({ itemId, mountType }),
+      "Failed to access mount payload",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AbadgeClient — backward-compatible alias
+// ---------------------------------------------------------------------------
+
+/**
+ * Backward-compatible SDK client that combines user and agent operations.
+ *
+ * @deprecated Use {@link AbadgeUserClient} for user operations or
+ * {@link AbadgeAgentClient} for agent operations. This class remains for
+ * backward compatibility and will be removed in a future major version.
+ *
+ * @example
+ * ```typescript
+ * import { AbadgeClient } from "@abadge/sdk";
+ *
+ * const client = new AbadgeClient({
+ *   apiUrl: "https://api.abadge.dev",
+ *   token: "session_token_or_api_key",
+ * });
+ * ```
+ */
+export class AbadgeClient extends AbadgeUserClient {
+  /**
+   * Retrieve the currently authenticated agent's own record.
+   * Only works when the client was constructed with an agent API key.
+   *
+   * @returns The agent record
+   * @throws {AbadgeApiError} UNAUTHORIZED
+   */
+  async getCurrentAgent(): Promise<AgentResult> {
+    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
+  }
+
+  /**
+   * Read the encrypted blob of a zero-knowledge item for local decryption.
+   * @see {@link AbadgeAgentClient.accessCiphertext}
+   */
+  async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
+    return call(
+      () => this.client.access.ciphertext.mutate({ itemId }),
+      "Failed to access ciphertext",
+    );
+  }
+
+  /**
+   * Decrypt and return the plaintext of a server-managed item.
+   * @see {@link AbadgeAgentClient.accessReveal}
+   */
+  async accessReveal(itemId: string): Promise<RevealAccessResponse> {
+    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
+  }
+
+  /**
+   * Request item data for local injection (env variable or temp file).
+   * @see {@link AbadgeAgentClient.accessMount}
+   */
+  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
+    return call(
       () => this.client.access.mount.mutate({ itemId, mountType }),
       "Failed to access mount payload",
     );
   }
 
-  /**
-   * Query the audit log with optional filters and cursor-based pagination.
-   *
-   * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
-   * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
-   */
-  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
-    return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
-  }
-
   async createOperatorToken(data: CreateOperatorTokenInput): Promise<OperatorTokenCreateResult> {
-    return this.call(
+    return call(
       () => this.client.auth.createOperatorToken.mutate(data),
       "Failed to create operator token",
     );
   }
 
   async listOperatorTokens(): Promise<OperatorTokenListResult> {
-    return this.call(
+    return call(
       () => this.client.auth.listOperatorTokens.query(),
       "Failed to list operator tokens",
     );
   }
 
   async revokeOperatorToken(tokenId: string): Promise<SuccessResult> {
-    return this.call(
+    return call(
       () => this.client.auth.revokeOperatorToken.mutate({ tokenId }),
       "Failed to revoke operator token",
     );
   }
-
-  private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      throw AbadgeApiError.fromUnknown(error, fallback);
-    }
-  }
 }
+
+// Re-export ErrorCode for SDK consumers
+export type { ErrorCode } from "@abadge/core";

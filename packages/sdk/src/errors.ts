@@ -1,10 +1,13 @@
+import type { ErrorCode } from "@abadge/core";
 import { normalizeTrpcError } from "./trpc";
 
 /**
- * Error thrown by all AbadgeClient methods when an API request fails.
+ * Error thrown by all SDK client methods when an API request fails.
  *
- * Includes a machine-readable `code` (e.g. "VAULT_NOT_FOUND", "PERMISSION_DENIED")
- * and the HTTP `statusCode` for programmatic error handling.
+ * Includes a machine-readable {@link code} field typed as `ErrorCode | string`
+ * (the union preserves backward compatibility while enabling exhaustive checks
+ * for known error codes) and the HTTP {@link statusCode} for programmatic
+ * error handling.
  *
  * @example
  * ```typescript
@@ -20,10 +23,18 @@ import { normalizeTrpcError } from "./trpc";
 export class AbadgeApiError extends Error {
   /** HTTP status code from the API response (e.g. 400, 401, 403, 404, 409, 429). */
   public readonly statusCode: number;
-  /** Machine-readable error code (e.g. "VAULT_NOT_FOUND", "PERMISSION_DENIED", "UNAUTHORIZED"). */
-  public readonly code: string;
 
-  constructor(statusCode: number, code: string, message: string) {
+  /**
+   * Machine-readable error code.
+   *
+   * Known codes are members of the `ErrorCode` union exported from `@abadge/core`
+   * (e.g. `"VAULT_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
+   * Unknown server codes or tRPC transport codes fall back to plain strings,
+   * so the type is `ErrorCode | string` to stay backward-compatible.
+   */
+  public readonly code: ErrorCode | string;
+
+  constructor(statusCode: number, code: ErrorCode | string, message: string) {
     super(message);
     this.name = "AbadgeApiError";
     this.statusCode = statusCode;
@@ -37,7 +48,7 @@ export class AbadgeApiError extends Error {
    * @param fallback - Message to use if the response body cannot be parsed
    */
   static async fromResponse(res: Response, fallback: string): Promise<AbadgeApiError> {
-    let code = "UNKNOWN";
+    let code: ErrorCode | string = "UNKNOWN";
     let message = fallback;
     try {
       const body = (await res.json()) as { error?: string; code?: string };
