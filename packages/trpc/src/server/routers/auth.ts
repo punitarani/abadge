@@ -615,7 +615,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
 
 const createAgentChallenge = (input: CreateAgentChallengeInput) =>
   Effect.gen(function* () {
-    const ctx = yield* BaseRequestContextTag;
+    const ctx = yield* SessionRequestContextTag;
     const [agent] = (yield* tryAsync(() =>
       ctx.db
         .select()
@@ -623,6 +623,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .where(
           and(
             eq(agentRecords.id, input.agentId),
+            eq(agentRecords.userId, ctx.identity.userId),
             eq(agentRecords.enabled, true),
             isNull(agentRecords.revokedAt),
           ),
@@ -630,8 +631,17 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .limit(1),
     )) as Array<OwnedAgentRow>;
 
-    if (!agent?.publicKey) {
+    if (!agent) {
       return yield* Effect.fail(challengeUnavailableError());
+    }
+
+    if (!agent.publicKey) {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "ENROLLMENT_REQUIRED",
+          message: "Agent must be enrolled before requesting a challenge",
+        }),
+      );
     }
 
     const challengeId = crypto.randomUUID();
@@ -877,10 +887,10 @@ export const authRouter = createTrpcRouter({
     .input(strictSchema(EnrollAgentSchema))
     .output(strictSchema(AgentEnrollmentResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, enrollAgent(input))),
-  createChallenge: publicProcedure
+  createChallenge: sessionProcedure
     .input(strictSchema(CreateAgentChallengeSchema))
     .output(strictSchema(AgentChallengeResultSchema))
-    .mutation(({ ctx, input }) => runBaseEffect(ctx, createAgentChallenge(input))),
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgentChallenge(input))),
   exchangeSession: publicProcedure
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))
