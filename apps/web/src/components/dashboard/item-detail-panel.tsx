@@ -137,7 +137,7 @@ export function ItemDetailPanel({
   async function revealServerManaged(): Promise<string | null> {
     if (!item) return null;
     try {
-      const result = await browserTrpcClient.items.ownerReveal.query({ itemId: item.id });
+      const result = await browserTrpcClient.items.ownerReveal.mutate({ itemId: item.id });
       return JSON.stringify(result.payload, null, 2);
     } catch (error) {
       toast.error(getClientErrorMessage(error, "Failed to reveal item"));

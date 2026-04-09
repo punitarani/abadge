@@ -100,6 +100,7 @@ interface SdkTrpcClient {
       { itemId: string; data: UpdateItemInput },
       { ok: boolean; contentVersion: number }
     >;
+    ownerReveal: TrpcMutation<{ itemId: string }, RevealAccessResponse>;
     delete: TrpcMutation<{ itemId: string }, SuccessResult>;
   };
   agents: {
@@ -281,6 +282,21 @@ export class AbadgeUserClient {
     return call(
       () => this.client.items.update.mutate({ itemId: id, data }),
       "Failed to update item",
+    );
+  }
+
+  /**
+   * Decrypt and return the plaintext of a server-managed item owned by the
+   * current user. Zero-knowledge items cannot be revealed server-side.
+   *
+   * @param id - Item ID
+   * @returns The decrypted item payload
+   * @throws {AbadgeApiError} BAD_REQUEST (non-server-managed), ITEM_NOT_FOUND
+   */
+  async ownerReveal(id: string): Promise<RevealAccessResponse> {
+    return call(
+      () => this.client.items.ownerReveal.mutate({ itemId: id }),
+      "Failed to reveal item",
     );
   }
 

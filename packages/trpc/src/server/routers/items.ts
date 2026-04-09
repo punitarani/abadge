@@ -22,7 +22,7 @@ import { items, vaults } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
@@ -380,7 +380,7 @@ export const itemsRouter = createTrpcRouter({
   ownerReveal: sessionProcedure
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(RevealAccessResponseSchema))
-    .query(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
   delete: sessionProcedure
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
