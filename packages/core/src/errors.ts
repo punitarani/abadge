@@ -26,6 +26,7 @@ const ErrorCodeSchema = Schema.Literal(
   "INVALID_CAPABILITY",
   "STALE_VERSION",
   "VALIDATION_ERROR",
+  "INTEGRITY_ERROR",
 );
 
 export const ValidationIssueSchema = Schema.Struct({
@@ -86,6 +87,13 @@ export class RateLimitError extends Schema.TaggedError<RateLimitError>()("RateLi
   readonly statusCode = 429;
 }
 
+export class IntegrityError extends Schema.TaggedError<IntegrityError>()("IntegrityError", {
+  code: Schema.Literal("INTEGRITY_ERROR"),
+  message: Schema.String,
+}) {
+  readonly statusCode = 500;
+}
+
 export type DomainError =
   | BadRequestError
   | ValidationError
@@ -93,7 +101,8 @@ export type DomainError =
   | ForbiddenError
   | NotFoundError
   | ConflictError
-  | RateLimitError;
+  | RateLimitError
+  | IntegrityError;
 
 export function isDomainError(error: unknown): error is DomainError {
   return (
@@ -103,7 +112,8 @@ export function isDomainError(error: unknown): error is DomainError {
     error instanceof ForbiddenError ||
     error instanceof NotFoundError ||
     error instanceof ConflictError ||
-    error instanceof RateLimitError
+    error instanceof RateLimitError ||
+    error instanceof IntegrityError
   );
 }
 

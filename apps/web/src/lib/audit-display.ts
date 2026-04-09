@@ -19,6 +19,8 @@ export function buildAuditItemLabelMap(
   const labels = new Map<string, string>();
 
   for (const item of items) {
+    if ("error" in item) continue;
+
     if (item.storageMode === "server_managed") {
       labels.set(item.itemId, item.label);
       continue;

@@ -10,11 +10,11 @@ function toArrayBuffer(arr: Uint8Array): ArrayBuffer {
 }
 
 async function importKey(base64Key: string): Promise<CryptoKey> {
-  let raw = fromBase64(base64Key);
-  // AES-256-GCM requires exactly 32 bytes. If key is longer (e.g. legacy 64-byte key),
-  // use only the first 32 bytes. If shorter than 16 bytes, it's invalid.
-  if (raw.byteLength > 32) {
-    raw = raw.slice(0, 32);
+  const raw = fromBase64(base64Key);
+  if (raw.byteLength !== 32) {
+    throw new Error(
+      `ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256), got ${raw.byteLength} bytes`,
+    );
   }
   return crypto.subtle.importKey("raw", toArrayBuffer(raw), { name: ALGORITHM }, false, [
     "encrypt",
