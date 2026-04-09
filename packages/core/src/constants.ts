@@ -26,7 +26,6 @@ export const CAPABILITIES = [
   "reveal_plaintext",
   "mount_env",
   "mount_file",
-  "use_without_reveal",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -51,6 +50,7 @@ export const AUDIT_EVENT_TYPES = [
   "agent.session_revoke",
   "permission.create",
   "permission.revoke",
+  "access.probe",
   "access.ciphertext",
   "access.reveal",
   "access.mount_env",
@@ -111,4 +111,5 @@ export type ErrorCode =
   | "PERMISSION_EXPIRED"
   | "INVALID_CAPABILITY"
   | "STALE_VERSION"
-  | "VALIDATION_ERROR";
+  | "VALIDATION_ERROR"
+  | "INTEGRITY_ERROR";

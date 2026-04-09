@@ -27,7 +27,6 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   reveal_plaintext: "Reveal plaintext",
   mount_env: "Mount as env var",
   mount_file: "Mount as file",
-  use_without_reveal: "Use without reveal",
 };
 
 function formatItemLabel(id: string, storageMode?: string): string {
@@ -172,7 +171,7 @@ export default function PermissionsPage(): React.ReactElement {
             <TableRow>
               <TableHead>Agent</TableHead>
               <TableHead>Item</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>Capability</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>

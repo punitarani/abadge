@@ -23,8 +23,6 @@ const KIND_LABELS: Record<AgentKind, string> = {
 
 export interface AgentRegistrationState {
   apiKey: string | null;
-  bootstrapToken: string | null;
-  bootstrapExpiresAt: string | null;
 }
 
 type CreateAgentPanelViewProps =
@@ -51,17 +49,7 @@ export function CreateAgentPanelView(props: CreateAgentPanelViewProps): React.Re
         <p className="text-sm text-muted-foreground">
           Copy the credential below. It will not be shown again.
         </p>
-        <SecretDisplay
-          value={props.registration.apiKey ?? props.registration.bootstrapToken ?? ""}
-        />
-        {props.registration.bootstrapToken ? (
-          <p className="text-sm text-muted-foreground">
-            This bootstrap token can be redeemed exactly once to enroll the agent keypair.
-            {props.registration.bootstrapExpiresAt
-              ? ` Expires at ${props.registration.bootstrapExpiresAt}.`
-              : ""}
-          </p>
-        ) : null}
+        <SecretDisplay value={props.registration.apiKey ?? ""} />
       </div>
     );
   }
@@ -120,7 +108,7 @@ export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): Reac
   const queryClient = useQueryClient();
   const formId = useId();
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<AgentKind>("remote_agent");
+  const [kind, setKind] = useState<AgentKind>("local_cli");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [registration, setRegistration] = useState<AgentRegistrationState | null>(null);
@@ -129,8 +117,6 @@ export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): Reac
       onSuccess: async (result) => {
         setRegistration({
           apiKey: result.apiKey,
-          bootstrapToken: result.bootstrapToken,
-          bootstrapExpiresAt: result.bootstrapExpiresAt,
         });
         await queryClient.invalidateQueries({
           queryKey: dashboardQueryKeys.agents(),
@@ -161,7 +147,7 @@ export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): Reac
   const title = inSuccessState ? "Agent registered" : "Register agent";
   const descriptionText = inSuccessState
     ? "Save the one-time credential before leaving this panel."
-    : "Create a new agent or service identity. Remote agents use one-time enrollment tokens by default.";
+    : "Create a new agent or service identity.";
 
   const footer = inSuccessState ? (
     <div className="flex justify-end">

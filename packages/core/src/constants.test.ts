@@ -69,8 +69,7 @@ describe("CAPABILITIES", () => {
     expect(CAPABILITIES).toContain("reveal_plaintext");
     expect(CAPABILITIES).toContain("mount_env");
     expect(CAPABILITIES).toContain("mount_file");
-    expect(CAPABILITIES).toContain("use_without_reveal");
-    expect(CAPABILITIES.length).toBe(5);
+    expect(CAPABILITIES.length).toBe(4);
   });
 });
 

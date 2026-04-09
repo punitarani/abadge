@@ -40,7 +40,7 @@ type Story = StoryObj<typeof meta>;
 
 function AgentFormStory({ loading = false }: { loading?: boolean }): React.ReactElement {
   const [name, setName] = useState("Claude Code");
-  const [kind, setKind] = useState<AgentKind>("remote_agent");
+  const [kind, setKind] = useState<AgentKind>("local_cli");
   const [description, setDescription] = useState("Used for local development workflows.");
 
   return (
@@ -69,9 +69,7 @@ function AgentFormStory({ loading = false }: { loading?: boolean }): React.React
 }
 
 const registration: AgentRegistrationState = {
-  apiKey: null,
-  bootstrapToken: "abt_bootstrap_c6VMJhRk91eTnX2m",
-  bootstrapExpiresAt: "2026-04-06T21:30:00.000Z",
+  apiKey: "abl_test_c6VMJhRk91eTnX2m",
 };
 
 export const Default: Story = {

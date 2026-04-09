@@ -70,16 +70,6 @@
       }
     },
     {
-      "includes": ["packages/broker/**"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noRestrictedGlobals": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["packages/mcp/**"],
       "linter": {
         "rules": {
