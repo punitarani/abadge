@@ -23,7 +23,11 @@ export const AuditQueryInputSchema = Schema.Struct({
   result: Schema.optional(AuditResultSchema),
   agentId: Schema.optional(Schema.String),
   itemId: Schema.optional(Schema.String),
-  cursor: Schema.optional(Schema.String),
+  cursor: Schema.optional(
+    Schema.String.pipe(
+      Schema.pattern(/^\d+$/, { message: () => "cursor must be a numeric string" }),
+    ),
+  ),
   limit: Schema.optional(
     Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
   ),

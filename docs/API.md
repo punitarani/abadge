@@ -4,6 +4,8 @@ The canonical control-plane transport is tRPC over HTTP at `/trpc`.
 
 Better Auth remains mounted at `/api/auth/*`.
 
+There is no REST layer. All application endpoints are tRPC procedures.
+
 Base URL:
 
 * production: `https://your-api-domain`
@@ -18,7 +20,7 @@ import { createNodeTrpcClient } from "@abadge/trpc/client";
 
 const client = createNodeTrpcClient({
   baseUrl: "http://localhost:8787",
-  token: process.env.ABADGE_OPERATOR_TOKEN ?? process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
+  token: process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
 });
 ```
 
@@ -54,20 +56,8 @@ Session-backed tRPC procedures accept:
 
 * Better Auth browser cookies
 * Better Auth bearer access tokens in `Authorization: Bearer ...`
-* operator automation tokens in `X-Abadge-Operator-Token: abo_...`
 
 The CLI stores the bearer token only in daemon memory.
-
-Operator automation tokens:
-
-* prefix: `abo_`
-* storage: hash + prefix only
-* default TTL: 24 hours
-* maximum TTL: 30 days
-* scopes: `items:read`, `items:write`, `agents:read`, `agents:write`, `permissions:read`,
-  `permissions:write`, `audit:read`, `vault:read`, `vault:write`
-* management: `auth.createOperatorToken`, `auth.listOperatorTokens`, `auth.revokeOperatorToken`
-* restriction: operator-token callers cannot manage operator tokens
 
 ### Agent auth
 
@@ -85,126 +75,96 @@ Keypair-backed agents use the auth router lifecycle:
 
 | Procedure | Auth | Description |
 |------|------|-------------|
-| `auth.issueBootstrapToken` | `scopedSessionProcedure("agents:write")` | Issue a one-time `abe_...` bootstrap token |
+| `auth.issueBootstrapToken` | `sessionProcedure` | Issue a one-time `abe_...` bootstrap token |
 | `auth.enroll` | `publicProcedure` | Redeem bootstrap token and upload an agent public key |
 | `auth.createChallenge` | `publicProcedure` | Create a short-lived signing challenge |
 | `auth.exchangeSession` | `publicProcedure` | Verify Ed25519 signature and mint an `abs_...` session |
-| `auth.revokeSession` | `scopedSessionProcedure("agents:write")` | Revoke an existing `abs_...` session for the current operator |
+| `auth.revokeSession` | `sessionProcedure` | Revoke an existing `abs_...` session for the current operator |
 | `auth.recordLogin` | `sessionProcedure` | Audit successful CLI login |
 | `auth.logout` | `sessionProcedure` | Audit operator logout |
-| `auth.createOperatorToken` | `sessionProcedure` | Create a scoped `abo_...` operator token |
-| `auth.listOperatorTokens` | `sessionProcedure` | List operator tokens for the current operator |
-| `auth.revokeOperatorToken` | `sessionProcedure` | Revoke an operator token for the current operator |
 
 ## Procedure tiers
 
 | Tier | Auth | Used by |
 |------|------|---------|
 | `publicProcedure` | none | agent enrollment and agent session exchange |
-| `sessionProcedure` | Better Auth cookie, bearer session, or operator token | dashboard, CLI management commands, SDK |
-| `scopedSessionProcedure` | session plus operator-token scope check | operator-token-compatible session procedures |
+| `sessionProcedure` | Better Auth session or bearer session token | dashboard, CLI management commands, SDK |
 | `agentProcedure` | agent bearer credential | local runtime agents, MCP, remote agents |
 
-## Selected session procedures
+## Session procedures
 
-### `auth.createOperatorToken`
+### `vault.bootstrap`
+
+Auth: `sessionProcedure`
+
+Creates the user's vault. Returns `{ id }`. Fails with `VAULT_ALREADY_EXISTS` (409) if the vault
+already exists.
+
+### `vault.get`
+
+Auth: `sessionProcedure`
+
+Returns vault metadata including `wrappedRootKey`, `kdfSalt`, `kdfParams`, `keyVersion`.
+
+### `vault.changePassword`
+
+Auth: `sessionProcedure`
+
+Accepts new `wrappedRootKey`, `kdfSalt`, `kdfParams`. Returns `{ ok: true }`.
+
+### `vault.setupRecovery`
+
+Auth: `sessionProcedure`
+
+Accepts `recoveryWrappedRootKey`. Returns `{ ok: true }`.
+
+### `vault.rotateKey`
+
+Auth: `sessionProcedure`
+
+Accepts `wrappedRootKey` and `rekeyedItems` map. Returns `{ ok: true, keyVersion }`.
+
+### `items.create`
 
 Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `name` | string | yes | Token display name |
-| `scopes` | `OperatorTokenScope[]` | yes | One or more coarse scopes |
-| `expiresAt` | string | no | ISO expiry, capped at 30 days |
+| `storageMode` | enum | yes | `zero_knowledge` or `server_managed` |
+| `payload` | object | conditional | Required for `server_managed` items |
+| `encryptedItemKey` | string | conditional | Required for `zero_knowledge` items |
+| `ciphertext` | string | conditional | Required for `zero_knowledge` items |
 
-Response:
+Returns `{ id }`.
 
-```ts
-{
-  token: "abo_...";
-  operatorToken: OperatorToken;
-}
-```
-
-`token` is shown once. Subsequent list calls return only metadata and prefix.
-
-### `auth.listOperatorTokens`
+### `items.list`
 
 Auth: `sessionProcedure`
 
-Response: `{ operatorTokens: OperatorToken[] }`
+Returns `{ items }` with metadata only (no secret data).
 
-### `auth.revokeOperatorToken`
+### `items.get`
 
 Auth: `sessionProcedure`
 
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `tokenId` | string | yes | Operator token ID |
+Input: `{ itemId }`. Returns `{ item }`.
 
-Response: `{ ok: true }`
+### `items.update`
 
-### `agents.create`
+Auth: `sessionProcedure`
 
-Auth: `scopedSessionProcedure("agents:write")`
+Input: `{ itemId, data }` where `data` contains updated fields and `contentVersion` for optimistic
+concurrency. Returns `{ ok: true, contentVersion }`.
 
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
-| `name` | string | yes | Display name |
-| `authMethod` | enum | no | `public_key_session` or `legacy_api_key` |
-| `publicKey` | string | no | JWK-serialized public key for direct enrollment |
-| `issueBootstrapToken` | boolean | no | Whether to issue a one-time bootstrap token |
-| `metadata` | object | no | Free-form metadata |
+### `items.delete`
 
-Response:
+Auth: `sessionProcedure`
 
-```ts
-{
-  agent: Agent;
-  apiKey: string | null;
-  bootstrapToken: string | null;
-  bootstrapExpiresAt: string | null;
-}
-```
-
-Defaults:
-
-* `authMethod` defaults to `public_key_session`
-* legacy API keys are opt-in
-* keypair-backed agents without `publicKey` receive a bootstrap token by default
-
-### `agents.rotate`
-
-Auth: `scopedSessionProcedure("agents:write")`
-
-Rotates a legacy API key only.
-
-Response:
-
-```ts
-{ apiKey: string; keyPrefix: string }
-```
-
-### `permissions.create`
-
-Auth: `scopedSessionProcedure("permissions:write")`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `agentId` | string | yes | Agent receiving access |
-| `itemId` | string | yes | Target item |
-| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
-| `expiresAt` | string | no | ISO timestamp for permission expiry |
-
-Current creation-time enforcement also rejects:
-
-* remote agent + zero-knowledge item
-* remote agent + capability other than `reveal_plaintext`
+Input: `{ itemId }`. Soft-deletes the item. Returns `{ ok: true }`.
 
 ### `items.resolveDisplay`
 
-Auth: `scopedSessionProcedure("items:read")`
+Auth: `sessionProcedure`
 
 Resolves live dashboard display values for a bounded set of items without changing the
 zero-knowledge trust model.
@@ -240,7 +200,136 @@ Notes:
 * zero-knowledge items never return plaintext labels; browser clients may derive the current label locally if the vault is already unlocked
 * labels are current display values, not historical snapshots captured at audit-event time
 
-## Selected agent procedures
+### `agents.create`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
+| `name` | string | yes | Display name |
+| `authMethod` | enum | no | `public_key_session` or `legacy_api_key` (default: `legacy_api_key`) |
+| `publicKey` | string | no | JWK-serialized public key for direct enrollment |
+| `issueBootstrapToken` | boolean | no | Whether to issue a one-time bootstrap token |
+| `metadata` | object | no | Free-form metadata |
+
+Response:
+
+```ts
+{
+  agent: Agent;
+  apiKey: string | null;
+  bootstrapToken: string | null;
+  bootstrapExpiresAt: string | null;
+}
+```
+
+Behavior:
+
+* `authMethod` defaults to `legacy_api_key`
+* `legacy_api_key` agents receive a one-time API key
+* `public_key_session` agents must provide either `publicKey` or `issueBootstrapToken: true`
+* missing both `publicKey` and `issueBootstrapToken` fails with `PUBLIC_KEY_REQUIRED`
+* keypair-backed agents without `publicKey` receive a bootstrap token (`abe_`, 10-min TTL)
+
+### `agents.list`
+
+Auth: `sessionProcedure`
+
+Returns `{ agents }`.
+
+### `agents.get`
+
+Auth: `sessionProcedure`
+
+Input: `{ agentId }`. Returns `{ agent }`.
+
+### `agents.self`
+
+Auth: `agentProcedure`
+
+Returns `{ agent }` for the currently authenticated agent.
+
+### `agents.rotate`
+
+Auth: `sessionProcedure`
+
+Input: `{ agentId }`. Rotates a legacy API key only. Returns `{ apiKey, keyPrefix }`.
+
+### `agents.revoke`
+
+Auth: `sessionProcedure`
+
+Input: `{ agentId }`. Returns `{ ok: true }`.
+
+### `permissions.create`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `agentId` | string | yes | Agent receiving access |
+| `itemId` | string | yes | Target item |
+| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
+| `expiresAt` | string | no | ISO timestamp for permission expiry |
+
+Creation-time enforcement rejects:
+
+* remote agent + zero-knowledge item (`REMOTE_AGENT_ZK_FORBIDDEN`)
+* remote agent + capability other than `reveal_plaintext`
+
+### `permissions.list`
+
+Auth: `sessionProcedure`
+
+Optional filters: `agentId`, `itemId`. Returns `{ permissions }`.
+
+### `permissions.revoke`
+
+Auth: `sessionProcedure`
+
+Input: `{ permissionId }`. Returns `{ ok: true }`.
+
+### `audit.list`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `eventType` | enum | no | Filter by event type |
+| `result` | enum | no | Filter by result (`allowed`, `denied`, `expired`, `revoked`) |
+| `agentId` | string | no | Filter by agent |
+| `itemId` | string | no | Filter by item |
+| `cursor` | string | no | Pagination cursor (numeric string) |
+| `limit` | integer | no | 1--100, default 50 |
+
+Returns `{ entries, nextCursor }`.
+
+## Agent procedures
+
+### `access.ciphertext`
+
+Auth: `agentProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+
+Returns `{ encryptedItemKey, ciphertext, cryptoVersion }`.
+
+Denied if: remote agent, non-ZK item, or missing `read_ciphertext` permission.
+
+### `access.reveal`
+
+Auth: `agentProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | yes | Target item |
+
+Returns `{ payload }`.
+
+Denied if: non-server-managed item, or missing `reveal_plaintext` permission.
 
 ### `access.mount`
 
@@ -256,36 +345,47 @@ Response:
 * zero-knowledge item: `{ storageMode: "zero_knowledge", encryptedItemKey, ciphertext, cryptoVersion }`
 * server-managed item: `{ storageMode: "server_managed", payload }`
 
-### `access.reveal`
+Denied if: remote agent, or missing `mount_env`/`mount_file` permission.
 
-Auth: `agentProcedure`
+## Error codes
 
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-
-Response: `{ payload }`
-
-### `access.ciphertext`
-
-Auth: `agentProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-
-Response: `{ encryptedItemKey, ciphertext, cryptoVersion }`
+| Code | HTTP | Description |
+|------|------|-------------|
+| `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault exists |
+| `AGENT_NOT_FOUND` | 404 | Agent ID does not exist or belongs to another user |
+| `ITEM_NOT_FOUND` | 404 | Item ID does not exist, belongs to another user, or is deleted |
+| `PERMISSION_DENIED` | 403 | No matching grant or locality restriction |
+| `REMOTE_AGENT_ZK_FORBIDDEN` | 403 | Remote agent tried to access a zero-knowledge item |
+| `PUBLIC_KEY_REQUIRED` | 400 | public_key_session agent created without publicKey or issueBootstrapToken |
+| `ENROLLMENT_REQUIRED` | 400 | Agent has no public key enrolled |
+| `integrity_error` | 500 | Server-side data integrity failure |
 
 ## Audit events
 
-Auth and agent lifecycle now emit these additional audit event types:
+Auth and agent lifecycle emit these audit event types:
 
 * `auth.login`
 * `auth.logout`
-* `operator_token.create`
-* `operator_token.revoke`
+* `agent.create`
 * `agent.bootstrap_issue`
 * `agent.enroll`
+* `agent.rotate`
+* `agent.revoke`
 * `agent.session_issue`
 * `agent.session_reject`
 * `agent.session_revoke`
+* `access.ciphertext`
+* `access.reveal`
+* `access.mount_env`
+* `access.mount_file`
+
+## Rate limiting
+
+| Path | Limit |
+|------|-------|
+| `/api/auth/*` | 60 requests/minute per IP |
+| `/trpc/*` | 100 requests/minute per IP |
+
+## Health check
+
+`GET /health` returns `{ "status": "ok" }`. No authentication required.
