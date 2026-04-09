@@ -1,5 +1,10 @@
-export type { AbadgeClientConfig } from "./client";
-export { AbadgeClient } from "./client";
+export type {
+  AbadgeAgentClientConfig,
+  AbadgeClientConfig,
+  AbadgeUserClientConfig,
+  ErrorCode,
+} from "./client";
+export { AbadgeAgentClient, AbadgeClient, AbadgeUserClient } from "./client";
 export { AbadgeApiError } from "./errors";
 export type {
   Agent,

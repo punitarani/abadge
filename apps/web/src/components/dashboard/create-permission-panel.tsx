@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { resolveItemLabel, useItemLabels } from "@/lib/use-item-labels";
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
   read_ciphertext: "Read ciphertext",
@@ -23,13 +24,6 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   mount_env: "Mount as env var",
   mount_file: "Mount as file",
 };
-
-function formatItemLabel(id: string, storageMode?: string): string {
-  const prefix =
-    storageMode === "zero_knowledge" ? "ZK" : storageMode === "server_managed" ? "Srv" : null;
-  const shortId = `${id.slice(0, 13)}…`;
-  return prefix ? `${prefix} · ${shortId}` : shortId;
-}
 
 interface CreatePermissionPanelViewProps {
   formId: string;
@@ -152,6 +146,7 @@ export function CreatePermissionPanel({
 
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
+  const { labelMap } = useItemLabels(items);
   const optionsLoading = agentsQuery.isPending || itemsQuery.isPending;
 
   const activeAgentOptions = useMemo<SearchableSelectOption[]>(
@@ -172,9 +167,9 @@ export function CreatePermissionPanel({
         )
         .map((item: ItemSummary) => ({
           value: item.id,
-          label: formatItemLabel(item.id, item.storageMode),
+          label: resolveItemLabel(item.id, labelMap, item.storageMode),
         })),
-    [items],
+    [items, labelMap],
   );
 
   function handleClose(): void {

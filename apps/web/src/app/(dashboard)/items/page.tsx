@@ -30,6 +30,7 @@ import {
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { itemPanelParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { useItemLabels } from "@/lib/use-item-labels";
 import { formatRelativeTime } from "@/lib/utils";
 
 export default function ItemsPage(): React.ReactElement {
@@ -41,6 +42,10 @@ export default function ItemsPage(): React.ReactElement {
     queryKey: dashboardQueryKeys.items(),
     queryFn: () => browserTrpcClient.items.list.query(),
   });
+
+  const items = itemsQuery.data?.items ?? [];
+  const { labelMap } = useItemLabels(items);
+
   const deleteItem = useMutation({
     mutationFn: ({ itemId }: { itemId: string }) =>
       browserTrpcClient.items.delete.mutate({ itemId }),
@@ -51,7 +56,6 @@ export default function ItemsPage(): React.ReactElement {
     },
   });
 
-  const items = itemsQuery.data?.items ?? [];
   const loading = itemsQuery.isPending;
 
   async function handleConfirmDelete(): Promise<void> {
@@ -64,6 +68,10 @@ export default function ItemsPage(): React.ReactElement {
     } finally {
       setItemToDelete(null);
     }
+  }
+
+  function itemLabel(item: ItemSummary): string {
+    return labelMap.get(item.id) ?? `${item.id.slice(0, 8)}…`;
   }
 
   return (
@@ -87,7 +95,7 @@ export default function ItemsPage(): React.ReactElement {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>ID</TableHead>
+              <TableHead>Name</TableHead>
               <TableHead>Storage</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Updated</TableHead>
@@ -119,15 +127,18 @@ export default function ItemsPage(): React.ReactElement {
             ) : (
               items.map((item: ItemSummary) => (
                 <TableRow key={item.id}>
-                  <TableCell className="font-medium">
+                  <TableCell>
                     <button
                       type="button"
-                      className="font-mono text-foreground hover:underline"
+                      className="text-left hover:underline"
                       onClick={() => {
                         void setItemPanelState({ item: item.id });
                       }}
                     >
-                      {item.id.slice(0, 13)}…
+                      <div className="font-medium text-foreground">{itemLabel(item)}</div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {item.id.slice(0, 8)}…
+                      </div>
                     </button>
                   </TableCell>
                   <TableCell>

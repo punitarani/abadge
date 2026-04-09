@@ -1,4 +1,5 @@
 import {
+  BadRequestError,
   ConflictError,
   type CreateItemInput,
   CreateItemSchema,
@@ -10,6 +11,7 @@ import {
   ItemResultSchema,
   ItemVersionResultSchema,
   NotFoundError,
+  RevealAccessResponseSchema,
   SuccessResultSchema,
   type UpdateItemInput,
   UpdateItemSchema,
@@ -20,7 +22,7 @@ import { items, vaults } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
@@ -283,6 +285,49 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     return { ok: true, contentVersion: item.contentVersion + 1 };
   });
 
+const ownerReveal = (itemId: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    const item = yield* loadOwnedItem(itemId);
+
+    if (item.storageMode !== "server_managed") {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Only server-managed items can be revealed via the API",
+        }),
+      );
+    }
+
+    if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Item has no server-encrypted data",
+        }),
+      );
+    }
+
+    const ciphertext = item.serverCiphertext;
+    const iv = item.serverIv;
+    const keyVersion = item.serverKeyVersion;
+
+    const decrypted = yield* Effect.tryPromise(() =>
+      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY),
+    );
+
+    yield* logSessionAudit({
+      userId: ctx.identity.userId,
+      itemId,
+      eventType: "item.read",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { reveal: true },
+    });
+
+    return { payload: decodeServerManagedPayload(item.id, decrypted) };
+  });
+
 const deleteItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -332,7 +377,11 @@ export const itemsRouter = createTrpcRouter({
     .input(strictSchema(UpdateItemInputEnvelopeSchema))
     .output(strictSchema(ItemVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateItem(input.itemId, input.data))),
-  delete: scopedSessionProcedure("items:write")
+  ownerReveal: sessionProcedure
+    .input(strictSchema(ItemIdSchema))
+    .output(strictSchema(RevealAccessResponseSchema))
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
+  delete: sessionProcedure
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteItem(input.itemId))),

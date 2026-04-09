@@ -133,5 +133,7 @@
 }
 
 body[data-dashboard-overlay-open="true"] [data-userjot-widget-container] {
-  z-index: 40;
+  /* Third-party widget may set inline z-index; override needed to keep it behind overlays */
+  /* biome-ignore lint/complexity/noImportantStyles: required to override third-party inline styles */
+  z-index: 40 !important;
 }

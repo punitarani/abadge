@@ -53,43 +53,39 @@ export function ItemDetailPanelView({
         </div>
       </div>
 
-      {item.storageMode === "zero_knowledge" ? (
-        <div className="flex flex-col gap-4 rounded-lg border border-border p-5">
-          <div className="flex flex-col gap-1">
-            <div className="text-sm font-semibold">Secret value</div>
-            <p className="text-sm text-muted-foreground">
-              Decrypt the item in your browser when you need to inspect it.
-            </p>
-          </div>
-
-          {revealedValue !== null ? (
-            <div className="flex flex-col gap-3">
-              <pre className="rounded-md border border-border bg-muted p-3 text-sm whitespace-pre-wrap break-all">
-                {revealedValue}
-              </pre>
-              <div>
-                <Button variant="outline" size="sm" onClick={onHide}>
-                  Hide
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <Button size="sm" onClick={onReveal} disabled={revealing}>
-                {revealing ? "Decrypting..." : "Reveal"}
-              </Button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2 rounded-lg border border-border p-5">
+      <div className="flex flex-col gap-4 rounded-lg border border-border p-5">
+        <div className="flex flex-col gap-1">
           <div className="text-sm font-semibold">Secret value</div>
           <p className="text-sm text-muted-foreground">
-            Server-managed items are encrypted server-side. Agents can access them through the API
-            with appropriate permissions.
+            {item.storageMode === "zero_knowledge"
+              ? "Decrypt the item in your browser when you need to inspect it."
+              : "Server-managed items are encrypted server-side. You can reveal the value below."}
           </p>
         </div>
-      )}
+
+        {revealedValue !== null ? (
+          <div className="flex flex-col gap-3">
+            <pre className="rounded-md border border-border bg-muted p-3 text-sm whitespace-pre-wrap break-all">
+              {revealedValue}
+            </pre>
+            <div>
+              <Button variant="outline" size="sm" onClick={onHide}>
+                Hide
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <Button size="sm" onClick={onReveal} disabled={revealing}>
+              {revealing
+                ? item.storageMode === "zero_knowledge"
+                  ? "Decrypting..."
+                  : "Loading..."
+                : "Reveal"}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -115,9 +111,13 @@ export function ItemDetailPanel({
   });
   const item = itemQuery.data?.item ?? null;
 
-  async function decryptItem(encryptedItemKey: string, ciphertext: string): Promise<string | null> {
-    let key: Uint8Array;
+  async function revealZeroKnowledge(): Promise<string | null> {
+    if (!item?.encryptedItemKey || !item.ciphertext) {
+      toast.error("Missing encrypted data.");
+      return null;
+    }
 
+    let key: Uint8Array;
     try {
       key = await requestUnlock();
     } catch {
@@ -126,7 +126,7 @@ export function ItemDetailPanel({
     }
 
     try {
-      const plaintext = decryptItemFromVault(encryptedItemKey, ciphertext, key);
+      const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, key);
       return JSON.stringify(plaintext, null, 2);
     } catch {
       toast.error("Failed to decrypt item.");
@@ -134,28 +134,26 @@ export function ItemDetailPanel({
     }
   }
 
+  async function revealServerManaged(): Promise<string | null> {
+    if (!item) return null;
+    try {
+      const result = await browserTrpcClient.items.ownerReveal.mutate({ itemId: item.id });
+      return JSON.stringify(result.payload, null, 2);
+    } catch (error) {
+      toast.error(getClientErrorMessage(error, "Failed to reveal item"));
+      return null;
+    }
+  }
+
   async function handleReveal(): Promise<void> {
-    if (!item) {
-      return;
-    }
-
-    if (item.storageMode !== "zero_knowledge") {
-      toast.error("Server-managed items can only be revealed by agents through the API.");
-      return;
-    }
-
-    if (!item.encryptedItemKey || !item.ciphertext) {
-      toast.error("Missing encrypted data.");
-      return;
-    }
-
+    if (!item) return;
     setRevealing(true);
-    const value = await decryptItem(item.encryptedItemKey, item.ciphertext);
+    const value =
+      item.storageMode === "zero_knowledge"
+        ? await revealZeroKnowledge()
+        : await revealServerManaged();
     setRevealing(false);
-
-    if (value !== null) {
-      setRevealedValue(value);
-    }
+    if (value !== null) setRevealedValue(value);
   }
 
   const title = item ? `${item.id.slice(0, 8)}…` : "Item details";

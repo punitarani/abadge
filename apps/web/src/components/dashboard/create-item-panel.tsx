@@ -53,33 +53,42 @@ export function CreateItemPanelView({
 
       <fieldset className="flex flex-col gap-3">
         <div className="text-sm font-medium">Storage mode</div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
-          <label className="flex items-center gap-1.5 text-sm">
+        <div className="flex flex-col gap-3">
+          <label className="flex items-start gap-2 text-sm">
             <input
               type="radio"
               name="storageMode"
               value="zero_knowledge"
               checked={storageMode === "zero_knowledge"}
               onChange={() => onStorageModeChange("zero_knowledge")}
+              className="mt-0.5"
             />
-            Zero-knowledge (client-encrypted)
+            <span>
+              <span className="font-medium">Zero-knowledge</span>
+              <span className="block text-xs text-muted-foreground">
+                Your device, your key. Encrypted in your browser before leaving — only you can
+                decrypt. Best for personal secrets. Cannot be accessed by remote agents.
+              </span>
+            </span>
           </label>
-          <label className="flex items-center gap-1.5 text-sm">
+          <label className="flex items-start gap-2 text-sm">
             <input
               type="radio"
               name="storageMode"
               value="server_managed"
               checked={storageMode === "server_managed"}
               onChange={() => onStorageModeChange("server_managed")}
+              className="mt-0.5"
             />
-            Server-managed
+            <span>
+              <span className="font-medium">Server-managed</span>
+              <span className="block text-xs text-muted-foreground">
+                Encrypted server-side with AES-256-GCM. Can be accessed by local and remote agents
+                through the API. Best for credentials shared with automated systems.
+              </span>
+            </span>
           </label>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {storageMode === "zero_knowledge"
-            ? "The secret is encrypted in your browser before being sent to the server. Only you can decrypt it."
-            : "The secret is encrypted server-side. Agents can access it through the API."}
-        </p>
       </fieldset>
 
       <div className="flex flex-col gap-1.5">
