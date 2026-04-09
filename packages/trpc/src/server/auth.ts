@@ -94,12 +94,15 @@ function getBearerToken(ctx: BaseRequestContext): Effect.Effect<string, Unauthor
   return Effect.fail(unauthorized("Missing Bearer token"));
 }
 
-function touchAgent(ctx: BaseRequestContext, agentId: string): void {
-  void ctx.db
-    .update(agentRecords)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(agentRecords.id, agentId))
-    .execute();
+function touchAgent(ctx: BaseRequestContext, agentId: string): Effect.Effect<void, Error> {
+  return tryAsync(() =>
+    ctx.db
+      .update(agentRecords)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(agentRecords.id, agentId))
+      .execute()
+      .then(() => undefined),
+  );
 }
 
 function toAgentIdentity(
@@ -113,12 +116,15 @@ function toAgentIdentity(
   };
 }
 
-function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
-  void ctx.db
-    .update(agentSessions)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(agentSessions.id, sessionId))
-    .execute();
+function touchAgentSession(ctx: BaseRequestContext, sessionId: string): Effect.Effect<void, Error> {
+  return tryAsync(() =>
+    ctx.db
+      .update(agentSessions)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(agentSessions.id, sessionId))
+      .execute()
+      .then(() => undefined),
+  );
 }
 
 function touchOperatorToken(ctx: BaseRequestContext, tokenId: string): void {
@@ -137,15 +143,20 @@ function auditAgentSessionReject(
     result: "denied" | "expired" | "revoked";
     reason: string;
   },
-): void {
-  void ctx.db.insert(auditLog).values({
-    userId: input.userId,
-    principalId: input.agentId,
-    eventType: "agent.session_reject",
-    result: input.result,
-    meta: { reason: input.reason },
-    ipAddress: ctx.ipAddress ?? null,
-  });
+): Effect.Effect<void, Error> {
+  return tryAsync(() =>
+    ctx.db
+      .insert(auditLog)
+      .values({
+        userId: input.userId,
+        principalId: input.agentId,
+        eventType: "agent.session_reject",
+        result: input.result,
+        meta: { reason: input.reason },
+        ipAddress: ctx.ipAddress ?? null,
+      })
+      .then(() => undefined),
+  );
 }
 
 const verifyLocalAgentIdentity = (
@@ -189,7 +200,7 @@ const verifyLocalAgentIdentity = (
         continue;
       }
 
-      touchAgent(ctx, agent.id);
+      yield* touchAgent(ctx, agent.id);
       return toAgentIdentity(agent);
     }
 
@@ -236,7 +247,7 @@ const verifyLegacyAgentIdentity = (
     }
 
     if (migratedAgent) {
-      touchAgent(ctx, legacyAgentId);
+      yield* touchAgent(ctx, legacyAgentId);
       return toAgentIdentity(migratedAgent);
     }
 
@@ -276,7 +287,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (sessionRecord.expiresAt <= new Date()) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
         result: "expired",
@@ -305,7 +316,7 @@ const verifyAgentSessionIdentity = (
     )) as Array<AgentSessionAgentCandidate>;
 
     if (!agent) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
         result: "denied",
@@ -315,7 +326,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (!agent.enabled) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: agent.userId,
         agentId: agent.id,
         result: "denied",
@@ -325,7 +336,7 @@ const verifyAgentSessionIdentity = (
     }
 
     if (agent.revokedAt) {
-      auditAgentSessionReject(ctx, {
+      yield* auditAgentSessionReject(ctx, {
         userId: agent.userId,
         agentId: agent.id,
         result: "revoked",
@@ -334,8 +345,8 @@ const verifyAgentSessionIdentity = (
       return yield* Effect.fail(unauthorized("Invalid agent session"));
     }
 
-    touchAgent(ctx, agent.id);
-    touchAgentSession(ctx, sessionRecord.id);
+    yield* touchAgent(ctx, agent.id);
+    yield* touchAgentSession(ctx, sessionRecord.id);
     return toAgentIdentity(agent);
   });
 
