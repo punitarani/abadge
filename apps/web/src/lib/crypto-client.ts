@@ -14,6 +14,7 @@ import {
   generateRecoveryKey as generateRecoveryKeyRaw,
   generateRootKey,
   generateSalt,
+  recoverRootKey,
   serializeItemPayload,
   toBase64,
   unwrapRootKey,
@@ -124,6 +125,67 @@ export async function changePassword(
   zeroKey(newKek);
   zeroKey(rootKey);
   return { recoveryKey };
+}
+
+export async function recoverVault(
+  recoveryKeyInput: string,
+  newPassword: string,
+): Promise<{ rootKey: Uint8Array; recoveryKey: string }> {
+  let vault: {
+    recoveryWrappedRootKey: string | null;
+  };
+
+  try {
+    const result = await browserTrpcClient.vault.get.query();
+    vault = result.vault;
+  } catch (error) {
+    throw new Error(getClientErrorMessage(error, "Failed to fetch vault"));
+  }
+
+  if (!vault.recoveryWrappedRootKey) {
+    throw new Error("No recovery key configured for this vault");
+  }
+
+  let rootKey: Uint8Array;
+  try {
+    rootKey = recoverRootKey(recoveryKeyInput, {
+      wrapped: vault.recoveryWrappedRootKey,
+    });
+  } catch {
+    throw new Error("Invalid recovery key");
+  }
+
+  const newSalt = generateSalt();
+  const newKek = deriveKEK(newPassword, newSalt, DEFAULT_KDF_PARAMS);
+  const wrapped = wrapRootKey(rootKey, newKek);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
+
+  try {
+    await browserTrpcClient.vault.changePassword.mutate({
+      wrappedRootKey: wrapped.wrapped,
+      kdfSalt: toBase64(newSalt),
+      kdfParams: DEFAULT_KDF_PARAMS,
+    });
+  } catch (error) {
+    zeroKey(newKek);
+    zeroKey(rootKey);
+    throw new Error(getClientErrorMessage(error, "Password reset failed"));
+  }
+
+  try {
+    await browserTrpcClient.vault.setupRecovery.mutate({
+      recoveryWrappedRootKey: recoveryWrapped.wrapped,
+    });
+  } catch {
+    zeroKey(newKek);
+    zeroKey(rootKey);
+    throw new Error(
+      "Password reset successfully, but recovery key update failed. Your new password is active. Please try updating recovery from settings.",
+    );
+  }
+
+  zeroKey(newKek);
+  return { rootKey, recoveryKey };
 }
 
 export function encryptItemForVault(

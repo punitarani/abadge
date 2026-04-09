@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SecretDisplay } from "@/components/ui/secret-display";
-import { bootstrapVault, unlockVault } from "@/lib/crypto-client";
+import { bootstrapVault, recoverVault, unlockVault } from "@/lib/crypto-client";
 
-type ModalStep = "loading" | "unlock" | "bootstrap" | "recovery";
+type ModalStep = "loading" | "unlock" | "bootstrap" | "recover" | "recovery";
 
 interface MasterPasswordModalProps {
   open: boolean;
@@ -30,6 +30,7 @@ export function MasterPasswordModal({
   const [step, setStep] = useState<ModalStep>("loading");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [recoveryKeyInput, setRecoveryKeyInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState("");
@@ -39,10 +40,11 @@ export function MasterPasswordModal({
   useEffect(() => {
     const wasOpen = prevOpenRef.current;
     prevOpenRef.current = open;
-    if (!open || wasOpen) return; // only initialize on false → true transition
+    if (!open || wasOpen) return;
 
     setPassword("");
     setConfirmPassword("");
+    setRecoveryKeyInput("");
     setError("");
     setRecoveryKey("");
     pendingKeyRef.current = null;
@@ -104,6 +106,37 @@ export function MasterPasswordModal({
     }
   }
 
+  async function handleRecover(e: React.FormEvent): Promise<void> {
+    e.preventDefault();
+    setError("");
+    if (password.length < 8) {
+      setError("New master password must be at least 8 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (!recoveryKeyInput.trim()) {
+      setError("Recovery key is required");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { rootKey: key, recoveryKey: rk } = await recoverVault(
+        recoveryKeyInput.trim(),
+        password,
+      );
+      pendingKeyRef.current = key;
+      setRecoveryKey(rk);
+      setStep("recovery");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Recovery failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleRecoveryAcknowledged(): void {
     const key = pendingKeyRef.current;
     if (key) {
@@ -112,7 +145,23 @@ export function MasterPasswordModal({
     }
   }
 
-  const preventClose = step === "bootstrap" || step === "recovery";
+  function switchToRecover(): void {
+    setPassword("");
+    setConfirmPassword("");
+    setRecoveryKeyInput("");
+    setError("");
+    setStep("recover");
+  }
+
+  function switchToUnlock(): void {
+    setPassword("");
+    setConfirmPassword("");
+    setRecoveryKeyInput("");
+    setError("");
+    setStep("unlock");
+  }
+
+  const preventClose = step === "bootstrap" || step === "recovery" || step === "recover";
 
   return (
     <Dialog.Root
@@ -171,6 +220,73 @@ export function MasterPasswordModal({
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={onCancel}>
                     Cancel
+                  </Button>
+                </div>
+              </form>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+                onClick={switchToRecover}
+              >
+                Forgot your master password? Recover with your recovery key
+              </button>
+            </div>
+          )}
+
+          {step === "recover" && (
+            <div className="space-y-6">
+              <div className="space-y-1">
+                <Dialog.Title className="text-base font-semibold">Recover your vault</Dialog.Title>
+                <Dialog.Description className="text-sm text-muted-foreground">
+                  Enter your recovery key and choose a new master password.
+                </Dialog.Description>
+              </div>
+              <form onSubmit={handleRecover} className="space-y-4">
+                {error && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {error}
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="mp-modal-recovery-key">Recovery key</Label>
+                  <Input
+                    id="mp-modal-recovery-key"
+                    type="text"
+                    value={recoveryKeyInput}
+                    onChange={(e) => setRecoveryKeyInput(e.target.value)}
+                    placeholder="XXXX-XXXX-XXXX-…"
+                    required
+                    autoFocus
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="mp-modal-recover-pw">New master password</Label>
+                  <Input
+                    id="mp-modal-recover-pw"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={8}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="mp-modal-recover-confirm">Confirm new password</Label>
+                  <Input
+                    id="mp-modal-recover-confirm"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" disabled={loading}>
+                    {loading ? "Recovering..." : "Reset password"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={switchToUnlock}>
+                    Back
                   </Button>
                 </div>
               </form>

@@ -30,6 +30,7 @@ import {
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { permissionFilterParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { useItemLabels } from "@/lib/use-item-labels";
 import { formatRelativeTime } from "@/lib/utils";
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
@@ -39,10 +40,12 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   mount_file: "Mount as file",
 };
 
-function formatItemLabel(id: string, storageMode?: string): string {
+function formatItemLabel(id: string, labelMap: Map<string, string>, storageMode?: string): string {
+  const label = labelMap.get(id);
+  if (label) return label;
   const prefix =
     storageMode === "zero_knowledge" ? "ZK" : storageMode === "server_managed" ? "Srv" : null;
-  const shortId = `${id.slice(0, 13)}…`;
+  const shortId = `${id.slice(0, 8)}…`;
   return prefix ? `${prefix} · ${shortId}` : shortId;
 }
 
@@ -77,6 +80,7 @@ export default function PermissionsPage(): React.ReactElement {
   const permissions = permissionsQuery.data?.permissions ?? [];
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
+  const { labelMap } = useItemLabels(items);
   const loading = permissionsQuery.isPending || agentsQuery.isPending || itemsQuery.isPending;
 
   const agentNames = useMemo<Map<string, string>>(
@@ -109,10 +113,10 @@ export default function PermissionsPage(): React.ReactElement {
           )
           .map((item: ItemSummary) => ({
             value: item.id,
-            label: formatItemLabel(item.id, item.storageMode),
+            label: formatItemLabel(item.id, labelMap, item.storageMode),
           })),
       ),
-    [items],
+    [items, labelMap],
   );
 
   async function handleConfirmRevoke(): Promise<void> {
@@ -217,9 +221,10 @@ export default function PermissionsPage(): React.ReactElement {
                   <TableCell className="font-medium">
                     {agentNames.get(permission.agentId) ?? permission.agentId}
                   </TableCell>
-                  <TableCell className="font-mono text-sm text-muted-foreground">
+                  <TableCell className="text-sm text-muted-foreground">
                     {formatItemLabel(
                       permission.itemId,
+                      labelMap,
                       itemMap.get(permission.itemId)?.storageMode,
                     )}
                   </TableCell>

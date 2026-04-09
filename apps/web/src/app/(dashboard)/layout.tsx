@@ -8,6 +8,9 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { VaultProvider } from "@/lib/vault-context";
 
+// biome-ignore lint/style/noRestrictedGlobals: Next.js replaces NEXT_PUBLIC_ at build time
+const USERJOT_PROJECT_ID = process.env.NEXT_PUBLIC_USERJOT_PROJECT_ID;
+
 declare global {
   interface Window {
     uj: {
@@ -40,7 +43,7 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
   }, [isPending, session, router]);
 
   useEffect(() => {
-    if (session?.user) {
+    if (USERJOT_PROJECT_ID && session?.user) {
       window.uj.identify({
         id: session.user.id,
         email: session.user.email,
@@ -60,12 +63,16 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
   return (
     <VaultProvider>
       <DashboardShell>{children}</DashboardShell>
-      <Script id="userjot-loader" strategy="afterInteractive">
-        {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
-      </Script>
-      <Script id="userjot-init" strategy="afterInteractive">
-        {`window.uj.init('cmnkcclu80xvr0io6ha14686u',{widget:true,position:'right',theme:'auto'});`}
-      </Script>
+      {USERJOT_PROJECT_ID && (
+        <>
+          <Script id="userjot-loader" strategy="afterInteractive">
+            {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
+          </Script>
+          <Script id="userjot-init" strategy="afterInteractive">
+            {`window.uj.init('${USERJOT_PROJECT_ID}',{widget:true,position:'right',theme:'auto'});`}
+          </Script>
+        </>
+      )}
     </VaultProvider>
   );
 }
