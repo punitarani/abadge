@@ -11,7 +11,7 @@ The system keeps one synchronous control plane:
 * Postgres is the single source of truth
 * Hono runs as the outer Cloudflare Worker shell
 * tRPC is the only application transport for the control plane
-* local daemon and broker IPC stay on JSON-RPC over a Unix socket
+* local daemon IPC stays on JSON-RPC over a Unix socket
 
 ## System parts
 
@@ -36,12 +36,11 @@ apps/
   web/        Next.js dashboard
 packages/
   auth/       Better Auth wiring
-  broker/     Local execution helpers
   cli/        CLI commands and config
   config/     Shared tsconfig
   core/       Effect Schema contracts, constants, tagged errors
   crypto/     Encryption and API-key primitives
-  daemon/     Local vault daemon and JSON-RPC client
+  daemon/     Local vault daemon, JSON-RPC client, and execution helpers
   db/         Drizzle schema and DB client
   env/        Environment validation
   mcp/        MCP server and tools
@@ -56,7 +55,7 @@ flowchart LR
   subgraph Clients["Callers"]
     Browser["Dashboard"]
     CLI["CLI / SDK"]
-    MCP["MCP / Broker"]
+    MCP["MCP"]
     Remote["Remote agent"]
   end
 

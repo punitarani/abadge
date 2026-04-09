@@ -7,12 +7,6 @@ import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import { getConnectionString, getDb } from "./lib/db";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
-import { accessRoutes } from "./routes/access";
-import { agentRoutes } from "./routes/agents";
-import { auditRoutes } from "./routes/audit";
-import { itemRoutes } from "./routes/items";
-import { permissionRoutes } from "./routes/permissions";
-import { vaultRoutes } from "./routes/vault";
 import type { Bindings } from "./types";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -32,7 +26,6 @@ app.use("*", async (c, next) =>
 // Rate limiting
 app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
 app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
-app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 
 // Better Auth catch-all route
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
@@ -40,14 +33,6 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const auth = createAuth(db, validateWorkerEnv(c.env as unknown as Record<string, unknown>));
   return auth.handler(c.req.raw);
 });
-
-// REST v1 routes
-app.route("/v1/vault", vaultRoutes);
-app.route("/v1/items", itemRoutes);
-app.route("/v1/agents", agentRoutes);
-app.route("/v1/permissions", permissionRoutes);
-app.route("/v1/access", accessRoutes);
-app.route("/v1/audit", auditRoutes);
 
 app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 

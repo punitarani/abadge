@@ -121,8 +121,7 @@ packages/db      -> Drizzle schema and DB client
 packages/auth    -> Better Auth setup
 packages/env     -> environment validation
 packages/trpc    -> app router, clients, context, error mapping
-packages/daemon  -> local vault daemon and JSON-RPC client
-packages/broker  -> execution helpers for local secret use
+packages/daemon  -> local vault daemon, JSON-RPC client, and execution helpers
 packages/cli     -> CLI command implementations
 packages/mcp     -> MCP server and tools
 packages/sdk     -> public TypeScript client built on tRPC
