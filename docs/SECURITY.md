@@ -47,7 +47,7 @@ The API worker encrypts and decrypts with a shared key.
 |---|---|---|---|
 | Item encryption | AES-256-GCM | 32 bytes | 12 bytes (random) |
 
-**Key source**: `ENCRYPTION_KEY` environment variable on the Cloudflare Worker. Decryption only happens after all authorization checks pass.
+**Key source**: `ENCRYPTION_KEY` environment variable on the Cloudflare Worker, validated to decode to exactly 32 bytes (AES-256) at runtime. Decryption only happens after all authorization checks pass.
 
 ### Comparison
 
@@ -193,7 +193,7 @@ Secret is passed as an environment variable to a spawned subprocess. The secret 
 
 ### File Mounting (`mount_file`)
 
-Secret is written to a temporary file with `0600` permissions (owner read/write only). The MCP server auto-deletes after 5 minutes. The CLI returns the path for manual cleanup.
+Secret is written to a temporary file with `0600` permissions (owner read/write only). The daemon restricts mount paths to the OS temp directory (`os.tmpdir()`), rejecting any path outside it. The MCP server auto-deletes after 5 minutes. The CLI returns the path for manual cleanup.
 
 ### Direct Reveal (`reveal_plaintext`)
 
@@ -254,8 +254,9 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 | CORS | Restricted to trusted origins only |
 | Secure headers | Hono `secureHeaders()` middleware |
 | CSRF | Better Auth built-in protection |
-| Input validation | Zod schemas on all external input |
+| Input validation | Effect Schema on all external input |
 | SQL injection | Drizzle ORM parameterized queries (no raw SQL) |
+| Audit write ordering | Audit entries are awaited before returning responses |
 
 ### Credential Handling on Disk
 
