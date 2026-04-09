@@ -1,8 +1,7 @@
 import { CAPABILITIES, type Capability } from "@abadge/core";
 import type { CreatePermissionInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { SessionApiClient } from "../client";
-import { requireSessionConfig } from "../config";
+import { createSessionApiClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createPermissionCommand(): Command {
@@ -30,9 +29,8 @@ export function createPermissionCommand(): Command {
         }
         const capability = opts.capability as Capability;
 
-        const client = new SessionApiClient(requireSessionConfig());
-
         try {
+          const client = await createSessionApiClient();
           const result = await client.createPermission({
             agentId: opts.agentId,
             itemId: opts.itemId,
@@ -59,9 +57,8 @@ export function createPermissionCommand(): Command {
     .option("--item-id <id>", "Filter by item")
     .option("--json", "Output as JSON")
     .action(async (opts: { agentId?: string; itemId?: string; json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const permissions = (
           await client.listPermissions({
             agentId: opts.agentId,
@@ -95,9 +92,8 @@ export function createPermissionCommand(): Command {
     .description("Revoke a permission")
     .argument("<id>", "Permission ID")
     .action(async (id: string) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         await client.revokePermission(id);
         success(`Permission ${id} revoked.`);
       } catch (err) {

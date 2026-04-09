@@ -54,6 +54,7 @@ function createSessionContext(
     identity: {
       kind: "session",
       userId,
+      authMethod: "browser_session",
     },
   };
 }

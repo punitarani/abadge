@@ -74,6 +74,31 @@ The API worker encrypts and decrypts with a shared key.
 
 **CLI**: The CLI initiates a device authorization flow -- user approves in the browser, CLI receives a bearer token. The token is held in daemon memory only; the config file never stores a human bearer token.
 
+### Operator Automation Tokens
+
+Fully non-interactive operator automation uses scoped `abo_...` tokens.
+
+- Token value is shown once
+- Server stores only the token hash and prefix in `operator_tokens`
+- Default TTL is 24 hours
+- Maximum TTL is 30 days
+- Revoked and expired tokens fail closed
+- Operator-token callers cannot create, list, or revoke operator tokens
+
+Scopes are coarse and route-bound:
+
+```text
+items:read
+items:write
+agents:read
+agents:write
+permissions:read
+permissions:write
+audit:read
+vault:read
+vault:write
+```
+
 ### Agent Authentication
 
 Agents authenticate using one of two methods:
@@ -205,6 +230,8 @@ The MCP server adds additional protections for AI model contexts:
 | Permissions | Create, revoke |
 | Access | Ciphertext read, reveal, env mount, file mount |
 
+Auth lifecycle events include `auth.login`, `auth.logout`, `operator_token.create`, and `operator_token.revoke`.
+
 ### Audit Entry Fields
 
 Each entry records: user, agent (if applicable), item (if applicable), event type, result (`allowed`/`denied`/`expired`/`revoked`), delivery mode, IP address, timestamp, and a `meta` JSON blob.
@@ -305,9 +332,11 @@ block-beta
 | ZK item value | XChaCha20-Poly1305 ciphertext | Only by vault owner |
 | Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
 | Agent API key | SHA-256 hash + prefix | Shown once at creation |
+| Operator automation token | SHA-256 hash + prefix | Shown once at creation |
 | Agent session token | SHA-256 hash | Shown once at exchange |
 | Bootstrap token | SHA-256 hash | Shown once at issuance |
 | Challenge token | SHA-256 hash | Used once, 1-min TTL |
+| Connector config | AES-256-GCM ciphertext + IV | By server on authorized request |
 | Audit entries | Metadata only | Via audit API (no secrets) |
 
 ---

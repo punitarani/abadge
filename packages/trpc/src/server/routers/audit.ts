@@ -8,7 +8,7 @@ import { and, desc, eq, lt, or, type SQL } from "@abadge/db";
 import { auditLog } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, sessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure } from "../init";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,
@@ -101,7 +101,7 @@ const listAuditEntries = (input: AuditQuery) =>
   });
 
 export const auditRouter = createTrpcRouter({
-  list: sessionProcedure
+  list: scopedSessionProcedure("audit:read")
     .input(strictSchema(AuditQueryInputSchema))
     .output(strictSchema(AuditListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listAuditEntries(normalizeAuditQuery(input)))),

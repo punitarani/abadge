@@ -133,5 +133,5 @@
 }
 
 body[data-dashboard-overlay-open="true"] [data-userjot-widget-container] {
-  z-index: 40 !important;
+  z-index: 40;
 }

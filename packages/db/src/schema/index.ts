@@ -5,6 +5,7 @@ export * from "./audit-log";
 export * from "./auth";
 export * from "./grants";
 export * from "./items";
+export * from "./operator-tokens";
 export * from "./organization";
 export * from "./principals";
 export * from "./vaults";

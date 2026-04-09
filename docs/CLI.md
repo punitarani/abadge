@@ -21,24 +21,29 @@ bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
 ### Public installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+curl -fsSL https://abadge.io/install | bash
 ```
+
+`/install` redirects to the raw GitHub installer script.
 
 See [`docs/release/cli.md`](./release/cli.md) for the release and installer flow.
 
 ## Configuration
 
-Config lives at `~/.abadge/config.json`. The CLI stores a user session for control-plane commands
-and a local CLI agent key for principal-authenticated access commands:
+Config lives at `~/.abadge/config.json`. It stores durable metadata and the local CLI agent key.
+It does not store human session tokens:
 
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "sessionCookie": "...",
+  "operatorUserId": "usr_...",
   "principalId": "agt_...",
   "principalSecret": "abg_..."
 }
 ```
+
+Human CLI sessions are Better Auth bearer tokens held only in daemon memory. Automation can use
+operator tokens through `ABADGE_OPERATOR_TOKEN`, `ABADGE_SESSION_TOKEN`, or `--token-stdin`.
 
 The local daemon socket is `~/.abadge/vaultd.sock`.
 
@@ -46,12 +51,66 @@ The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ### `abadge login`
 
-Interactive email/password login. Stores `apiUrl`, the Better Auth session cookie, and ensures a
-reusable local CLI agent exists for `run` and `mount`.
+Starts Better Auth device authorization, opens a browser when possible, polls until approval, loads
+the short-lived human session into daemon memory, and ensures a reusable local CLI agent exists for
+`run` and `mount`.
 
 ```bash
 abadge login --api-url http://localhost:8787
-abadge login --api-url http://localhost:8787 --email user@example.com --password password123
+abadge login --api-url http://localhost:8787 --no-open-browser
+```
+
+Headless and async flows:
+
+```bash
+abadge login start --api-url http://localhost:8787 --json
+abadge login poll --api-url http://localhost:8787 --device-code <device-code> --json
+abadge login poll --device-code <device-code> --print-token --json
+```
+
+`--print-token` emits the Better Auth bearer token for explicit machine handoff and does not load it
+into the daemon.
+
+### `abadge logout`
+
+Clears daemon-held operator auth and best-effort audits logout with the control plane. It also
+rewrites config through the current schema, which removes legacy human-session fields.
+
+```bash
+abadge logout
+```
+
+### `abadge token`
+
+Creates, lists, and revokes first-party operator automation tokens. Tokens use the `abo_` prefix,
+are hashed at rest, default to a 24-hour TTL, can live for at most 30 days, and are shown only once.
+
+```bash
+abadge token create --name "ci deploy" --scope items:read --scope agents:read
+abadge token create --name "ci deploy" --scope items:read --expires-at 2026-04-07T12:00:00.000Z --json
+abadge token list
+abadge token revoke <operator-token-id>
+```
+
+Supported scopes:
+
+```text
+items:read
+items:write
+agents:read
+agents:write
+permissions:read
+permissions:write
+audit:read
+vault:read
+vault:write
+```
+
+Fully non-interactive commands can use environment variables or stdin:
+
+```bash
+ABADGE_API_URL=https://api.abadge.io ABADGE_OPERATOR_TOKEN=abo_... abadge item list
+printf '%s\n' "$ABADGE_OPERATOR_TOKEN" | ABADGE_API_URL=https://api.abadge.io abadge --token-stdin item list
 ```
 
 ### `abadge daemon start`
@@ -66,7 +125,7 @@ abadge daemon start
 
 ### `abadge daemon status`
 
-Prints daemon runtime state.
+Prints daemon runtime state, including whether an operator auth token is loaded in daemon memory.
 
 ```bash
 abadge daemon status
@@ -294,3 +353,4 @@ abadge audit --json
 | `--help, -h` | Show help |
 | `--version, -v` | Show version |
 | `--json` | Print machine-readable output on commands that support it |
+| `--token-stdin` | Read a Better Auth bearer token or `abo_` operator token from stdin |

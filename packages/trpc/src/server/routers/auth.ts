@@ -9,8 +9,11 @@ import {
   AgentChallengeResultSchema,
   AgentEnrollmentResultSchema,
   AgentSessionResultSchema,
+  BadRequestError,
   type CreateAgentChallengeInput,
   CreateAgentChallengeSchema,
+  type CreateOperatorTokenInput,
+  CreateOperatorTokenSchema,
   type EnrollAgentInput,
   EnrollAgentSchema,
   type ExchangeAgentSessionInput,
@@ -19,17 +22,25 @@ import {
   type IssueAgentBootstrapTokenInput,
   IssueAgentBootstrapTokenSchema,
   NotFoundError,
+  OPERATOR_TOKEN_DEFAULT_TTL_MS,
+  OPERATOR_TOKEN_MAX_TTL_MS,
+  OPERATOR_TOKEN_PREFIX,
+  OperatorTokenCreateResultSchema,
+  OperatorTokenListResultSchema,
   type RevokeAgentSessionInput,
   RevokeAgentSessionSchema,
+  type RevokeOperatorTokenInput,
+  RevokeOperatorTokenSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, desc, eq, isNull } from "@abadge/db";
 import {
   agentEnrollmentTokens,
   principals as agentRecords,
   agentSessionChallenges,
   agentSessions,
+  operatorTokens,
 } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { logBaseAudit, logSessionAudit } from "../audit";
@@ -41,7 +52,12 @@ import {
   strictSchema,
   tryAsync,
 } from "../effect";
-import { createTrpcRouter, publicProcedure, sessionProcedure } from "../init";
+import {
+  createTrpcRouter,
+  publicProcedure,
+  scopedSessionProcedure,
+  sessionProcedure,
+} from "../init";
 import { serializeAgent } from "../serialize";
 
 type OwnedAgentRow = Pick<
@@ -71,6 +87,8 @@ interface RevocableAgentSessionRow {
   agentId: string;
 }
 
+type OperatorTokenRow = typeof operatorTokens.$inferSelect;
+
 function notFound(): NotFoundError {
   return new NotFoundError({
     code: "AGENT_NOT_FOUND",
@@ -97,6 +115,65 @@ function challengeUnavailableError(): NotFoundError {
     code: "AGENT_NOT_FOUND",
     message: "Agent challenge unavailable",
   });
+}
+
+function serializeOperatorToken(row: OperatorTokenRow) {
+  return {
+    id: row.id,
+    userId: row.userId,
+    name: row.name,
+    tokenPrefix: row.tokenPrefix,
+    scopes: row.scopes,
+    expiresAt: row.expiresAt.toISOString(),
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function forbidOperatorTokenSelfManagement(
+  authMethod: string | undefined,
+): Effect.Effect<void, ForbiddenError> {
+  if (authMethod !== "operator_token") {
+    return Effect.void;
+  }
+
+  return Effect.fail(
+    new ForbiddenError({
+      code: "PERMISSION_DENIED",
+      message: "Operator tokens cannot manage operator tokens",
+    }),
+  );
+}
+
+function resolveOperatorTokenExpiry(expiresAt: string | undefined): Date {
+  const now = Date.now();
+  const max = now + OPERATOR_TOKEN_MAX_TTL_MS;
+  const resolved = expiresAt ? new Date(expiresAt) : new Date(now + OPERATOR_TOKEN_DEFAULT_TTL_MS);
+  const timestamp = resolved.getTime();
+
+  if (!Number.isFinite(timestamp)) {
+    throw new BadRequestError({
+      code: "BAD_REQUEST",
+      message: "expiresAt must be a valid ISO timestamp",
+    });
+  }
+
+  if (timestamp <= now) {
+    throw new BadRequestError({
+      code: "BAD_REQUEST",
+      message: "expiresAt must be in the future",
+    });
+  }
+
+  if (timestamp > max) {
+    throw new BadRequestError({
+      code: "BAD_REQUEST",
+      message: "Operator tokens can live for at most 30 days",
+    });
+  }
+
+  return resolved;
 }
 
 const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
@@ -215,6 +292,10 @@ const recordLogin = Effect.gen(function* () {
 
 const recordLogout = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
+  // Best-effort server-side session invalidation. Don't block the audit log on this.
+  yield* tryAsync(() =>
+    (ctx.auth.api.signOut({ headers: ctx.req.headers }) as Promise<unknown>).catch(() => undefined),
+  );
   yield* logSessionAudit({
     userId: ctx.identity.userId,
     eventType: "auth.logout",
@@ -224,6 +305,117 @@ const recordLogout = Effect.gen(function* () {
 
   return { ok: true };
 });
+
+const createOperatorToken = (input: CreateOperatorTokenInput) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
+
+    const expiresAt = yield* Effect.try({
+      try: () => resolveOperatorTokenExpiry(input.expiresAt),
+      catch: (e) =>
+        e instanceof BadRequestError
+          ? e
+          : new BadRequestError({ code: "BAD_REQUEST", message: String(e) }),
+    });
+    const token = generateOpaqueToken(OPERATOR_TOKEN_PREFIX);
+    const tokenHash = yield* tryAsync(() => hashApiKey(token));
+    const id = crypto.randomUUID();
+    const createdAt = new Date();
+
+    const row = {
+      id,
+      userId: ctx.identity.userId,
+      name: input.name,
+      tokenHash,
+      tokenPrefix: token.slice(0, 8),
+      scopes: [...new Set(input.scopes)],
+      expiresAt,
+      createdAt,
+      createdBy: ctx.identity.userId,
+    };
+
+    yield* tryAsync(() => ctx.db.insert(operatorTokens).values(row));
+
+    yield* logSessionAudit({
+      userId: ctx.identity.userId,
+      eventType: "operator_token.create",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: {
+        tokenId: id,
+        name: input.name,
+        scopes: row.scopes,
+        expiresAt: expiresAt.toISOString(),
+      },
+    });
+
+    return {
+      token,
+      operatorToken: serializeOperatorToken({
+        ...row,
+        lastUsedAt: null,
+        revokedAt: null,
+      }),
+    };
+  });
+
+const listOperatorTokens = Effect.gen(function* () {
+  const ctx = yield* SessionRequestContextTag;
+  yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
+
+  const result = yield* tryAsync(() =>
+    ctx.db
+      .select()
+      .from(operatorTokens)
+      .where(eq(operatorTokens.userId, ctx.identity.userId))
+      .orderBy(desc(operatorTokens.createdAt)),
+  );
+
+  return { operatorTokens: result.map(serializeOperatorToken) };
+});
+
+const revokeOperatorToken = (input: RevokeOperatorTokenInput) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
+
+    const [token] = (yield* tryAsync(() =>
+      ctx.db
+        .select({ id: operatorTokens.id })
+        .from(operatorTokens)
+        .where(
+          and(eq(operatorTokens.id, input.tokenId), eq(operatorTokens.userId, ctx.identity.userId)),
+        )
+        .limit(1),
+    )) as Array<{ id: string }>;
+
+    if (!token) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "NOT_FOUND",
+          message: "Operator token not found",
+        }),
+      );
+    }
+
+    yield* tryAsync(() =>
+      ctx.db
+        .update(operatorTokens)
+        .set({ revokedAt: new Date() })
+        .where(eq(operatorTokens.id, token.id)),
+    );
+
+    yield* logSessionAudit({
+      userId: ctx.identity.userId,
+      eventType: "operator_token.revoke",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { tokenId: token.id },
+    });
+
+    return { ok: true };
+  });
 
 const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
   Effect.gen(function* () {
@@ -665,7 +857,18 @@ export const authRouter = createTrpcRouter({
   logout: sessionProcedure
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx }) => runSessionEffect(ctx, recordLogout)),
-  issueBootstrapToken: sessionProcedure
+  createOperatorToken: sessionProcedure
+    .input(strictSchema(CreateOperatorTokenSchema))
+    .output(strictSchema(OperatorTokenCreateResultSchema))
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, createOperatorToken(input))),
+  listOperatorTokens: sessionProcedure
+    .output(strictSchema(OperatorTokenListResultSchema))
+    .query(({ ctx }) => runSessionEffect(ctx, listOperatorTokens)),
+  revokeOperatorToken: sessionProcedure
+    .input(strictSchema(RevokeOperatorTokenSchema))
+    .output(strictSchema(SuccessResultSchema))
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeOperatorToken(input))),
+  issueBootstrapToken: scopedSessionProcedure("agents:write")
     .input(strictSchema(IssueAgentBootstrapTokenSchema))
     .output(strictSchema(AgentBootstrapTokenResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, issueBootstrapToken(input))),
@@ -681,7 +884,7 @@ export const authRouter = createTrpcRouter({
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, exchangeAgentSession(input))),
-  revokeSession: sessionProcedure
+  revokeSession: scopedSessionProcedure("agents:write")
     .input(strictSchema(RevokeAgentSessionSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgentSession(input))),

@@ -12,10 +12,13 @@ import type {
   CiphertextAccessResponse,
   CreateAgentInput,
   CreateItemInput,
+  CreateOperatorTokenInput,
   CreatePermissionInput,
   ItemListResult,
   ItemResult,
   MountAccessResponse,
+  OperatorTokenCreateResult,
+  OperatorTokenListResult,
   PermissionFilters,
   PermissionListResult,
   PermissionResult,
@@ -89,6 +92,11 @@ interface SdkTrpcClient {
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
+  };
+  auth: {
+    createOperatorToken: TrpcMutation<CreateOperatorTokenInput, OperatorTokenCreateResult>;
+    listOperatorTokens: TrpcQueryWithoutInput<OperatorTokenListResult>;
+    revokeOperatorToken: TrpcMutation<{ tokenId: string }, SuccessResult>;
   };
 }
 
@@ -402,6 +410,27 @@ export class AbadgeClient {
    */
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
+  }
+
+  async createOperatorToken(data: CreateOperatorTokenInput): Promise<OperatorTokenCreateResult> {
+    return this.call(
+      () => this.client.auth.createOperatorToken.mutate(data),
+      "Failed to create operator token",
+    );
+  }
+
+  async listOperatorTokens(): Promise<OperatorTokenListResult> {
+    return this.call(
+      () => this.client.auth.listOperatorTokens.query(),
+      "Failed to list operator tokens",
+    );
+  }
+
+  async revokeOperatorToken(tokenId: string): Promise<SuccessResult> {
+    return this.call(
+      () => this.client.auth.revokeOperatorToken.mutate({ tokenId }),
+      "Failed to revoke operator token",
+    );
   }
 
   private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {

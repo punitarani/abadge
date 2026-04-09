@@ -1,6 +1,9 @@
 import { connect } from "node:net";
 import { defaultSocketPath } from "./paths";
 import type {
+  DaemonAuthHeaders,
+  DaemonAuthState,
+  DaemonAuthStatus,
   DecryptResult,
   EncryptResult,
   EnvExecResult,
@@ -63,6 +66,26 @@ export class DaemonClient {
         reject(new Error(`Cannot connect to vaultd: ${err.message}`));
       });
     });
+  }
+
+  /** Store a short-lived operator auth token in daemon memory. */
+  async setAuthSession(session: DaemonAuthState): Promise<DaemonAuthStatus> {
+    return (await this.send("auth.setSession", { ...session })) as DaemonAuthStatus;
+  }
+
+  /** Clear daemon-held operator auth. */
+  async clearAuthSession(): Promise<DaemonAuthStatus> {
+    return (await this.send("auth.clearSession")) as DaemonAuthStatus;
+  }
+
+  /** Get daemon-held operator auth status. */
+  async authStatus(): Promise<DaemonAuthStatus> {
+    return (await this.send("auth.status")) as DaemonAuthStatus;
+  }
+
+  /** Return request headers for the daemon-held operator auth token. */
+  async authHeaders(): Promise<DaemonAuthHeaders> {
+    return (await this.send("auth.getHeaders")) as DaemonAuthHeaders;
   }
 
   /** Unlock the vault with a master password. */

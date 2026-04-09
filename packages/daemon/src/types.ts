@@ -11,8 +11,26 @@ export interface DaemonConfig {
   autoLockMs: number;
   /** API base URL for fetching vault metadata. */
   apiUrl: string;
-  /** Better Auth session cookie for human-authenticated vault routes. */
-  sessionCookie: string;
+}
+
+export type DaemonAuthType = "better_auth_session" | "operator_token";
+
+export interface DaemonAuthState {
+  type: DaemonAuthType;
+  token: string;
+  expiresAt: string;
+}
+
+export interface DaemonAuthStatus {
+  authenticated: boolean;
+  type: DaemonAuthType | null;
+  expiresAt: string | null;
+}
+
+export interface DaemonAuthHeaders {
+  headers: Record<string, string>;
+  type: DaemonAuthType;
+  expiresAt: string;
 }
 
 /** Vault metadata fetched from the API. */
@@ -97,4 +115,6 @@ export const RPC_ERRORS = {
   WRONG_PASSWORD: -32002,
   /** Custom: vault not bootstrapped. */
   VAULT_NOT_FOUND: -32003,
+  /** Custom: an operator session is required. */
+  AUTH_REQUIRED: -32004,
 } as const;

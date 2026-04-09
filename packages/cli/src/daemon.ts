@@ -1,4 +1,11 @@
-import type { EnvExecResult, MountExecResult, VaultStatus } from "@abadge/daemon";
+import type {
+  DaemonAuthHeaders,
+  DaemonAuthState,
+  DaemonAuthStatus,
+  EnvExecResult,
+  MountExecResult,
+  VaultStatus,
+} from "@abadge/daemon";
 import {
   clearDaemonState,
   DaemonClient,
@@ -8,7 +15,7 @@ import {
   startDaemon,
   stopDaemon,
 } from "@abadge/daemon";
-import { requireSessionConfig } from "./config";
+import { requireConfig } from "./config";
 
 async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): Promise<T> {
   const client = new DaemonClient();
@@ -30,6 +37,22 @@ export async function daemonStatus(): Promise<VaultStatus> {
 }
 
 export const daemonVaultStatus = daemonStatus;
+
+export async function daemonSetAuthSession(session: DaemonAuthState): Promise<DaemonAuthStatus> {
+  return withDaemonClient((client) => client.setAuthSession(session));
+}
+
+export async function daemonClearAuthSession(): Promise<DaemonAuthStatus> {
+  return withDaemonClient((client) => client.clearAuthSession());
+}
+
+export async function daemonAuthStatus(): Promise<DaemonAuthStatus> {
+  return withDaemonClient((client) => client.authStatus());
+}
+
+export async function daemonAuthHeaders(): Promise<DaemonAuthHeaders> {
+  return withDaemonClient((client) => client.authHeaders());
+}
 
 export async function daemonChangePassword(
   oldPassword: string,
@@ -79,9 +102,8 @@ export function stopDaemonProcess(): boolean {
 }
 
 export function serveDaemon(): void {
-  const config = requireSessionConfig();
+  const config = requireConfig();
   startDaemon({
     apiUrl: config.apiUrl,
-    sessionCookie: config.sessionCookie,
   });
 }

@@ -1,3 +1,4 @@
+import { tokenToHeaders } from "@abadge/core";
 import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AnyTRPCRouter } from "@trpc/server";
@@ -75,7 +76,7 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
         headers() {
           return {
             ...toHeaderRecord(options.headers),
-            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+            ...(options.token ? tokenToHeaders(options.token) : {}),
           };
         },
       }),

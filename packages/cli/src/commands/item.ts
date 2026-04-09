@@ -1,8 +1,7 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
 import type { CreateItemInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { SessionApiClient } from "../client";
-import { requireSessionConfig } from "../config";
+import { createSessionApiClient } from "../client";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
@@ -87,9 +86,8 @@ export function createItemCommand(): Command {
     .option("--storage-mode <mode>", "zero_knowledge or server_managed")
     .option("--json", "Output as JSON")
     .action(async (opts: CreateItemOptions) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const values = await readCreateItemValues(opts);
         const result = await client.createItem(await buildCreateItemInput(values));
         if (opts.json) {
@@ -109,9 +107,8 @@ export function createItemCommand(): Command {
     .description("List all vault items")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const items = (await client.listItems()).items;
 
         if (opts.json) {
@@ -141,9 +138,8 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .option("--reveal", "Decrypt zero-knowledge item locally")
     .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         const item = (await client.getItem(id)).item;
 
         if (!opts.reveal || item.storageMode !== "zero_knowledge") {
@@ -168,31 +164,23 @@ export function createItemCommand(): Command {
     .argument("<id>", "Item ID")
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
-      const client = new SessionApiClient(requireSessionConfig());
-
-      let currentItem: Awaited<ReturnType<typeof client.getItem>>["item"];
       try {
-        currentItem = (await client.getItem(id)).item;
-      } catch (err) {
-        error(errorMessage(err, "Failed to fetch item."));
-        process.exit(1);
-      }
+        const client = await createSessionApiClient();
+        const currentItem = (await client.getItem(id)).item;
+        const label = await prompt("Label: ");
+        const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
+        const value = await prompt("Value (secret): ", true);
 
-      const label = await prompt("Label: ");
-      const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
-      const value = await prompt("Value (secret): ", true);
+        if (!label || !kind || !value) {
+          error("Label, kind, and value are required.");
+          process.exit(1);
+        }
 
-      if (!label || !kind || !value) {
-        error("Label, kind, and value are required.");
-        process.exit(1);
-      }
+        if (!ITEM_KINDS.includes(kind as ItemKind)) {
+          error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
+          process.exit(1);
+        }
 
-      if (!ITEM_KINDS.includes(kind as ItemKind)) {
-        error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
-        process.exit(1);
-      }
-
-      try {
         const payload = buildPayload(label, value, kind as ItemKind);
         let result: { ok: boolean; contentVersion: number };
 
@@ -238,9 +226,8 @@ export function createItemCommand(): Command {
         }
       }
 
-      const client = new SessionApiClient(requireSessionConfig());
-
       try {
+        const client = await createSessionApiClient();
         await client.deleteItem(id);
         success(`Item ${id} deleted.`);
       } catch (err) {

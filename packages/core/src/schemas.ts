@@ -5,6 +5,7 @@ import {
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
+  OPERATOR_TOKEN_SCOPES,
   PRINCIPAL_AUTH_METHODS,
   STORAGE_MODES,
 } from "./constants";
@@ -22,6 +23,7 @@ export const PrincipalAuthMethodSchema = Schema.Literal(...PRINCIPAL_AUTH_METHOD
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
+export const OperatorTokenScopeSchema = Schema.Literal(...OPERATOR_TOKEN_SCOPES);
 
 export const KdfParamsSchema = Schema.Struct({
   algorithm: Schema.Literal("argon2id"),
@@ -141,6 +143,18 @@ export const ExchangeAgentSessionSchema = Schema.Struct({
 
 export const RevokeAgentSessionSchema = Schema.Struct({
   token: NonEmptyString,
+});
+
+export const CreateOperatorTokenSchema = Schema.Struct({
+  name: BoundedNameString,
+  scopes: Schema.Array(OperatorTokenScopeSchema).pipe(
+    Schema.filter((scopes) => scopes.length > 0 || "At least one scope is required."),
+  ),
+  expiresAt: Schema.optional(IsoDateString),
+});
+
+export const RevokeOperatorTokenSchema = Schema.Struct({
+  tokenId: NonEmptyString,
 });
 
 export const CreatePermissionSchema = Schema.Struct({
@@ -301,6 +315,27 @@ export const AgentSessionSchema = Schema.Struct({
 export const AgentSessionResultSchema = Schema.Struct({
   agentId: NonEmptyString,
   session: AgentSessionSchema,
+});
+
+export const OperatorTokenSchema = Schema.Struct({
+  id: NonEmptyString,
+  userId: NonEmptyString,
+  name: NonEmptyString,
+  tokenPrefix: NonEmptyString,
+  scopes: Schema.Array(OperatorTokenScopeSchema),
+  expiresAt: IsoDateString,
+  lastUsedAt: Schema.NullOr(IsoDateString),
+  revokedAt: Schema.NullOr(IsoDateString),
+  createdAt: IsoDateString,
+});
+
+export const OperatorTokenCreateResultSchema = Schema.Struct({
+  token: NonEmptyString,
+  operatorToken: OperatorTokenSchema,
+});
+
+export const OperatorTokenListResultSchema = Schema.Struct({
+  operatorTokens: Schema.Array(OperatorTokenSchema),
 });
 
 export const CliLocalAgentReferenceSchema = Schema.Struct({

@@ -1,3 +1,4 @@
+import { tokenToHeaders } from "@abadge/core";
 import type { QueryClientConfig } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientErrorLike } from "@trpc/client";
@@ -94,7 +95,7 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
         headers() {
           return {
             ...toHeaderRecord(options.headers),
-            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+            ...(options.token ? tokenToHeaders(options.token) : {}),
           };
         },
       }),

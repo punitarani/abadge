@@ -24,7 +24,7 @@ app.use("*", async (c, next) =>
   cors({
     origin: getTrustedOrigins(c.env),
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Abadge-Operator-Token"],
     credentials: true,
   })(c, next),
 );

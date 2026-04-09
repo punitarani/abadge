@@ -22,7 +22,7 @@ import {
   SessionRequestContextTag,
   strictSchema,
 } from "../effect";
-import { agentProcedure, createTrpcRouter, sessionProcedure } from "../init";
+import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -79,6 +79,8 @@ const createAgent = (input: CreateAgentInput) =>
         createdAt: new Date(),
       }),
       apiKey: key,
+      bootstrapToken: null,
+      bootstrapExpiresAt: null,
     };
   });
 
@@ -227,25 +229,25 @@ const revokeAgent = (agentId: string) =>
   });
 
 export const agentsRouter = createTrpcRouter({
-  create: sessionProcedure
+  create: scopedSessionProcedure("agents:write")
     .input(strictSchema(CreateAgentSchema))
     .output(strictSchema(AgentWithKeySchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgent(input))),
-  list: sessionProcedure
+  list: scopedSessionProcedure("agents:read")
     .output(strictSchema(AgentListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listAgents)),
   self: agentProcedure
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx }) => runAgentEffect(ctx, getCurrentAgent)),
-  get: sessionProcedure
+  get: scopedSessionProcedure("agents:read")
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getAgent(input.agentId))),
-  rotate: sessionProcedure
+  rotate: scopedSessionProcedure("agents:write")
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(AgentRotateResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateAgent(input.agentId))),
-  revoke: sessionProcedure
+  revoke: scopedSessionProcedure("agents:write")
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgent(input.agentId))),

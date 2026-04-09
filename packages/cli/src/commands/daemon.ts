@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { Command } from "commander";
-import { requireSessionConfig } from "../config";
+import { requireConfig } from "../config";
 import {
   clearDaemonProcessState,
+  daemonAuthStatus,
   daemonProcessRunning,
   daemonStatus,
   serveDaemon,
@@ -65,13 +66,12 @@ function resolveCurrentCliCommand(): { command: string; args: string[] } {
   };
 }
 
-async function daemonStart(): Promise<void> {
-  requireSessionConfig();
+export async function ensureDaemonStarted(): Promise<void> {
+  requireConfig();
 
   if (daemonProcessRunning()) {
     try {
       await daemonStatus();
-      success("Daemon is already running.");
       return;
     } catch {
       clearDaemonProcessState();
@@ -87,14 +87,12 @@ async function daemonStart(): Promise<void> {
 
   const readyState = await waitForDaemonReady(child.pid);
   if (readyState === "ready") {
-    success(`Daemon started (pid ${child.pid ?? "unknown"}).`);
     return;
   }
 
   if (readyState === "exited") {
     clearDaemonProcessState();
-    error("Daemon exited before it became ready. Check `abadge daemon status`.");
-    process.exit(1);
+    throw new Error("Daemon exited before it became ready. Check `abadge daemon status`.");
   }
 
   if (child.pid) {
@@ -106,8 +104,19 @@ async function daemonStart(): Promise<void> {
   }
 
   clearDaemonProcessState();
-  error("Daemon failed to become ready in time.");
-  process.exit(1);
+  throw new Error("Daemon failed to become ready in time.");
+}
+
+async function daemonStart(): Promise<void> {
+  const wasRunning = daemonProcessRunning();
+
+  try {
+    await ensureDaemonStarted();
+    success(wasRunning ? "Daemon is already running." : "Daemon started.");
+  } catch (err) {
+    error(errorMessage(err, "Failed to start daemon."));
+    process.exit(1);
+  }
 }
 
 async function daemonStop(): Promise<void> {
@@ -127,9 +136,15 @@ async function daemonStatusCmd(): Promise<void> {
 
   try {
     const status = await daemonStatus();
+    const auth = await daemonAuthStatus().catch(() => null);
     console.log("Daemon: running");
     console.log(`  locked: ${String(status.locked)}`);
     console.log(`  keyVersion: ${String(status.keyVersion)}`);
+    console.log(`  authenticated: ${String(auth?.authenticated ?? false)}`);
+    if (auth?.authenticated) {
+      console.log(`  authType: ${auth.type}`);
+      console.log(`  authExpiresAt: ${auth.expiresAt}`);
+    }
   } catch (err) {
     error(errorMessage(err, "Daemon is running but not responding correctly."));
     process.exit(1);

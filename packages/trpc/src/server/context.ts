@@ -1,4 +1,5 @@
 import { createAuth } from "@abadge/auth";
+import type { OperatorTokenScope } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { createDb } from "@abadge/db";
 import { validateWorkerEnv, type WorkerEnv } from "@abadge/env/worker";
@@ -25,6 +26,9 @@ export interface BaseRequestContext {
 export interface SessionIdentity {
   kind: "session";
   userId: string;
+  authMethod: "browser_session" | "bearer_session" | "operator_token";
+  operatorTokenId?: string;
+  scopes?: OperatorTokenScope[];
 }
 
 export interface AgentIdentity {

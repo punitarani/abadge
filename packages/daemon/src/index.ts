@@ -1,6 +1,10 @@
 export { DaemonClient } from "./client";
 export { clearDaemonState, isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
 export type {
+  DaemonAuthHeaders,
+  DaemonAuthState,
+  DaemonAuthStatus,
+  DaemonAuthType,
   DaemonConfig,
   DecryptResult,
   EncryptResult,

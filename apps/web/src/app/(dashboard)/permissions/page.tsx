@@ -3,9 +3,19 @@
 import type { Agent, Capability, ItemSummary, Permission } from "@abadge/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
@@ -39,6 +49,7 @@ function formatItemLabel(id: string, storageMode?: string): string {
 
 export default function PermissionsPage(): React.ReactElement {
   const queryClient = useQueryClient();
+  const [permissionToRevoke, setPermissionToRevoke] = useState<string | null>(null);
   const [{ agent: filterAgent, item: filterItem, create: createPanelOpen }, setPermissionFilters] =
     useQueryStates(permissionFilterParsers);
 
@@ -105,16 +116,15 @@ export default function PermissionsPage(): React.ReactElement {
     [items],
   );
 
-  async function handleRevoke(permissionId: string): Promise<void> {
-    if (!confirm("Revoke this permission?")) {
-      return;
-    }
-
+  async function handleConfirmRevoke(): Promise<void> {
+    if (!permissionToRevoke) return;
     try {
-      await revokePermission.mutateAsync({ permissionId });
+      await revokePermission.mutateAsync({ permissionId: permissionToRevoke });
       toast.success("Permission revoked.");
     } catch (error) {
       toast.error(getClientErrorMessage(error, "Failed to revoke permission"));
+    } finally {
+      setPermissionToRevoke(null);
     }
   }
 
@@ -227,7 +237,7 @@ export default function PermissionsPage(): React.ReactElement {
                       variant="destructive"
                       size="sm"
                       disabled={revokePermission.isPending}
-                      onClick={() => handleRevoke(permission.id)}
+                      onClick={() => setPermissionToRevoke(permission.id)}
                     >
                       Revoke
                     </Button>
@@ -245,6 +255,28 @@ export default function PermissionsPage(): React.ReactElement {
           void setPermissionFilters({ create: null });
         }}
       />
+
+      <AlertDialog
+        open={permissionToRevoke !== null}
+        onOpenChange={(open) => {
+          if (!open) setPermissionToRevoke(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this permission?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The agent will immediately lose access to the item.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void handleConfirmRevoke()}>
+              Revoke
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
