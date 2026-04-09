@@ -94,15 +94,12 @@ function getBearerToken(ctx: BaseRequestContext): Effect.Effect<string, Unauthor
   return Effect.fail(unauthorized("Missing Bearer token"));
 }
 
-function touchAgent(ctx: BaseRequestContext, agentId: string): Effect.Effect<void, Error> {
-  return tryAsync(() =>
-    ctx.db
-      .update(agentRecords)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(agentRecords.id, agentId))
-      .execute()
-      .then(() => undefined),
-  );
+function touchAgent(ctx: BaseRequestContext, agentId: string): void {
+  void ctx.db
+    .update(agentRecords)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(agentRecords.id, agentId))
+    .execute();
 }
 
 function toAgentIdentity(
@@ -116,15 +113,12 @@ function toAgentIdentity(
   };
 }
 
-function touchAgentSession(ctx: BaseRequestContext, sessionId: string): Effect.Effect<void, Error> {
-  return tryAsync(() =>
-    ctx.db
-      .update(agentSessions)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(agentSessions.id, sessionId))
-      .execute()
-      .then(() => undefined),
-  );
+function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
+  void ctx.db
+    .update(agentSessions)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(agentSessions.id, sessionId))
+    .execute();
 }
 
 function touchOperatorToken(ctx: BaseRequestContext, tokenId: string): void {
@@ -200,7 +194,7 @@ const verifyLocalAgentIdentity = (
         continue;
       }
 
-      yield* touchAgent(ctx, agent.id);
+      touchAgent(ctx, agent.id);
       return toAgentIdentity(agent);
     }
 
@@ -247,7 +241,7 @@ const verifyLegacyAgentIdentity = (
     }
 
     if (migratedAgent) {
-      yield* touchAgent(ctx, legacyAgentId);
+      touchAgent(ctx, legacyAgentId);
       return toAgentIdentity(migratedAgent);
     }
 
@@ -345,8 +339,8 @@ const verifyAgentSessionIdentity = (
       return yield* Effect.fail(unauthorized("Invalid agent session"));
     }
 
-    yield* touchAgent(ctx, agent.id);
-    yield* touchAgentSession(ctx, sessionRecord.id);
+    touchAgent(ctx, agent.id);
+    touchAgentSession(ctx, sessionRecord.id);
     return toAgentIdentity(agent);
   });
 

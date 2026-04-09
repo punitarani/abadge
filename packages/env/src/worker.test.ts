@@ -4,7 +4,7 @@ import { validateWorkerEnv } from "./worker";
 const validWorkerEnv = {
   ABADGE_API_URL: "https://api.abadge.io",
   ABADGE_APP_URL: "https://abadge.io",
-  ENCRYPTION_KEY: "test-encryption-key",
+  ENCRYPTION_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
   BETTER_AUTH_SECRET: "test-better-auth-secret",
   GOOGLE_CLIENT_ID: "google-client-id",
   GOOGLE_CLIENT_SECRET: "google-client-secret",
