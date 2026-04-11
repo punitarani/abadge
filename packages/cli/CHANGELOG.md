@@ -1,5 +1,11 @@
 # @abadge/cli
 
+## 0.0.3
+
+### Patch Changes
+
+- fcc48e9: Improve CLI login flow with device-based OAuth, operator token support, and daemon readiness handling.
+
 ## 0.0.2
 
 ### Patch Changes
