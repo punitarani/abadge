@@ -9,7 +9,7 @@ import { type TRPC_ERROR_CODE_KEY, TRPCError } from "@trpc/server";
 import { Cause, type Cause as EffectCause, Option, type Schema } from "effect";
 
 export interface TrpcErrorData {
-  appCode?: string;
+  code?: string;
   hint?: string;
   meta?: Readonly<Record<string, unknown>>;
   issues?: ReadonlyArray<Schema.Schema.Type<typeof ValidationIssueSchema>>;
@@ -92,7 +92,7 @@ export function getTrpcErrorData(error: TRPCError): TrpcErrorData {
 
   const formatted = formatDomainError(cause);
   return {
-    appCode: formatted.code,
+    code: formatted.code,
     ...(formatted.hint ? { hint: formatted.hint } : {}),
     ...(formatted.meta ? { meta: formatted.meta } : {}),
     ...(formatted.issues ? { issues: formatted.issues } : {}),

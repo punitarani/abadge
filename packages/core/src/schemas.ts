@@ -158,14 +158,22 @@ export const CiphertextAccessSchema = Schema.Struct({
 
 export const RevealAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(Schema.String),
 });
 
 export const MountAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
   mountType: Schema.Literal("env", "file"),
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(Schema.String),
 });
 
 export const AuditQuerySchema = Schema.Struct({
+  orgId: Schema.optional(Schema.String),
+  profileId: Schema.optional(Schema.String),
+  surface: Schema.optional(Schema.String),
+  field: Schema.optional(Schema.String),
   eventType: Schema.optional(AuditEventTypeSchema),
   result: Schema.optional(AuditResultSchema),
   agentId: Schema.optional(Schema.String),

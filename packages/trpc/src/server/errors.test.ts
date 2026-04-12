@@ -20,7 +20,7 @@ describe("toTrpcError", () => {
     expect(error.code).toBe("NOT_FOUND");
     expect(error.message).toBe("Item not found");
     expect(getTrpcErrorData(error)).toEqual({
-      appCode: "ITEM_NOT_FOUND",
+      code: "ITEM_NOT_FOUND",
       hint: "Verify the item id and try again.",
     });
   });
@@ -41,7 +41,7 @@ describe("toTrpcError", () => {
 
     expect(error.code).toBe("BAD_REQUEST");
     expect(getTrpcErrorData(error)).toEqual({
-      appCode: "VALIDATION_ERROR",
+      code: "VALIDATION_ERROR",
       hint: "Fix the highlighted input fields and try again.",
       issues: [{ path: ["name"], message: "Required" }],
     });
@@ -74,7 +74,7 @@ describe("toTrpcError", () => {
     );
 
     expect(getTrpcErrorData(error)).toEqual({
-      appCode: "INVALID_CAPABILITY_LOCALITY",
+      code: "INVALID_CAPABILITY_LOCALITY",
       hint: "Use reveal_plaintext or register a local agent.",
       meta: {
         capability: "mount_env",

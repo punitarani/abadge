@@ -1,5 +1,5 @@
 import { STORAGE_MODES } from "@abadge/core";
-import { index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
 export const profiles = pgTable(
@@ -22,6 +22,6 @@ export const profiles = pgTable(
   },
   (table) => [
     index("profiles_organization_id_idx").on(table.organizationId),
-    index("profiles_name_idx").on(table.organizationId, table.name),
+    uniqueIndex("profiles_name_idx").on(table.organizationId, table.name),
   ],
 );

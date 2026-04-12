@@ -210,7 +210,7 @@ const updateOrg = (input: Schema.Schema.Type<typeof UpdateOrganizationSchema>) =
     const ctx = yield* SessionRequestContextTag;
     const { orgId, ...updates } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner"));
 
     const setValues: Record<string, unknown> = {};
     if (updates.name !== undefined) setValues.name = updates.name;
