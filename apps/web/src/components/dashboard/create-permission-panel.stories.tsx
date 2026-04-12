@@ -1,4 +1,4 @@
-import type { Capability } from "@abadge/core";
+import { CAPABILITIES, type Capability } from "@abadge/core";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,19 +16,20 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const agentOptions = [
-  { value: "agent-1", label: "Claude Code" },
-  { value: "agent-2", label: "CI Pipeline" },
+  { value: "agent-1", label: "Claude Code (CLI)" },
+  { value: "agent-2", label: "CI Pipeline (Remote)" },
 ];
 
 const itemOptions = [
-  { value: "item-1", label: "ZK · fa3c8cf8-d5ae…" },
-  { value: "item-2", label: "Srv · c07e1999-a7eb…" },
+  { value: "item-1", label: "DB Password (ZK)" },
+  { value: "item-2", label: "API Token (server)" },
 ];
 
 function PermissionStory(): React.ReactElement {
   const [selectedAgent, setSelectedAgent] = useState(agentOptions[0]?.value ?? "");
   const [selectedItem, setSelectedItem] = useState(itemOptions[0]?.value ?? "");
-  const [selectedCapability, setSelectedCapability] = useState<Capability>("mount_env");
+  const [selectedCapability, setSelectedCapability] = useState<Capability | "">("");
+  const [expiresAt, setExpiresAt] = useState("");
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 rounded-lg border border-border bg-background p-5">
@@ -40,16 +41,24 @@ function PermissionStory(): React.ReactElement {
         optionsLoading={false}
         agentOptions={agentOptions}
         itemOptions={itemOptions}
+        allowedCapabilities={CAPABILITIES as readonly Capability[]}
+        incompatibleMessage=""
+        agentName="Claude Code"
+        itemLabel="DB Password"
+        expiresAt={expiresAt}
         onAgentChange={setSelectedAgent}
         onItemChange={setSelectedItem}
         onCapabilityChange={setSelectedCapability}
+        onExpiresAtChange={setExpiresAt}
         onSubmit={(event) => event.preventDefault()}
       />
       <div className="flex justify-end gap-2 border-t border-border pt-4">
         <Button variant="outline" size="sm">
           Cancel
         </Button>
-        <Button size="sm">Create permission</Button>
+        <Button size="sm" disabled={!selectedCapability}>
+          Grant permission
+        </Button>
       </div>
     </div>
   );
