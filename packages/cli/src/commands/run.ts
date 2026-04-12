@@ -1,8 +1,34 @@
+import type { AbadgeAgentClient } from "@abadge/sdk";
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
 import { daemonExpandEnv } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
+
+async function runWithExpandEnv(
+  client: AbadgeAgentClient,
+  itemId: string,
+  executable: string,
+  args: string[],
+): Promise<never> {
+  try {
+    const mounted = await client.accessMount(itemId, "env");
+    const res = await daemonExpandEnv(
+      mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
+      mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
+      mounted.storageMode === "server_managed" ? mounted.payload : null,
+      executable,
+      args,
+    );
+    process.exit(res.exitCode);
+  } catch {
+    throw new Error(
+      "--expand-env requires the local daemon.\n" +
+        "hint: Start it with: abadge daemon start\n" +
+        "hint: Daemonless --expand-env support is coming in v0.1.",
+    );
+  }
+}
 
 export function createRunCommand(): Command {
   const cmd = new Command("run")
@@ -32,24 +58,7 @@ export function createRunCommand(): Command {
           const client = await createAgentApiClient();
 
           if (opts.expandEnv) {
-            // --expand-env requires daemon (daemonless support deferred to v0.1)
-            try {
-              const mounted = await client.accessMount(opts.item, "env");
-              const res = await daemonExpandEnv(
-                mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
-                mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
-                mounted.storageMode === "server_managed" ? mounted.payload : null,
-                executable,
-                command.slice(1),
-              );
-              process.exit(res.exitCode);
-            } catch {
-              throw new Error(
-                "--expand-env requires the local daemon.\n" +
-                  "hint: Start it with: abadge daemon start\n" +
-                  "hint: Daemonless --expand-env support is coming in v0.1.",
-              );
-            }
+            await runWithExpandEnv(client, opts.item, executable, command.slice(1));
           } else {
             const secretValue = await resolveSecretValue(client, opts.item, "env", opts.field);
             const proc = Bun.spawn([executable, ...command.slice(1)], {

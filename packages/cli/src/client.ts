@@ -176,6 +176,21 @@ export async function createUserApiClient(
   return new AbadgeUserClient({ apiUrl: config.apiUrl, sessionToken });
 }
 
+async function connectKeypairClient(
+  apiUrl: string,
+  agentId: string,
+  privateKey: string | object,
+): Promise<AbadgeAgentClient> {
+  const client = new AbadgeAgentClient({ apiUrl, agentId, privateKey });
+  await client.connect();
+  return client;
+}
+
+async function readPrivateKeyFromFile(path: string): Promise<object> {
+  const { readFileSync } = await import("node:fs");
+  return JSON.parse(readFileSync(path, "utf-8")) as object;
+}
+
 /**
  * Create an agent API client using env vars, config file, or legacy credentials.
  *
@@ -193,49 +208,27 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
   // 1. Inline JWK from env
   if (env.ABADGE_PRIVATE_KEY && env.ABADGE_AGENT_ID) {
     if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
-    const client = new AbadgeAgentClient({
-      apiUrl,
-      agentId: env.ABADGE_AGENT_ID,
-      privateKey: env.ABADGE_PRIVATE_KEY,
-    });
-    await client.connect();
-    return client;
+    return connectKeypairClient(apiUrl, env.ABADGE_AGENT_ID, env.ABADGE_PRIVATE_KEY);
   }
 
   // 2. JWK file path from env
   if (env.ABADGE_PRIVATE_KEY_PATH && env.ABADGE_AGENT_ID) {
     if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
-    const { readFileSync } = await import("node:fs");
-    const jwk = JSON.parse(readFileSync(env.ABADGE_PRIVATE_KEY_PATH, "utf-8"));
-    const client = new AbadgeAgentClient({
-      apiUrl,
-      agentId: env.ABADGE_AGENT_ID,
-      privateKey: jwk,
-    });
-    await client.connect();
-    return client;
+    const jwk = await readPrivateKeyFromFile(env.ABADGE_PRIVATE_KEY_PATH);
+    return connectKeypairClient(apiUrl, env.ABADGE_AGENT_ID, jwk);
   }
 
-  // 3. Config file
-  if (config) {
-    const agentConfig = config.localAgents?.cli;
-    if (agentConfig) {
-      const { readFileSync } = await import("node:fs");
-      const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
-      const client = new AbadgeAgentClient({
-        apiUrl: apiUrl ?? config.apiUrl,
-        agentId: agentConfig.agentId,
-        privateKey: privateKeyJwk,
-      });
-      await client.connect();
-      return client;
-    }
+  // 3. Config file — keypair agent
+  const agentConfig = config?.localAgents?.cli;
+  if (agentConfig) {
+    const jwk = await readPrivateKeyFromFile(agentConfig.privateKeyPath);
+    return connectKeypairClient(apiUrl ?? config.apiUrl, agentConfig.agentId, jwk);
+  }
 
-    // Legacy principalSecret/authToken from config
-    const secret = config.principalSecret ?? config.authToken;
-    if (secret) {
-      return new AbadgeAgentClient({ apiUrl: apiUrl ?? config.apiUrl, apiKey: secret });
-    }
+  // 3b. Config file — legacy secret
+  const configSecret = config?.principalSecret ?? config?.authToken;
+  if (configSecret && config) {
+    return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: configSecret });
   }
 
   // 4. Legacy API key from env
