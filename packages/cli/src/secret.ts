@@ -7,8 +7,16 @@ async function decryptMountedPayload(
   ciphertext: string,
   field?: string,
 ): Promise<string> {
-  const result = await daemonDecrypt(encryptedItemKey, ciphertext);
-  return payloadToSecret(result.payload, field);
+  try {
+    const result = await daemonDecrypt(encryptedItemKey, ciphertext);
+    return payloadToSecret(result.payload, field);
+  } catch {
+    throw new Error(
+      "Zero-knowledge items require the local daemon for decryption.\n" +
+        "hint: Start it with: abadge daemon start && abadge profile unlock\n" +
+        "hint: Or use a server-managed profile for remote agent access.",
+    );
+  }
 }
 
 async function resolveMountedSecret(

@@ -63,6 +63,21 @@ describe("resolveSecretValue", () => {
     );
   });
 
+  test("returns a clear error with hint when daemon is unavailable for ZK items", async () => {
+    const client = {
+      accessMount: async () => ({
+        storageMode: "zero_knowledge" as const,
+        encryptedItemKey: "encrypted-key",
+        ciphertext: "encrypted-data",
+      }),
+    } as Pick<AbadgeAgentClient, "accessMount"> as AbadgeAgentClient;
+
+    const result = resolveSecretValue(client, "item_zk", "env");
+
+    await expect(result).rejects.toThrow(/daemon/i);
+    await expect(resolveSecretValue(client, "item_zk", "env")).rejects.toThrow(/hint/i);
+  });
+
   test("rejects ambiguous multi-field payloads when no field is provided", async () => {
     const client = {
       getItem: async () => ({
