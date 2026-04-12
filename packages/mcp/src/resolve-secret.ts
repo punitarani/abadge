@@ -1,5 +1,5 @@
 import { resolveFieldValue } from "@abadge/core";
-import type { AbadgeClient } from "@abadge/sdk";
+import type { AbadgeAgentClient } from "@abadge/sdk";
 import { daemonDecrypt } from "./daemon-client.js";
 
 function payloadToSecret(payload: unknown, field?: string): string {
@@ -18,7 +18,7 @@ function payloadToSecret(payload: unknown, field?: string): string {
 }
 
 export async function resolveSecret(
-  client: AbadgeClient,
+  client: AbadgeAgentClient,
   itemId: string,
   mountType: "env" | "file",
   field?: string,

@@ -1,11 +1,11 @@
 // SDK basics: item CRUD, agent registration, and permission creation.
 // Requires a running abadge API and a valid session token.
 
-import { AbadgeClient } from "@abadge/sdk";
+import { AbadgeUserClient } from "@abadge/sdk";
 
-const client = new AbadgeClient({
+const client = new AbadgeUserClient({
   apiUrl: "http://localhost:8787",
-  token: "your-session-token",
+  sessionToken: "your-session-token",
 });
 
 const createdItem = await client.createItem({
@@ -27,7 +27,7 @@ console.log("Items:", items.map((item) => item.id));
 
 const { agent, apiKey } = await client.createAgent({
   name: "deploy-bot",
-  kind: "remote_agent",
+  kind: "remote",
 });
 console.log("Agent API key (save this now):", apiKey);
 

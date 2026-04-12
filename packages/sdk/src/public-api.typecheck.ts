@@ -1,8 +1,9 @@
 import type { AbadgeApiError } from "./errors";
 import type {
+  AbadgeAgentApiKeyConfig,
   AbadgeAgentClient,
   AbadgeAgentClientConfig,
-  AbadgeClient,
+  AbadgeAgentKeypairConfig,
   AbadgeClientConfig,
   AbadgeUserClient,
   AbadgeUserClientConfig,
@@ -48,20 +49,28 @@ type _LegacyOperatorToken = import("./index").OperatorToken;
 type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInput;
 // @ts-expect-error legacy operator-token revoke input removed
 type _LegacyRevokeOperatorTokenInput = import("./index").RevokeOperatorTokenInput;
+// @ts-expect-error AbadgeClient removed — use AbadgeUserClient or AbadgeAgentClient
+type _LegacyAbadgeClient = import("./index").AbadgeClient;
 
 // -- Client split assertions -----------------------------------------------
 
 type _UserClientConfig = Assert<
   AbadgeUserClientConfig extends { apiUrl: string; sessionToken: string } ? true : false
 >;
-type _AgentClientConfigShape = Assert<
-  AbadgeAgentClientConfig extends { apiUrl: string; apiKey: string } ? true : false
+type _AgentApiKeyConfigShape = Assert<
+  AbadgeAgentApiKeyConfig extends { apiUrl: string; apiKey: string } ? true : false
+>;
+type _AgentKeypairConfigShape = Assert<
+  AbadgeAgentKeypairConfig extends { apiUrl: string; agentId: string } ? true : false
 >;
 type _LegacyClientConfig = Assert<
   AbadgeClientConfig extends { apiUrl: string; token: string } ? true : false
 >;
 
-type _AbadgeClientExtendsUser = Assert<AbadgeClient extends AbadgeUserClient ? true : false>;
+// AbadgeAgentClientConfig is the union of keypair and apikey configs
+type _AgentClientConfigIsUnion = Assert<
+  AbadgeAgentClientConfig extends AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig ? true : false
+>;
 
 type _UserHasCreateItem = Assert<
   AbadgeUserClient["createItem"] extends (...args: never[]) => Promise<{ id: string }>
@@ -74,13 +83,11 @@ type _AgentHasAccessReveal = Assert<
 type _AgentHasGetCurrentAgent = Assert<
   AbadgeAgentClient["getCurrentAgent"] extends () => Promise<unknown> ? true : false
 >;
-
-// AbadgeClient (backward compat) retains both user and agent methods
-type _BackcompatHasCreateItem = Assert<
-  AbadgeClient["createItem"] extends (...args: never[]) => Promise<{ id: string }> ? true : false
+type _AgentHasConnect = Assert<
+  AbadgeAgentClient["connect"] extends () => Promise<void> ? true : false
 >;
-type _BackcompatHasAccessReveal = Assert<
-  AbadgeClient["accessReveal"] extends (...args: never[]) => Promise<unknown> ? true : false
+type _AgentHasDisconnect = Assert<
+  AbadgeAgentClient["disconnect"] extends () => void ? true : false
 >;
 
 // -- ErrorCode typing assertions -------------------------------------------

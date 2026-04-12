@@ -2,9 +2,11 @@ import type { ErrorCode } from "@abadge/core";
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
+  AgentChallengeResult,
   AgentListResult,
   AgentResult,
   AgentRotateResult,
+  AgentSessionResult,
   AgentWithKey,
   AuditFilters,
   AuditListResult,
@@ -40,13 +42,38 @@ export interface AbadgeUserClientConfig {
   sessionToken: string;
 }
 
-/** Configuration for agent SDK clients (API key or session token auth). */
-export interface AbadgeAgentClientConfig {
+/**
+ * Minimal JSON Web Key representation for an Ed25519 private key.
+ * Matches the `JsonWebKey` shape from the Web Crypto API without requiring DOM lib.
+ */
+export interface Ed25519PrivateKeyJwk {
+  kty: string;
+  crv?: string;
+  x?: string;
+  d?: string;
+  [key: string]: unknown;
+}
+
+/** Keypair-based session auth for agents (preferred). */
+export interface AbadgeAgentKeypairConfig {
+  /** API endpoint URL (no trailing slash). */
+  apiUrl: string;
+  /** Agent ID registered in Abadge. */
+  agentId: string;
+  /** Ed25519 private key (CryptoKey or JWK). */
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk;
+}
+
+/** Legacy API key auth for agents. */
+export interface AbadgeAgentApiKeyConfig {
   /** API endpoint URL (no trailing slash). */
   apiUrl: string;
   /** Agent API key (prefixed `abl_`, `abg_`) or session token (prefixed `abs_`). */
   apiKey: string;
 }
+
+/** Configuration for agent SDK clients. Supports keypair or API key auth. */
+export type AbadgeAgentClientConfig = AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig;
 
 /**
  * Backward-compatible config that accepts either persona.
@@ -82,6 +109,13 @@ interface TrpcQueryWithoutInput<TOutput> {
 }
 
 interface SdkTrpcClient {
+  auth: {
+    createChallenge: TrpcMutation<{ agentId: string }, AgentChallengeResult>;
+    exchangeSession: TrpcMutation<
+      { agentId: string; challengeId: string; signature: string },
+      AgentSessionResult
+    >;
+  };
   vault: {
     bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
     get: TrpcQueryWithoutInput<VaultResult>;
@@ -114,11 +148,48 @@ interface SdkTrpcClient {
   };
   access: {
     ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
-    reveal: TrpcMutation<{ itemId: string }, RevealAccessResponse>;
-    mount: TrpcMutation<{ itemId: string; mountType: "env" | "file" }, MountAccessResponse>;
+    reveal: TrpcMutation<{ itemId: string; field?: string }, RevealAccessResponse>;
+    mount: TrpcMutation<
+      { itemId: string; mountType: "env" | "file"; field?: string },
+      MountAccessResponse
+    >;
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
+  };
+  profiles: {
+    create: TrpcMutation<
+      { orgId: string; name: string; description?: string; storageMode?: string },
+      { id: string }
+    >;
+    list: TrpcQuery<{ orgId: string }, unknown>;
+    get: TrpcQuery<{ profileId: string }, unknown>;
+    bootstrap: TrpcMutation<{ profileId: string } & BootstrapVaultInput, { id: string }>;
+    changePassword: TrpcMutation<{ profileId: string } & ChangePasswordInput, SuccessResult>;
+    setupRecovery: TrpcMutation<{ profileId: string } & SetupRecoveryInput, SuccessResult>;
+    rotateKey: TrpcMutation<
+      { profileId: string } & RotateKeyInput,
+      { ok: boolean; keyVersion: number }
+    >;
+    delete: TrpcMutation<{ profileId: string }, SuccessResult>;
+  };
+  organizations: {
+    create: TrpcMutation<
+      { name: string; slug?: string },
+      { id: string; name: string; slug: string }
+    >;
+    list: TrpcQueryWithoutInput<{
+      organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+    }>;
+    get: TrpcQuery<{ orgId: string }, unknown>;
+    update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
+    delete: TrpcMutation<{ orgId: string }, SuccessResult>;
+    members: {
+      list: TrpcQuery<{ orgId: string }, unknown>;
+      invite: TrpcMutation<{ orgId: string; email: string; role: string }, SuccessResult>;
+      remove: TrpcMutation<{ orgId: string; userId: string }, SuccessResult>;
+      updateRole: TrpcMutation<{ orgId: string; userId: string; role: string }, SuccessResult>;
+    };
   };
 }
 
@@ -136,6 +207,26 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
 
 function buildTrpcClient(apiUrl: string, token: string): SdkTrpcClient {
   return createNodeTrpcClient({ baseUrl: apiUrl, token }) as unknown as SdkTrpcClient;
+}
+
+/** Build a tRPC client without auth (for keypair-based pre-auth challenge requests). */
+function buildUnauthTrpcClient(apiUrl: string): SdkTrpcClient {
+  return createNodeTrpcClient({ baseUrl: apiUrl }) as unknown as SdkTrpcClient;
+}
+
+function toBase64url(bytes: ArrayBuffer): string {
+  return Buffer.from(bytes)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+async function resolvePrivateKey(privateKey: CryptoKey | Ed25519PrivateKeyJwk): Promise<CryptoKey> {
+  if (privateKey instanceof CryptoKey) {
+    return privateKey;
+  }
+  return crypto.subtle.importKey("jwk", privateKey as never, { name: "Ed25519" }, false, ["sign"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,20 +488,243 @@ export class AbadgeUserClient {
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
   }
+
+  // -- Organizations --------------------------------------------------------
+
+  /**
+   * Create a new organization.
+   *
+   * @param data - Organization name and optional slug
+   * @returns The created organization
+   */
+  async createOrganization(data: {
+    name: string;
+    slug?: string;
+  }): Promise<{ id: string; name: string; slug: string }> {
+    return call(
+      () => this.client.organizations.create.mutate(data),
+      "Failed to create organization",
+    );
+  }
+
+  /**
+   * List organizations the current user belongs to.
+   */
+  async listOrganizations(): Promise<{
+    organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+  }> {
+    return call(() => this.client.organizations.list.query(), "Failed to list organizations");
+  }
+
+  /**
+   * Get a specific organization by ID.
+   *
+   * @param orgId - Organization ID
+   */
+  async getOrganization(orgId: string): Promise<unknown> {
+    return call(
+      () => this.client.organizations.get.query({ orgId }),
+      "Failed to fetch organization",
+    );
+  }
+
+  /**
+   * Update organization metadata.
+   *
+   * @param orgId - Organization ID
+   * @param data - Fields to update
+   */
+  async updateOrganization(orgId: string, data: { name?: string }): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.update.mutate({ orgId, ...data }),
+      "Failed to update organization",
+    );
+  }
+
+  /**
+   * Delete an organization and all its resources.
+   *
+   * @param orgId - Organization ID
+   */
+  async deleteOrganization(orgId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.delete.mutate({ orgId }),
+      "Failed to delete organization",
+    );
+  }
+
+  /**
+   * List members of an organization.
+   *
+   * @param orgId - Organization ID
+   */
+  async listMembers(orgId: string): Promise<unknown> {
+    return call(
+      () => this.client.organizations.members.list.query({ orgId }),
+      "Failed to list members",
+    );
+  }
+
+  /**
+   * Invite a user to an organization.
+   *
+   * @param orgId - Organization ID
+   * @param data - Email and role for the invited member
+   */
+  async inviteMember(orgId: string, data: { email: string; role: string }): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.invite.mutate({ orgId, ...data }),
+      "Failed to invite member",
+    );
+  }
+
+  /**
+   * Remove a member from an organization.
+   *
+   * @param orgId - Organization ID
+   * @param userId - User ID to remove
+   */
+  async removeMember(orgId: string, userId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.remove.mutate({ orgId, userId }),
+      "Failed to remove member",
+    );
+  }
+
+  /**
+   * Update a member's role in an organization.
+   *
+   * @param orgId - Organization ID
+   * @param userId - User ID
+   * @param role - New role
+   */
+  async updateMemberRole(orgId: string, userId: string, role: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.updateRole.mutate({ orgId, userId, role }),
+      "Failed to update member role",
+    );
+  }
+
+  // -- Profiles -------------------------------------------------------------
+
+  /**
+   * Create a new profile in an organization.
+   *
+   * @param data - Profile data including orgId, name, and optional fields
+   * @returns The new profile's ID
+   */
+  async createProfile(data: {
+    orgId: string;
+    name: string;
+    description?: string;
+    storageMode?: string;
+  }): Promise<{ id: string }> {
+    return call(() => this.client.profiles.create.mutate(data), "Failed to create profile");
+  }
+
+  /**
+   * List profiles in an organization.
+   *
+   * @param orgId - Organization ID
+   */
+  async listProfiles(orgId: string): Promise<unknown> {
+    return call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles");
+  }
+
+  /**
+   * Get a specific profile.
+   *
+   * @param profileId - Profile ID
+   */
+  async getProfile(profileId: string): Promise<unknown> {
+    return call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile");
+  }
+
+  /**
+   * Bootstrap a profile vault.
+   *
+   * @param profileId - Profile ID
+   * @param data - Vault bootstrap data
+   */
+  async bootstrapProfile(profileId: string, data: BootstrapVaultInput): Promise<{ id: string }> {
+    return call(
+      () => this.client.profiles.bootstrap.mutate({ profileId, ...data }),
+      "Failed to bootstrap profile",
+    );
+  }
+
+  /**
+   * Change the password for a profile.
+   *
+   * @param profileId - Profile ID
+   * @param data - New password data
+   */
+  async changeProfilePassword(
+    profileId: string,
+    data: ChangePasswordInput,
+  ): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.changePassword.mutate({ profileId, ...data }),
+      "Failed to change profile password",
+    );
+  }
+
+  /**
+   * Set up recovery for a profile.
+   *
+   * @param profileId - Profile ID
+   * @param data - Recovery setup data
+   */
+  async setupProfileRecovery(profileId: string, data: SetupRecoveryInput): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.setupRecovery.mutate({ profileId, ...data }),
+      "Failed to set up profile recovery",
+    );
+  }
+
+  /**
+   * Rotate a profile's encryption key.
+   *
+   * @param profileId - Profile ID
+   * @param data - Key rotation data
+   */
+  async rotateProfileKey(
+    profileId: string,
+    data: RotateKeyInput,
+  ): Promise<{ ok: boolean; keyVersion: number }> {
+    return call(
+      () => this.client.profiles.rotateKey.mutate({ profileId, ...data }),
+      "Failed to rotate profile key",
+    );
+  }
+
+  /**
+   * Delete a profile.
+   *
+   * @param profileId - Profile ID
+   */
+  async deleteProfile(profileId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.delete.mutate({ profileId }),
+      "Failed to delete profile",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
-// AbadgeAgentClient — agent API key / session token operations
+// AbadgeAgentClient — agent API key / session token / keypair operations
 // ---------------------------------------------------------------------------
 
 /**
- * SDK client for agent-facing operations authenticated with an API key or
- * session token (prefixed `abl_`, `abg_`, or `abs_`).
+ * SDK client for agent-facing operations. Supports two auth modes:
+ * - **Keypair auth** (preferred): Ed25519 session exchange with automatic refresh.
+ *   Call {@link connect} before using access methods.
+ * - **API key auth**: Static API key (`abl_`, `abg_`, or `abs_` prefix).
  *
- * Provides secret access methods and self-identification. All methods throw
- * {@link AbadgeApiError} on failure with a typed {@link ErrorCode} code.
+ * All methods throw {@link AbadgeApiError} on failure with a typed
+ * {@link ErrorCode} code.
  *
- * @example
+ * @example API key auth
  * ```typescript
  * import { AbadgeAgentClient } from "@abadge/sdk";
  *
@@ -421,14 +735,99 @@ export class AbadgeUserClient {
  *
  * const secret = await agent.accessReveal("item_id");
  * ```
+ *
+ * @example Keypair auth
+ * ```typescript
+ * const agent = new AbadgeAgentClient({
+ *   apiUrl: "https://api.abadge.dev",
+ *   agentId: "agent_id",
+ *   privateKey: ed25519PrivateKey,
+ * });
+ * await agent.connect();
+ * const secret = await agent.accessReveal("item_id");
+ * ```
  */
 export class AbadgeAgentClient {
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly config: AbadgeAgentClientConfig | AbadgeClientConfig;
+
   /** @internal */
-  protected readonly client: SdkTrpcClient;
+  protected client: SdkTrpcClient;
 
   constructor(config: AbadgeAgentClientConfig | AbadgeClientConfig) {
-    const token = "apiKey" in config ? config.apiKey : config.token;
-    this.client = buildTrpcClient(config.apiUrl, token);
+    this.config = config;
+    if ("apiKey" in config) {
+      this.client = buildTrpcClient(config.apiUrl, config.apiKey);
+    } else if ("token" in config) {
+      this.client = buildTrpcClient(config.apiUrl, config.token);
+    } else {
+      // Keypair config — build an unauth client; connect() will set the token
+      this.client = buildUnauthTrpcClient(config.apiUrl);
+    }
+  }
+
+  /**
+   * For keypair-auth agents: performs Ed25519 session exchange and starts the
+   * background T-2 minute refresh loop. Must be called before using access methods.
+   * For API-key agents: no-op (session is implicit).
+   */
+  async connect(): Promise<void> {
+    if (!("agentId" in this.config)) {
+      return;
+    }
+
+    const { agentId, privateKey, apiUrl } = this.config;
+
+    const unauthClient = buildUnauthTrpcClient(apiUrl);
+    let challengeResult: AgentChallengeResult;
+    try {
+      challengeResult = await unauthClient.auth.createChallenge.mutate({ agentId });
+    } catch (error) {
+      throw AbadgeApiError.fromUnknown(error, "Failed to create agent challenge");
+    }
+
+    const { challengeId, challenge } = challengeResult;
+    const key = await resolvePrivateKey(privateKey);
+    const encoder = new TextEncoder();
+    const signatureBytes = await crypto.subtle.sign("Ed25519", key, encoder.encode(challenge));
+    const signature = toBase64url(signatureBytes);
+
+    let sessionResult: AgentSessionResult;
+    try {
+      sessionResult = await unauthClient.auth.exchangeSession.mutate({
+        agentId,
+        challengeId,
+        signature,
+      });
+    } catch (error) {
+      throw AbadgeApiError.fromUnknown(error, "Failed to exchange agent session");
+    }
+
+    const { token: sessionToken, expiresAt } = sessionResult.session;
+    this.client = buildTrpcClient(apiUrl, sessionToken);
+
+    // Schedule refresh at T-2 minutes before expiry
+    const expiresMs = new Date(expiresAt).getTime();
+    const refreshDelay = Math.max(0, expiresMs - Date.now() - 2 * 60 * 1000);
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.connect().catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[AbadgeAgentClient] Session refresh failed: ${msg}`);
+      });
+    }, refreshDelay);
+  }
+
+  /**
+   * Stops the background refresh loop. Safe to call multiple times.
+   */
+  disconnect(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
   }
 
   // -- Self -----------------------------------------------------------------
@@ -441,6 +840,42 @@ export class AbadgeAgentClient {
    */
   async getCurrentAgent(): Promise<AgentResult> {
     return call(() => this.client.agents.self.query(), "Failed to fetch agent");
+  }
+
+  // -- Items (read-only) ----------------------------------------------------
+
+  /**
+   * List all items visible to this agent (metadata only, no encrypted data).
+   *
+   * @returns Array of item summaries
+   */
+  async listItems(): Promise<ItemListResult> {
+    return call(() => this.client.items.list.query(), "Failed to list items");
+  }
+
+  /**
+   * Retrieve a single item's metadata and encrypted content.
+   * Only works when the agent session also carries user-level privileges.
+   * If called with an agent-only API key, throws {@link AbadgeApiError} with
+   * code `UNAUTHORIZED` — the caller should fall back to the `access*` methods.
+   *
+   * @param id - Item ID
+   * @throws {AbadgeApiError} ITEM_NOT_FOUND, UNAUTHORIZED
+   */
+  async getItem(id: string): Promise<ItemResult> {
+    return call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
+  }
+
+  // -- Audit ----------------------------------------------------------------
+
+  /**
+   * Query the audit log with optional filters and cursor-based pagination.
+   *
+   * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
+   * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
+   */
+  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
+    return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
   }
 
   // -- Access ---------------------------------------------------------------
@@ -470,11 +905,15 @@ export class AbadgeAgentClient {
    * returns plaintext. Every access attempt is recorded in the audit log.
    *
    * @param itemId - Item ID
+   * @param field - Optional specific field name to return (for multi-field items)
    * @returns The decrypted item payload
    * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
-  async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
+  async accessReveal(itemId: string, field?: string): Promise<RevealAccessResponse> {
+    return call(
+      () => this.client.access.reveal.mutate({ itemId, ...(field ? { field } : {}) }),
+      "Failed to reveal item",
+    );
   }
 
   /**
@@ -487,76 +926,17 @@ export class AbadgeAgentClient {
    *
    * @param itemId - Item ID
    * @param mountType - Injection method: "env" for environment variable, "file" for temp file
+   * @param field - Optional specific field name to return (for multi-field items)
    * @returns Item data discriminated by storageMode
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
-  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
+  async accessMount(
+    itemId: string,
+    mountType: "env" | "file",
+    field?: string,
+  ): Promise<MountAccessResponse> {
     return call(
-      () => this.client.access.mount.mutate({ itemId, mountType }),
-      "Failed to access mount payload",
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// AbadgeClient — backward-compatible alias
-// ---------------------------------------------------------------------------
-
-/**
- * Backward-compatible SDK client that combines user and agent operations.
- *
- * @deprecated Use {@link AbadgeUserClient} for user operations or
- * {@link AbadgeAgentClient} for agent operations. This class remains for
- * backward compatibility and will be removed in a future major version.
- *
- * @example
- * ```typescript
- * import { AbadgeClient } from "@abadge/sdk";
- *
- * const client = new AbadgeClient({
- *   apiUrl: "https://api.abadge.dev",
- *   token: "session_token_or_api_key",
- * });
- * ```
- */
-export class AbadgeClient extends AbadgeUserClient {
-  /**
-   * Retrieve the currently authenticated agent's own record.
-   * Only works when the client was constructed with an agent API key.
-   *
-   * @returns The agent record
-   * @throws {AbadgeApiError} UNAUTHORIZED
-   */
-  async getCurrentAgent(): Promise<AgentResult> {
-    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
-  }
-
-  /**
-   * Read the encrypted blob of a zero-knowledge item for local decryption.
-   * @see {@link AbadgeAgentClient.accessCiphertext}
-   */
-  async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return call(
-      () => this.client.access.ciphertext.mutate({ itemId }),
-      "Failed to access ciphertext",
-    );
-  }
-
-  /**
-   * Decrypt and return the plaintext of a server-managed item.
-   * @see {@link AbadgeAgentClient.accessReveal}
-   */
-  async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
-  }
-
-  /**
-   * Request item data for local injection (env variable or temp file).
-   * @see {@link AbadgeAgentClient.accessMount}
-   */
-  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
-    return call(
-      () => this.client.access.mount.mutate({ itemId, mountType }),
+      () => this.client.access.mount.mutate({ itemId, mountType, ...(field ? { field } : {}) }),
       "Failed to access mount payload",
     );
   }

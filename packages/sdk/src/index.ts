@@ -1,11 +1,14 @@
 export { resolveFieldValue } from "@abadge/core";
 export type {
+  AbadgeAgentApiKeyConfig,
   AbadgeAgentClientConfig,
+  AbadgeAgentKeypairConfig,
   AbadgeClientConfig,
   AbadgeUserClientConfig,
+  Ed25519PrivateKeyJwk,
   ErrorCode,
 } from "./client";
-export { AbadgeAgentClient, AbadgeClient, AbadgeUserClient } from "./client";
+export { AbadgeAgentClient, AbadgeUserClient } from "./client";
 export { AbadgeApiError } from "./errors";
 export { SecretValue } from "./secret-value";
 export type {

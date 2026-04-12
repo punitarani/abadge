@@ -17,7 +17,7 @@ import type {
   SuccessResult,
   UpdateItemInput,
 } from "@abadge/sdk";
-import { AbadgeApiError, AbadgeClient } from "@abadge/sdk";
+import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { createNodeTrpcClient } from "@abadge/trpc/client";
 import type { CliConfig, PrincipalConfig, SessionConfig } from "./config";
 import { loadConfig } from "./config";
@@ -33,11 +33,11 @@ function getPrincipalSecret(config: PrincipalConfig | CliConfig): string {
   return secret;
 }
 
-export class ApiClient extends AbadgeClient {
+export class ApiClient extends AbadgeAgentClient {
   constructor(config: PrincipalConfig | CliConfig) {
     super({
       apiUrl: config.apiUrl,
-      token: getPrincipalSecret(config),
+      apiKey: getPrincipalSecret(config),
     });
   }
 }
