@@ -1,9 +1,10 @@
 "use client";
 
-import { useTRPC } from "@abadge/trpc/react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import type { ItemKind } from "@abadge/core";
+import { ITEM_KINDS } from "@abadge/core";
+import { Warning } from "@phosphor-icons/react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useId, useState } from "react";
 import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
@@ -12,32 +13,319 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { encryptItemForVault } from "@/lib/crypto-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
-import { getClientErrorMessage } from "@/lib/trpc-browser";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 
 export type StorageMode = "zero_knowledge" | "server_managed";
 
-interface CreateItemPanelViewProps {
+const KIND_LABELS: Record<ItemKind, string> = {
+  api_key: "API Key",
+  login: "Login",
+  token: "Token",
+  certificate: "Certificate",
+  ssh_key: "SSH Key",
+  json: "JSON",
+  opaque: "Opaque",
+};
+
+function buildFieldsForKind(
+  _kind: ItemKind,
+  fieldValues: Record<string, string>,
+): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fieldValues)) {
+    if (value.trim()) {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
+/* ---- Per-kind field editors ---- */
+
+interface FieldEditorProps {
+  fields: Record<string, string>;
+  onChange: (fields: Record<string, string>) => void;
+}
+
+function ApiKeyFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldInput label="Key value" field="value" fields={fields} onChange={onChange} required />
+    </div>
+  );
+}
+
+function LoginFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldInput label="Username" field="username" fields={fields} onChange={onChange} required />
+      <FieldInput
+        label="Password"
+        field="password"
+        fields={fields}
+        onChange={onChange}
+        required
+        type="password"
+      />
+      <FieldInput
+        label="URL"
+        field="url"
+        fields={fields}
+        onChange={onChange}
+        placeholder="https://..."
+      />
+      <FieldInput
+        label="TOTP secret"
+        field="totp_secret"
+        fields={fields}
+        onChange={onChange}
+        placeholder="Optional"
+      />
+    </div>
+  );
+}
+
+function TokenFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldInput label="Value" field="value" fields={fields} onChange={onChange} required />
+    </div>
+  );
+}
+
+function CertificateFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldTextarea
+        label="Certificate PEM"
+        field="cert"
+        fields={fields}
+        onChange={onChange}
+        required
+      />
+      <FieldTextarea
+        label="Private Key PEM"
+        field="key"
+        fields={fields}
+        onChange={onChange}
+        required
+      />
+      <FieldTextarea
+        label="Chain"
+        field="chain"
+        fields={fields}
+        onChange={onChange}
+        placeholder="Optional intermediate chain"
+      />
+      <FieldInput
+        label="Passphrase"
+        field="passphrase"
+        fields={fields}
+        onChange={onChange}
+        type="password"
+        placeholder="Optional"
+      />
+    </div>
+  );
+}
+
+function SshKeyFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldTextarea
+        label="Private Key"
+        field="private_key"
+        fields={fields}
+        onChange={onChange}
+        required
+      />
+      <FieldTextarea
+        label="Public Key"
+        field="public_key"
+        fields={fields}
+        onChange={onChange}
+        placeholder="Optional"
+      />
+      <FieldInput
+        label="Passphrase"
+        field="passphrase"
+        fields={fields}
+        onChange={onChange}
+        type="password"
+        placeholder="Optional"
+      />
+    </div>
+  );
+}
+
+function JsonFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  const entries = Object.entries(fields).filter(([key]) => key !== "__json_next_id");
+  const addRow = useCallback(() => {
+    const nextId = Number(fields.__json_next_id ?? entries.length);
+    onChange({ ...fields, [`key_${nextId}`]: "", __json_next_id: String(nextId + 1) });
+  }, [fields, entries.length, onChange]);
+
+  const removeRow = useCallback(
+    (key: string) => {
+      const next = { ...fields };
+      delete next[key];
+      onChange(next);
+    },
+    [fields, onChange],
+  );
+
+  const updateKey = useCallback(
+    (oldKey: string, newKey: string, value: string) => {
+      const next = { ...fields };
+      delete next[oldKey];
+      if (newKey.trim()) {
+        next[newKey.trim()] = value;
+      }
+      onChange(next);
+    },
+    [fields, onChange],
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-sm font-medium">Key-value pairs</div>
+      {entries.map(([key, value]) => (
+        <div key={key} className="flex items-center gap-2">
+          <Input
+            placeholder="Key"
+            value={key.startsWith("key_") ? "" : key}
+            onChange={(e) => updateKey(key, e.target.value, value)}
+            className="flex-1"
+          />
+          <Input
+            placeholder="Value"
+            value={value}
+            onChange={(e) => onChange({ ...fields, [key]: e.target.value })}
+            className="flex-1"
+          />
+          <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(key)}>
+            &times;
+          </Button>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={addRow} className="w-fit">
+        + Add field
+      </Button>
+    </div>
+  );
+}
+
+function OpaqueFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-3">
+      <FieldTextarea label="Value" field="value" fields={fields} onChange={onChange} required />
+    </div>
+  );
+}
+
+/* ---- Shared field helpers ---- */
+
+function FieldInput({
+  label,
+  field,
+  fields,
+  onChange,
+  required,
+  type = "text",
+  placeholder,
+}: {
+  label: string;
+  field: string;
+  fields: Record<string, string>;
+  onChange: (fields: Record<string, string>) => void;
+  required?: boolean;
+  type?: string;
+  placeholder?: string;
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <Input
+        type={type}
+        value={fields[field] ?? ""}
+        onChange={(e) => onChange({ ...fields, [field]: e.target.value })}
+        required={required}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function FieldTextarea({
+  label,
+  field,
+  fields,
+  onChange,
+  required,
+  placeholder,
+}: {
+  label: string;
+  field: string;
+  fields: Record<string, string>;
+  onChange: (fields: Record<string, string>) => void;
+  required?: boolean;
+  placeholder?: string;
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <Textarea
+        value={fields[field] ?? ""}
+        onChange={(e) => onChange({ ...fields, [field]: e.target.value })}
+        required={required}
+        placeholder={placeholder}
+        rows={4}
+      />
+    </div>
+  );
+}
+
+const KIND_FIELD_EDITORS: Record<ItemKind, React.ComponentType<FieldEditorProps>> = {
+  api_key: ApiKeyFields,
+  login: LoginFields,
+  token: TokenFields,
+  certificate: CertificateFields,
+  ssh_key: SshKeyFields,
+  json: JsonFields,
+  opaque: OpaqueFields,
+};
+
+/* ---- View ---- */
+
+export interface CreateItemPanelViewProps {
   formId: string;
   name: string;
-  value: string;
+  kind: ItemKind;
   storageMode: StorageMode;
+  fieldValues: Record<string, string>;
   onNameChange: (value: string) => void;
-  onValueChange: (value: string) => void;
+  onKindChange: (kind: ItemKind) => void;
   onStorageModeChange: (value: StorageMode) => void;
+  onFieldsChange: (fields: Record<string, string>) => void;
   onSubmit: React.FormEventHandler<HTMLFormElement>;
 }
 
 export function CreateItemPanelView({
   formId,
   name,
-  value,
+  kind,
   storageMode,
+  fieldValues,
   onNameChange,
-  onValueChange,
+  onKindChange,
   onStorageModeChange,
+  onFieldsChange,
   onSubmit,
 }: CreateItemPanelViewProps): React.ReactElement {
+  const FieldEditor = KIND_FIELD_EDITORS[kind];
+
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
@@ -50,6 +338,28 @@ export function CreateItemPanelView({
           required
         />
       </div>
+
+      {/* Kind selector */}
+      <fieldset className="flex flex-col gap-2">
+        <div className="text-sm font-medium">Kind</div>
+        <div className="flex flex-wrap gap-1.5">
+          {ITEM_KINDS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onKindChange(k)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                k === kind
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {KIND_LABELS[k]}
+            </button>
+          ))}
+        </div>
+      </fieldset>
 
       <fieldset className="flex flex-col gap-3">
         <div className="text-sm font-medium">Storage mode</div>
@@ -91,19 +401,24 @@ export function CreateItemPanelView({
         </div>
       </fieldset>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="item-value">Value</Label>
-        <Textarea
-          id="item-value"
-          placeholder="The secret value"
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          required
-        />
-      </div>
+      {/* ZK warning */}
+      {storageMode === "zero_knowledge" && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+          <Warning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-xs text-amber-800 dark:text-amber-300">
+            Zero-knowledge items are encrypted in your browser. You will need your vault password to
+            decrypt them. The server never sees the plaintext.
+          </p>
+        </div>
+      )}
+
+      {/* Per-kind fields */}
+      <FieldEditor fields={fieldValues} onChange={onFieldsChange} />
     </form>
   );
 }
+
+/* ---- Container ---- */
 
 interface CreateItemPanelProps {
   open: boolean;
@@ -111,32 +426,39 @@ interface CreateItemPanelProps {
 }
 
 export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.ReactElement {
-  const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const router = useRouter();
   const { requestUnlock } = useVault();
   const formId = useId();
   const [name, setName] = useState("");
-  const [value, setValue] = useState("");
+  const [kind, setKind] = useState<ItemKind>("opaque");
   const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
-  const createItem = useMutation(
-    trpc.items.create.mutationOptions({
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: dashboardQueryKeys.items(),
-        });
-        toast.success("Item created.");
-        router.push("/items");
-      },
-    }),
-  );
+
+  function handleKindChange(newKind: ItemKind): void {
+    setKind(newKind);
+    setFieldValues({});
+  }
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setCreating(true);
 
     try {
+      const fields = buildFieldsForKind(kind, fieldValues);
+
+      // For JSON kind, clean up the internal tracking key
+      const cleanFields = { ...fields };
+      delete cleanFields.__json_next_id;
+
+      const payload = {
+        v: 1 as const,
+        label: name,
+        kind,
+        tags: [] as string[],
+        fields: cleanFields,
+      };
+
       let body:
         | {
             storageMode: "zero_knowledge";
@@ -146,13 +468,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
           }
         | {
             storageMode: "server_managed";
-            payload: {
-              v: number;
-              label: string;
-              kind: "opaque";
-              tags: string[];
-              fields: { value: string };
-            };
+            payload: typeof payload;
           };
 
       if (storageMode === "zero_knowledge") {
@@ -165,7 +481,6 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
           return;
         }
 
-        const payload = { v: 1, label: name, kind: "opaque" as const, tags: [], fields: { value } };
         const encrypted = encryptItemForVault(payload, key);
         body = {
           storageMode: "zero_knowledge",
@@ -176,11 +491,19 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       } else {
         body = {
           storageMode: "server_managed",
-          payload: { v: 1, label: name, kind: "opaque", tags: [], fields: { value } },
+          payload,
         };
       }
 
-      await createItem.mutateAsync(body);
+      await browserTrpcClient.items.create.mutate(body);
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.items(),
+      });
+      toast.success("Item created.");
+      setName("");
+      setKind("opaque");
+      setFieldValues({});
+      onClose();
     } catch (mutationError) {
       toast.error(getClientErrorMessage(mutationError, "Failed to create item"));
     } finally {
@@ -188,13 +511,16 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
     }
   }
 
+  const buttonText = storageMode === "zero_knowledge" ? "Encrypt & save" : "Save";
+  const buttonTextCreating = storageMode === "zero_knowledge" ? "Encrypting..." : "Saving...";
+
   const footer = (
     <div className="flex justify-end gap-2">
       <Button type="button" variant="outline" size="sm" onClick={onClose}>
         Cancel
       </Button>
       <Button form={formId} type="submit" size="sm" disabled={creating}>
-        {creating ? "Creating..." : "Create"}
+        {creating ? buttonTextCreating : buttonText}
       </Button>
     </div>
   );
@@ -203,11 +529,13 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
     <CreateItemPanelView
       formId={formId}
       name={name}
-      value={value}
+      kind={kind}
       storageMode={storageMode}
+      fieldValues={fieldValues}
       onNameChange={setName}
-      onValueChange={setValue}
+      onKindChange={handleKindChange}
       onStorageModeChange={setStorageMode}
+      onFieldsChange={setFieldValues}
       onSubmit={handleSubmit}
     />
   );
