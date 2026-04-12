@@ -223,7 +223,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
       const { readFileSync } = await import("node:fs");
       const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
       const client = new AbadgeAgentClient({
-        apiUrl: config.apiUrl,
+        apiUrl,
         agentId: agentConfig.agentId,
         privateKey: privateKeyJwk,
       });
@@ -234,7 +234,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
     // Legacy principalSecret/authToken from config
     const secret = config.principalSecret ?? config.authToken;
     if (secret) {
-      return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: secret });
+      return new AbadgeAgentClient({ apiUrl: apiUrl ?? config.apiUrl, apiKey: secret });
     }
   }
 
