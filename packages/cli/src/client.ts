@@ -10,16 +10,14 @@ import { daemonAuthHeaders } from "./daemon";
 // (recordLogin, logout). These are only used during device-code login/logout.
 // ---------------------------------------------------------------------------
 
-type AuthTrpcClient = ReturnType<typeof createNodeTrpcClient>;
-
 /** @internal Record a login event via the session-authenticated tRPC client. */
 export async function recordLoginViaTrpc(config: SessionConfig): Promise<void> {
-  const client: AuthTrpcClient = createNodeTrpcClient({
+  const client = createNodeTrpcClient({
     baseUrl: config.apiUrl,
     headers: config.sessionHeaders,
   });
   try {
-    await (client as any).auth.recordLogin.mutate();
+    await client.auth.recordLogin.mutate();
   } catch (error) {
     throw AbadgeApiError.fromUnknown(error, "Failed to record login");
   }
@@ -27,12 +25,12 @@ export async function recordLoginViaTrpc(config: SessionConfig): Promise<void> {
 
 /** @internal Record a logout event via the session-authenticated tRPC client. */
 export async function logoutViaTrpc(config: SessionConfig): Promise<void> {
-  const client: AuthTrpcClient = createNodeTrpcClient({
+  const client = createNodeTrpcClient({
     baseUrl: config.apiUrl,
     headers: config.sessionHeaders,
   });
   try {
-    await (client as any).auth.logout.mutate();
+    await client.auth.logout.mutate();
   } catch (error) {
     throw AbadgeApiError.fromUnknown(error, "Failed to record logout");
   }
@@ -195,7 +193,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
       return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: secret });
     }
     throw new Error(
-      'No local CLI agent configured. Run `abadge agent register --kind local_cli` first.',
+      "No local CLI agent configured. Run `abadge agent register --kind local_cli` first.",
     );
   }
 

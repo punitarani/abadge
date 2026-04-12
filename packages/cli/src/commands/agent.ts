@@ -2,10 +2,78 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
+import type { AbadgeUserClient } from "@abadge/sdk";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { loadConfig, updateConfig } from "../config";
 import { error, errorMessage, json, success, table, warn } from "../output";
+
+async function registerKeypairAgent(
+  client: AbadgeUserClient,
+  opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
+): Promise<void> {
+  const genKey = crypto.subtle.generateKey as (
+    algorithm: { name: string },
+    extractable: boolean,
+    keyUsages: string[],
+  ) => Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>;
+  const keypair = await genKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
+  const privateKeyJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
+  const publicKeyBase64 = publicKeyJwk.x ?? "";
+  if (!publicKeyBase64) {
+    error("Failed to export Ed25519 public key.");
+    process.exit(1);
+  }
+
+  const result = await client.createAgent({
+    name: opts.name,
+    kind: opts.kind,
+    publicKey: publicKeyBase64,
+    metadata: opts.description ? { description: opts.description } : {},
+  });
+
+  const agentsDir = join(homedir(), ".abadge", "agents");
+  mkdirSync(agentsDir, { recursive: true, mode: 0o700 });
+  const keyPath = join(agentsDir, `${result.agent.id}.ed25519.jwk`);
+  writeFileSync(keyPath, JSON.stringify(privateKeyJwk), { mode: 0o600 });
+
+  const configSlot = opts.kind === "local_mcp" ? "mcp" : "cli";
+  updateConfig({
+    localAgents: {
+      ...loadConfig()?.localAgents,
+      [configSlot]: { agentId: result.agent.id, privateKeyPath: keyPath },
+    },
+  });
+
+  if (opts.json) {
+    json({ agent: result.agent, privateKeyPath: keyPath });
+  } else {
+    success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+    success(`Private key saved to ${keyPath}`);
+  }
+}
+
+async function registerLegacyAgent(
+  client: AbadgeUserClient,
+  opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
+): Promise<void> {
+  const result = await client.createAgent({
+    name: opts.name,
+    kind: opts.kind,
+    authMethod: "legacy_api_key",
+    metadata: opts.description ? { description: opts.description } : {},
+  });
+
+  if (opts.json) {
+    json(result);
+  } else {
+    success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+    console.log("");
+    warn("Save this API key — it will NOT be shown again:");
+    console.log(`  ${result.apiKey}`);
+  }
+}
 
 export function createAgentCommand(): Command {
   const cmd = new Command("agent").description("Manage agents");
@@ -34,69 +102,10 @@ export function createAgentCommand(): Command {
 
         try {
           const client = await createUserApiClient();
-          const useKeypair = !opts.legacyApiKey;
-
-          if (useKeypair) {
-            // Generate Ed25519 keypair — cast needed because TS DOM lib
-            // doesn't have Ed25519-specific overloads for generateKey.
-            const genKey = crypto.subtle.generateKey as (
-              algorithm: { name: string },
-              extractable: boolean,
-              keyUsages: string[],
-            ) => Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>;
-            const keypair = await genKey({ name: "Ed25519" }, true, ["sign", "verify"]);
-            const publicKeyJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
-            const privateKeyJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
-            const publicKeyBase64 = publicKeyJwk.x!; // Ed25519 public key as base64url
-
-            const result = await client.createAgent({
-              name: opts.name,
-              kind,
-              publicKey: publicKeyBase64,
-              metadata: opts.description ? { description: opts.description } : {},
-            });
-
-            // Store private key
-            const agentsDir = join(homedir(), ".abadge", "agents");
-            mkdirSync(agentsDir, { recursive: true, mode: 0o700 });
-            const keyPath = join(agentsDir, `${result.agent.id}.ed25519.jwk`);
-            writeFileSync(keyPath, JSON.stringify(privateKeyJwk), { mode: 0o600 });
-
-            // Update config with local agent info
-            const configSlot = kind === "local_mcp" ? "mcp" : "cli";
-            updateConfig({
-              localAgents: {
-                ...loadConfig()?.localAgents,
-                [configSlot]: {
-                  agentId: result.agent.id,
-                  privateKeyPath: keyPath,
-                },
-              },
-            });
-
-            if (opts.json) {
-              json({ agent: result.agent, privateKeyPath: keyPath });
-            } else {
-              success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-              success(`Private key saved to ${keyPath}`);
-            }
+          if (opts.legacyApiKey) {
+            await registerLegacyAgent(client, { ...opts, kind });
           } else {
-            // Legacy API key flow
-            const result = await client.createAgent({
-              name: opts.name,
-              kind,
-              authMethod: "legacy_api_key",
-              metadata: opts.description ? { description: opts.description } : {},
-            });
-
-            if (opts.json) {
-              json(result);
-            } else {
-              success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-              console.log("");
-              warn("Save this API key — it will NOT be shown again:");
-              console.log(`  ${result.apiKey}`);
-            }
+            await registerKeypairAgent(client, { ...opts, kind });
           }
         } catch (err) {
           error(errorMessage(err, "Failed to register agent."));
