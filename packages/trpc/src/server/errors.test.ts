@@ -10,6 +10,7 @@ describe("toTrpcError", () => {
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Verify the item id and try again.",
         }),
       ),
     ).catch((error) => error);
@@ -20,7 +21,7 @@ describe("toTrpcError", () => {
     expect(error.message).toBe("Item not found");
     expect(getTrpcErrorData(error)).toEqual({
       appCode: "ITEM_NOT_FOUND",
-      issues: undefined,
+      hint: "Verify the item id and try again.",
     });
   });
 
@@ -30,6 +31,7 @@ describe("toTrpcError", () => {
         new ValidationError({
           code: "VALIDATION_ERROR",
           message: "Invalid input",
+          hint: "Fix the highlighted input fields and try again.",
           issues: [{ path: ["name"], message: "Required" }],
         }),
       ),
@@ -40,6 +42,7 @@ describe("toTrpcError", () => {
     expect(error.code).toBe("BAD_REQUEST");
     expect(getTrpcErrorData(error)).toEqual({
       appCode: "VALIDATION_ERROR",
+      hint: "Fix the highlighted input fields and try again.",
       issues: [{ path: ["name"], message: "Required" }],
     });
   });
@@ -49,6 +52,7 @@ describe("toTrpcError", () => {
       new UnauthorizedError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
+        hint: "Sign in again and retry the request.",
       }),
     );
 

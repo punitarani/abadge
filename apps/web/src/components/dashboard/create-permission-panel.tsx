@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/select";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { resolveItemLabel, useItemLabels } from "@/lib/use-item-labels";
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
   read_ciphertext: "Read ciphertext",
@@ -146,7 +145,6 @@ export function CreatePermissionPanel({
 
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
-  const { labelMap } = useItemLabels(items);
   const optionsLoading = agentsQuery.isPending || itemsQuery.isPending;
 
   const activeAgentOptions = useMemo<SearchableSelectOption[]>(
@@ -167,9 +165,9 @@ export function CreatePermissionPanel({
         )
         .map((item: ItemSummary) => ({
           value: item.id,
-          label: resolveItemLabel(item.id, labelMap, item.storageMode),
+          label: item.label,
         })),
-    [items, labelMap],
+    [items],
   );
 
   function handleClose(): void {

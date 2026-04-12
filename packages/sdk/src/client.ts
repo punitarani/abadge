@@ -13,13 +13,10 @@ import type {
   CiphertextAccessResponse,
   CreateAgentInput,
   CreateItemInput,
-  CreateOperatorTokenInput,
   CreatePermissionInput,
   ItemListResult,
   ItemResult,
   MountAccessResponse,
-  OperatorTokenCreateResult,
-  OperatorTokenListResult,
   PermissionFilters,
   PermissionListResult,
   PermissionResult,
@@ -122,11 +119,6 @@ interface SdkTrpcClient {
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
-  };
-  auth: {
-    createOperatorToken: TrpcMutation<CreateOperatorTokenInput, OperatorTokenCreateResult>;
-    listOperatorTokens: TrpcQueryWithoutInput<OperatorTokenListResult>;
-    revokeOperatorToken: TrpcMutation<{ tokenId: string }, SuccessResult>;
   };
 }
 
@@ -566,27 +558,6 @@ export class AbadgeClient extends AbadgeUserClient {
     return call(
       () => this.client.access.mount.mutate({ itemId, mountType }),
       "Failed to access mount payload",
-    );
-  }
-
-  async createOperatorToken(data: CreateOperatorTokenInput): Promise<OperatorTokenCreateResult> {
-    return call(
-      () => this.client.auth.createOperatorToken.mutate(data),
-      "Failed to create operator token",
-    );
-  }
-
-  async listOperatorTokens(): Promise<OperatorTokenListResult> {
-    return call(
-      () => this.client.auth.listOperatorTokens.query(),
-      "Failed to list operator tokens",
-    );
-  }
-
-  async revokeOperatorToken(tokenId: string): Promise<SuccessResult> {
-    return call(
-      () => this.client.auth.revokeOperatorToken.mutate({ tokenId }),
-      "Failed to revoke operator token",
     );
   }
 }

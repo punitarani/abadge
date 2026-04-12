@@ -1,18 +1,14 @@
 import { bigserial, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { organization } from "./organization";
-import { profiles } from "./profiles";
 
 export const auditLogs = pgTable(
   "audit_logs",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id").notNull(),
     userId: text("user_id").notNull(),
     agentId: text("agent_id"),
     itemId: text("item_id"),
-    profileId: text("profile_id").references(() => profiles.id, { onDelete: "set null" }),
+    profileId: text("profile_id"),
     surface: text("surface"),
     eventType: text("event_type").notNull(),
     result: text("result").notNull(),

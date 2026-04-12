@@ -23,15 +23,16 @@ describe("roadmap schema foundations", () => {
   });
 
   test("items table carries additive org/profile/label metadata for the v0 cutover", () => {
-    const columns = Object.keys(getTableColumns(items));
+    const columns = getTableColumns(items);
 
-    expect(columns).toContain("organizationId");
-    expect(columns).toContain("profileId");
-    expect(columns).toContain("label");
-    expect(columns).toContain("kind");
-    expect(columns).toContain("tags");
-    expect(columns).toContain("userId");
-    expect(columns).toContain("vaultId");
+    expect(Object.keys(columns)).toContain("organizationId");
+    expect(Object.keys(columns)).toContain("profileId");
+    expect(Object.keys(columns)).toContain("label");
+    expect(Object.keys(columns)).toContain("kind");
+    expect(Object.keys(columns)).toContain("tags");
+    expect(Object.keys(columns)).toContain("userId");
+    expect(Object.keys(columns)).toContain("vaultId");
+    expect(columns.label.notNull).toBe(true);
   });
 
   test("agents table is org-scoped and uses the simplified roadmap kinds", () => {
@@ -74,8 +75,16 @@ describe("roadmap schema foundations", () => {
   });
 
   test("audit logs carry delivery and surface metadata end-to-end", () => {
+    const columns = getTableColumns(auditLogs);
+    const organizationId = columns.organizationId as typeof columns.organizationId & {
+      foreignKeyConfigs?: unknown[];
+    };
+    const profileId = columns.profileId as typeof columns.profileId & {
+      foreignKeyConfigs?: unknown[];
+    };
+
     expect(getTableName(auditLogs)).toBe("audit_logs");
-    expect(Object.keys(getTableColumns(auditLogs))).toEqual([
+    expect(Object.keys(columns)).toEqual([
       "id",
       "organizationId",
       "userId",
@@ -92,5 +101,7 @@ describe("roadmap schema foundations", () => {
       "ipAddress",
       "occurredAt",
     ]);
+    expect(organizationId.foreignKeyConfigs ?? []).toHaveLength(0);
+    expect(profileId.foreignKeyConfigs ?? []).toHaveLength(0);
   });
 });

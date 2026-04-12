@@ -30,7 +30,6 @@ import {
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { permissionFilterParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { useItemLabels } from "@/lib/use-item-labels";
 import { formatRelativeTime } from "@/lib/utils";
 
 const CAPABILITY_LABELS: Record<Capability, string> = {
@@ -39,15 +38,6 @@ const CAPABILITY_LABELS: Record<Capability, string> = {
   mount_env: "Mount as env var",
   mount_file: "Mount as file",
 };
-
-function formatItemLabel(id: string, labelMap: Map<string, string>, storageMode?: string): string {
-  const label = labelMap.get(id);
-  if (label) return label;
-  const prefix =
-    storageMode === "zero_knowledge" ? "ZK" : storageMode === "server_managed" ? "Srv" : null;
-  const shortId = `${id.slice(0, 8)}…`;
-  return prefix ? `${prefix} · ${shortId}` : shortId;
-}
 
 export default function PermissionsPage(): React.ReactElement {
   const queryClient = useQueryClient();
@@ -80,7 +70,6 @@ export default function PermissionsPage(): React.ReactElement {
   const permissions = permissionsQuery.data?.permissions ?? [];
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
-  const { labelMap } = useItemLabels(items);
   const loading = permissionsQuery.isPending || agentsQuery.isPending || itemsQuery.isPending;
 
   const agentNames = useMemo<Map<string, string>>(
@@ -113,10 +102,10 @@ export default function PermissionsPage(): React.ReactElement {
           )
           .map((item: ItemSummary) => ({
             value: item.id,
-            label: formatItemLabel(item.id, labelMap, item.storageMode),
+            label: item.label,
           })),
       ),
-    [items, labelMap],
+    [items],
   );
 
   async function handleConfirmRevoke(): Promise<void> {
@@ -222,11 +211,7 @@ export default function PermissionsPage(): React.ReactElement {
                     {agentNames.get(permission.agentId) ?? permission.agentId}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatItemLabel(
-                      permission.itemId,
-                      labelMap,
-                      itemMap.get(permission.itemId)?.storageMode,
-                    )}
+                    {itemMap.get(permission.itemId)?.label ?? `${permission.itemId.slice(0, 8)}…`}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">

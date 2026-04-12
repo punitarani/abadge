@@ -35,6 +35,7 @@ const bootstrapVault = (input: VaultBootstrapInput) =>
         new ConflictError({
           code: "VAULT_ALREADY_EXISTS",
           message: "Vault already exists",
+          hint: "Use the existing vault for this account instead of bootstrapping a second one.",
         }),
       );
     }
@@ -52,7 +53,7 @@ const bootstrapVault = (input: VaultBootstrapInput) =>
 
     yield* logSessionAudit({
       userId,
-      eventType: "vault.bootstrap",
+      eventType: "profile.create",
       result: "allowed",
       ipAddress: ctx.ipAddress,
     });
@@ -71,6 +72,7 @@ const getVault = Effect.gen(function* () {
       new NotFoundError({
         code: "VAULT_NOT_FOUND",
         message: "Vault not found",
+        hint: "Bootstrap the vault for this account before requesting vault metadata.",
       }),
     );
   }
@@ -91,6 +93,7 @@ const changePassword = (input: ChangePasswordInput) =>
         new NotFoundError({
           code: "VAULT_NOT_FOUND",
           message: "Vault not found",
+          hint: "Bootstrap the vault before changing the password.",
         }),
       );
     }
@@ -109,7 +112,7 @@ const changePassword = (input: ChangePasswordInput) =>
 
     yield* logSessionAudit({
       userId,
-      eventType: "vault.password_change",
+      eventType: "profile.rotate",
       result: "allowed",
       ipAddress: ctx.ipAddress,
     });
@@ -133,6 +136,7 @@ const setupRecovery = (input: RecoverySetupInput) =>
         new NotFoundError({
           code: "VAULT_NOT_FOUND",
           message: "Vault not found",
+          hint: "Bootstrap the vault before configuring a recovery key.",
         }),
       );
     }
@@ -163,6 +167,7 @@ const rotateKey = (input: RotateKeyInput) =>
         new NotFoundError({
           code: "VAULT_NOT_FOUND",
           message: "Vault not found",
+          hint: "Bootstrap the vault before rotating keys.",
         }),
       );
     }
@@ -194,7 +199,7 @@ const rotateKey = (input: RotateKeyInput) =>
 
     yield* logSessionAudit({
       userId,
-      eventType: "vault.key_rotate",
+      eventType: "profile.rotate",
       result: "allowed",
       ipAddress: ctx.ipAddress,
       meta: { itemCount: Object.keys(input.rekeyedItems).length },

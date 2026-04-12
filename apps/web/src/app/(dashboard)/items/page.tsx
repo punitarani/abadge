@@ -30,7 +30,6 @@ import {
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { itemPanelParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { useItemLabels } from "@/lib/use-item-labels";
 import { formatRelativeTime } from "@/lib/utils";
 
 export default function ItemsPage(): React.ReactElement {
@@ -44,7 +43,6 @@ export default function ItemsPage(): React.ReactElement {
   });
 
   const items = itemsQuery.data?.items ?? [];
-  const { labelMap } = useItemLabels(items);
 
   const deleteItem = useMutation({
     mutationFn: ({ itemId }: { itemId: string }) =>
@@ -71,7 +69,7 @@ export default function ItemsPage(): React.ReactElement {
   }
 
   function itemLabel(item: ItemSummary): string {
-    return labelMap.get(item.id) ?? `${item.id.slice(0, 8)}…`;
+    return item.label;
   }
 
   return (

@@ -9,6 +9,7 @@ import {
   AGENT_SESSION_PREFIX,
   AGENT_SESSION_REFRESH_BUFFER_MS,
   AGENT_SESSION_TTL_MS,
+  AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   agentLocalityForKind,
   CAPABILITY_MATRIX,
@@ -83,6 +84,23 @@ describe("agent auth constants", () => {
 describe("AUDIT_RESULTS", () => {
   test("includes cascade outcomes for downstream revocation and deletion effects", () => {
     expect(AUDIT_RESULTS).toEqual(["allowed", "denied", "expired", "revoked", "cascade"]);
+  });
+});
+
+describe("AUDIT_EVENT_TYPES", () => {
+  test("tracks the roadmap audit surface instead of legacy vault or operator-token events", () => {
+    expect(AUDIT_EVENT_TYPES).toContain("item.export");
+    expect(AUDIT_EVENT_TYPES).toContain("profile.create");
+    expect(AUDIT_EVENT_TYPES).toContain("profile.rotate");
+    expect(AUDIT_EVENT_TYPES).toContain("agent.revoke_cascade");
+    expect(AUDIT_EVENT_TYPES).toContain("permission.revoke_cascade");
+    expect(AUDIT_EVENT_TYPES).toContain("item.delete_cascade");
+    expect(AUDIT_EVENT_TYPES).not.toContain("vault.bootstrap");
+    expect(AUDIT_EVENT_TYPES).not.toContain("vault.unlock");
+    expect(AUDIT_EVENT_TYPES).not.toContain("vault.password_change");
+    expect(AUDIT_EVENT_TYPES).not.toContain("vault.key_rotate");
+    expect(AUDIT_EVENT_TYPES).not.toContain("operator_token.create");
+    expect(AUDIT_EVENT_TYPES).not.toContain("operator_token.revoke");
   });
 });
 

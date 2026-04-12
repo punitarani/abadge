@@ -42,6 +42,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
+          hint: "Check the agent ID and make sure it belongs to this account.",
         }),
       );
     }
@@ -59,6 +60,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and make sure it belongs to this account.",
         }),
       );
     }
@@ -68,6 +70,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new BadRequestError({
           code: "INVALID_CAPABILITY",
           message: "Remote agents cannot access zero-knowledge items",
+          hint: "Choose a server-managed item when granting permissions to remote agents.",
         }),
       );
     }
@@ -77,6 +80,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new BadRequestError({
           code: "INVALID_CAPABILITY",
           message: "Remote agents can only have reveal_plaintext capability",
+          hint: "Grant reveal_plaintext or switch the agent to a local runtime.",
         }),
       );
     }
@@ -188,6 +192,7 @@ const revokePermission = (permissionId: string) =>
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
+          hint: "Check the permission ID and make sure it still exists.",
         }),
       );
     }
@@ -205,6 +210,7 @@ const revokePermission = (permissionId: string) =>
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
+          hint: "Check the permission ID and make sure it belongs to this account.",
         }),
       );
     }

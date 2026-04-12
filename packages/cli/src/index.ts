@@ -8,7 +8,6 @@ import { createLoginCommand, createLogoutCommand } from "./commands/login";
 import { createMountCommand } from "./commands/mount";
 import { createPermissionCommand } from "./commands/permission";
 import { createRunCommand } from "./commands/run";
-import { createTokenCommand } from "./commands/token";
 import { createVaultCommand } from "./commands/vault";
 
 const program = new Command()
@@ -23,7 +22,6 @@ program.addCommand(createDaemonCommand());
 program.addCommand(createVaultCommand());
 program.addCommand(createItemCommand());
 program.addCommand(createAgentCommand());
-program.addCommand(createTokenCommand());
 program.addCommand(createPermissionCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createMountCommand());

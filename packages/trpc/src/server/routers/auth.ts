@@ -9,11 +9,8 @@ import {
   AgentChallengeResultSchema,
   AgentEnrollmentResultSchema,
   AgentSessionResultSchema,
-  BadRequestError,
   type CreateAgentChallengeInput,
   CreateAgentChallengeSchema,
-  type CreateOperatorTokenInput,
-  CreateOperatorTokenSchema,
   type EnrollAgentInput,
   EnrollAgentSchema,
   type ExchangeAgentSessionInput,
@@ -22,25 +19,17 @@ import {
   type IssueAgentBootstrapTokenInput,
   IssueAgentBootstrapTokenSchema,
   NotFoundError,
-  OPERATOR_TOKEN_DEFAULT_TTL_MS,
-  OPERATOR_TOKEN_MAX_TTL_MS,
-  OPERATOR_TOKEN_PREFIX,
-  OperatorTokenCreateResultSchema,
-  OperatorTokenListResultSchema,
   type RevokeAgentSessionInput,
   RevokeAgentSessionSchema,
-  type RevokeOperatorTokenInput,
-  RevokeOperatorTokenSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/shared";
-import { and, desc, eq, isNull } from "@abadge/db";
+import { and, eq, isNull } from "@abadge/db";
 import {
   agentEnrollmentTokens,
   principals as agentRecords,
   agentSessionChallenges,
   agentSessions,
-  operatorTokens,
 } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { logBaseAudit, logSessionAudit } from "../audit";
@@ -87,12 +76,11 @@ interface RevocableAgentSessionRow {
   agentId: string;
 }
 
-type OperatorTokenRow = typeof operatorTokens.$inferSelect;
-
 function notFound(): NotFoundError {
   return new NotFoundError({
     code: "AGENT_NOT_FOUND",
     message: "Agent not found",
+    hint: "Check the agent ID and make sure it belongs to this account.",
   });
 }
 
@@ -100,6 +88,7 @@ function disabledAgentError(): ForbiddenError {
   return new ForbiddenError({
     code: "PERMISSION_DENIED",
     message: "Agent is disabled",
+    hint: "Enable the agent before retrying this operation.",
   });
 }
 
@@ -107,6 +96,7 @@ function revokedAgentError(): ForbiddenError {
   return new ForbiddenError({
     code: "AGENT_REVOKED",
     message: "Agent is revoked",
+    hint: "Create or use a different active agent before retrying this operation.",
   });
 }
 
@@ -114,66 +104,8 @@ function challengeUnavailableError(): NotFoundError {
   return new NotFoundError({
     code: "AGENT_NOT_FOUND",
     message: "Agent challenge unavailable",
+    hint: "Check the agent ID and make sure it belongs to this account.",
   });
-}
-
-function serializeOperatorToken(row: OperatorTokenRow) {
-  return {
-    id: row.id,
-    userId: row.userId,
-    name: row.name,
-    tokenPrefix: row.tokenPrefix,
-    scopes: row.scopes,
-    expiresAt: row.expiresAt.toISOString(),
-    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
-    revokedAt: row.revokedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-  };
-}
-
-function forbidOperatorTokenSelfManagement(
-  authMethod: string | undefined,
-): Effect.Effect<void, ForbiddenError> {
-  if (authMethod !== "operator_token") {
-    return Effect.void;
-  }
-
-  return Effect.fail(
-    new ForbiddenError({
-      code: "PERMISSION_DENIED",
-      message: "Operator tokens cannot manage operator tokens",
-    }),
-  );
-}
-
-function resolveOperatorTokenExpiry(expiresAt: string | undefined): Date {
-  const now = Date.now();
-  const max = now + OPERATOR_TOKEN_MAX_TTL_MS;
-  const resolved = expiresAt ? new Date(expiresAt) : new Date(now + OPERATOR_TOKEN_DEFAULT_TTL_MS);
-  const timestamp = resolved.getTime();
-
-  if (!Number.isFinite(timestamp)) {
-    throw new BadRequestError({
-      code: "BAD_REQUEST",
-      message: "expiresAt must be a valid ISO timestamp",
-    });
-  }
-
-  if (timestamp <= now) {
-    throw new BadRequestError({
-      code: "BAD_REQUEST",
-      message: "expiresAt must be in the future",
-    });
-  }
-
-  if (timestamp > max) {
-    throw new BadRequestError({
-      code: "BAD_REQUEST",
-      message: "Operator tokens can live for at most 30 days",
-    });
-  }
-
-  return resolved;
 }
 
 const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
@@ -191,6 +123,7 @@ const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Agent does not support keypair enrollment",
+          hint: "Use a public_key_session agent when requesting enrollment or bootstrap flows.",
         }),
       );
     }
@@ -200,6 +133,7 @@ const ensureAgentEligibleForEnrollment = (agent: OwnedAgentRow) =>
         new ForbiddenError({
           code: "AGENT_ALREADY_ENROLLED",
           message: "Agent is already enrolled",
+          hint: "Use the existing enrollment or rotate the public key instead of enrolling again.",
         }),
       );
     }
@@ -243,6 +177,7 @@ const ensureAgentEligibleForSessionExchange = (agent: OwnedAgentRow) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Agent does not support signed session exchange",
+          hint: "Use a public_key_session agent to exchange signed session challenges.",
         }),
       );
     }
@@ -255,6 +190,7 @@ const ensureAgentEligibleForSessionExchange = (agent: OwnedAgentRow) =>
         new ForbiddenError({
           code: "AGENT_NOT_ENROLLED",
           message: "Agent is not enrolled",
+          hint: "Enroll the agent with a public key before requesting a signed session exchange.",
         }),
       );
     }
@@ -307,117 +243,6 @@ const recordLogout = Effect.gen(function* () {
   return { ok: true };
 });
 
-const createOperatorToken = (input: CreateOperatorTokenInput) =>
-  Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
-    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
-
-    const expiresAt = yield* Effect.try({
-      try: () => resolveOperatorTokenExpiry(input.expiresAt),
-      catch: (e) =>
-        e instanceof BadRequestError
-          ? e
-          : new BadRequestError({ code: "BAD_REQUEST", message: String(e) }),
-    });
-    const token = generateOpaqueToken(OPERATOR_TOKEN_PREFIX);
-    const tokenHash = yield* tryAsync(() => hashApiKey(token));
-    const id = crypto.randomUUID();
-    const createdAt = new Date();
-
-    const row = {
-      id,
-      userId: ctx.identity.userId,
-      name: input.name,
-      tokenHash,
-      tokenPrefix: token.slice(0, 8),
-      scopes: [...new Set(input.scopes)],
-      expiresAt,
-      createdAt,
-      createdBy: ctx.identity.userId,
-    };
-
-    yield* tryAsync(() => ctx.db.insert(operatorTokens).values(row));
-
-    yield* logSessionAudit({
-      userId: ctx.identity.userId,
-      eventType: "operator_token.create",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: {
-        tokenId: id,
-        name: input.name,
-        scopes: row.scopes,
-        expiresAt: expiresAt.toISOString(),
-      },
-    });
-
-    return {
-      token,
-      operatorToken: serializeOperatorToken({
-        ...row,
-        lastUsedAt: null,
-        revokedAt: null,
-      }),
-    };
-  });
-
-const listOperatorTokens = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
-  yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
-
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .select()
-      .from(operatorTokens)
-      .where(eq(operatorTokens.userId, ctx.identity.userId))
-      .orderBy(desc(operatorTokens.createdAt)),
-  );
-
-  return { operatorTokens: result.map(serializeOperatorToken) };
-});
-
-const revokeOperatorToken = (input: RevokeOperatorTokenInput) =>
-  Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
-    yield* forbidOperatorTokenSelfManagement(ctx.identity.authMethod);
-
-    const [token] = (yield* tryAsync(() =>
-      ctx.db
-        .select({ id: operatorTokens.id })
-        .from(operatorTokens)
-        .where(
-          and(eq(operatorTokens.id, input.tokenId), eq(operatorTokens.userId, ctx.identity.userId)),
-        )
-        .limit(1),
-    )) as Array<{ id: string }>;
-
-    if (!token) {
-      return yield* Effect.fail(
-        new NotFoundError({
-          code: "NOT_FOUND",
-          message: "Operator token not found",
-        }),
-      );
-    }
-
-    yield* tryAsync(() =>
-      ctx.db
-        .update(operatorTokens)
-        .set({ revokedAt: new Date() })
-        .where(eq(operatorTokens.id, token.id)),
-    );
-
-    yield* logSessionAudit({
-      userId: ctx.identity.userId,
-      eventType: "operator_token.revoke",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: { tokenId: token.id },
-    });
-
-    return { ok: true };
-  });
-
 const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -428,6 +253,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Agent is disabled",
+          hint: "Enable the agent before requesting a bootstrap token.",
         }),
       );
     }
@@ -437,6 +263,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
         new ForbiddenError({
           code: "AGENT_REVOKED",
           message: "Agent is revoked",
+          hint: "Create or use a different active agent before requesting bootstrap enrollment.",
         }),
       );
     }
@@ -446,6 +273,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Bootstrap tokens are only available for keypair-backed agents",
+          hint: "Create a public_key_session agent before issuing a bootstrap token.",
         }),
       );
     }
@@ -455,6 +283,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
         new ForbiddenError({
           code: "AGENT_ALREADY_ENROLLED",
           message: "Agent is already enrolled",
+          hint: "Use the existing enrollment or rotate the public key instead of issuing a new bootstrap token.",
         }),
       );
     }
@@ -509,6 +338,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         new ForbiddenError({
           code: "INVALID_BOOTSTRAP_TOKEN",
           message: "Invalid bootstrap token",
+          hint: "Request a fresh bootstrap token from the owning user and retry enrollment.",
         }),
       );
     }
@@ -518,6 +348,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         new ForbiddenError({
           code: "BOOTSTRAP_TOKEN_EXPIRED",
           message: "Bootstrap token expired",
+          hint: "Request a new bootstrap token and retry enrollment before it expires.",
         }),
       );
     }
@@ -578,6 +409,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
           throw new ForbiddenError({
             code: "PERMISSION_DENIED",
             message: "Agent is no longer eligible for enrollment",
+            hint: "Re-check the agent state and request a fresh bootstrap token if it is still unenrolled.",
           });
         }
 
@@ -590,6 +422,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         new ForbiddenError({
           code: "INVALID_BOOTSTRAP_TOKEN",
           message: "Invalid or already used bootstrap token",
+          hint: "Request a fresh bootstrap token before retrying enrollment.",
         }),
       );
     }
@@ -640,6 +473,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         new ForbiddenError({
           code: "ENROLLMENT_REQUIRED",
           message: "Agent must be enrolled before requesting a challenge",
+          hint: "Enroll the agent with a public key before requesting a challenge.",
         }),
       );
     }
@@ -707,6 +541,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
         new ForbiddenError({
           code: "AGENT_CHALLENGE_NOT_FOUND",
           message: "Invalid agent challenge",
+          hint: "Request a new challenge and retry the session exchange promptly.",
         }),
       );
     }
@@ -724,6 +559,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
         new ForbiddenError({
           code: "AGENT_CHALLENGE_EXPIRED",
           message: "Agent challenge expired",
+          hint: "Request a fresh challenge and retry the signed exchange before it expires.",
         }),
       );
     }
@@ -744,6 +580,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Invalid agent signature",
+          hint: "Sign the exact challenge string with the enrolled private key and retry.",
         }),
       );
     }
@@ -796,6 +633,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
         new ForbiddenError({
           code: "AGENT_CHALLENGE_NOT_FOUND",
           message: "Invalid or already used agent challenge",
+          hint: "Request a fresh challenge before retrying the session exchange.",
         }),
       );
     }
@@ -868,17 +706,6 @@ export const authRouter = createTrpcRouter({
   logout: sessionProcedure
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx }) => runSessionEffect(ctx, recordLogout)),
-  createOperatorToken: sessionProcedure
-    .input(strictSchema(CreateOperatorTokenSchema))
-    .output(strictSchema(OperatorTokenCreateResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, createOperatorToken(input))),
-  listOperatorTokens: sessionProcedure
-    .output(strictSchema(OperatorTokenListResultSchema))
-    .query(({ ctx }) => runSessionEffect(ctx, listOperatorTokens)),
-  revokeOperatorToken: sessionProcedure
-    .input(strictSchema(RevokeOperatorTokenSchema))
-    .output(strictSchema(SuccessResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeOperatorToken(input))),
   issueBootstrapToken: scopedSessionProcedure("agents:write")
     .input(strictSchema(IssueAgentBootstrapTokenSchema))
     .output(strictSchema(AgentBootstrapTokenResultSchema))

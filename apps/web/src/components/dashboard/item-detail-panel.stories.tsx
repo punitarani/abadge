@@ -5,6 +5,7 @@ import { ItemDetailPanelView } from "./item-detail-panel";
 
 const zeroKnowledgeItem: ItemDetail = {
   id: "fa3c8cf8-d5ae-4b1f-8dc8-1d58d902ee11",
+  label: "Production API Key",
   storageMode: "zero_knowledge",
   cryptoVersion: 1,
   contentVersion: 1,
@@ -16,6 +17,7 @@ const zeroKnowledgeItem: ItemDetail = {
 
 const serverManagedItem: ItemDetail = {
   id: "c07e1999-a7eb-4f26-af0f-b13f49a32ec8",
+  label: "Database Password",
   storageMode: "server_managed",
   cryptoVersion: 1,
   contentVersion: 1,

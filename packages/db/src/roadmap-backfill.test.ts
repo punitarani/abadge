@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildDefaultProfileFromVault,
   buildPersonalMembership,
@@ -9,6 +11,11 @@ import {
   personalOrganizationSlugForUser,
   resolveServerManagedBackfillLabel,
 } from "./roadmap-backfill";
+
+const migrationSql = readFileSync(
+  join(import.meta.dir, "../migrations/0006_v0_foundation_cutover.sql"),
+  "utf8",
+);
 
 describe("personal organization backfill helpers", () => {
   test("creates deterministic personal organization identifiers per user", () => {
@@ -94,6 +101,21 @@ describe("item label backfill helpers", () => {
     expect(resolveServerManagedBackfillLabel("item-legacy", "raw-secret-value")).toBe(
       "migrated-item-leg",
     );
+  });
+
+  test("migration backfills every item label and makes the column required", () => {
+    expect(migrationSql).toContain('UPDATE "items"');
+    expect(migrationSql).toContain('SET "label" =');
+    expect(migrationSql).toContain('WHERE "label" IS NULL OR "label" = \'\';');
+    expect(migrationSql).toContain('ALTER TABLE "items" ALTER COLUMN "label" SET NOT NULL;');
+    expect(migrationSql).not.toContain("Server-managed labels require app-layer decryption");
+  });
+});
+
+describe("audit log migration invariants", () => {
+  test("does not add foreign keys to append-only audit logs", () => {
+    expect(migrationSql).not.toContain("audit_logs_organization_id_organization_id_fk");
+    expect(migrationSql).not.toContain("audit_logs_profile_id_profiles_id_fk");
   });
 });
 

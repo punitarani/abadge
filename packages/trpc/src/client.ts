@@ -1,9 +1,10 @@
-import { tokenToHeaders } from "@abadge/core";
 import type { QueryClientConfig } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AppRouter } from "./server/router";
+
+const OPERATOR_TOKEN_PREFIX = "abo_";
 
 export interface BrowserTrpcClientOptions {
   baseUrl: string;
@@ -25,6 +26,12 @@ export interface NormalizedTrpcError {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
+}
+
+function tokenToHeaders(token: string): Record<string, string> {
+  return token.startsWith(OPERATOR_TOKEN_PREFIX)
+    ? { "X-Abadge-Operator-Token": token }
+    : { Authorization: `Bearer ${token}` };
 }
 
 function toHeaderRecord(headers?: unknown): Record<string, string> {

@@ -122,8 +122,8 @@ Each tRPC request constructs context once:
 
 Procedure middleware then adds identity:
 
-* `sessionProcedure` resolves browser sessions, Better Auth bearer sessions, or operator tokens
-* `scopedSessionProcedure` adds coarse scope checks only for operator-token callers
+* `sessionProcedure` resolves browser sessions, Better Auth bearer sessions, or legacy operator tokens
+* `scopedSessionProcedure` adds coarse scope checks only for legacy operator-token callers
 * `agentProcedure` resolves an agent token, including legacy fallback
 
 ## Contract model
@@ -132,7 +132,7 @@ Procedure middleware then adds identity:
 
 * Effect Schema definitions
 * derived `Type` and encoded boundary types
-* constants for item kinds, capabilities, audit types, localities, and operator-token scopes
+* constants for item kinds, capabilities, audit types, and localities
 * tagged domain errors
 
 Every public procedure declares both input and output schemas. No custom transformer is used.
@@ -145,7 +145,7 @@ Every public procedure declares both input and output schemas. No custom transfo
 2. Hono middleware applies headers, CORS, and rate limiting
 3. tRPC builds request context
 4. `sessionProcedure` resolves the user identity
-5. `scopedSessionProcedure` checks token scopes when the caller used `X-Abadge-Operator-Token`
+5. `scopedSessionProcedure` checks scopes only when the caller used a legacy `X-Abadge-Operator-Token`
 6. Effect program runs domain logic
 7. response is encoded as JSON-safe data
 

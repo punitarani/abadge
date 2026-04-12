@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Either, ParseResult, Schema } from "effect";
 import {
+  BadRequestError,
   FieldNotFoundError,
   formatDomainError,
   parseErrorToValidationError,
@@ -49,6 +50,48 @@ describe("formatDomainError", () => {
         availableFields: ["username", "token"],
       },
     });
+  });
+});
+
+describe("error hints", () => {
+  test("require a non-empty hint on base domain errors", () => {
+    expect(
+      () =>
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Missing input",
+        } as never),
+    ).toThrow();
+
+    expect(
+      () =>
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Missing input",
+          hint: "",
+        }),
+    ).toThrow();
+  });
+
+  test("require a non-empty hint on validation errors", () => {
+    expect(
+      () =>
+        new ValidationError({
+          code: "VALIDATION_ERROR",
+          message: "kind is required",
+          issues: [{ path: ["kind"], message: "kind is required" }],
+        } as never),
+    ).toThrow();
+
+    expect(
+      () =>
+        new ValidationError({
+          code: "VALIDATION_ERROR",
+          message: "kind is required",
+          hint: "",
+          issues: [{ path: ["kind"], message: "kind is required" }],
+        }),
+    ).toThrow();
   });
 });
 

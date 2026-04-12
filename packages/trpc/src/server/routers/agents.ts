@@ -65,6 +65,7 @@ const createAgent = (input: CreateAgentInput) =>
           code: "PUBLIC_KEY_REQUIRED",
           message:
             "public_key_session agents require either a publicKey or issueBootstrapToken: true",
+          hint: "Provide a public key or request a bootstrap token for public_key_session agents.",
         }),
       );
     }
@@ -153,6 +154,7 @@ const getAgent = (agentId: string) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
+          hint: "Check the agent ID and make sure it belongs to this account.",
         }),
       );
     }
@@ -171,6 +173,7 @@ const getCurrentAgent = Effect.gen(function* () {
       new NotFoundError({
         code: "AGENT_NOT_FOUND",
         message: "Agent not found",
+        hint: "Check the current agent session and make sure the agent record still exists.",
       }),
     );
   }
@@ -200,6 +203,7 @@ const rotateAgent = (agentId: string) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
+          hint: "Check the agent ID and make sure it belongs to this account and is still active.",
         }),
       );
     }
@@ -247,6 +251,7 @@ const revokeAgent = (agentId: string) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
+          hint: "Check the agent ID and make sure it belongs to this account.",
         }),
       );
     }

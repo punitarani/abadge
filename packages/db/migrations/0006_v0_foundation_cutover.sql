@@ -191,32 +191,6 @@ CREATE TABLE IF NOT EXISTS "audit_logs" (
   "occurred_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'audit_logs_organization_id_organization_id_fk'
-  ) THEN
-    ALTER TABLE "audit_logs"
-    ADD CONSTRAINT "audit_logs_organization_id_organization_id_fk"
-    FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'audit_logs_profile_id_profiles_id_fk'
-  ) THEN
-    ALTER TABLE "audit_logs"
-    ADD CONSTRAINT "audit_logs_profile_id_profiles_id_fk"
-    FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id")
-    ON DELETE set null ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
-
 CREATE INDEX IF NOT EXISTS "items_organization_id_idx" ON "items" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "items_profile_id_idx" ON "items" USING btree ("profile_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "profiles_organization_id_idx" ON "profiles" USING btree ("organization_id");--> statement-breakpoint
@@ -303,12 +277,9 @@ WHERE i."profile_id" IS NULL
 
 UPDATE "items"
 SET "label" = 'migrated-' || substring("id" from 1 for 8)
-WHERE "storage_mode" = 'zero_knowledge'
-  AND ("label" IS NULL OR "label" = '');--> statement-breakpoint
+WHERE "label" IS NULL OR "label" = '';--> statement-breakpoint
 
--- Server-managed labels require app-layer decryption with ENCRYPTION_KEY.
--- packages/db/src/roadmap-backfill.ts provides the deterministic fallback rules
--- until a runtime backfill command is wired in.
+ALTER TABLE "items" ALTER COLUMN "label" SET NOT NULL;--> statement-breakpoint
 
 INSERT INTO "agents" (
   "id",
@@ -410,6 +381,12 @@ SELECT
     WHEN l."event_type" = 'principal.revoke' THEN 'agent.revoke'
     WHEN l."event_type" = 'grant.create' THEN 'permission.create'
     WHEN l."event_type" = 'grant.revoke' THEN 'permission.revoke'
+    WHEN l."event_type" = 'vault.bootstrap' THEN 'profile.create'
+    WHEN l."event_type" = 'vault.unlock' THEN 'auth.login'
+    WHEN l."event_type" = 'vault.password_change' THEN 'profile.rotate'
+    WHEN l."event_type" = 'vault.key_rotate' THEN 'profile.rotate'
+    WHEN l."event_type" = 'operator_token.create' THEN 'auth.token_issue'
+    WHEN l."event_type" = 'operator_token.revoke' THEN 'auth.token_revoke'
     ELSE l."event_type"
   END,
   l."result",

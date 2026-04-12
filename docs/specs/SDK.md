@@ -506,7 +506,7 @@ export type StorageMode = "zero_knowledge" | "server_managed";
 export type AgentKind = "device" | "local_cli" | "local_mcp" | "remote_agent";
 export type AgentLocality = "local" | "remote";
 export type Capability = "read_ciphertext" | "reveal_plaintext" | "mount_env" | "mount_file" | "use_without_reveal";
-export type AuditEventType = "vault.bootstrap" | "vault.unlock" | ... ;
+export type AuditEventType = "profile.create" | "profile.rotate" | "item.export" | ... ;
 export type AuditResult = "allowed" | "denied" | "expired" | "revoked";
 
 // Entity types

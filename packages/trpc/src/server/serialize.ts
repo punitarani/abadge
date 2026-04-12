@@ -14,6 +14,12 @@ export const LEGACY_AUDIT_EVENT_TYPES = [
   "principal.revoke",
   "grant.create",
   "grant.revoke",
+  "vault.bootstrap",
+  "vault.unlock",
+  "vault.password_change",
+  "vault.key_rotate",
+  "operator_token.create",
+  "operator_token.revoke",
 ] as const;
 
 type LegacyAuditEventType = (typeof LEGACY_AUDIT_EVENT_TYPES)[number];
@@ -24,6 +30,12 @@ const AUDIT_EVENT_TYPE_ALIASES: Record<LegacyAuditEventType, AuditEventType> = {
   "principal.revoke": "agent.revoke",
   "grant.create": "permission.create",
   "grant.revoke": "permission.revoke",
+  "vault.bootstrap": "profile.create",
+  "vault.unlock": "auth.login",
+  "vault.password_change": "profile.rotate",
+  "vault.key_rotate": "profile.rotate",
+  "operator_token.create": "auth.token_issue",
+  "operator_token.revoke": "auth.token_revoke",
 };
 
 function isAuditEventType(eventType: string): eventType is AuditEventType {
@@ -47,6 +59,16 @@ export function getAuditEventTypeFilters(
   const normalized = normalizeAuditEventType(eventType);
 
   switch (normalized) {
+    case "profile.create":
+      return ["profile.create", "vault.bootstrap"];
+    case "profile.rotate":
+      return ["profile.rotate", "vault.password_change", "vault.key_rotate"];
+    case "auth.login":
+      return ["auth.login", "vault.unlock"];
+    case "auth.token_issue":
+      return ["auth.token_issue", "operator_token.create"];
+    case "auth.token_revoke":
+      return ["auth.token_revoke", "operator_token.revoke"];
     case "agent.create":
       return ["agent.create", "principal.create"];
     case "agent.rotate":
@@ -79,11 +101,12 @@ export function serializeVault(row: VaultRow): Vault {
 export function serializeItemSummary(
   row: Pick<
     ItemRow,
-    "id" | "storageMode" | "cryptoVersion" | "contentVersion" | "createdAt" | "updatedAt"
+    "id" | "label" | "storageMode" | "cryptoVersion" | "contentVersion" | "createdAt" | "updatedAt"
   >,
 ): ItemSummary {
   return {
     id: row.id,
+    label: row.label,
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,
@@ -95,6 +118,7 @@ export function serializeItemSummary(
 export function serializeItemDetail(row: ItemRow): ItemDetail {
   const base = {
     id: row.id,
+    label: row.label,
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,

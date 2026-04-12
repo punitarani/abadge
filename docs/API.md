@@ -141,7 +141,8 @@ Returns `{ id }`.
 
 Auth: `sessionProcedure`
 
-Returns `{ items }` with metadata only (no secret data).
+Returns `{ items }` with metadata only (no secret data). Each item summary includes the durable
+`label` field used by the dashboard and audit views.
 
 ### `items.get`
 
@@ -161,44 +162,6 @@ concurrency. Returns `{ ok: true, contentVersion }`.
 Auth: `sessionProcedure`
 
 Input: `{ itemId }`. Soft-deletes the item. Returns `{ ok: true }`.
-
-### `items.resolveDisplay`
-
-Auth: `sessionProcedure`
-
-Resolves live dashboard display values for a bounded set of items without changing the
-zero-knowledge trust model.
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemIds` | `string[]` | yes | Up to 100 item IDs to resolve |
-
-Response:
-
-```ts
-{
-  items: Array<
-    | {
-        itemId: string;
-        storageMode: "server_managed";
-        label: string;
-      }
-    | {
-        itemId: string;
-        storageMode: "zero_knowledge";
-        encryptedItemKey: string;
-        ciphertext: string;
-      }
-  >;
-}
-```
-
-Notes:
-
-* soft-deleted or cross-user items are omitted
-* server-managed items return the current plaintext label after auth
-* zero-knowledge items never return plaintext labels; browser clients may derive the current label locally if the vault is already unlocked
-* labels are current display values, not historical snapshots captured at audit-event time
 
 ### `agents.create`
 

@@ -42,6 +42,12 @@ type _LegacyCreatePrincipalInput = import("./index").CreatePrincipalInput;
 type _LegacyCreateGrantInput = import("./index").CreateGrantInput;
 // @ts-expect-error legacy export removed
 type _LegacyGrantFilters = import("./index").GrantFilters;
+// @ts-expect-error legacy operator-token export removed
+type _LegacyOperatorToken = import("./index").OperatorToken;
+// @ts-expect-error legacy operator-token creation input removed
+type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInput;
+// @ts-expect-error legacy operator-token revoke input removed
+type _LegacyRevokeOperatorTokenInput = import("./index").RevokeOperatorTokenInput;
 
 // -- Client split assertions -----------------------------------------------
 

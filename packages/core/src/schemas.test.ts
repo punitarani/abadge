@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Either, Schema } from "effect";
-import { AgentSchema, AuditEntrySchema, ProfileSchema } from "./schemas";
+import { AgentSchema, AuditEntrySchema, ItemSummarySchema, ProfileSchema } from "./schemas";
 
 function decodeSucceeds(schema: Schema.Schema.Any, value: unknown): boolean {
   return Either.isRight(
@@ -82,5 +82,32 @@ describe("AuditEntrySchema", () => {
         occurredAt: "2026-04-11T00:00:00.000Z",
       }),
     ).toBe(true);
+  });
+});
+
+describe("ItemSummarySchema", () => {
+  test("requires a first-class label on item summaries", () => {
+    expect(
+      decodeSucceeds(ItemSummarySchema, {
+        id: "item-1",
+        label: "Production API key",
+        storageMode: "server_managed",
+        cryptoVersion: 1,
+        contentVersion: 2,
+        createdAt: "2026-04-11T00:00:00.000Z",
+        updatedAt: "2026-04-11T00:00:00.000Z",
+      }),
+    ).toBe(true);
+
+    expect(
+      decodeSucceeds(ItemSummarySchema, {
+        id: "item-1",
+        storageMode: "server_managed",
+        cryptoVersion: 1,
+        contentVersion: 2,
+        createdAt: "2026-04-11T00:00:00.000Z",
+        updatedAt: "2026-04-11T00:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 });

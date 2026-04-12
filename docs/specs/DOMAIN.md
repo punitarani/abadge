@@ -213,21 +213,22 @@ This is the core authorization table. It defines what is possible given an agent
 
 ### AuditEventType
 
-**Vault lifecycle:**
+**Profile lifecycle:**
 | Value | Triggered by |
 |-------|-------------|
-| `vault.bootstrap` | Vault creation |
-| `vault.unlock` | Daemon unlock |
-| `vault.password_change` | Password change |
-| `vault.key_rotate` | Root key rotation |
+| `profile.create` | Initial profile bootstrap |
+| `profile.rotate` | Password change or root-key rotation |
+| `profile.delete` | Direct profile deletion |
+| `profile.delete_cascade` | Profile deletion as a downstream cascade |
 
 **Item lifecycle:**
 | Value | Triggered by |
 |-------|-------------|
 | `item.create` | Item creation |
-| `item.read` | Item retrieval (by owner) |
+| `item.export` | Owner export / reveal of item material |
 | `item.update` | Item update |
 | `item.delete` | Item soft-delete |
+| `item.delete_cascade` | Item deletion as a downstream cascade |
 
 **Agent lifecycle:**
 | Value | Triggered by |
@@ -235,6 +236,7 @@ This is the core authorization table. It defines what is possible given an agent
 | `agent.create` | Agent registration |
 | `agent.rotate` | API key rotation |
 | `agent.revoke` | Agent revocation |
+| `agent.revoke_cascade` | Agent revocation as a downstream cascade |
 
 **Permission lifecycle:**
 | Value | Triggered by |

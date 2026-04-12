@@ -1,4 +1,4 @@
-import { AGENT_SESSION_PREFIX, OPERATOR_TOKEN_PREFIX, UnauthorizedError } from "@abadge/core";
+import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull, or } from "@abadge/db";
 import {
@@ -10,6 +10,7 @@ import {
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
+import { OPERATOR_TOKEN_PREFIX } from "./operator-token";
 
 function getCandidatePrefixes(token: string): string[] {
   return [
@@ -82,6 +83,7 @@ function unauthorized(message: string): UnauthorizedError {
   return new UnauthorizedError({
     code: "UNAUTHORIZED",
     message,
+    hint: "Authenticate with a valid session token, agent API key, or short-lived agent session token.",
   });
 }
 

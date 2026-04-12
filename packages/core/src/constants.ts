@@ -30,28 +30,32 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const AUDIT_EVENT_TYPES = [
-  "vault.bootstrap",
-  "vault.unlock",
-  "vault.password_change",
-  "vault.key_rotate",
+  "profile.create",
+  "profile.rotate",
+  "profile.delete",
+  "profile.delete_cascade",
   "item.create",
   "item.read",
   "item.update",
   "item.delete",
+  "item.delete_cascade",
+  "item.export",
   "auth.login",
   "auth.logout",
-  "operator_token.create",
-  "operator_token.revoke",
+  "auth.token_issue",
+  "auth.token_revoke",
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
   "agent.rotate",
   "agent.revoke",
+  "agent.revoke_cascade",
   "agent.session_issue",
   "agent.session_reject",
   "agent.session_revoke",
   "permission.create",
   "permission.revoke",
+  "permission.revoke_cascade",
   "access.ciphertext",
   "access.reveal",
   "access.mount_env",
@@ -107,39 +111,11 @@ export const API_KEY_PREFIX = {
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 export const AGENT_CHALLENGE_PREFIX = "abc_";
-/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
-export const OPERATOR_TOKEN_PREFIX = "abo_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
 export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
-/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
-export const OPERATOR_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
-/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
-export const OPERATOR_TOKEN_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-
-/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
-/** Map a session/operator token to the correct request header. */
-export function tokenToHeaders(token: string): Record<string, string> {
-  return token.startsWith(OPERATOR_TOKEN_PREFIX)
-    ? { "X-Abadge-Operator-Token": token }
-    : { Authorization: `Bearer ${token}` };
-}
-
-/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
-export const OPERATOR_TOKEN_SCOPES = [
-  "items:read",
-  "items:write",
-  "agents:read",
-  "agents:write",
-  "permissions:read",
-  "permissions:write",
-  "audit:read",
-  "vault:read",
-  "vault:write",
-] as const;
-export type OperatorTokenScope = (typeof OPERATOR_TOKEN_SCOPES)[number];
 
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"): AgentLocality {

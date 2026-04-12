@@ -222,7 +222,7 @@ sequenceDiagram
   API->>DB: Update vault (new wrapped keys, key_version++)
   API->>DB: Update each item (new encrypted_item_key)
   API->>DB: COMMIT
-  API->>DB: Log vault.key_rotate audit event
+  API->>DB: Log profile.rotate audit event
   API-->>User: {ok: true, keyVersion}
 ```
 

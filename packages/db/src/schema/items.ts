@@ -17,7 +17,7 @@ export const items = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     vaultId: text("vault_id").references(() => vaults.id, { onDelete: "set null" }),
-    label: text("label"),
+    label: text("label").notNull(),
     kind: text("kind", { enum: ITEM_KINDS }),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
     storageMode: text("storage_mode", { enum: STORAGE_MODES }).notNull(),

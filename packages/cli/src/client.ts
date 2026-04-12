@@ -1,10 +1,4 @@
 import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
-import {
-  type CreateOperatorTokenInput,
-  OPERATOR_TOKEN_PREFIX,
-  type OperatorTokenCreateResult,
-  type OperatorTokenListResult,
-} from "@abadge/core";
 import type {
   AgentListResult,
   AgentResult,
@@ -30,6 +24,7 @@ import { loadConfig } from "./config";
 import { daemonAuthHeaders } from "./daemon";
 
 type SessionTrpcClient = ReturnType<typeof createNodeTrpcClient>;
+const OPERATOR_TOKEN_PREFIX = "abo_";
 
 function getPrincipalSecret(config: PrincipalConfig | CliConfig): string {
   const secret = config.principalSecret ?? config.authToken;
@@ -144,27 +139,6 @@ export class SessionApiClient {
 
   async logout(): Promise<SuccessResult> {
     return this.call(() => this.client.auth.logout.mutate(), "Failed to record logout");
-  }
-
-  async createOperatorToken(data: CreateOperatorTokenInput): Promise<OperatorTokenCreateResult> {
-    return this.call(
-      () => this.client.auth.createOperatorToken.mutate(data),
-      "Failed to create operator token",
-    );
-  }
-
-  async listOperatorTokens(): Promise<OperatorTokenListResult> {
-    return this.call(
-      () => this.client.auth.listOperatorTokens.query(),
-      "Failed to list operator tokens",
-    );
-  }
-
-  async revokeOperatorToken(tokenId: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.auth.revokeOperatorToken.mutate({ tokenId }),
-      "Failed to revoke operator token",
-    );
   }
 
   private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {

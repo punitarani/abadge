@@ -52,7 +52,7 @@ export const ValidationIssueSchema = Schema.Struct({
 export class BadRequestError extends Schema.TaggedError<BadRequestError>()("BadRequestError", {
   code: ErrorCodeSchema,
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 400;
@@ -61,7 +61,7 @@ export class BadRequestError extends Schema.TaggedError<BadRequestError>()("BadR
 export class ValidationError extends Schema.TaggedError<ValidationError>()("ValidationError", {
   code: Schema.Literal("VALIDATION_ERROR"),
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
   issues: Schema.Array(ValidationIssueSchema),
 }) {
@@ -73,7 +73,7 @@ export class UnauthorizedError extends Schema.TaggedError<UnauthorizedError>()(
   {
     code: ErrorCodeSchema,
     message: Schema.String,
-    hint: Schema.optional(NonEmptyString),
+    hint: NonEmptyString,
     meta: Schema.optional(DomainErrorMetaSchema),
   },
 ) {
@@ -83,7 +83,7 @@ export class UnauthorizedError extends Schema.TaggedError<UnauthorizedError>()(
 export class ForbiddenError extends Schema.TaggedError<ForbiddenError>()("ForbiddenError", {
   code: ErrorCodeSchema,
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 403;
@@ -92,7 +92,7 @@ export class ForbiddenError extends Schema.TaggedError<ForbiddenError>()("Forbid
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("NotFoundError", {
   code: ErrorCodeSchema,
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 404;
@@ -101,7 +101,7 @@ export class NotFoundError extends Schema.TaggedError<NotFoundError>()("NotFound
 export class ConflictError extends Schema.TaggedError<ConflictError>()("ConflictError", {
   code: ErrorCodeSchema,
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 409;
@@ -110,7 +110,7 @@ export class ConflictError extends Schema.TaggedError<ConflictError>()("Conflict
 export class RateLimitError extends Schema.TaggedError<RateLimitError>()("RateLimitError", {
   code: Schema.Literal("RATE_LIMITED"),
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 429;
@@ -119,7 +119,7 @@ export class RateLimitError extends Schema.TaggedError<RateLimitError>()("RateLi
 export class IntegrityError extends Schema.TaggedError<IntegrityError>()("IntegrityError", {
   code: Schema.Literal("INTEGRITY_ERROR"),
   message: Schema.String,
-  hint: Schema.optional(NonEmptyString),
+  hint: NonEmptyString,
   meta: Schema.optional(DomainErrorMetaSchema),
 }) {
   readonly statusCode = 500;
@@ -136,7 +136,7 @@ export class FieldNotFoundError extends Schema.TaggedError<FieldNotFoundError>()
   {
     code: Schema.Literal("FIELD_NOT_FOUND"),
     message: Schema.String,
-    hint: Schema.optional(NonEmptyString),
+    hint: NonEmptyString,
     meta: Schema.optional(DomainErrorMetaSchema),
   },
 ) {
@@ -160,7 +160,7 @@ export class MultiFieldItemError extends Schema.TaggedError<MultiFieldItemError>
   {
     code: Schema.Literal("MULTI_FIELD_ITEM"),
     message: Schema.String,
-    hint: Schema.optional(NonEmptyString),
+    hint: NonEmptyString,
     meta: Schema.optional(DomainErrorMetaSchema),
   },
 ) {
@@ -216,7 +216,7 @@ export function getDomainErrorCode(error: DomainError): ErrorCode {
 export function formatDomainError(error: DomainError): {
   code: ErrorCode;
   message: string;
-  hint?: string;
+  hint: string;
   meta?: Readonly<Record<string, unknown>>;
   issues?: ReadonlyArray<Schema.Schema.Type<typeof ValidationIssueSchema>>;
 } {

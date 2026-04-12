@@ -40,7 +40,6 @@ import {
 } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
-import { useVault } from "@/lib/vault-context";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -64,7 +63,6 @@ const COLUMN_COUNT = 6;
 export default function AuditPage(): React.ReactElement {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [cursorStack, setCursorStack] = useState<Array<string | undefined>>([]);
-  const { rootKey } = useVault();
   const [{ eventType: eventTypeFilter, result: resultFilter }, setAuditFilters] =
     useQueryStates(auditFilterParsers);
   const limit = 50;
@@ -90,9 +88,9 @@ export default function AuditPage(): React.ReactElement {
     queryKey: dashboardQueryKeys.agents(),
     queryFn: () => browserTrpcClient.agents.list.query(),
   });
-  const itemDisplayQuery = useQuery({
-    queryKey: dashboardQueryKeys.itemDisplay(itemIds),
-    queryFn: () => browserTrpcClient.items.resolveDisplay.query({ itemIds }),
+  const itemsQuery = useQuery({
+    queryKey: dashboardQueryKeys.items(),
+    queryFn: () => browserTrpcClient.items.list.query(),
     enabled: itemIds.length > 0,
   });
   const agentNames = useMemo(
@@ -100,8 +98,8 @@ export default function AuditPage(): React.ReactElement {
     [agentsQuery.data?.agents],
   );
   const itemLabels = useMemo(
-    () => buildAuditItemLabelMap(itemDisplayQuery.data?.items ?? [], rootKey),
-    [itemDisplayQuery.data?.items, rootKey],
+    () => buildAuditItemLabelMap(itemsQuery.data?.items ?? []),
+    [itemsQuery.data?.items],
   );
   const nextCursor = auditQuery.data?.nextCursor ?? null;
   const hasMore = Boolean(nextCursor);

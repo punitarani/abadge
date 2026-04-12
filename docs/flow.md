@@ -191,7 +191,7 @@ sequenceDiagram
   User->>User: Wrap root key with KEK (XChaCha20-Poly1305)
   User->>API: Bootstrap vault (wrapped root key, salt, KDF params)
   API->>API: Store vault record
-  API->>API: Audit: vault.bootstrap
+  API->>API: Audit: profile.create
   API-->>User: Success
 ```
 
@@ -246,7 +246,7 @@ sequenceDiagram
   API->>DB: Update vault (key_version++)
   API->>DB: Update each item (new encrypted_item_key)
   API->>DB: COMMIT
-  API->>DB: Audit: vault.key_rotate
+  API->>DB: Audit: profile.rotate
   API-->>User: New key version
 ```
 

@@ -121,6 +121,7 @@ const loadAccessibleItem = (itemId: string) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and confirm the agent is scoped to the same owner account.",
         }),
       );
     }
@@ -147,6 +148,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Remote agents cannot access ciphertext",
+          hint: "Use reveal_plaintext on a server-managed item or register a local agent.",
         }),
       );
     }
@@ -166,6 +168,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Item is not zero-knowledge",
+          hint: "Use reveal_plaintext for server-managed items instead of ciphertext access.",
         }),
       );
     }
@@ -189,6 +192,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "No valid permission",
+          hint: "Grant read_ciphertext on this item to the agent before retrying.",
         }),
       );
     }
@@ -228,6 +232,7 @@ const accessReveal = (input: RevealAccessInput) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Cannot reveal zero-knowledge items via API",
+          hint: "Use read_ciphertext for zero-knowledge items or choose a server-managed item.",
         }),
       );
     }
@@ -251,6 +256,7 @@ const accessReveal = (input: RevealAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "No valid permission",
+          hint: "Grant reveal_plaintext on this item to the agent before retrying.",
         }),
       );
     }
@@ -291,6 +297,7 @@ const accessMount = (input: MountAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Remote agents cannot mount",
+          hint: "Use reveal_plaintext remotely or run the agent locally to mount secrets.",
         }),
       );
     }
@@ -312,6 +319,7 @@ const accessMount = (input: MountAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "No valid permission",
+          hint: "Grant the matching mount capability on this item to the agent before retrying.",
         }),
       );
     }

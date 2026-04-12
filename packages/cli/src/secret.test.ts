@@ -9,6 +9,7 @@ describe("resolveSecretValue", () => {
       getItem: async () => ({
         item: {
           id: "item_123",
+          label: "Database password",
           storageMode: "server_managed" as const,
           cryptoVersion: 1,
           contentVersion: 1,
@@ -38,6 +39,7 @@ describe("resolveSecretValue", () => {
       getItem: async () => ({
         item: {
           id: "item_123",
+          label: "Database password",
           storageMode: "server_managed" as const,
           cryptoVersion: 1,
           contentVersion: 1,
@@ -66,6 +68,7 @@ describe("resolveSecretValue", () => {
       getItem: async () => ({
         item: {
           id: "item_123",
+          label: "Database password",
           storageMode: "server_managed" as const,
           cryptoVersion: 1,
           contentVersion: 1,

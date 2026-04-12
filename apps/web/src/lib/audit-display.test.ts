@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Agent } from "@abadge/core";
-import { encryptItem, serializeItemPayload } from "@abadge/crypto";
+import type { Agent, ItemSummary } from "@abadge/core";
 import {
   buildAuditAgentNameMap,
   buildAuditItemLabelMap,
@@ -34,44 +33,35 @@ describe("audit display helpers", () => {
   });
 
   test("uses server-managed labels directly", () => {
-    const labels = buildAuditItemLabelMap(
-      [
-        {
-          itemId: "item_sm_1",
-          storageMode: "server_managed",
-          label: "Production API key",
-        },
-      ],
-      null,
-    );
+    const labels = buildAuditItemLabelMap([
+      {
+        id: "item_sm_1",
+        label: "Production API key",
+        storageMode: "server_managed",
+        cryptoVersion: 1,
+        contentVersion: 1,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ] satisfies ItemSummary[]);
 
     expect(labels.get("item_sm_1")).toBe("Production API key");
   });
 
-  test("derives zero-knowledge labels only when the vault is unlocked", () => {
-    const rootKey = new Uint8Array(32).fill(9);
-    const encrypted = encryptItem(
-      serializeItemPayload({
-        v: 1,
+  test("uses stored labels for zero-knowledge items too", () => {
+    const labels = buildAuditItemLabelMap([
+      {
+        id: "item_zk_1",
         label: "Database password",
-        kind: "opaque",
-        tags: [],
-        fields: { value: "secret" },
-      }),
-      rootKey,
-    );
+        storageMode: "zero_knowledge",
+        cryptoVersion: 1,
+        contentVersion: 1,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      },
+    ] satisfies ItemSummary[]);
 
-    const displayItem = {
-      itemId: "item_zk_1",
-      storageMode: "zero_knowledge" as const,
-      encryptedItemKey: encrypted.encryptedItemKey,
-      ciphertext: encrypted.ciphertext,
-    };
-
-    expect(buildAuditItemLabelMap([displayItem], null).has("item_zk_1")).toBe(false);
-    expect(buildAuditItemLabelMap([displayItem], rootKey).get("item_zk_1")).toBe(
-      "Database password",
-    );
+    expect(labels.get("item_zk_1")).toBe("Database password");
   });
 
   test("falls back to ids and em dashes when display values are unavailable", () => {

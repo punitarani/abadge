@@ -1,8 +1,8 @@
 import { createAuth } from "@abadge/auth";
-import type { OperatorTokenScope } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { createDb } from "@abadge/db";
 import { validateWorkerEnv, type WorkerEnv } from "@abadge/env/worker";
+import type { OperatorTokenScope } from "./operator-token";
 
 export interface HyperdriveBindingLike {
   connectionString: string;

@@ -4,9 +4,6 @@ import {
   type CreateItemInput,
   CreateItemSchema,
   IdResultSchema,
-  ItemDisplayListResultSchema,
-  type ItemDisplayQuery,
-  ItemDisplayQuerySchema,
   ItemListResultSchema,
   ItemResultSchema,
   ItemVersionResultSchema,
@@ -17,7 +14,7 @@ import {
   UpdateItemSchema,
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
-import { and, desc, eq, inArray, isNull } from "@abadge/db";
+import { and, desc, eq, isNull } from "@abadge/db";
 import { items, vaults } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -25,6 +22,15 @@ import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../eff
 import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
+
+function fallbackItemLabel(itemId: string): string {
+  return `migrated-${itemId.slice(0, 8)}`;
+}
+
+function resolveStoredLabel(itemId: string, label?: string | null): string {
+  const trimmed = label?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallbackItemLabel(itemId);
+}
 
 const loadOwnedItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -44,6 +50,7 @@ const loadOwnedItem = (itemId: string) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and make sure the item still exists for this account.",
         }),
       );
     }
@@ -67,6 +74,7 @@ const createItem = (input: CreateItemInput) =>
           new NotFoundError({
             code: "VAULT_NOT_FOUND",
             message: "Vault not bootstrapped",
+            hint: "Bootstrap the vault before creating zero-knowledge items.",
           }),
         );
       }
@@ -76,6 +84,7 @@ const createItem = (input: CreateItemInput) =>
           id,
           userId,
           vaultId: vault.id,
+          label: fallbackItemLabel(id),
           storageMode: "zero_knowledge",
           encryptedItemKey: input.encryptedItemKey,
           ciphertext: input.ciphertext,
@@ -91,6 +100,7 @@ const createItem = (input: CreateItemInput) =>
         ctx.db.insert(items).values({
           id,
           userId,
+          label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
           serverCiphertext: encrypted.ciphertext,
           serverIv: encrypted.iv,
@@ -116,6 +126,7 @@ const listItems = Effect.gen(function* () {
     ctx.db
       .select({
         id: items.id,
+        label: items.label,
         storageMode: items.storageMode,
         cryptoVersion: items.cryptoVersion,
         contentVersion: items.contentVersion,
@@ -129,91 +140,6 @@ const listItems = Effect.gen(function* () {
 
   return { items: result.map(serializeItemSummary) };
 });
-
-type DisplayRow = {
-  id: string;
-  storageMode: string;
-  encryptedItemKey: string | null;
-  ciphertext: string | null;
-  serverCiphertext: string | null;
-  serverIv: string | null;
-  serverKeyVersion: number | null;
-};
-
-async function resolveOneItemDisplay(
-  item: DisplayRow,
-  encryptionKey: string,
-): Promise<
-  | { itemId: string; storageMode: "server_managed"; label: string }
-  | { itemId: string; storageMode: "zero_knowledge"; encryptedItemKey: string; ciphertext: string }
-  | { itemId: string; error: "decrypt_failed" }
-> {
-  try {
-    if (item.storageMode === "server_managed") {
-      if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-        return { itemId: item.id, error: "decrypt_failed" };
-      }
-      const decrypted = await serverDecrypt(
-        { ciphertext: item.serverCiphertext, iv: item.serverIv, keyVersion: item.serverKeyVersion },
-        encryptionKey,
-      );
-      return {
-        itemId: item.id,
-        storageMode: "server_managed",
-        label: decodeServerManagedPayload(item.id, decrypted).label,
-      };
-    }
-
-    if (!item.encryptedItemKey || !item.ciphertext) {
-      return { itemId: item.id, error: "decrypt_failed" };
-    }
-    return {
-      itemId: item.id,
-      storageMode: "zero_knowledge",
-      encryptedItemKey: item.encryptedItemKey,
-      ciphertext: item.ciphertext,
-    };
-  } catch {
-    return { itemId: item.id, error: "decrypt_failed" };
-  }
-}
-
-export const resolveItemDisplay = (input: ItemDisplayQuery) =>
-  Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
-    const itemIds = [...new Set(input.itemIds)];
-
-    if (itemIds.length === 0) {
-      return { items: [] };
-    }
-
-    const result = yield* Effect.tryPromise(() =>
-      ctx.db
-        .select({
-          id: items.id,
-          storageMode: items.storageMode,
-          encryptedItemKey: items.encryptedItemKey,
-          ciphertext: items.ciphertext,
-          serverCiphertext: items.serverCiphertext,
-          serverIv: items.serverIv,
-          serverKeyVersion: items.serverKeyVersion,
-        })
-        .from(items)
-        .where(
-          and(
-            eq(items.userId, ctx.identity.userId),
-            isNull(items.deletedAt),
-            inArray(items.id, itemIds),
-          ),
-        ),
-    );
-
-    const displayItems = yield* Effect.tryPromise(() =>
-      Promise.all(result.map((item) => resolveOneItemDisplay(item, ctx.env.ENCRYPTION_KEY))),
-    );
-
-    return { items: displayItems };
-  });
 
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -241,6 +167,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
         new ConflictError({
           code: "STALE_VERSION",
           message: "Stale version — reload and retry",
+          hint: "Refresh the item details and retry the update with the latest contentVersion.",
         }),
       );
     }
@@ -267,6 +194,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
         ctx.db
           .update(items)
           .set({
+            label: resolveStoredLabel(itemId, input.payload.label),
             serverCiphertext: encrypted.ciphertext,
             serverIv: encrypted.iv,
             serverKeyVersion: encrypted.keyVersion,
@@ -298,6 +226,7 @@ const ownerReveal = (itemId: string) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only server-managed items can be revealed via the API",
+          hint: "Use local decryption for zero-knowledge items instead of the owner reveal API.",
         }),
       );
     }
@@ -307,6 +236,7 @@ const ownerReveal = (itemId: string) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Item has no server-encrypted data",
+          hint: "Check the item storage mode and stored ciphertext before retrying the reveal.",
         }),
       );
     }
@@ -322,10 +252,10 @@ const ownerReveal = (itemId: string) =>
     yield* logSessionAudit({
       userId: ctx.identity.userId,
       itemId,
-      eventType: "item.read",
+      eventType: "item.export",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { reveal: true },
+      meta: { exportFormat: "json" },
     });
 
     return { payload: decodeServerManagedPayload(item.id, decrypted) };
@@ -368,10 +298,6 @@ export const itemsRouter = createTrpcRouter({
   list: scopedSessionProcedure("items:read")
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
-  resolveDisplay: scopedSessionProcedure("items:read")
-    .input(strictSchema(ItemDisplayQuerySchema))
-    .output(strictSchema(ItemDisplayListResultSchema))
-    .query(({ ctx, input }) => runSessionEffect(ctx, resolveItemDisplay(input))),
   get: scopedSessionProcedure("items:read")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))

@@ -83,7 +83,7 @@ Fully non-interactive operator automation uses scoped `abo_...` tokens.
 - Default TTL is 24 hours
 - Maximum TTL is 30 days
 - Revoked and expired tokens fail closed
-- Operator-token callers cannot create, list, or revoke operator tokens
+- Token issuance and revocation are legacy maintenance flows, not part of the v0 public `@abadge/core`, SDK, or dashboard contract
 
 Scopes are coarse and route-bound:
 
@@ -223,14 +223,14 @@ The MCP server adds additional protections for AI model contexts:
 
 | Category | Events Logged |
 |---|---|
-| Vault | Bootstrap, unlock, password change, key rotation |
-| Items | Create, read, update, delete |
-| Auth | Login, logout |
-| Agents | Create, bootstrap issue, enroll, rotate, revoke, session issue/reject/revoke |
-| Permissions | Create, revoke |
+| Profile | Create, rotate, delete, delete cascade |
+| Items | Create, export, update, delete, delete cascade |
+| Auth | Login, logout, token issue, token revoke |
+| Agents | Create, bootstrap issue, enroll, rotate, revoke, revoke cascade, session issue/reject/revoke |
+| Permissions | Create, revoke, revoke cascade |
 | Access | Ciphertext read, reveal, env mount, file mount |
 
-Auth lifecycle events include `auth.login`, `auth.logout`, `operator_token.create`, and `operator_token.revoke`.
+Auth lifecycle events include `auth.login`, `auth.logout`, `auth.token_issue`, and `auth.token_revoke`.
 
 ### Audit Entry Fields
 

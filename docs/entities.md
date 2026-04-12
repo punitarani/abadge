@@ -235,11 +235,11 @@ Append-only record of every significant event. No foreign key constraints -- aud
 
 | Category | Events |
 |---|---|
-| Vault | `vault.bootstrap`, `vault.unlock`, `vault.password_change`, `vault.key_rotate` |
-| Item | `item.create`, `item.read`, `item.update`, `item.delete` |
-| Auth | `auth.login`, `auth.logout` |
-| Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
-| Permission | `permission.create`, `permission.revoke` |
+| Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
+| Item | `item.create`, `item.export`, `item.update`, `item.delete`, `item.delete_cascade` |
+| Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
+| Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
+| Permission | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
 | Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
 
 ---

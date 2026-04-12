@@ -1,6 +1,16 @@
-import type { OperatorTokenScope } from "@abadge/core";
 import { index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+
+type OperatorTokenScope =
+  | "items:read"
+  | "items:write"
+  | "agents:read"
+  | "agents:write"
+  | "permissions:read"
+  | "permissions:write"
+  | "audit:read"
+  | "vault:read"
+  | "vault:write";
 
 export const operatorTokens = pgTable(
   "operator_tokens",
