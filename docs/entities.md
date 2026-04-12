@@ -6,80 +6,68 @@ Complete reference for all database entities, relationships, and data lifecycle 
 
 ## Entity Relationship Diagram
 
-```mermaid
-erDiagram
-  USER ||--o{ SESSION : "has"
-  USER ||--o{ ACCOUNT : "links"
-  USER ||--o| VAULT : "owns (one)"
-  USER ||--o{ ITEM : "owns"
-  USER ||--o{ PRINCIPAL : "registers"
-  USER ||--o{ MEMBER : "belongs to"
-  USER ||--o{ INVITATION : "invites"
+```
+Organization
+  ├── Members (Users with roles: owner, admin, member)
+  ├── Profiles (named credential namespaces, each with ZK or server-managed encryption)
+  │     └── Items (individual credentials, each with named fields)
+  └── Agents (automated callers scoped to the org)
+        └── Permissions → Items (with Capabilities)
 
-  VAULT ||--o{ ITEM : "contains (ZK)"
-
-  PRINCIPAL ||--o{ AGENT_SESSION : "authenticates via"
-  PRINCIPAL ||--o{ AGENT_SESSION_CHALLENGE : "verifies via"
-  PRINCIPAL ||--o{ AGENT_ENROLLMENT_TOKEN : "enrolls via"
-  PRINCIPAL ||--o{ GRANT : "receives"
-
-  ITEM ||--o{ GRANT : "protected by"
-
-  ORGANIZATION ||--o{ MEMBER : "has"
-  ORGANIZATION ||--o{ INVITATION : "sends"
-
-  AUDIT_LOG }o--|| USER : "records for"
+AuditLog (append-only, org-scoped, records everything)
 ```
 
 ---
 
-## Core Entities
+## Organization
 
-### User
-
-The root identity. Every resource in abadge belongs to a user.
+Top-level resource owner. Everything belongs to an organization. Personal workspace = org with one member.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | text | PK | Unique user ID |
+| `id` | text | PK | Unique org ID |
 | `name` | text | NOT NULL | Display name |
-| `email` | text | NOT NULL, UNIQUE | Login email |
-| `emailVerified` | boolean | NOT NULL, default `false` | Email verification status |
-| `image` | text | nullable | Avatar URL |
-| `createdAt` | timestamptz | NOT NULL, default `now()` | Account creation |
-| `updatedAt` | timestamptz | NOT NULL, default `now()` | Last update |
+| `slug` | text | NOT NULL, UNIQUE | URL slug |
+| `logo` | text | nullable | Logo URL |
+| `createdAt` | timestamptz | NOT NULL | Creation time |
 
 ---
 
-### Vault
+## Profile
 
-One per user. Stores the wrapped root key for zero-knowledge encryption. The server never has the plaintext root key.
+Named credential namespace within an org. Replaces the single vault-per-user model. Each profile has its own encryption root.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | text | PK | Vault ID |
-| `userId` | text | FK → user, UNIQUE | Owner (one vault per user) |
-| `wrappedRootKey` | text | NOT NULL | Root key encrypted by KEK (XChaCha20-Poly1305) |
-| `kdfSalt` | text | NOT NULL | Argon2id salt (16 bytes, base64) |
-| `kdfParams` | jsonb | NOT NULL | `{algorithm, memory, iterations, parallelism, hashLength}` |
+| `id` | text | PK | Profile ID |
+| `organizationId` | text | FK → organization, NOT NULL | Owning org |
+| `name` | text | NOT NULL | Human-readable name |
+| `description` | text | nullable | Optional description |
+| `storageMode` | text | NOT NULL | `zero_knowledge` or `server_managed` |
+| `wrappedRootKey` | text | nullable | Root key encrypted by KEK (XChaCha20-Poly1305) |
+| `kdfSalt` | text | nullable | Argon2id salt (16 bytes, base64) |
+| `kdfParams` | jsonb | nullable | `{algorithm, memory, iterations, parallelism, hashLength}` |
 | `recoveryWrappedRootKey` | text | nullable | Root key encrypted by recovery key |
 | `keyVersion` | integer | NOT NULL, default `1` | Incremented on root key rotation |
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 | `updatedAt` | timestamptz | NOT NULL | Last update |
 
-**Key derivation**: Master password + salt → Argon2id (64 MiB, 3 iterations) → KEK → unwraps root key.
+**Unique constraint**: `(organizationId, name)` -- one profile name per org.
 
 ---
 
-### Item
+## Item
 
-A stored secret. Supports two storage modes with different encryption schemes.
+Stored credential within a profile. Two storage modes: zero_knowledge (client-side XChaCha20-Poly1305) and server_managed (AES-256-GCM).
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | text | PK | Item ID |
-| `userId` | text | FK → user, NOT NULL | Owner |
-| `vaultId` | text | FK → vault, nullable | Vault (ZK items only) |
+| `organizationId` | text | FK → organization, NOT NULL | Owning org |
+| `profileId` | text | FK → profile, NOT NULL | Parent profile |
+| `label` | text | NOT NULL | Human-readable name (cleartext) |
+| `kind` | text | NOT NULL | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
+| `tags` | jsonb | NOT NULL, default `[]` | Categorization tags |
 | `storageMode` | text | NOT NULL | `zero_knowledge` or `server_managed` |
 | `encryptedItemKey` | text | nullable | DEK wrapped by root key (ZK only) |
 | `keyNonce` | text | nullable | Nonce for key wrapping (ZK only) |
@@ -90,11 +78,9 @@ A stored secret. Supports two storage modes with different encryption schemes.
 | `serverKeyVersion` | integer | nullable | Encryption key version (server-managed only) |
 | `cryptoVersion` | integer | NOT NULL, default `1` | Envelope format version |
 | `contentVersion` | integer | NOT NULL, default `1` | Optimistic concurrency counter |
+| `deletedAt` | timestamptz | nullable | Soft-delete timestamp |
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 | `updatedAt` | timestamptz | NOT NULL | Last update |
-| `deletedAt` | timestamptz | nullable | Soft-delete timestamp |
-
-**Item kinds**: `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque`
 
 **Plaintext envelope** (what gets encrypted):
 ```json
@@ -110,122 +96,70 @@ A stored secret. Supports two storage modes with different encryption schemes.
 
 ---
 
-### Principal (Agent)
+## Agent
 
-An agent identity that can request access to items.
+Automated caller scoped to an org. Kinds: local_cli, local_mcp, remote.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | text | PK | Agent ID |
-| `userId` | text | FK → user, NOT NULL | Owner |
+| `organizationId` | text | FK → organization, NOT NULL | Owning org |
+| `createdBy` | text | FK → user, NOT NULL | User who registered this agent |
+| `name` | text | NOT NULL | Human-readable name |
+| `description` | text | nullable | Optional description |
 | `kind` | text | NOT NULL | `local_cli`, `local_mcp`, `remote` |
 | `locality` | text | NOT NULL | `local` or `remote` (derived from kind) |
 | `authMethod` | text | NOT NULL | `public_key_session` or `legacy_api_key` |
-| `name` | text | NOT NULL | Human-readable name |
-| `secretHash` | text | nullable | SHA-256 hash of API key (legacy auth) |
-| `secretPrefix` | text | nullable | First 4-8 chars for fast lookup |
 | `publicKey` | text | nullable | Ed25519 public key (session auth) |
+| `secretHash` | text | nullable | SHA-256 hash of API key (legacy auth) |
+| `secretPrefix` | text | nullable | First chars for fast lookup |
 | `enabled` | boolean | NOT NULL, default `true` | Whether agent can authenticate |
 | `revokedAt` | timestamptz | nullable | Revocation timestamp |
 | `lastUsedAt` | timestamptz | nullable | Last successful auth |
 | `metadata` | jsonb | NOT NULL, default `{}` | Arbitrary metadata |
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 
-**Locality mapping**:
-- `local_cli`, `local_mcp` → `local`
-- `remote` → `remote`
+**Locality mapping**: `local_cli`, `local_mcp` → `local`. `remote` → `remote`.
 
 ---
 
-### Grant (Permission)
+## Permission
 
-Links a principal to an item with a specific capability.
+Explicit capability grant: agent + item + capability. Unique constraint on (agentId, itemId, capability).
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | text | PK | Grant ID |
-| `principalId` | text | FK → principal, NOT NULL | Agent receiving access |
+| `id` | text | PK | Permission ID |
+| `organizationId` | text | FK → organization, NOT NULL | Owning org |
+| `agentId` | text | FK → agent, NOT NULL | Agent receiving access |
 | `itemId` | text | FK → item, NOT NULL | Item being accessed |
-| `capability` | text | NOT NULL | Access type (see below) |
+| `capability` | text | NOT NULL | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` |
 | `expiresAt` | timestamptz | nullable | Auto-expiration |
-| `grantedBy` | text | FK → user, NOT NULL | User who created the grant |
+| `grantedBy` | text | FK → user, NOT NULL | User who created the permission |
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 
-**Unique constraint**: `(principalId, itemId, capability)` -- one grant per agent-item-capability triple.
-
-**Capabilities**:
-
-| Capability | Description | Local | Remote |
-|---|---|---|---|
-| `read_ciphertext` | Download encrypted blob | ZK items only | Never |
-| `reveal_plaintext` | Decrypt and return value | Server-managed | Server-managed |
-| `mount_env` | Inject as environment variable | Both modes | Never |
-| `mount_file` | Write to temp file (0600) | Both modes | Never |
+**Unique constraint**: `(agentId, itemId, capability)` -- one permission per agent-item-capability triple.
 
 ---
 
-### Agent Session
+## Audit Log
 
-Short-lived authentication token for agents using public-key auth.
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | text | PK | Session ID |
-| `agentId` | text | FK → principal, NOT NULL | Agent this session belongs to |
-| `userId` | text | FK → user, NOT NULL | Agent's owner |
-| `tokenHash` | text | NOT NULL, UNIQUE | SHA-256 hash of `abs_...` token |
-| `expiresAt` | timestamptz | NOT NULL | Expiration (default: 15 minutes) |
-| `revokedAt` | timestamptz | nullable | Revocation timestamp |
-| `lastUsedAt` | timestamptz | nullable | Last use |
-| `createdAt` | timestamptz | NOT NULL | Creation time |
-
----
-
-### Agent Session Challenge
-
-One-time challenge for agent session exchange (Ed25519 signature verification).
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | text | PK | Challenge ID |
-| `agentId` | text | FK → principal, NOT NULL | Target agent |
-| `challengeHash` | text | NOT NULL, UNIQUE | SHA-256 hash of challenge |
-| `expiresAt` | timestamptz | NOT NULL | Expiration (1 minute) |
-| `usedAt` | timestamptz | nullable | When used |
-| `createdAt` | timestamptz | NOT NULL | Creation time |
-
----
-
-### Agent Enrollment Token
-
-One-time bootstrap token for agent enrollment (public key registration).
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | text | PK | Token ID |
-| `agentId` | text | FK → principal, NOT NULL | Target agent |
-| `userId` | text | FK → user, NOT NULL | Agent's owner |
-| `createdBy` | text | FK → user, NOT NULL | Issuer |
-| `tokenHash` | text | NOT NULL, UNIQUE | SHA-256 hash of `abe_...` token |
-| `expiresAt` | timestamptz | NOT NULL | Expiration (10 minutes) |
-| `usedAt` | timestamptz | nullable | When used |
-| `createdAt` | timestamptz | NOT NULL | Creation time |
-
----
-
-### Audit Log
-
-Append-only record of every significant event. No foreign key constraints -- audit entries survive entity deletion.
+Append-only, no FK constraints. Survives entity deletion.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | bigserial | PK | Auto-incrementing ID |
-| `userId` | text | NOT NULL | User context |
-| `principalId` | text | nullable | Agent involved (if any) |
+| `organizationId` | text | NOT NULL | Org context |
+| `userId` | text | nullable | User context |
+| `agentId` | text | nullable | Agent involved (if any) |
 | `itemId` | text | nullable | Item involved (if any) |
-| `eventType` | text | NOT NULL | Event category (see below) |
-| `result` | text | NOT NULL | `allowed`, `denied`, `expired`, `revoked` |
+| `profileId` | text | nullable | Profile involved (if any) |
+| `surface` | text | nullable | `cli`, `mcp`, `api`, `sdk` |
+| `eventType` | text | NOT NULL | Event category |
+| `result` | text | NOT NULL | `allowed`, `denied`, `expired`, `revoked`, `cascade` |
 | `deliveryMode` | text | nullable | How the secret was delivered |
+| `field` | text | nullable | Specific field accessed |
+| `purpose` | text | nullable | Caller-declared purpose |
 | `meta` | jsonb | NOT NULL, default `{}` | Structured metadata |
 | `ipAddress` | text | nullable | Client IP |
 | `occurredAt` | timestamptz | NOT NULL, default `now()` | Event timestamp |
@@ -257,27 +191,6 @@ Append-only record of every significant event. No foreign key constraints -- aud
 | `userAgent` | text | Browser user agent |
 | `activeOrganizationId` | text | Active org context |
 
-### Account (OAuth)
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | text | PK |
-| `accountId` | text | Provider account ID |
-| `providerId` | text | `google`, `github`, `credential` |
-| `userId` | text | FK → user |
-| `accessToken` | text | OAuth access token |
-| `refreshToken` | text | OAuth refresh token |
-| `password` | text | Hashed password (credential provider) |
-
-### Organization
-
-| Column | Type | Description |
-|---|---|---|
-| `id` | text | PK |
-| `name` | text | Org name |
-| `slug` | text | UNIQUE URL slug |
-| `metadata` | text | Arbitrary metadata |
-
 ### Member
 
 | Column | Type | Description |
@@ -285,7 +198,7 @@ Append-only record of every significant event. No foreign key constraints -- aud
 | `id` | text | PK |
 | `organizationId` | text | FK → organization |
 | `userId` | text | FK → user |
-| `role` | text | `owner` or `member` |
+| `role` | text | `owner`, `admin`, or `member` |
 
 ### Device Code
 
@@ -300,28 +213,50 @@ Append-only record of every significant event. No foreign key constraints -- aud
 
 ---
 
-## Indexes
+## Agent Session Entities
 
-| Table | Index | Columns | Type |
+### Agent Session
+
+Short-lived authentication token for agents using public-key auth.
+
+| Column | Type | Constraints | Description |
 |---|---|---|---|
-| `vaults` | `vaults_user_id_idx` | userId | UNIQUE |
-| `items` | `items_user_id_idx` | userId | Regular |
-| `items` | `items_vault_id_idx` | vaultId | Regular |
-| `principals` | `principals_user_id_idx` | userId | Regular |
-| `principals` | `principals_secret_prefix_idx` | secretPrefix | Regular |
-| `grants` | `grants_unique_idx` | principalId, itemId, capability | UNIQUE |
-| `grants` | `grants_principal_id_idx` | principalId | Regular |
-| `grants` | `grants_item_id_idx` | itemId | Regular |
-| `agentSessions` | `agent_sessions_token_hash_idx` | tokenHash | UNIQUE |
-| `agentSessions` | `agent_sessions_agent_id_idx` | agentId | Regular |
-| `agentSessions` | `agent_sessions_expires_at_idx` | expiresAt | Regular |
-| `agentSessionChallenges` | `agent_session_challenges_hash_idx` | challengeHash | UNIQUE |
-| `agentEnrollmentTokens` | `agent_enrollment_tokens_token_hash_idx` | tokenHash | UNIQUE |
-| `auditLog` | `audit_log_user_id_idx` | userId | Regular |
-| `auditLog` | `audit_log_principal_id_idx` | principalId | Regular |
-| `auditLog` | `audit_log_item_id_idx` | itemId | Regular |
-| `auditLog` | `audit_log_occurred_at_idx` | occurredAt | Regular |
-| `organization` | `idx_organization_slug` | slug | Regular |
+| `id` | text | PK | Session ID |
+| `agentId` | text | FK → agent, NOT NULL | Agent this session belongs to |
+| `userId` | text | FK → user, NOT NULL | Agent's owner |
+| `tokenHash` | text | NOT NULL, UNIQUE | SHA-256 hash of `abs_...` token |
+| `expiresAt` | timestamptz | NOT NULL | Expiration (default: 15 minutes) |
+| `revokedAt` | timestamptz | nullable | Revocation timestamp |
+| `lastUsedAt` | timestamptz | nullable | Last use |
+| `createdAt` | timestamptz | NOT NULL | Creation time |
+
+### Agent Session Challenge
+
+One-time challenge for agent session exchange (Ed25519 signature verification).
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | text | PK | Challenge ID |
+| `agentId` | text | FK → agent, NOT NULL | Target agent |
+| `challengeHash` | text | NOT NULL, UNIQUE | SHA-256 hash of challenge |
+| `expiresAt` | timestamptz | NOT NULL | Expiration (1 minute) |
+| `usedAt` | timestamptz | nullable | When used |
+| `createdAt` | timestamptz | NOT NULL | Creation time |
+
+### Agent Enrollment Token
+
+One-time bootstrap token for agent enrollment (public key registration).
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | text | PK | Token ID |
+| `agentId` | text | FK → agent, NOT NULL | Target agent |
+| `userId` | text | FK → user, NOT NULL | Agent's owner |
+| `createdBy` | text | FK → user, NOT NULL | Issuer |
+| `tokenHash` | text | NOT NULL, UNIQUE | SHA-256 hash of `abe_...` token |
+| `expiresAt` | timestamptz | NOT NULL | Expiration (10 minutes) |
+| `usedAt` | timestamptz | nullable | When used |
+| `createdAt` | timestamptz | NOT NULL | Creation time |
 
 ---
 
@@ -341,45 +276,34 @@ Append-only record of every significant event. No foreign key constraints -- aud
 
 ### Item Lifecycle
 
-```mermaid
-stateDiagram-v2
-  [*] --> Created: item.create
-  Created --> Updated: item.update
-  Updated --> Updated: item.update (contentVersion++)
-  Updated --> SoftDeleted: item.delete
-  Created --> SoftDeleted: item.delete
-  SoftDeleted --> [*]
-
-  note right of Created: ZK: ciphertext stored\nSM: AES-256-GCM encrypted
-  note right of SoftDeleted: deletedAt set\nData retained
+```
+[Created] → item.create
+  │
+  ├── [Updated] → item.update (contentVersion++)
+  │
+  └── [SoftDeleted] → item.delete (deletedAt set, data retained)
 ```
 
 ### Agent Lifecycle
 
-```mermaid
-stateDiagram-v2
-  [*] --> Created: agent.create
-  Created --> Enrolled: agent.enroll (public key set)
-  Created --> Active: API key issued (legacy)
-  Enrolled --> Active: Session exchanged
-  Active --> KeyRotated: agent.rotate
-  KeyRotated --> Active: New key issued
-  Active --> Revoked: agent.revoke
-  Revoked --> [*]
-
-  note right of Active: Can authenticate and\nrequest access
-  note right of Revoked: revokedAt set\nenabled = false
+```
+[Created] → agent.create
+  │
+  ├── [Enrolled] → agent.enroll (public key set)
+  │     └── [Active] → session exchanged
+  │
+  ├── [Active] → API key issued (legacy)
+  │     └── [KeyRotated] → agent.rotate → [Active]
+  │
+  └── [Revoked] → agent.revoke (revokedAt set, enabled = false)
 ```
 
 ### Permission Lifecycle
 
-```mermaid
-stateDiagram-v2
-  [*] --> Active: permission.create
-  Active --> Expired: expiresAt passed
-  Active --> Revoked: permission.revoke
-  Expired --> [*]
-  Revoked --> [*]
-
-  note right of Active: Agent can access\nitem with capability
+```
+[Active] → permission.create
+  │
+  ├── [Expired] → expiresAt passed
+  │
+  └── [Revoked] → permission.revoke
 ```

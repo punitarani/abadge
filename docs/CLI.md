@@ -34,11 +34,15 @@ Config lives at `~/.abadge/config.json`. Key fields:
 {
   "apiUrl": "http://localhost:8787",
   "activeOrgId": "org_...",
-  "activeProfileId": "prof_..."
+  "activeProfileId": "prof_...",
+  "localAgents": {
+    "cli": { "agentId": "agent_...", "privateKeyPath": "~/.abadge/agents/cli.ed25519.jwk" },
+    "mcp": { "agentId": "agent_...", "privateKeyPath": "~/.abadge/agents/mcp.ed25519.jwk" }
+  }
 }
 ```
 
-The bearer session token is held in daemon memory only and is never written to disk.
+No API keys are stored in config. The bearer session token is held in daemon memory only and is never written to disk. Agent private keys live in protected files (0600) under `~/.abadge/agents/`.
 
 The local daemon socket is `~/.abadge/vaultd.sock`.
 
@@ -249,11 +253,14 @@ abadge item delete <item-id> --force
 ### `abadge agent register`
 
 Registers a new agent (does not auto-run on login). Defaults to keypair auth
-(`public_key_session`) and issues a bootstrap token for enrollment.
+(`public_key_session`): generates an Ed25519 keypair on-device, stores the private key in
+`~/.abadge/agents/`, and uploads the public key via bootstrap token. Use `--legacy-api-key`
+to opt into legacy API key auth instead (shows the key once, warns about deprecation).
 
 ```bash
 abadge agent register --kind local_cli
 abadge agent register --name "ci bot" --kind remote
+abadge agent register --name "legacy bot" --kind remote --legacy-api-key
 ```
 
 | Flag | Description |
@@ -261,6 +268,7 @@ abadge agent register --name "ci bot" --kind remote
 | `--name, -n` | Agent display name |
 | `--kind, -k` | `local_cli`, `local_mcp`, or `remote` |
 | `--description, -d` | Optional metadata description |
+| `--legacy-api-key` | Opt into legacy API key auth instead of keypair session |
 | `--json` | Print raw JSON |
 
 ### `abadge agent list`
@@ -288,14 +296,14 @@ Revokes an agent and invalidates all active sessions.
 abadge agent revoke <agent-id>
 ```
 
-### `abadge permission grant`
+### `abadge permission create`
 
-Creates an explicit permission granting a capability to an agent for an item.
+Creates an explicit permission createing a capability to an agent for an item.
 
 ```bash
-abadge permission grant --agent <agent-id> --item <item-id> --capability reveal_plaintext
-abadge permission grant --agent <agent-id> --item <item-id> --capability mount_env
-abadge permission grant --agent <agent-id> --item <item-id> --capability mount_env --expires-at 2026-12-31T00:00:00Z
+abadge permission create --agent <agent-id> --item <item-id> --capability reveal_plaintext
+abadge permission create --agent <agent-id> --item <item-id> --capability mount_env
+abadge permission create --agent <agent-id> --item <item-id> --capability mount_env --expires-at 2026-12-31T00:00:00Z
 ```
 
 | Flag | Description |
@@ -328,19 +336,33 @@ abadge permission revoke <permission-id>
 ### `abadge run`
 
 Resolves a secret value and injects it into a subprocess via the daemon. Exits with the child
-process exit code.
+process exit code. Supports field-level delivery for multi-field items and environment expansion.
 
 ```bash
+# Single-value item — inject as ABADGE_SECRET
 abadge run --item <item-id> -- npm run deploy
-abadge run --item <item-id> --field password -- psql "$DB_HOST"
-abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
+
+# Inject a specific field from a multi-field item
+abadge run --item <item-id> --field password --env DB_PASSWORD -- psql "$DB_HOST"
+
+# Inject as a named env var
+abadge run --item <item-id> --env OPENAI_API_KEY -- node script.js
+
+# Multiple fields from one item (stacked triples)
+abadge run --item prod-db --field username --env DB_USER \
+           --field password --env DB_PASSWORD -- ./migrate.sh
+
+# Expand every field of a multi-field item into the environment
+abadge run --item my-service-env --expand-env -- ./server
+# → DATABASE_URL=..., REDIS_URL=..., API_KEY=... (field name = env var name)
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--item` | Item ID |
-| `--field` | Named field to inject (for multi-field items) |
-| `--env-var` | Environment variable name (default: `ABADGE_SECRET`) |
+| `--item` | Item ID or label |
+| `--field` | Named field to inject (for multi-field items); can be repeated |
+| `--env` | Environment variable name (default: `ABADGE_SECRET`) |
+| `--expand-env` | Inject every field as a separate env var (field name = var name) |
 
 ### `abadge mount`
 

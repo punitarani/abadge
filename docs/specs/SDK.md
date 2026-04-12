@@ -1,20 +1,15 @@
 # TypeScript SDK Specification
 
 > Client library reference for `@abadge/sdk`.
-> The SDK is the programmatic interface to the abadge control plane.
 
 ## Overview
 
-The SDK provides a typed TypeScript client that wraps the abadge API. It is used by the CLI, can be used by custom integrations, and is published as `@abadge/sdk` on npm.
+The SDK provides two typed TypeScript clients for interacting with the abadge API.
 
-The SDK has two personas:
-
-| Persona | Auth | Can do |
-|---------|------|--------|
-| **User client** | Session token | Manage vault, items, agents, permissions, audit |
-| **Agent client** | API key (`abl_` / `abg_`) | Access secrets via `access.*` methods |
-
-Both use the same `AbadgeClient` class — the server determines available operations based on the token type.
+| Client | Auth | Purpose |
+|--------|------|---------|
+| `AbadgeUserClient` | Session token | Manage organizations, profiles, items, agents, permissions, audit |
+| `AbadgeAgentClient` | Ed25519 keypair session (preferred) or legacy API key | Access secrets via `access.*` methods |
 
 ---
 
@@ -28,419 +23,265 @@ bun add @abadge/sdk
 
 ---
 
-## Client Construction
+## `AbadgeUserClient`
+
+Session-token authenticated client for operator commands.
+
+### Construction
 
 ```typescript
-import { AbadgeClient } from "@abadge/sdk";
+import { AbadgeUserClient } from "@abadge/sdk";
 
-const client = new AbadgeClient({
+const client = new AbadgeUserClient({
   apiUrl: "https://api.abadge.dev",
-  token: "session_token_or_api_key",
+  token: sessionToken,
 });
 ```
 
-### Configuration
+### Organizations
 
 ```typescript
-interface AbadgeClientConfig {
-  apiUrl: string;   // API endpoint URL (no trailing slash)
-  token: string;    // Session token or agent API key
-}
+client.organizations.create({ name, slug? })
+client.organizations.list()
+client.organizations.get(orgId)
+client.organizations.update(orgId, { name, slug })
+client.organizations.delete(orgId)
+client.organizations.members.list(orgId)
+client.organizations.members.invite(orgId, email, role)
+client.organizations.members.remove(orgId, userId)
+client.organizations.members.updateRole(orgId, userId, role)
 ```
 
----
-
-## Methods
-
-### Vault
-
-#### `client.bootstrapVault(data)`
-
-Initialize the user's vault. Called once after account creation.
+### Profiles
 
 ```typescript
-async bootstrapVault(data: {
-  wrappedRootKey: string;
-  kdfSalt: string;
-  kdfParams: {
-    algorithm: "argon2id";
-    memory: number;
-    iterations: number;
-    parallelism: number;
-    hashLength: number;
-  };
-}): Promise<{ id: string }>
+client.profiles.create(orgId, { name, description?, storageMode? })
+client.profiles.list(orgId)
+client.profiles.get(profileId)
+client.profiles.bootstrap(profileId, { wrappedRootKey, kdfSalt, kdfParams })
+client.profiles.changePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams })
+client.profiles.setupRecovery(profileId, { recoveryWrappedRootKey })
+client.profiles.rotateKey(profileId, { wrappedRootKey, recoveryWrappedRootKey?, rekeyedItems })
+client.profiles.delete(profileId)
 ```
-
-**Errors:** `VAULT_ALREADY_EXISTS`
-
-#### `client.getVault()`
-
-Retrieve vault metadata.
-
-```typescript
-async getVault(): Promise<{
-  vault: {
-    id: string;
-    userId: string;
-    wrappedRootKey: string;
-    kdfSalt: string;
-    kdfParams: KdfParams;
-    recoveryWrappedRootKey: string | null;
-    keyVersion: number;
-    createdAt: string;
-    updatedAt: string;
-  };
-}>
-```
-
-**Errors:** `VAULT_NOT_FOUND`
-
-#### `client.changePassword(data)`
-
-Re-wrap root key with new password.
-
-```typescript
-async changePassword(data: {
-  wrappedRootKey: string;
-  kdfSalt: string;
-  kdfParams: KdfParams;
-}): Promise<{ ok: boolean }>
-```
-
-**Errors:** `VAULT_NOT_FOUND`
-
-#### `client.setupRecovery(data)`
-
-Set recovery key.
-
-```typescript
-async setupRecovery(data: {
-  recoveryWrappedRootKey: string;
-}): Promise<{ ok: boolean }>
-```
-
-**Errors:** `VAULT_NOT_FOUND`
-
-#### `client.rotateKey(data)`
-
-Rotate root key. Requires re-keying all ZK items atomically.
-
-```typescript
-async rotateKey(data: {
-  wrappedRootKey: string;
-  recoveryWrappedRootKey?: string;
-  rekeyedItems: Record<string, string>; // itemId → newEncryptedItemKey
-}): Promise<{ ok: boolean; keyVersion: number }>
-```
-
-**Errors:** `VAULT_NOT_FOUND`
-
----
 
 ### Items
 
-#### `client.createItem(data)`
-
-Create a new encrypted item.
-
 ```typescript
-// Zero-knowledge
-async createItem(data: {
+// Create (zero_knowledge)
+client.items.create({
+  profileId: string;
   storageMode: "zero_knowledge";
+  label: string;
+  kind: ItemKind;
+  tags?: string[];
   encryptedItemKey: string;
+  keyNonce: string;
   ciphertext: string;
-}): Promise<{ id: string }>
+  contentNonce: string;
+})
 
-// Server-managed
-async createItem(data: {
+// Create (server_managed)
+client.items.create({
+  profileId: string;
   storageMode: "server_managed";
-  payload: {
-    v: number;
-    label: string;
-    kind: ItemKind;
-    tags: string[];
-    notes?: string;
-    fields: Record<string, unknown>;
-  };
-}): Promise<{ id: string }>
-```
-
-#### `client.listItems()`
-
-List all items (metadata only).
-
-```typescript
-async listItems(): Promise<{
-  items: Array<{
-    id: string;
-    storageMode: "zero_knowledge" | "server_managed";
-    cryptoVersion: number;
-    contentVersion: number;
-    createdAt: string;
-    updatedAt: string;
-  }>;
-}>
-```
-
-#### `client.getItem(id)`
-
-Retrieve a single item.
-
-```typescript
-async getItem(id: string): Promise<{
-  item: ItemDetail; // ZK includes encryptedItemKey + ciphertext; server-managed includes metadata only
-}>
-```
-
-**Errors:** `ITEM_NOT_FOUND`
-
-#### `client.updateItem(id, data)`
-
-Update an item with optimistic concurrency.
-
-```typescript
-// Zero-knowledge
-async updateItem(id: string, data: {
-  storageMode: "zero_knowledge";
-  encryptedItemKey: string;
-  ciphertext: string;
-  contentVersion: number;
-}): Promise<{ ok: boolean; contentVersion: number }>
-
-// Server-managed
-async updateItem(id: string, data: {
-  storageMode: "server_managed";
+  label: string;
+  kind: ItemKind;
+  tags?: string[];
   payload: ItemPayload;
-  contentVersion: number;
-}): Promise<{ ok: boolean; contentVersion: number }>
+})
+
+client.items.list(profileId?)
+client.items.get(itemId)
+client.items.update(itemId, data)   // optimistic concurrency via contentVersion
+client.items.delete(itemId)
+
+// Owner reveal — returns a SecretValue for the requested field
+client.items.ownerReveal(itemId, field?)
 ```
-
-**Errors:** `ITEM_NOT_FOUND`, `STALE_VERSION`
-
-#### `client.deleteItem(id)`
-
-Soft-delete an item.
-
-```typescript
-async deleteItem(id: string): Promise<{ ok: boolean }>
-```
-
-**Errors:** `ITEM_NOT_FOUND`
-
----
 
 ### Agents
 
-#### `client.createAgent(data)`
-
-Register a new agent. Returns the API key exactly once.
-
 ```typescript
-async createAgent(data: {
-  kind: "local_cli" | "local_mcp" | "remote";
+client.agents.create({
+  organizationId: string;
   name: string;
-  metadata?: Record<string, unknown>;
-}): Promise<{
-  agent: Agent;
-  apiKey: string; // One-time display
-}>
+  kind: AgentKind;
+  description?: string;
+  authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
+  publicKey?: string;
+  issueBootstrapToken?: boolean;
+})
+
+client.agents.list()
+client.agents.get(agentId)
+client.agents.rotate(agentId)
+client.agents.revoke(agentId)
+
+// Issue a bootstrap token for an existing agent
+client.auth.issueBootstrapToken(agentId)
 ```
-
-#### `client.listAgents()`
-
-List all agents.
-
-```typescript
-async listAgents(): Promise<{
-  agents: Array<{
-    id: string;
-    userId: string;
-    kind: AgentKind;
-    locality: "local" | "remote";
-    name: string;
-    keyPrefix: string | null;
-    enabled: boolean;
-    revokedAt: string | null;
-    lastUsedAt: string | null;
-    metadata: Record<string, unknown>;
-    createdAt: string;
-  }>;
-}>
-```
-
-#### `client.rotateAgent(id)`
-
-Rotate an agent's API key.
-
-```typescript
-async rotateAgent(id: string): Promise<{
-  apiKey: string;    // New key, shown once
-  keyPrefix: string;
-}>
-```
-
-**Errors:** `AGENT_NOT_FOUND`
-
-#### `client.revokeAgent(id)`
-
-Revoke an agent.
-
-```typescript
-async revokeAgent(id: string): Promise<{ ok: boolean }>
-```
-
-**Errors:** `AGENT_NOT_FOUND`
-
----
 
 ### Permissions
 
-#### `client.createPermission(data)`
-
-Grant a capability to an agent for an item.
-
 ```typescript
-async createPermission(data: {
+client.permissions.create({
   agentId: string;
   itemId: string;
   capability: Capability;
-  expiresAt?: string; // ISO 8601
-}): Promise<{
-  permission: {
-    id: string;
-    agentId: string;
-    itemId: string;
-    capability: Capability;
-    expiresAt: string | null;
-    createdBy: string;
-    createdAt: string;
-  };
-}>
+  expiresAt?: string;  // ISO 8601
+})
+
+client.permissions.list({ agentId?, itemId? })
+client.permissions.revoke(permissionId)
 ```
-
-**Errors:** `AGENT_NOT_FOUND`, `ITEM_NOT_FOUND`, `INVALID_CAPABILITY`
-
-#### `client.listPermissions(filters?)`
-
-List permissions, optionally filtered.
-
-```typescript
-async listPermissions(filters?: {
-  agentId?: string;
-  itemId?: string;
-}): Promise<{
-  permissions: Array<Permission>;
-}>
-```
-
-#### `client.revokePermission(id)`
-
-Revoke a permission.
-
-```typescript
-async revokePermission(id: string): Promise<{ ok: boolean }>
-```
-
-**Errors:** `PERMISSION_NOT_FOUND`
-
----
-
-### Access (Agent Methods)
-
-These methods are used by agents (authenticated with API keys) to access secrets. They enforce the capability access matrix and log every attempt.
-
-#### `client.accessCiphertext(itemId)`
-
-Read the encrypted blob of a ZK item for local decryption.
-
-```typescript
-async accessCiphertext(itemId: string): Promise<{
-  encryptedItemKey: string;
-  ciphertext: string;
-  cryptoVersion: number;
-}>
-```
-
-**Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
-**Errors:** `FORBIDDEN`, `PERMISSION_DENIED`, `PERMISSION_EXPIRED`, `ITEM_NOT_FOUND`
-
-#### `client.accessReveal(itemId)`
-
-Decrypt and return the plaintext of a server-managed item.
-
-```typescript
-async accessReveal(itemId: string): Promise<{
-  payload: {
-    v: number;
-    label: string;
-    kind: ItemKind;
-    tags: string[];
-    notes?: string;
-    fields: Record<string, unknown>;
-  };
-}>
-```
-
-**Requires:** `reveal_plaintext` permission. Server-managed item only.
-**Errors:** `BAD_REQUEST`, `PERMISSION_DENIED`, `PERMISSION_EXPIRED`, `ITEM_NOT_FOUND`
-
-#### `client.accessMount(itemId, mountType)`
-
-Request item data for local injection.
-
-```typescript
-async accessMount(
-  itemId: string,
-  mountType: "env" | "file"
-): Promise<
-  | {
-      storageMode: "zero_knowledge";
-      encryptedItemKey: string;
-      ciphertext: string;
-      cryptoVersion: number;
-    }
-  | {
-      storageMode: "server_managed";
-      payload: ItemPayload;
-    }
->
-```
-
-**Requires:** `mount_env` or `mount_file` permission. Local agent only.
-**Errors:** `FORBIDDEN`, `PERMISSION_DENIED`, `PERMISSION_EXPIRED`, `ITEM_NOT_FOUND`
-
----
 
 ### Audit
 
-#### `client.getAudit(filters?)`
-
-Query the audit log.
-
 ```typescript
-async getAudit(filters?: {
-  eventType?: AuditEventType;
-  result?: AuditResult;
+client.audit.list({
+  orgId?: string;
+  profileId?: string;
   agentId?: string;
   itemId?: string;
+  surface?: string;
+  field?: string;
+  eventType?: AuditEventType;
+  result?: AuditResult;
   cursor?: string;
-  limit?: number; // 1-100, default 50
-}): Promise<{
-  entries: Array<{
-    id: number;
-    userId: string;
-    agentId: string | null;
-    itemId: string | null;
-    eventType: AuditEventType;
-    result: AuditResult;
-    deliveryMode: string | null;
-    meta: Record<string, unknown>;
-    ipAddress: string | null;
-    occurredAt: string;
-  }>;
-  nextCursor: string | null;
-}>
+  limit?: number;  // 1-100, default 50
+})
+```
+
+---
+
+## `AbadgeAgentClient`
+
+Agent-authenticated client for accessing secrets. Supports Ed25519 keypair sessions (preferred) or legacy API keys.
+
+### Construction
+
+```typescript
+import { AbadgeAgentClient } from "@abadge/sdk";
+
+// Keypair auth (preferred)
+const agent = new AbadgeAgentClient({
+  apiUrl: "https://api.abadge.dev",
+  agentId: "agent_...",
+  privateKey: ed25519PrivateKey,
+});
+
+// Legacy API key auth
+const agent = new AbadgeAgentClient({
+  apiUrl: "https://api.abadge.dev",
+  apiKey: "abl_...",
+});
+```
+
+### Lifecycle
+
+```typescript
+// Start session exchange and background refresh loop
+await agent.connect();
+
+// ... use the client ...
+
+// Stop the refresh loop
+agent.disconnect();
+```
+
+`connect()` performs the Ed25519 challenge/exchange and starts a background refresh that re-exchanges the session when less than 2 minutes of TTL remain. Legacy API key clients do not need `connect()`.
+
+### Enrollment
+
+```typescript
+// Enroll an agent with a bootstrap token and public key
+agent.enroll(bootstrapToken: string, publicKey: string)
+```
+
+### Access Methods
+
+These methods enforce the capability matrix and log every attempt.
+
+#### `agent.access.ciphertext(itemId)`
+
+Read the encrypted blob of a ZK item for local decryption.
+
+**Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
+
+```typescript
+const { encryptedItemKey, keyNonce, ciphertext, contentNonce, cryptoVersion } =
+  await agent.access.ciphertext(itemId);
+```
+
+#### `agent.access.reveal(itemId, field?)`
+
+Decrypt and return a field value from a server-managed item. Returns a `SecretValue`.
+
+**Requires:** `reveal_plaintext` permission. Server-managed item only.
+
+```typescript
+const secret: SecretValue = await agent.access.reveal(itemId);
+const value = secret.expose();  // explicit opt-in to get raw string
+
+// With a specific field
+const password: SecretValue = await agent.access.reveal(itemId, "password");
+```
+
+#### `agent.access.mount(itemId, mountType, field?)`
+
+Request item data for local injection (env var or temp file).
+
+**Requires:** `mount_env` or `mount_file` permission. Local agent only.
+
+```typescript
+const data = await agent.access.mount(itemId, "env", "password");
+```
+
+### Other Methods
+
+```typescript
+agent.agents.self()                    // Get this agent's own record
+agent.items.list(profileId)            // Metadata only
+agent.audit.list(orgId, filters?)      // Structured audit listing
+```
+
+---
+
+## `SecretValue` Opaque Type
+
+Secret values are wrapped in a `SecretValue` type that prevents accidental logging.
+
+```typescript
+class SecretValue {
+  expose(): string       // Explicit opt-in to get the raw string
+  toString(): string     // Returns "[REDACTED]"
+  toJSON(): string       // Returns "[REDACTED]"
+}
+```
+
+```typescript
+const secret = await agent.access.reveal(itemId);
+
+console.log(secret);             // "[REDACTED]"
+JSON.stringify({ key: secret }); // {"key":"[REDACTED]"}
+
+const raw = secret.expose();     // actual secret value
+```
+
+---
+
+## Field Delivery
+
+The `field` parameter on `access.reveal` and `access.mount` selects a specific named field from a multi-field item. Field resolution is handled by `resolveFieldValue` from `@abadge/core/secret-delivery`, re-exported from the SDK for convenience.
+
+Behavior:
+- If `field` is omitted and the item has exactly one field, that field is returned
+- If `field` is omitted and the item has multiple fields, the server returns `MULTI_FIELD_ITEM` with a list of available fields
+- If `field` is specified but does not exist, the server returns `FIELD_NOT_FOUND` with available fields
+
+```typescript
+import { resolveFieldValue } from "@abadge/sdk";
 ```
 
 ---
@@ -450,43 +291,43 @@ async getAudit(filters?: {
 All API errors are thrown as `AbadgeApiError`.
 
 ```typescript
+import { AbadgeApiError } from "@abadge/sdk";
+
 class AbadgeApiError extends Error {
-  statusCode: number;   // HTTP status code
-  code: string;         // Error code (e.g., "VAULT_NOT_FOUND")
-  message: string;      // Human-readable description
+  statusCode: number;                     // HTTP status code
+  code: string;                           // Machine-readable code (e.g., "PERMISSION_DENIED")
+  message: string;                        // Human-readable description
+  hint: string;                           // Actionable next step
+  meta?: Record<string, unknown>;         // Structured context for clients
 
   static fromResponse(res: Response, fallback: string): Promise<AbadgeApiError>;
   static fromUnknown(error: unknown, fallback: string): AbadgeApiError;
 }
 ```
 
-### Error Handling Patterns
+### Usage
 
 ```typescript
-import { AbadgeClient, AbadgeApiError } from "@abadge/sdk";
-
-const client = new AbadgeClient({ apiUrl, token });
+import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
 try {
-  const { permission } = await client.createPermission({
-    agentId: "...",
-    itemId: "...",
-    capability: "mount_env",
-  });
+  const secret = await agent.access.reveal(itemId, "password");
+  const value = secret.expose();
 } catch (err) {
   if (err instanceof AbadgeApiError) {
+    console.error(`${err.code}: ${err.message}`);
+    console.error(`Hint: ${err.hint}`);
+
     switch (err.code) {
-      case "AGENT_NOT_FOUND":
-        console.error("Agent does not exist");
+      case "PERMISSION_DENIED":
+        // No matching permission for this capability
         break;
-      case "ITEM_NOT_FOUND":
-        console.error("Item does not exist");
+      case "FIELD_NOT_FOUND":
+        // Named field not present in item; err.meta has available fields
         break;
-      case "INVALID_CAPABILITY":
-        console.error("This capability is not allowed for this agent/item combination");
+      case "MULTI_FIELD_ITEM":
+        // Item has multiple fields; specify --field
         break;
-      default:
-        console.error(`API error: ${err.message}`);
     }
   }
   throw err;
@@ -507,38 +348,14 @@ export type AgentKind = "local_cli" | "local_mcp" | "remote";
 export type AgentLocality = "local" | "remote";
 export type Capability = "read_ciphertext" | "reveal_plaintext" | "mount_env" | "mount_file";
 export type AuditEventType = "profile.create" | "profile.rotate" | "item.export" | ... ;
-export type AuditResult = "allowed" | "denied" | "expired" | "revoked";
+export type AuditResult = "allowed" | "denied" | "expired" | "revoked" | "cascade";
 
-// Entity types
-export type Vault = { ... };
-export type ItemSummary = { ... };
-export type ItemDetail = { ... };
-export type ItemPayload = { ... };
-export type Agent = { ... };
-export type AgentWithKey = { agent: Agent; apiKey: string };
-export type Permission = { ... };
-export type AuditEntry = { ... };
-
-// Input types
-export type CreateItemInput = { ... };
-export type UpdateItemInput = { ... };
-export type CreateAgentInput = { ... };
-export type CreatePermissionInput = { ... };
-export type AuditQuery = { ... };
-
-// Result types
-export type SuccessResult = { ok: boolean };
-export type VaultResult = { vault: Vault };
-export type ItemResult = { item: ItemDetail };
-export type ItemListResult = { items: ItemSummary[] };
-export type AgentResult = { agent: Agent };
-export type AgentListResult = { agents: Agent[] };
-export type PermissionResult = { permission: Permission };
-export type PermissionListResult = { permissions: Permission[] };
-export type AuditListResult = { entries: AuditEntry[]; nextCursor: string | null };
+// Helpers
+export { resolveFieldValue } from "@abadge/core/secret-delivery";
 
 // Error
 export { AbadgeApiError } from "./error";
+export { SecretValue } from "./secret-value";
 ```
 
 ---
@@ -548,16 +365,20 @@ export { AbadgeApiError } from "./error";
 ### User: Create an item and grant access
 
 ```typescript
-import { AbadgeClient } from "@abadge/sdk";
+import { AbadgeUserClient } from "@abadge/sdk";
 
-const client = new AbadgeClient({
+const client = new AbadgeUserClient({
   apiUrl: "https://api.abadge.dev",
   token: userSessionToken,
 });
 
 // Create a server-managed item
-const { id: itemId } = await client.createItem({
+const { id: itemId } = await client.items.create({
+  profileId: "prof_...",
   storageMode: "server_managed",
+  label: "GitHub Deploy Token",
+  kind: "token",
+  tags: ["ci", "github"],
   payload: {
     v: 1,
     label: "GitHub Deploy Token",
@@ -567,43 +388,48 @@ const { id: itemId } = await client.createItem({
   },
 });
 
-// Register an agent
-const { agent, apiKey } = await client.createAgent({
-  kind: "remote",
+// Register an agent (defaults to public_key_session)
+const { agent, bootstrapToken } = await client.agents.create({
+  organizationId: "org_...",
   name: "github-actions-deploy",
+  kind: "remote",
+  issueBootstrapToken: true,
 });
-// Store apiKey securely — it won't be shown again
 
 // Grant reveal_plaintext capability
-await client.createPermission({
+await client.permissions.create({
   agentId: agent.id,
   itemId,
   capability: "reveal_plaintext",
-  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24h
+  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 });
 ```
 
-### Agent: Access a secret
+### Agent: Access a secret with keypair auth
 
 ```typescript
-import { AbadgeClient } from "@abadge/sdk";
+import { AbadgeAgentClient } from "@abadge/sdk";
 
-const agentClient = new AbadgeClient({
+const agent = new AbadgeAgentClient({
   apiUrl: "https://api.abadge.dev",
-  token: "abg_xxxxxxxxxxxx", // Agent API key
+  agentId: "agent_...",
+  privateKey: ed25519PrivateKey,
 });
 
-// Reveal plaintext
-const { payload } = await agentClient.accessReveal(itemId);
-const token = payload.fields.token as string;
+await agent.connect();
+
+const secret = await agent.access.reveal(itemId);
+const token = secret.expose();
 
 // Use the token...
+
+agent.disconnect();
 ```
 
 ### Audit: Review access history
 
 ```typescript
-const { entries, nextCursor } = await client.getAudit({
+const { entries, nextCursor } = await client.audit.list({
   itemId,
   limit: 10,
 });
@@ -612,19 +438,3 @@ for (const entry of entries) {
   console.log(`${entry.occurredAt}: ${entry.eventType} → ${entry.result}`);
 }
 ```
-
----
-
-## Design Decisions
-
-### Why a single client class for both user and agent?
-
-Simplicity. The same HTTP transport and error handling applies to both. The server determines what operations are available based on the token type. This avoids maintaining two client classes with overlapping code.
-
-### Why throw errors instead of returning Result types?
-
-The SDK targets TypeScript, where try/catch is the idiomatic error handling pattern. All errors are typed (`AbadgeApiError`) with machine-readable `code` fields, so callers can handle specific cases without string matching.
-
-### Why re-export core types?
-
-SDK consumers should not need to install `@abadge/core` separately. All types needed to interact with the API are re-exported from the SDK package. This keeps the dependency graph simple: install `@abadge/sdk`, get everything you need.
