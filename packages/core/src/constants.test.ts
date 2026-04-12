@@ -8,20 +8,12 @@ import {
   AGENT_KINDS,
   AGENT_SESSION_PREFIX,
   AGENT_SESSION_TTL_MS,
-  API_KEY_PREFIX,
-  AUDIT_EVENT_TYPES,
+  AGENT_SESSION_REFRESH_BUFFER_MS,
   AUDIT_RESULTS,
+  STANDARD_FIELDS_BY_KIND,
   agentLocalityForKind,
-  CAPABILITIES,
-  ITEM_KINDS,
-  STORAGE_MODES,
 } from "./constants";
-import {
-  CreateAgentSchema,
-  CreateItemSchema,
-  CreatePermissionSchema,
-  VaultBootstrapSchema,
-} from "./schemas";
+import { CreateAgentSchema, ItemPayloadSchema } from "./schemas";
 
 function isValid(schema: unknown, value: unknown): boolean {
   return Either.isRight(
@@ -31,83 +23,39 @@ function isValid(schema: unknown, value: unknown): boolean {
   );
 }
 
-describe("ITEM_KINDS", () => {
-  test("includes all expected kinds", () => {
-    const kinds = [...ITEM_KINDS];
-    expect(kinds).toContain("login");
-    expect(kinds).toContain("api_key");
-    expect(kinds).toContain("token");
-    expect(kinds).toContain("json");
-    expect(kinds).toContain("certificate");
-    expect(kinds).toContain("ssh_key");
-    expect(kinds).toContain("opaque");
-    expect(ITEM_KINDS.length).toBe(7);
-  });
-});
-
-describe("STORAGE_MODES", () => {
-  test("includes zero_knowledge and server_managed", () => {
-    expect(STORAGE_MODES).toContain("zero_knowledge");
-    expect(STORAGE_MODES).toContain("server_managed");
-    expect(STORAGE_MODES.length).toBe(2);
-  });
-});
-
 describe("AGENT_KINDS", () => {
-  test("includes all expected kinds", () => {
-    expect(AGENT_KINDS).toContain("device");
-    expect(AGENT_KINDS).toContain("local_cli");
-    expect(AGENT_KINDS).toContain("local_mcp");
-    expect(AGENT_KINDS).toContain("remote_agent");
-    expect(AGENT_KINDS.length).toBe(4);
-  });
-});
-
-describe("CAPABILITIES", () => {
-  test("includes all expected capabilities", () => {
-    expect(CAPABILITIES).toContain("read_ciphertext");
-    expect(CAPABILITIES).toContain("reveal_plaintext");
-    expect(CAPABILITIES).toContain("mount_env");
-    expect(CAPABILITIES).toContain("mount_file");
-    expect(CAPABILITIES.length).toBe(4);
-  });
-});
-
-describe("AUDIT_EVENT_TYPES", () => {
-  test("includes vault events", () => {
-    expect(AUDIT_EVENT_TYPES).toContain("vault.bootstrap");
-    expect(AUDIT_EVENT_TYPES).toContain("vault.unlock");
-    expect(AUDIT_EVENT_TYPES).toContain("vault.password_change");
-    expect(AUDIT_EVENT_TYPES).toContain("vault.key_rotate");
-  });
-
-  test("includes access events", () => {
-    expect(AUDIT_EVENT_TYPES).toContain("access.ciphertext");
-    expect(AUDIT_EVENT_TYPES).toContain("access.reveal");
-    expect(AUDIT_EVENT_TYPES).toContain("access.mount_env");
-    expect(AUDIT_EVENT_TYPES).toContain("access.mount_file");
-  });
-});
-
-describe("AUDIT_RESULTS", () => {
-  test("includes all outcomes", () => {
-    expect(AUDIT_RESULTS).toContain("allowed");
-    expect(AUDIT_RESULTS).toContain("denied");
-    expect(AUDIT_RESULTS).toContain("expired");
-    expect(AUDIT_RESULTS).toContain("revoked");
+  test("matches the roadmap kinds exactly", () => {
+    expect(AGENT_KINDS).toEqual(["local_cli", "local_mcp", "remote"]);
   });
 });
 
 describe("agentLocalityForKind", () => {
-  test("device is local", () => expect(agentLocalityForKind("device")).toBe("local"));
-  test("local_cli is local", () => expect(agentLocalityForKind("local_cli")).toBe("local"));
-  test("local_mcp is local", () => expect(agentLocalityForKind("local_mcp")).toBe("local"));
-  test("remote_agent is remote", () => expect(agentLocalityForKind("remote_agent")).toBe("remote"));
+  test("maps local runtimes to local locality", () => {
+    expect(agentLocalityForKind("local_cli")).toBe("local");
+    expect(agentLocalityForKind("local_mcp")).toBe("local");
+  });
+
+  test("maps remote agents to remote locality", () => {
+    expect(agentLocalityForKind("remote")).toBe("remote");
+  });
 });
 
-describe("API_KEY_PREFIX", () => {
-  test("remote prefix is abg_", () => expect(API_KEY_PREFIX.remote).toBe("abg_"));
-  test("local prefix is abl_", () => expect(API_KEY_PREFIX.local).toBe("abl_"));
+describe("STANDARD_FIELDS_BY_KIND", () => {
+  test("defines standard login fields used by CLI prompts and delivery helpers", () => {
+    expect(STANDARD_FIELDS_BY_KIND.login).toEqual([
+      "username",
+      "email",
+      "password",
+      "url",
+      "totp_secret",
+    ]);
+  });
+
+  test("keeps single-value kinds explicitly defaultable", () => {
+    expect(STANDARD_FIELDS_BY_KIND.api_key).toEqual(["value", "key_id", "key_secret"]);
+    expect(STANDARD_FIELDS_BY_KIND.token).toEqual(["value"]);
+    expect(STANDARD_FIELDS_BY_KIND.opaque).toEqual(["value"]);
+  });
 });
 
 describe("agent auth constants", () => {
@@ -117,93 +65,43 @@ describe("agent auth constants", () => {
     expect(AGENT_SESSION_PREFIX).toBe("abs_");
   });
 
-  test("uses expected auth ttl windows", () => {
+  test("uses the expected auth timing windows", () => {
     expect(AGENT_BOOTSTRAP_TTL_MS).toBe(10 * 60 * 1000);
     expect(AGENT_CHALLENGE_TTL_MS).toBe(60 * 1000);
     expect(AGENT_SESSION_TTL_MS).toBe(15 * 60 * 1000);
+    expect(AGENT_SESSION_REFRESH_BUFFER_MS).toBe(2 * 60 * 1000);
+  });
+});
+
+describe("AUDIT_RESULTS", () => {
+  test("includes cascade outcomes for downstream revocation and deletion effects", () => {
+    expect(AUDIT_RESULTS).toEqual(["allowed", "denied", "expired", "revoked", "cascade"]);
   });
 });
 
 describe("schema validation", () => {
-  test("VaultBootstrapSchema requires all fields", () => {
-    expect(isValid(VaultBootstrapSchema, {})).toBe(false);
+  test("CreateAgentSchema accepts the roadmap remote kind", () => {
     expect(
-      isValid(VaultBootstrapSchema, {
-        wrappedRootKey: "key",
-        kdfSalt: "salt",
-        kdfParams: {
-          algorithm: "argon2id",
-          memory: 65536,
-          iterations: 3,
-          parallelism: 1,
-          hashLength: 32,
-        },
+      isValid(CreateAgentSchema, {
+        kind: "remote",
+        name: "deploy-bot",
       }),
     ).toBe(true);
   });
 
-  test("CreateItemSchema accepts ZK mode", () => {
+  test("CreateAgentSchema rejects the pre-roadmap remote_agent kind", () => {
     expect(
-      isValid(CreateItemSchema, {
-        storageMode: "zero_knowledge",
-        encryptedItemKey: "key",
-        ciphertext: "ct",
-      }),
-    ).toBe(true);
-  });
-
-  test("CreateItemSchema accepts server_managed mode", () => {
-    expect(
-      isValid(CreateItemSchema, {
-        storageMode: "server_managed",
-        payload: { v: 1, label: "test", kind: "opaque", tags: [], fields: {} },
-      }),
-    ).toBe(true);
-  });
-
-  test("CreatePermissionSchema rejects invalid capability", () => {
-    expect(
-      isValid(CreatePermissionSchema, {
-        agentId: "p1",
-        itemId: "i1",
-        capability: "wildcard",
+      isValid(CreateAgentSchema, {
+        kind: "remote_agent",
+        name: "legacy-remote-agent",
       }),
     ).toBe(false);
   });
 
-  test("CreatePermissionSchema accepts valid capability", () => {
+  test("ItemPayloadSchema only requires a fields map", () => {
     expect(
-      isValid(CreatePermissionSchema, {
-        agentId: "p1",
-        itemId: "i1",
-        capability: "read_ciphertext",
-      }),
-    ).toBe(true);
-  });
-
-  test("CreateAgentSchema requires name and kind", () => {
-    expect(isValid(CreateAgentSchema, {})).toBe(false);
-    expect(isValid(CreateAgentSchema, { kind: "remote_agent", name: "my-agent" })).toBe(true);
-  });
-
-  test("CreateAgentSchema rejects legacy agents with a public key", () => {
-    expect(
-      isValid(CreateAgentSchema, {
-        kind: "remote_agent",
-        name: "legacy-agent",
-        authMethod: "legacy_api_key",
-        publicKey: "jwk-public-key",
-      }),
-    ).toBe(false);
-  });
-
-  test("CreateAgentSchema allows legacy agents to disable bootstrap issuance explicitly", () => {
-    expect(
-      isValid(CreateAgentSchema, {
-        kind: "remote_agent",
-        name: "legacy-agent",
-        authMethod: "legacy_api_key",
-        issueBootstrapToken: false,
+      isValid(ItemPayloadSchema, {
+        fields: { username: "alice", password: "secret" },
       }),
     ).toBe(true);
   });

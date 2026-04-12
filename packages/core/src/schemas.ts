@@ -34,10 +34,10 @@ export const KdfParamsSchema = Schema.Struct({
 });
 
 export const ItemPayloadSchema = Schema.Struct({
-  v: Schema.Int,
-  label: NonEmptyString,
-  kind: ItemKindSchema,
-  tags: Schema.Array(Schema.String),
+  v: Schema.optional(Schema.Int),
+  label: Schema.optional(NonEmptyString),
+  kind: Schema.optional(ItemKindSchema),
+  tags: Schema.optional(Schema.Array(Schema.String)),
   notes: Schema.optional(Schema.String),
   fields: JsonRecord,
 });
