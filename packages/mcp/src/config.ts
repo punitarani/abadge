@@ -4,11 +4,8 @@ import { join } from "node:path";
 
 export interface McpConfig {
   apiUrl: string;
-  /** Keypair auth (preferred) */
-  agentId?: string;
-  privateKeyPath?: string;
-  /** Legacy API key auth */
-  authToken?: string;
+  agentId: string;
+  privateKeyPath: string;
 }
 
 function loadConfigFile(): Partial<McpConfig> {
@@ -20,12 +17,6 @@ function loadConfigFile(): Partial<McpConfig> {
       apiUrl: typeof parsed.apiUrl === "string" ? parsed.apiUrl : undefined,
       agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
       privateKeyPath: typeof parsed.privateKeyPath === "string" ? parsed.privateKeyPath : undefined,
-      authToken:
-        typeof parsed.authToken === "string"
-          ? parsed.authToken
-          : typeof parsed.principalSecret === "string"
-            ? parsed.principalSecret
-            : undefined,
     };
   } catch {
     return {};
@@ -38,16 +29,15 @@ export function loadConfig(): McpConfig {
   const apiUrl = env.ABADGE_API_URL ?? file.apiUrl;
   const agentId = env.ABADGE_AGENT_ID ?? file.agentId;
   const privateKeyPath = env.ABADGE_PRIVATE_KEY_PATH ?? file.privateKeyPath;
-  const authToken = env.ABADGE_AUTH_TOKEN ?? env.ABADGE_TOKEN ?? file.authToken;
 
   if (!apiUrl) {
     throw new Error("ABADGE_API_URL is required (env or ~/.abadge/config.json)");
   }
-  if (!agentId && !authToken) {
+  if (!agentId || !privateKeyPath) {
     throw new Error(
-      "Either ABADGE_AGENT_ID + ABADGE_PRIVATE_KEY_PATH or ABADGE_AUTH_TOKEN is required",
+      "ABADGE_AGENT_ID and ABADGE_PRIVATE_KEY_PATH are required (env or ~/.abadge/config.json). Legacy API key auth is not supported by the MCP.",
     );
   }
 
-  return { apiUrl, agentId, privateKeyPath, authToken };
+  return { apiUrl, agentId, privateKeyPath };
 }

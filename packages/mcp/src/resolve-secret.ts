@@ -22,8 +22,10 @@ export async function resolveSecret(
   itemId: string,
   mountType: "env" | "file",
   field?: string,
+  _purpose?: string,
 ): Promise<string> {
-  const result = await client.accessMount(itemId, mountType);
+  // TODO: forward _purpose to client.accessMount once the SDK accepts it
+  const result = await client.accessMount(itemId, mountType, field);
 
   if (result.storageMode === "zero_knowledge") {
     const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext);

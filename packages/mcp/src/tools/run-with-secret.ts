@@ -79,7 +79,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const client = await getApiClient(config);
-  const secret = await resolveSecret(client, input.itemId, "env", input.field);
+  const secret = await resolveSecret(client, input.itemId, "env", input.field, input.purpose);
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
   const childEnv = { ...globalThis.process?.env, [envVarName]: secret };

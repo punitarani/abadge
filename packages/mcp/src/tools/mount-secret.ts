@@ -44,7 +44,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const client = await getApiClient(config);
-  const secret = await resolveSecret(client, input.itemId, "file", input.field);
+  const secret = await resolveSecret(client, input.itemId, "file", input.field, input.purpose);
 
   const suffix = randomBytes(8).toString("hex");
   const dir = join(tmpdir(), `abadge-${suffix}`);
