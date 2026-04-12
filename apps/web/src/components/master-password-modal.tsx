@@ -184,9 +184,12 @@ export function MasterPasswordModal({
           }}
         >
           {step === "loading" && (
-            <div className="flex items-center justify-center py-4">
-              <span className="text-sm text-muted-foreground">Checking vault...</span>
-            </div>
+            <>
+              <Dialog.Title className="sr-only">Checking vault</Dialog.Title>
+              <div className="flex items-center justify-center py-4">
+                <span className="text-sm text-muted-foreground">Checking vault...</span>
+              </div>
+            </>
           )}
 
           {step === "unlock" && (
