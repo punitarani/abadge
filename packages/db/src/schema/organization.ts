@@ -10,6 +10,8 @@ export const organization = pgTable("organization", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const organizations = organization;
+
 export const member = pgTable(
   "member",
   {
@@ -28,6 +30,8 @@ export const member = pgTable(
     index("idx_member_user_id").on(t.userId),
   ],
 );
+
+export const members = member;
 
 export const invitation = pgTable(
   "invitation",
@@ -50,3 +54,5 @@ export const invitation = pgTable(
     index("idx_invitation_email").on(t.email),
   ],
 );
+
+export const invitations = invitation;

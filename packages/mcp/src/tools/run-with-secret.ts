@@ -17,6 +17,7 @@ export const toolDescription =
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to inject"),
+  field: z.string().optional().describe("Named field to inject from the item payload"),
   command: z.string().describe("Command to run"),
   args: z.array(z.string()).optional().describe("Command arguments"),
   envVarName: z
@@ -66,7 +67,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const client = await getApiClient(config);
-  const secret = await resolveSecret(client, input.itemId, "env");
+  const secret = await resolveSecret(client, input.itemId, "env", input.field);
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
   const childEnv = { ...globalThis.process?.env, [envVarName]: secret };

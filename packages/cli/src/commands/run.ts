@@ -9,11 +9,12 @@ export function createRunCommand(): Command {
   const cmd = new Command("run")
     .description("Run command with secret in env")
     .requiredOption("--item <id>", "Item ID")
+    .option("--field <name>", "Named field to deliver from the item payload")
     .option("--env-var <name>", "Environment variable name", "ABADGE_SECRET")
     // Allow unrecognised positional args so `abadge run --item <id> -- <cmd> [args...]`
     // passes everything after `--` through as cmd.args.
     .allowExcessArguments()
-    .action(async (opts: { item: string; envVar: string }, cmd: Command) => {
+    .action(async (opts: { item: string; field?: string; envVar: string }, cmd: Command) => {
       const command = cmd.args;
 
       if (command.length === 0) {
@@ -25,7 +26,7 @@ export function createRunCommand(): Command {
 
       try {
         const client = new ApiClient(requirePrincipalConfig());
-        const secretValue = await resolveSecretValue(client, opts.item, "env");
+        const secretValue = await resolveSecretValue(client, opts.item, "env", opts.field);
         const res = await daemonExecEnv(secretValue, opts.envVar, executable, command.slice(1));
         process.exit(res.exitCode);
       } catch (err) {

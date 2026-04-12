@@ -14,6 +14,7 @@ export const toolDescription =
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to mount"),
+  field: z.string().optional().describe("Named field to mount from the item payload"),
   filename: z.string().optional().describe("Custom filename (default: item ID)"),
   purpose: z.string().optional().describe("Why this credential is needed"),
 });
@@ -43,7 +44,7 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const client = await getApiClient(config);
-  const secret = await resolveSecret(client, input.itemId, "file");
+  const secret = await resolveSecret(client, input.itemId, "file", input.field);
 
   const suffix = randomBytes(8).toString("hex");
   const dir = join(tmpdir(), `abadge-${suffix}`);
