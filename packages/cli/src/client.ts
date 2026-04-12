@@ -1,5 +1,10 @@
 import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
-import { AbadgeAgentClient, AbadgeApiError, AbadgeUserClient } from "@abadge/sdk";
+import {
+  AbadgeAgentClient,
+  AbadgeApiError,
+  AbadgeUserClient,
+  type Ed25519PrivateKeyJwk,
+} from "@abadge/sdk";
 import { createNodeTrpcClient } from "@abadge/trpc/client";
 import type { CliConfig, SessionConfig } from "./config";
 import { loadConfig } from "./config";
@@ -179,16 +184,21 @@ export async function createUserApiClient(
 async function connectKeypairClient(
   apiUrl: string,
   agentId: string,
-  privateKey: string | object,
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk | string,
 ): Promise<AbadgeAgentClient> {
   const client = new AbadgeAgentClient({ apiUrl, agentId, privateKey });
   await client.connect();
   return client;
 }
 
-async function readPrivateKeyFromFile(path: string): Promise<object> {
+async function readPrivateKeyFromFile(path: string): Promise<Ed25519PrivateKeyJwk> {
   const { readFileSync } = await import("node:fs");
-  return JSON.parse(readFileSync(path, "utf-8")) as object;
+  return JSON.parse(readFileSync(path, "utf-8")) as Ed25519PrivateKeyJwk;
+}
+
+function requireApiUrl(apiUrl: string | undefined): string {
+  if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
+  return apiUrl;
 }
 
 /**
@@ -207,15 +217,13 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
 
   // 1. Inline JWK from env
   if (env.ABADGE_PRIVATE_KEY && env.ABADGE_AGENT_ID) {
-    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
-    return connectKeypairClient(apiUrl, env.ABADGE_AGENT_ID, env.ABADGE_PRIVATE_KEY);
+    return connectKeypairClient(requireApiUrl(apiUrl), env.ABADGE_AGENT_ID, env.ABADGE_PRIVATE_KEY);
   }
 
   // 2. JWK file path from env
   if (env.ABADGE_PRIVATE_KEY_PATH && env.ABADGE_AGENT_ID) {
-    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
     const jwk = await readPrivateKeyFromFile(env.ABADGE_PRIVATE_KEY_PATH);
-    return connectKeypairClient(apiUrl, env.ABADGE_AGENT_ID, jwk);
+    return connectKeypairClient(requireApiUrl(apiUrl), env.ABADGE_AGENT_ID, jwk);
   }
 
   // 3. Config file — keypair agent
@@ -233,8 +241,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
 
   // 4. Legacy API key from env
   if (env.ABADGE_AUTH_TOKEN) {
-    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
-    return new AbadgeAgentClient({ apiUrl, apiKey: env.ABADGE_AUTH_TOKEN });
+    return new AbadgeAgentClient({ apiUrl: requireApiUrl(apiUrl), apiKey: env.ABADGE_AUTH_TOKEN });
   }
 
   throw new Error(

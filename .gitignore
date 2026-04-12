@@ -46,6 +46,7 @@ drizzle/
 .remember
 
 # tools
+.mcp.json
 .playwright-cli
 
 # notionfs
