@@ -154,8 +154,11 @@ export async function seedServerItem(
 ): Promise<SeedServerItemResult> {
   const itemId = uuid();
   const label = opts.label ?? `item-${uuid()}`;
-  const payload = opts.fields ?? { username: "admin", password: "s3cret" };
+  const fields = opts.fields ?? { username: "admin", password: "s3cret" };
 
+  // Must match the ItemPayload structure that decodeServerManagedPayload expects:
+  // { v: 1, label, kind: "opaque", tags: [...], fields: {...} }
+  const payload = { v: 1, label, kind: "opaque" as const, tags: [] as string[], fields };
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
   const encrypted = await serverEncrypt(plaintext, TEST_ENV.ENCRYPTION_KEY, 1);
 
