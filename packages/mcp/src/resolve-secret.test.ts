@@ -1,5 +1,5 @@
-import { MultiFieldItemError } from "@abadge/core";
 import { describe, expect, test } from "bun:test";
+import { MultiFieldItemError } from "@abadge/core";
 import { resolveSecret } from "./resolve-secret";
 
 describe("resolveSecret", () => {

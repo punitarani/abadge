@@ -1,7 +1,7 @@
 import { CAPABILITIES } from "@abadge/core";
 import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import { user } from "./auth";
 import { agents } from "./agents";
+import { user } from "./auth";
 import { items } from "./items";
 import { organization } from "./organization";
 

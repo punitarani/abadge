@@ -56,7 +56,7 @@ describe("roadmap schema foundations", () => {
       "metadata",
       "createdAt",
     ]);
-    expect(columns.kind.enumValues).toEqual(AGENT_KINDS);
+    expect([...columns.kind.enumValues]).toEqual([...AGENT_KINDS]);
   });
 
   test("permissions table scopes grants to organizations", () => {

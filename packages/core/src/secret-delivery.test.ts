@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   BadRequestError,
+  expandFieldSelection,
   FieldNotFoundError,
-  MultiFieldItemError,
   formatDomainError,
+  listStringFields,
+  MultiFieldItemError,
   resolveFieldValue,
+  resolveFieldValues,
 } from "./index";
 
 describe("resolveFieldValue", () => {
@@ -86,6 +89,53 @@ describe("resolveFieldValue", () => {
       expect(formatted.hint).toContain("cert");
       expect(formatted.hint).toContain("key");
     }
+  });
+});
+
+describe("field expansion helpers", () => {
+  test("lists only string fields from a payload", () => {
+    expect(
+      listStringFields({
+        fields: {
+          username: "alice",
+          retries: 3,
+          enabled: true,
+          password: "super-secret",
+        },
+      }),
+    ).toEqual(["username", "password"]);
+  });
+
+  test("prefers standard fields for the item kind when no field was explicitly requested", () => {
+    expect(
+      expandFieldSelection({
+        kind: "login",
+        fields: {
+          password: "super-secret",
+          username: "alice",
+          notes: "ignored",
+        },
+      }),
+    ).toEqual(["username", "password"]);
+  });
+
+  test("resolves multiple requested fields into a delivery-safe map", () => {
+    expect(
+      resolveFieldValues(
+        {
+          kind: "certificate",
+          fields: {
+            cert: "cert-pem",
+            key: "key-pem",
+            chain: "chain-pem",
+          },
+        },
+        ["key", "cert", "key"],
+      ),
+    ).toEqual({
+      key: "key-pem",
+      cert: "cert-pem",
+    });
   });
 });
 

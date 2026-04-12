@@ -52,7 +52,6 @@ export const AUDIT_EVENT_TYPES = [
   "agent.session_revoke",
   "permission.create",
   "permission.revoke",
-  "access.probe",
   "access.ciphertext",
   "access.reveal",
   "access.mount_env",
@@ -73,6 +72,32 @@ export const STANDARD_FIELDS_BY_KIND = {
   opaque: ["value"],
 } as const satisfies Record<ItemKind, readonly string[]>;
 
+export const CAPABILITY_MATRIX = {
+  local: {
+    zero_knowledge: ["read_ciphertext", "mount_env", "mount_file"],
+    server_managed: ["reveal_plaintext", "mount_env", "mount_file"],
+  },
+  remote: {
+    zero_knowledge: [],
+    server_managed: ["reveal_plaintext"],
+  },
+} as const satisfies Record<AgentLocality, Record<StorageMode, readonly Capability[]>>;
+
+export function getAllowedCapabilities(
+  locality: AgentLocality,
+  storageMode: StorageMode,
+): readonly Capability[] {
+  return CAPABILITY_MATRIX[locality][storageMode];
+}
+
+export function isCapabilityAllowed(
+  capability: Capability,
+  locality: AgentLocality,
+  storageMode: StorageMode,
+): boolean {
+  return getAllowedCapabilities(locality, storageMode).includes(capability);
+}
+
 /** API key prefixes by agent locality */
 export const API_KEY_PREFIX = {
   remote: "abg_",
@@ -82,15 +107,19 @@ export const API_KEY_PREFIX = {
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 export const AGENT_CHALLENGE_PREFIX = "abc_";
+/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
 export const OPERATOR_TOKEN_PREFIX = "abo_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
 export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
+/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
 export const OPERATOR_TOKEN_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
 export const OPERATOR_TOKEN_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
 /** Map a session/operator token to the correct request header. */
 export function tokenToHeaders(token: string): Record<string, string> {
   return token.startsWith(OPERATOR_TOKEN_PREFIX)
@@ -98,6 +127,7 @@ export function tokenToHeaders(token: string): Record<string, string> {
     : { Authorization: `Bearer ${token}` };
 }
 
+/** @deprecated Operator tokens are a legacy compatibility surface during the v0 cutover. */
 export const OPERATOR_TOKEN_SCOPES = [
   "items:read",
   "items:write",
@@ -116,8 +146,8 @@ export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"
   switch (kind) {
     case "local_cli":
     case "local_mcp":
-      return "local";
     case "device":
+      return "local";
     case "remote":
     case "remote_agent":
       return "remote";

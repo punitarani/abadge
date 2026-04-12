@@ -13,9 +13,9 @@ import type {
   ErrorCode,
   Permission,
   PermissionFilters,
+  resolveFieldValue,
   SecretValue,
 } from "./index";
-import { resolveFieldValue } from "./index";
 
 type Assert<T extends true> = T;
 

@@ -32,7 +32,7 @@ export function buildAuditItemLabelMap(
 
     try {
       const payload = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, rootKey);
-      labels.set(item.itemId, payload.label);
+      labels.set(item.itemId, payload.label ?? formatAuditIdFallback(item.itemId));
     } catch {}
   }
 

@@ -33,10 +33,9 @@ import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 
 const AGENT_KIND_LABELS: Record<AgentKind, string> = {
-  device: "Device",
   local_cli: "Local CLI",
   local_mcp: "Local MCP",
-  remote_agent: "Remote agent",
+  remote: "Remote agent",
 };
 
 function AgentRow({

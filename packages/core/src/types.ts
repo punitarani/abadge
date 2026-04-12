@@ -47,6 +47,9 @@ import type {
   PermissionListResultSchema,
   PermissionResultSchema,
   PermissionSchema,
+  ProfileListResultSchema,
+  ProfileResultSchema,
+  ProfileSchema,
   RecoverySetupSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -68,6 +71,7 @@ export type VaultBootstrapInput = TypeOf<typeof VaultBootstrapSchema>;
 export type ChangePasswordInput = TypeOf<typeof ChangePasswordSchema>;
 export type RecoverySetupInput = TypeOf<typeof RecoverySetupSchema>;
 export type RotateKeyInput = TypeOf<typeof RotateKeySchema>;
+export type Profile = TypeOf<typeof ProfileSchema>;
 
 export type ItemPayload = TypeOf<typeof ItemPayloadSchema>;
 export type CreateItemInput = TypeOf<typeof CreateItemSchema>;
@@ -119,6 +123,8 @@ export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
 export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
 export type PermissionListResult = TypeOf<typeof PermissionListResultSchema>;
 export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
+export type ProfileResult = TypeOf<typeof ProfileResultSchema>;
+export type ProfileListResult = TypeOf<typeof ProfileListResultSchema>;
 
 export type SuccessResult = TypeOf<typeof SuccessResultSchema>;
 export type KeyVersionResult = TypeOf<typeof KeyVersionResultSchema>;

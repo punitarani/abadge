@@ -7,11 +7,14 @@ import {
   AGENT_CHALLENGE_TTL_MS,
   AGENT_KINDS,
   AGENT_SESSION_PREFIX,
-  AGENT_SESSION_TTL_MS,
   AGENT_SESSION_REFRESH_BUFFER_MS,
+  AGENT_SESSION_TTL_MS,
   AUDIT_RESULTS,
-  STANDARD_FIELDS_BY_KIND,
   agentLocalityForKind,
+  CAPABILITY_MATRIX,
+  getAllowedCapabilities,
+  isCapabilityAllowed,
+  STANDARD_FIELDS_BY_KIND,
 } from "./constants";
 import { CreateAgentSchema, ItemPayloadSchema } from "./schemas";
 
@@ -37,6 +40,10 @@ describe("agentLocalityForKind", () => {
 
   test("maps remote agents to remote locality", () => {
     expect(agentLocalityForKind("remote")).toBe("remote");
+  });
+
+  test("maps legacy device agents to local locality during cutover", () => {
+    expect(agentLocalityForKind("device")).toBe("local");
   });
 });
 
@@ -76,6 +83,29 @@ describe("agent auth constants", () => {
 describe("AUDIT_RESULTS", () => {
   test("includes cascade outcomes for downstream revocation and deletion effects", () => {
     expect(AUDIT_RESULTS).toEqual(["allowed", "denied", "expired", "revoked", "cascade"]);
+  });
+});
+
+describe("CAPABILITY_MATRIX", () => {
+  test("allows local runtimes to mount or read ciphertext without remote-only capabilities", () => {
+    expect(CAPABILITY_MATRIX.local.zero_knowledge).toEqual([
+      "read_ciphertext",
+      "mount_env",
+      "mount_file",
+    ]);
+    expect(CAPABILITY_MATRIX.local.server_managed).toEqual([
+      "reveal_plaintext",
+      "mount_env",
+      "mount_file",
+    ]);
+  });
+
+  test("restricts remote runtimes to plaintext reveal on server-managed items", () => {
+    expect(getAllowedCapabilities("remote", "zero_knowledge")).toEqual([]);
+    expect(getAllowedCapabilities("remote", "server_managed")).toEqual(["reveal_plaintext"]);
+    expect(isCapabilityAllowed("reveal_plaintext", "remote", "server_managed")).toBe(true);
+    expect(isCapabilityAllowed("mount_env", "remote", "server_managed")).toBe(false);
+    expect(isCapabilityAllowed("read_ciphertext", "local", "server_managed")).toBe(false);
   });
 });
 

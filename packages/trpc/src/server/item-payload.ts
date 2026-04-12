@@ -1,6 +1,9 @@
 import type { ItemPayload } from "@abadge/core";
 
-export function decodeServerManagedPayload(itemId: string, decrypted: Uint8Array): ItemPayload {
+export function decodeServerManagedPayload(
+  itemId: string,
+  decrypted: Uint8Array,
+): ItemPayload & { label: string } {
   const text = new TextDecoder().decode(decrypted);
 
   try {
@@ -22,7 +25,7 @@ export function decodeServerManagedPayload(itemId: string, decrypted: Uint8Array
       typeof parsed.fields === "object" &&
       !Array.isArray(parsed.fields)
     ) {
-      return parsed as ItemPayload;
+      return parsed as ItemPayload & { label: string };
     }
   } catch {
     // Migrated items were stored as raw strings rather than structured payloads.

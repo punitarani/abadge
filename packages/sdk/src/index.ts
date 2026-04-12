@@ -1,3 +1,4 @@
+export { resolveFieldValue } from "@abadge/core";
 export type {
   AbadgeAgentClientConfig,
   AbadgeClientConfig,
@@ -6,6 +7,7 @@ export type {
 } from "./client";
 export { AbadgeAgentClient, AbadgeClient, AbadgeUserClient } from "./client";
 export { AbadgeApiError } from "./errors";
+export { SecretValue } from "./secret-value";
 export type {
   Agent,
   AgentBootstrapTokenResult,
@@ -65,5 +67,3 @@ export type {
   VaultBootstrapInput,
   VaultResult,
 } from "./types";
-export { resolveFieldValue } from "@abadge/core";
-export { SecretValue } from "./secret-value";

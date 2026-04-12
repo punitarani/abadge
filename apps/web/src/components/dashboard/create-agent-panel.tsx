@@ -15,10 +15,9 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { getClientErrorMessage } from "@/lib/trpc-browser";
 
 const KIND_LABELS: Record<AgentKind, string> = {
-  device: "Device",
   local_cli: "Local CLI",
   local_mcp: "Local MCP",
-  remote_agent: "Remote Agent",
+  remote: "Remote Agent",
 };
 
 export interface AgentRegistrationState {

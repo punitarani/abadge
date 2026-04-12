@@ -10,8 +10,13 @@ const TEST_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 function createItemRow(overrides: Partial<typeof items.$inferSelect>): typeof items.$inferSelect {
   return {
     id: "item_123",
+    organizationId: null,
+    profileId: null,
     userId: "user_123",
     vaultId: null,
+    label: null,
+    kind: null,
+    tags: [],
     storageMode: "server_managed",
     encryptedItemKey: null,
     keyNonce: null,

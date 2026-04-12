@@ -200,6 +200,21 @@ export const VaultSchema = Schema.Struct({
   updatedAt: IsoDateString,
 });
 
+export const ProfileSchema = Schema.Struct({
+  id: NonEmptyString,
+  organizationId: NonEmptyString,
+  name: NonEmptyString,
+  description: Schema.NullOr(Schema.String),
+  storageMode: StorageModeSchema,
+  wrappedRootKey: Schema.NullOr(Schema.String),
+  kdfSalt: Schema.NullOr(Schema.String),
+  kdfParams: Schema.NullOr(KdfParamsSchema),
+  recoveryWrappedRootKey: Schema.NullOr(Schema.String),
+  keyVersion: Schema.Int.pipe(Schema.positive()),
+  createdAt: IsoDateString,
+  updatedAt: IsoDateString,
+});
+
 export const ItemSummarySchema = Schema.Struct({
   id: NonEmptyString,
   storageMode: StorageModeSchema,
@@ -267,11 +282,14 @@ export const ItemDetailSchema = Schema.Union(
 
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
-  userId: NonEmptyString,
+  userId: Schema.optional(NonEmptyString),
+  organizationId: Schema.optional(NonEmptyString),
+  createdBy: Schema.optional(NonEmptyString),
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
   authMethod: PrincipalAuthMethodSchema,
   name: NonEmptyString,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
   publicKeyConfigured: Schema.Boolean,
   keyPrefix: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
@@ -369,21 +387,28 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
 
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
+  organizationId: Schema.optional(NonEmptyString),
   agentId: NonEmptyString,
   itemId: NonEmptyString,
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
   createdBy: NonEmptyString,
+  grantedBy: Schema.optional(NonEmptyString),
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
+  organizationId: Schema.optional(NonEmptyString),
   userId: NonEmptyString,
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
+  profileId: Schema.optional(Schema.NullOr(Schema.String)),
+  surface: Schema.optional(Schema.NullOr(Schema.String)),
   eventType: AuditEventTypeSchema,
   result: AuditResultSchema,
+  field: Schema.optional(Schema.NullOr(Schema.String)),
+  purpose: Schema.optional(Schema.NullOr(Schema.String)),
   deliveryMode: Schema.NullOr(Schema.String),
   meta: JsonRecord,
   ipAddress: Schema.NullOr(Schema.String),
@@ -437,6 +462,14 @@ export const ItemVersionResultSchema = Schema.Struct({
 
 export const VaultResultSchema = Schema.Struct({
   vault: VaultSchema,
+});
+
+export const ProfileResultSchema = Schema.Struct({
+  profile: ProfileSchema,
+});
+
+export const ProfileListResultSchema = Schema.Struct({
+  profiles: Schema.Array(ProfileSchema),
 });
 
 export const ItemResultSchema = Schema.Struct({
