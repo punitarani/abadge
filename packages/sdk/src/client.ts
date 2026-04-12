@@ -226,6 +226,14 @@ function toBase64url(bytes: ArrayBuffer): string {
     .replace(/=/g, "");
 }
 
+function parseJwkString(raw: string): JsonWebKey {
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
+  }
+  return parsed as JsonWebKey;
+}
+
 async function resolvePrivateKey(
   privateKey: CryptoKey | Ed25519PrivateKeyJwk | string,
 ): Promise<CryptoKey> {
@@ -233,13 +241,9 @@ async function resolvePrivateKey(
     return privateKey;
   }
   if (typeof privateKey === "string") {
-    const parsed: unknown = JSON.parse(privateKey);
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
-    }
     return crypto.subtle.importKey(
       "jwk",
-      parsed as JsonWebKey,
+      parseJwkString(privateKey),
       { name: "Ed25519" },
       false,
       ["sign"],
@@ -799,10 +803,7 @@ export class AbadgeAgentClient {
       this.client = buildUnauthTrpcClient(config.apiUrl);
       // Fail fast: validate string keys at construction time rather than at connect()
       if (typeof config.privateKey === "string") {
-        const parsed: unknown = JSON.parse(config.privateKey);
-        if (!parsed || typeof parsed !== "object") {
-          throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
-        }
+        parseJwkString(config.privateKey);
       }
     }
   }
