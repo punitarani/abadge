@@ -6,6 +6,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AuthShell } from "@/components";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { useOrgStore } from "@/stores/org-store";
 
 function normalizeUserCode(value: string | null): string {
   return (value ?? "").trim().replace(/-/g, "").toUpperCase();
@@ -62,10 +63,15 @@ function useCountdown(ttlSeconds: number): number {
   return remaining;
 }
 
+function getApprovalRedirect(orgSlug: string | null): string {
+  return orgSlug ? `/${orgSlug}/overview` : "/onboarding";
+}
+
 function DeviceApprovalPageContent(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, isPending } = authClient.useSession();
+  const activeOrgSlug = useOrgStore((s) => s.activeOrgSlug);
   const userCode = useMemo(
     () => normalizeUserCode(searchParams.get("user_code") ?? searchParams.get("userCode")),
     [searchParams],
@@ -105,7 +111,8 @@ function DeviceApprovalPageContent(): React.ReactElement {
           return;
         }
 
-        router.replace(decision === "approve" ? "/items" : "/device");
+        const next = decision === "approve" ? getApprovalRedirect(activeOrgSlug) : "/device";
+        router.replace(next);
       } catch {
         setError(
           decision === "approve"
@@ -116,7 +123,7 @@ function DeviceApprovalPageContent(): React.ReactElement {
         setSubmitting(null);
       }
     },
-    [router, userCode],
+    [router, userCode, activeOrgSlug],
   );
 
   if (!userCode) {

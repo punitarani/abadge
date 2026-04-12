@@ -56,7 +56,7 @@ export const WithIcon: Story = {
 export const AsChild: Story = {
   render: () => (
     <Button asChild variant="outline">
-      <a href="/audit">View audit trail</a>
+      <a href="/my-org/audit">View audit trail</a>
     </Button>
   ),
 };

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { HeroInterfaceTabs } from "@/components";
 import {
+  AuthRedirect,
   LandingFooter,
   LandingHeader,
   landingCondensed,
@@ -114,6 +115,7 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <div id="top" className={landingRootClassName}>
+      <AuthRedirect />
       <LandingHeader currentPage="home" />
 
       <main>
