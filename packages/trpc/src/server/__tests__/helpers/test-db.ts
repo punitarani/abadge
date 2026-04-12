@@ -1,10 +1,11 @@
+import path from "node:path";
 import { createDb, type Database } from "@abadge/db";
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import path from "node:path";
 
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? "postgresql://abadge:abadge@localhost:5432/abadge_test";
+const DEFAULT_TEST_DB = "postgresql://abadge:abadge@localhost:5432/abadge_test";
+// biome-ignore lint/style/noRestrictedGlobals: test helper runs outside @abadge/env validation
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? DEFAULT_TEST_DB;
 
 let _db: Database | null = null;
 
@@ -15,10 +16,7 @@ export function getTestDb(): Database {
   return _db;
 }
 
-const migrationsFolder = path.resolve(
-  import.meta.dir,
-  "../../../../../db/migrations",
-);
+const migrationsFolder = path.resolve(import.meta.dir, "../../../../../db/migrations");
 
 export async function migrateTestDb(): Promise<void> {
   const db = getTestDb();
