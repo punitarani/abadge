@@ -12,12 +12,13 @@ import {
   MountAccessResponseSchema,
   MountAccessSchema,
   NotFoundError,
+  resolveFieldValue,
   RevealAccessResponseSchema,
   RevealAccessSchema,
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
 import { and, eq, isNull } from "@abadge/db";
-import { items, grants as permissionRecords } from "@abadge/db/schema";
+import { items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
@@ -32,6 +33,7 @@ const failMissingServerManagedData = (
     const ctx = yield* AgentRequestContextTag;
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId,
@@ -80,7 +82,7 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
         .from(permissionRecords)
         .where(
           and(
-            eq(permissionRecords.principalId, agentId),
+            eq(permissionRecords.agentId, agentId),
             eq(permissionRecords.itemId, itemId),
             eq(permissionRecords.capability, capability),
           ),
@@ -109,7 +111,7 @@ const loadAccessibleItem = (itemId: string) =>
         .where(
           and(
             eq(items.id, itemId),
-            eq(items.userId, ctx.identity.agentUserId),
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
             isNull(items.deletedAt),
           ),
         )
@@ -121,7 +123,7 @@ const loadAccessibleItem = (itemId: string) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
-          hint: "Check the item ID and confirm the agent is scoped to the same owner account.",
+          hint: "Check the item ID and confirm the agent belongs to the same organization.",
         }),
       );
     }
@@ -135,6 +137,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
 
     if (ctx.identity.agentLocality !== "local") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -156,6 +159,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     const item = yield* loadAccessibleItem(input.itemId);
     if (item.storageMode !== "zero_knowledge") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -180,6 +184,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     );
     if (!hasPermission) {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -198,6 +203,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
@@ -220,6 +226,7 @@ const accessReveal = (input: RevealAccessInput) =>
 
     if (item.storageMode !== "server_managed") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -244,6 +251,7 @@ const accessReveal = (input: RevealAccessInput) =>
     );
     if (!hasPermission) {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -262,20 +270,29 @@ const accessReveal = (input: RevealAccessInput) =>
     }
 
     const decrypted = yield* decryptServerManagedItem(item, "access.reveal");
+    const payload = decodeServerManagedPayload(item.id, decrypted);
+
+    // Resolve field if specified (validates field exists, throws domain error if not)
+    let deliveredPayload = payload;
+    if (input.field) {
+      const fieldValue = yield* Effect.try(() => resolveFieldValue(payload, input.field as string));
+      deliveredPayload = { ...payload, fields: { [input.field]: fieldValue } };
+    }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType: "access.reveal",
       result: "allowed",
       deliveryMode: "reveal",
+      field: input.field ?? "__default__",
+      purpose: input.purpose,
       ipAddress: ctx.ipAddress,
     });
 
-    return {
-      payload: decodeServerManagedPayload(item.id, decrypted),
-    };
+    return { payload: deliveredPayload };
   });
 
 const accessMount = (input: MountAccessInput) =>
@@ -285,6 +302,7 @@ const accessMount = (input: MountAccessInput) =>
 
     if (ctx.identity.agentLocality !== "local") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -307,6 +325,7 @@ const accessMount = (input: MountAccessInput) =>
     const hasPermission = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
     if (!hasPermission) {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -326,12 +345,15 @@ const accessMount = (input: MountAccessInput) =>
 
     if (item.storageMode === "zero_knowledge") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
         result: "allowed",
         deliveryMode: `mount_${input.mountType}`,
+        field: input.field ?? "__default__",
+        purpose: input.purpose,
         ipAddress: ctx.ipAddress,
       });
 
@@ -344,20 +366,31 @@ const accessMount = (input: MountAccessInput) =>
     }
 
     const decrypted = yield* decryptServerManagedItem(item, eventType);
+    const payload = decodeServerManagedPayload(item.id, decrypted);
+
+    // Resolve field if specified (validates field exists, throws domain error if not)
+    let deliveredPayload = payload;
+    if (input.field) {
+      const fieldValue = yield* Effect.try(() => resolveFieldValue(payload, input.field as string));
+      deliveredPayload = { ...payload, fields: { [input.field]: fieldValue } };
+    }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType,
       result: "allowed",
       deliveryMode: `mount_${input.mountType}`,
+      field: input.field ?? "__default__",
+      purpose: input.purpose,
       ipAddress: ctx.ipAddress,
     });
 
     return {
       storageMode: "server_managed" as const,
-      payload: decodeServerManagedPayload(item.id, decrypted),
+      payload: deliveredPayload,
     };
   });
 

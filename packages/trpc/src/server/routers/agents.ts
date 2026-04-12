@@ -15,9 +15,10 @@ import {
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
-import { agentEnrollmentTokens, principals as agentRecords } from "@abadge/db/schema";
+import { agentEnrollmentTokens, agents as agentRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
+import { onAgentRevoked } from "../cascades";
 import {
   AgentRequestContextTag,
   runAgentEffect,
@@ -75,7 +76,8 @@ const createAgent = (input: CreateAgentInput) =>
     yield* Effect.tryPromise(() =>
       ctx.db.insert(agentRecords).values({
         id,
-        userId: ctx.identity.userId,
+        organizationId: ctx.identity.organizationId,
+        createdBy: ctx.identity.userId,
         kind: input.kind,
         locality,
         authMethod,
@@ -101,6 +103,7 @@ const createAgent = (input: CreateAgentInput) =>
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId: id,
       eventType: "agent.create",
@@ -111,11 +114,13 @@ const createAgent = (input: CreateAgentInput) =>
     return {
       agent: serializeAgent({
         id,
-        userId: ctx.identity.userId,
+        organizationId: ctx.identity.organizationId,
+        createdBy: ctx.identity.userId,
         kind: input.kind,
         locality,
         authMethod,
         name: input.name,
+        description: null,
         secretHash,
         secretPrefix,
         publicKey,
@@ -134,7 +139,10 @@ const createAgent = (input: CreateAgentInput) =>
 const listAgents = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   const result = yield* Effect.tryPromise(() =>
-    ctx.db.select().from(agentRecords).where(eq(agentRecords.userId, ctx.identity.userId)),
+    ctx.db
+      .select()
+      .from(agentRecords)
+      .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
   );
 
   return { agents: result.map(serializeAgent) };
@@ -147,7 +155,12 @@ const getAgent = (agentId: string) =>
       ctx.db
         .select()
         .from(agentRecords)
-        .where(and(eq(agentRecords.id, agentId), eq(agentRecords.userId, ctx.identity.userId)))
+        .where(
+          and(
+            eq(agentRecords.id, agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
+        )
         .limit(1),
     );
 
@@ -156,7 +169,7 @@ const getAgent = (agentId: string) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
-          hint: "Check the agent ID and make sure it belongs to this account.",
+          hint: "Check the agent ID and make sure it belongs to this organization.",
         }),
       );
     }
@@ -193,7 +206,7 @@ const rotateAgent = (agentId: string) =>
         .where(
           and(
             eq(agentRecords.id, agentId),
-            eq(agentRecords.userId, ctx.identity.userId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
             isNull(agentRecords.revokedAt),
           ),
         )
@@ -224,6 +237,7 @@ const rotateAgent = (agentId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId,
       eventType: "agent.rotate",
@@ -244,7 +258,12 @@ const revokeAgent = (agentId: string) =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(and(eq(agentRecords.id, agentId), eq(agentRecords.userId, ctx.identity.userId)))
+        .where(
+          and(
+            eq(agentRecords.id, agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
+        )
         .limit(1),
     );
 
@@ -253,7 +272,7 @@ const revokeAgent = (agentId: string) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
-          hint: "Check the agent ID and make sure it belongs to this account.",
+          hint: "Check the agent ID and make sure it belongs to this organization.",
         }),
       );
     }
@@ -269,12 +288,17 @@ const revokeAgent = (agentId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId,
       eventType: "agent.revoke",
       result: "allowed",
       ipAddress: ctx.ipAddress,
     });
+
+    yield* Effect.tryPromise(() =>
+      onAgentRevoked(ctx.db, agentId, ctx.identity.organizationId, ctx.identity.userId),
+    );
 
     return { ok: true };
   });

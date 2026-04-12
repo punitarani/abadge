@@ -1,9 +1,6 @@
 import type { Database } from "@abadge/db";
 import { and, eq, gt, isNull } from "@abadge/db";
-// Writes to legacy auditLog table (audit_log). The new audit_logs table is the
-// v0 target, but existing audit writes still use the old table. Full migration
-// in Phase 3.
-import { agentSessions, auditLog } from "@abadge/db/schema";
+import { agentSessions, auditLogs } from "@abadge/db/schema";
 
 /**
  * Called after agent revocation: invalidates all active sessions for the agent
@@ -30,12 +27,13 @@ export async function onAgentRevoked(
   for (const session of activeSessions) {
     await db.update(agentSessions).set({ revokedAt: now }).where(eq(agentSessions.id, session.id));
 
-    await db.insert(auditLog).values({
+    await db.insert(auditLogs).values({
+      organizationId: orgId,
       userId: revokedBy,
-      principalId: agentId,
+      agentId,
       eventType: "agent.revoke",
       result: "cascade",
-      meta: { sessionId: session.id, orgId },
+      meta: { sessionId: session.id },
     });
   }
 }
@@ -50,12 +48,13 @@ export async function onItemDeleted(
   orgId: string,
   deletedBy: string,
 ): Promise<void> {
-  await db.insert(auditLog).values({
+  await db.insert(auditLogs).values({
+    organizationId: orgId,
     userId: deletedBy,
     itemId,
     eventType: "item.delete_cascade",
     result: "cascade",
-    meta: { orgId },
+    meta: {},
   });
 }
 
@@ -69,10 +68,11 @@ export async function onMemberRemoved(
   userId: string,
   removedBy: string,
 ): Promise<void> {
-  await db.insert(auditLog).values({
+  await db.insert(auditLogs).values({
+    organizationId: orgId,
     userId: removedBy,
     eventType: "auth.token_revoke",
     result: "cascade",
-    meta: { orgId, removedUserId: userId },
+    meta: { removedUserId: userId },
   });
 }

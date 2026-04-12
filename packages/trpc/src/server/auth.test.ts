@@ -6,10 +6,7 @@ import { createTrpcCallerFactory, createTrpcRouter, scopedSessionProcedure } fro
 
 function createMockDb(): BaseRequestContext["db"] {
   let callCount = 0;
-  const results = [
-    [{ organizationId: "org_mock" }],
-    [{ role: "owner" }],
-  ];
+  const results = [[{ organizationId: "org_mock" }], [{ role: "owner" }]];
   const mockQuery = {
     from: () => mockQuery,
     where: () => mockQuery,

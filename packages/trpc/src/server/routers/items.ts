@@ -15,9 +15,10 @@ import {
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
 import { and, desc, eq, isNull } from "@abadge/db";
-import { items, vaults } from "@abadge/db/schema";
+import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
+import { onItemDeleted } from "../cascades";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
 import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
@@ -32,7 +33,11 @@ const loadOwnedItem = (itemId: string) =>
         .select()
         .from(items)
         .where(
-          and(eq(items.id, itemId), eq(items.userId, ctx.identity.userId), isNull(items.deletedAt)),
+          and(
+            eq(items.id, itemId),
+            eq(items.organizationId, ctx.identity.organizationId),
+            isNull(items.deletedAt),
+          ),
         )
         .limit(1),
     );
@@ -57,16 +62,25 @@ const createItem = (input: CreateItemInput) =>
     const id = crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
-      const [vault] = yield* Effect.tryPromise(() =>
-        ctx.db.select({ id: vaults.id }).from(vaults).where(eq(vaults.userId, userId)).limit(1),
+      const [profile] = yield* Effect.tryPromise(() =>
+        ctx.db
+          .select({ id: profiles.id })
+          .from(profiles)
+          .where(
+            and(
+              eq(profiles.organizationId, ctx.identity.organizationId),
+              eq(profiles.storageMode, "zero_knowledge"),
+            ),
+          )
+          .limit(1),
       );
 
-      if (!vault) {
+      if (!profile) {
         return yield* Effect.fail(
           new NotFoundError({
-            code: "VAULT_NOT_FOUND",
-            message: "Vault not bootstrapped",
-            hint: "Bootstrap the vault before creating zero-knowledge items.",
+            code: "NOT_FOUND",
+            message: "No zero-knowledge profile found",
+            hint: "Create a ZK profile first or use server-managed storage mode.",
           }),
         );
       }
@@ -75,7 +89,8 @@ const createItem = (input: CreateItemInput) =>
         ctx.db.insert(items).values({
           id,
           userId,
-          vaultId: vault.id,
+          organizationId: ctx.identity.organizationId,
+          profileId: profile.id,
           label: resolveStoredLabel(id, input.label),
           storageMode: "zero_knowledge",
           encryptedItemKey: input.encryptedItemKey,
@@ -92,6 +107,7 @@ const createItem = (input: CreateItemInput) =>
         ctx.db.insert(items).values({
           id,
           userId,
+          organizationId: ctx.identity.organizationId,
           label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
           serverCiphertext: encrypted.ciphertext,
@@ -102,6 +118,7 @@ const createItem = (input: CreateItemInput) =>
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId,
       itemId: id,
       eventType: "item.create",
@@ -126,7 +143,7 @@ const listItems = Effect.gen(function* () {
         updatedAt: items.updatedAt,
       })
       .from(items)
-      .where(and(eq(items.userId, ctx.identity.userId), isNull(items.deletedAt)))
+      .where(and(eq(items.organizationId, ctx.identity.organizationId), isNull(items.deletedAt)))
       .orderBy(desc(items.createdAt)),
   );
 
@@ -139,6 +156,7 @@ const getItem = (itemId: string) =>
     const item = yield* loadOwnedItem(itemId);
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.read",
@@ -199,6 +217,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.update",
@@ -243,6 +262,7 @@ const ownerReveal = (itemId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.export",
@@ -264,12 +284,17 @@ const deleteItem = (itemId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.delete",
       result: "allowed",
       ipAddress: ctx.ipAddress,
     });
+
+    yield* Effect.tryPromise(() =>
+      onItemDeleted(ctx.db, itemId, ctx.identity.organizationId, ctx.identity.userId),
+    );
 
     return { ok: true };
   });

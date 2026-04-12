@@ -12,7 +12,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, or } from "@abadge/db";
-import { principals as agentRecords, items, grants as permissionRecords } from "@abadge/db/schema";
+import { agents as agentRecords, items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
@@ -36,7 +36,10 @@ const createPermission = (input: CreatePermissionInput) =>
         .select()
         .from(agentRecords)
         .where(
-          and(eq(agentRecords.id, input.agentId), eq(agentRecords.userId, ctx.identity.userId)),
+          and(
+            eq(agentRecords.id, input.agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
         )
         .limit(1),
     );
@@ -46,7 +49,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
-          hint: "Check the agent ID and make sure it belongs to this account.",
+          hint: "Check the agent ID and make sure it belongs to this organization.",
         }),
       );
     }
@@ -55,7 +58,9 @@ const createPermission = (input: CreatePermissionInput) =>
       ctx.db
         .select()
         .from(items)
-        .where(and(eq(items.id, input.itemId), eq(items.userId, ctx.identity.userId)))
+        .where(
+          and(eq(items.id, input.itemId), eq(items.organizationId, ctx.identity.organizationId)),
+        )
         .limit(1),
     );
 
@@ -64,7 +69,7 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
-          hint: "Check the item ID and make sure it belongs to this account.",
+          hint: "Check the item ID and make sure it belongs to this organization.",
         }),
       );
     }
@@ -107,7 +112,8 @@ const createPermission = (input: CreatePermissionInput) =>
     yield* Effect.tryPromise(() =>
       ctx.db.insert(permissionRecords).values({
         id,
-        principalId: input.agentId,
+        organizationId: ctx.identity.organizationId,
+        agentId: input.agentId,
         itemId: input.itemId,
         capability: input.capability,
         expiresAt,
@@ -117,6 +123,7 @@ const createPermission = (input: CreatePermissionInput) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId: input.agentId,
       itemId: input.itemId,
@@ -129,7 +136,8 @@ const createPermission = (input: CreatePermissionInput) =>
     return {
       permission: serializePermission({
         id,
-        principalId: input.agentId,
+        organizationId: ctx.identity.organizationId,
+        agentId: input.agentId,
         itemId: input.itemId,
         capability: input.capability,
         expiresAt,
@@ -146,7 +154,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(eq(agentRecords.userId, ctx.identity.userId)),
+        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
     );
 
     const agentIds = userAgents.map((agent) => agent.id);
@@ -161,7 +169,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         return { permissions: [] };
       }
       result = yield* Effect.tryPromise(() =>
-        ctx.db.select().from(permissionRecords).where(eq(permissionRecords.principalId, agentId)),
+        ctx.db.select().from(permissionRecords).where(eq(permissionRecords.agentId, agentId)),
       );
     } else if (input.itemId) {
       const itemId = input.itemId;
@@ -169,7 +177,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         ctx.db
           .select({ id: items.id })
           .from(items)
-          .where(and(eq(items.id, itemId), eq(items.userId, ctx.identity.userId)))
+          .where(and(eq(items.id, itemId), eq(items.organizationId, ctx.identity.organizationId)))
           .limit(1),
       );
 
@@ -185,7 +193,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         ctx.db
           .select()
           .from(permissionRecords)
-          .where(or(...agentIds.map((id) => eq(permissionRecords.principalId, id)))),
+          .where(or(...agentIds.map((id) => eq(permissionRecords.agentId, id)))),
       );
     }
 
@@ -215,18 +223,18 @@ const revokePermission = (permissionId: string) =>
 
     const [agent] = yield* Effect.tryPromise(() =>
       ctx.db
-        .select({ userId: agentRecords.userId })
+        .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(eq(agentRecords.id, permission.principalId))
+        .where(and(eq(agentRecords.id, permission.agentId), eq(agentRecords.organizationId, ctx.identity.organizationId)))
         .limit(1),
     );
 
-    if (!agent || agent.userId !== ctx.identity.userId) {
+    if (!agent) {
       return yield* Effect.fail(
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
-          hint: "Check the permission ID and make sure it belongs to this account.",
+          hint: "Check the permission ID and make sure it belongs to this organization.",
         }),
       );
     }
@@ -236,8 +244,9 @@ const revokePermission = (permissionId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
-      agentId: permission.principalId,
+      agentId: permission.agentId,
       itemId: permission.itemId,
       eventType: "permission.revoke",
       result: "allowed",
