@@ -1,16 +1,10 @@
 import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull, or } from "@abadge/db";
-import {
-  principals as agentRecords,
-  agentSessions,
-  auditLog,
-  operatorTokens,
-} from "@abadge/db/schema";
+import { principals as agentRecords, agentSessions, auditLog } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
-import { OPERATOR_TOKEN_PREFIX } from "./operator-token";
 
 function getCandidatePrefixes(token: string): string[] {
   return [
@@ -74,11 +68,6 @@ type AgentSessionAgentCandidate = Pick<
   "id" | "userId" | "locality" | "enabled" | "revokedAt"
 >;
 
-type ActiveOperatorToken = Pick<
-  typeof operatorTokens.$inferSelect,
-  "id" | "userId" | "scopes" | "expiresAt"
->;
-
 function unauthorized(message: string): UnauthorizedError {
   return new UnauthorizedError({
     code: "UNAUTHORIZED",
@@ -120,14 +109,6 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
     .update(agentSessions)
     .set({ lastUsedAt: new Date() })
     .where(eq(agentSessions.id, sessionId))
-    .execute();
-}
-
-function touchOperatorToken(ctx: BaseRequestContext, tokenId: string): void {
-  void ctx.db
-    .update(operatorTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(operatorTokens.id, tokenId))
     .execute();
 }
 
@@ -350,11 +331,6 @@ export const resolveSessionIdentity = (
   ctx: BaseRequestContext,
 ): Effect.Effect<SessionIdentity, Error | UnauthorizedError> =>
   Effect.gen(function* () {
-    const operatorTokenIdentity = yield* resolveOperatorTokenIdentity(ctx);
-    if (operatorTokenIdentity) {
-      return operatorTokenIdentity;
-    }
-
     const session = (yield* tryAsync(() =>
       ctx.auth.api.getSession({
         headers: ctx.req.headers,
@@ -376,51 +352,6 @@ export const resolveSessionIdentity = (
     }
 
     return yield* Effect.fail(unauthorized("Unauthorized"));
-  });
-
-const resolveOperatorTokenIdentity = (
-  ctx: BaseRequestContext,
-): Effect.Effect<SessionIdentity | null, Error | UnauthorizedError> =>
-  Effect.gen(function* () {
-    const token = ctx.req.headers.get("X-Abadge-Operator-Token");
-    if (!token) {
-      return null;
-    }
-
-    if (!token.startsWith(OPERATOR_TOKEN_PREFIX)) {
-      return yield* Effect.fail(unauthorized("Invalid operator token"));
-    }
-
-    const tokenHash = yield* tryAsync(() => hashApiKey(token));
-    const [record] = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: operatorTokens.id,
-          userId: operatorTokens.userId,
-          scopes: operatorTokens.scopes,
-          expiresAt: operatorTokens.expiresAt,
-        })
-        .from(operatorTokens)
-        .where(and(eq(operatorTokens.tokenHash, tokenHash), isNull(operatorTokens.revokedAt)))
-        .limit(1),
-    )) as Array<ActiveOperatorToken>;
-
-    if (!record) {
-      return yield* Effect.fail(unauthorized("Invalid operator token"));
-    }
-
-    if (record.expiresAt <= new Date()) {
-      return yield* Effect.fail(unauthorized("Expired operator token"));
-    }
-
-    touchOperatorToken(ctx, record.id);
-    return {
-      kind: "session" as const,
-      userId: record.userId,
-      authMethod: "operator_token",
-      operatorTokenId: record.id,
-      scopes: record.scopes,
-    };
   });
 
 const resolveBearerSessionIdentity = (

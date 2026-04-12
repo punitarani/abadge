@@ -20,17 +20,9 @@ import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
 import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
+import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
-
-function fallbackItemLabel(itemId: string): string {
-  return `migrated-${itemId.slice(0, 8)}`;
-}
-
-function resolveStoredLabel(itemId: string, label?: string | null): string {
-  const trimmed = label?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallbackItemLabel(itemId);
-}
 
 const loadOwnedItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -84,7 +76,7 @@ const createItem = (input: CreateItemInput) =>
           id,
           userId,
           vaultId: vault.id,
-          label: fallbackItemLabel(id),
+          label: resolveStoredLabel(id, input.label),
           storageMode: "zero_knowledge",
           encryptedItemKey: input.encryptedItemKey,
           ciphertext: input.ciphertext,
@@ -177,6 +169,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
         ctx.db
           .update(items)
           .set({
+            label: resolveStoredLabel(itemId, input.label),
             encryptedItemKey: input.encryptedItemKey,
             ciphertext: input.ciphertext,
             contentVersion: item.contentVersion + 1,

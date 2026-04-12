@@ -64,6 +64,7 @@ export const RotateKeySchema = Schema.Struct({
 
 export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
+  label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
 });
@@ -80,6 +81,7 @@ export const CreateItemSchema = Schema.Union(
 
 export const ZeroKnowledgeUpdateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
+  label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   contentVersion: Schema.Int.pipe(Schema.positive()),

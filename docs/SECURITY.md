@@ -83,7 +83,8 @@ Fully non-interactive operator automation uses scoped `abo_...` tokens.
 - Default TTL is 24 hours
 - Maximum TTL is 30 days
 - Revoked and expired tokens fail closed
-- Token issuance and revocation are legacy maintenance flows, not part of the v0 public `@abadge/core`, SDK, or dashboard contract
+- Token issuance and revocation are legacy maintenance flows, not part of the v0 public `@abadge/core`, SDK, dashboard, or CLI auth contract
+- Public CLI/API session auth uses Better Auth browser or bearer sessions instead of `X-Abadge-Operator-Token`
 
 Scopes are coarse and route-bound:
 

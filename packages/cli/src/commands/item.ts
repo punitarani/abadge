@@ -68,6 +68,7 @@ async function buildCreateItemInput(values: CreateItemValues): Promise<CreateIte
   const encrypted = await daemonEncrypt(payload);
   return {
     storageMode: "zero_knowledge",
+    label: values.label,
     encryptedItemKey: encrypted.encryptedItemKey,
     ciphertext: encrypted.ciphertext,
   };
@@ -188,6 +189,7 @@ export function createItemCommand(): Command {
           const encrypted = await daemonEncrypt(payload);
           result = await client.updateItem(id, {
             storageMode: "zero_knowledge",
+            label,
             encryptedItemKey: encrypted.encryptedItemKey,
             ciphertext: encrypted.ciphertext,
             contentVersion: currentItem.contentVersion,

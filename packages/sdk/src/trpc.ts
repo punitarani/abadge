@@ -2,8 +2,6 @@ import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AnyTRPCRouter } from "@trpc/server";
 
-const OPERATOR_TOKEN_PREFIX = "abo_";
-
 interface NodeTrpcClientOptions {
   baseUrl: string;
   token?: string;
@@ -25,9 +23,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 function tokenToHeaders(token: string): Record<string, string> {
-  return token.startsWith(OPERATOR_TOKEN_PREFIX)
-    ? { "X-Abadge-Operator-Token": token }
-    : { Authorization: `Bearer ${token}` };
+  return { Authorization: `Bearer ${token}` };
 }
 
 function toHeaderRecord(headers?: unknown): Record<string, string> {

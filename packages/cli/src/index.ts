@@ -14,7 +14,7 @@ const program = new Command()
   .name("abadge")
   .description("Zero-knowledge credential vault CLI")
   .version(packageJson.version, "-v, --version")
-  .option("--token-stdin", "Read an operator/session token from stdin for this command");
+  .option("--token-stdin", "Read a bearer session token from stdin for this command");
 
 program.addCommand(createLoginCommand());
 program.addCommand(createLogoutCommand());

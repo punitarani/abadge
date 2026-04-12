@@ -140,6 +140,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       let body:
         | {
             storageMode: "zero_knowledge";
+            label: string;
             encryptedItemKey: string;
             ciphertext: string;
           }
@@ -168,6 +169,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
         const encrypted = encryptItemForVault(payload, key);
         body = {
           storageMode: "zero_knowledge",
+          label: name,
           encryptedItemKey: encrypted.encryptedItemKey,
           ciphertext: encrypted.ciphertext,
         };

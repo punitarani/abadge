@@ -165,6 +165,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@abadge/core": "workspace:*",
+        "@abadge/crypto": "workspace:*",
         "@abadge/env": "workspace:*",
         "drizzle-orm": "0.45.2",
         "postgres": "^3.4.0",

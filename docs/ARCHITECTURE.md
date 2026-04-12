@@ -122,8 +122,8 @@ Each tRPC request constructs context once:
 
 Procedure middleware then adds identity:
 
-* `sessionProcedure` resolves browser sessions, Better Auth bearer sessions, or legacy operator tokens
-* `scopedSessionProcedure` adds coarse scope checks only for legacy operator-token callers
+* `sessionProcedure` resolves browser sessions or Better Auth bearer sessions
+* `scopedSessionProcedure` is the route-tier alias used for session-only management procedures
 * `agentProcedure` resolves an agent token, including legacy fallback
 
 ## Contract model
@@ -145,7 +145,7 @@ Every public procedure declares both input and output schemas. No custom transfo
 2. Hono middleware applies headers, CORS, and rate limiting
 3. tRPC builds request context
 4. `sessionProcedure` resolves the user identity
-5. `scopedSessionProcedure` checks scopes only when the caller used a legacy `X-Abadge-Operator-Token`
+5. `scopedSessionProcedure` marks routes that require an authenticated operator session
 6. Effect program runs domain logic
 7. response is encoded as JSON-safe data
 
@@ -173,7 +173,7 @@ Core persisted entities:
 * `agents`
 * `permissions`
 * `audit_log`
-* `operator_tokens`
+* `operator_tokens` (legacy maintenance data, not part of the public v0 auth surface)
 * Better Auth tables
 
 Current runtime logic depends on explicit permissions and does not use a background job system.

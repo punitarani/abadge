@@ -16,13 +16,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate && bun scripts/roadmap-backfill.ts",
+    "db:push": "drizzle-kit push && bun scripts/roadmap-backfill.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "bun scripts/db-reset.ts"
   },
   "dependencies": {
     "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
     "@abadge/env": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "^3.4.0"

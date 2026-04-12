@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { Either, Schema } from "effect";
-import { AgentSchema, AuditEntrySchema, ItemSummarySchema, ProfileSchema } from "./schemas";
+import {
+  AgentSchema,
+  AuditEntrySchema,
+  CreateItemSchema,
+  ItemSummarySchema,
+  ProfileSchema,
+  UpdateItemSchema,
+} from "./schemas";
 
 function decodeSucceeds(schema: Schema.Schema.Any, value: unknown): boolean {
   return Either.isRight(
@@ -107,6 +114,48 @@ describe("ItemSummarySchema", () => {
         contentVersion: 2,
         createdAt: "2026-04-11T00:00:00.000Z",
         updatedAt: "2026-04-11T00:00:00.000Z",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("item write schemas", () => {
+  test("require a cleartext label for zero-knowledge item creation", () => {
+    expect(
+      decodeSucceeds(CreateItemSchema, {
+        storageMode: "zero_knowledge",
+        label: "Production API key",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+      }),
+    ).toBe(true);
+
+    expect(
+      decodeSucceeds(CreateItemSchema, {
+        storageMode: "zero_knowledge",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+      }),
+    ).toBe(false);
+  });
+
+  test("require a cleartext label for zero-knowledge item updates", () => {
+    expect(
+      decodeSucceeds(UpdateItemSchema, {
+        storageMode: "zero_knowledge",
+        label: "Rotated API key",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+        contentVersion: 2,
+      }),
+    ).toBe(true);
+
+    expect(
+      decodeSucceeds(UpdateItemSchema, {
+        storageMode: "zero_knowledge",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+        contentVersion: 2,
       }),
     ).toBe(false);
   });

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { serverEncrypt } from "@abadge/crypto/server";
 import {
+  backfillServerManagedItemLabels,
   buildDefaultProfileFromVault,
   buildPersonalMembership,
   buildPersonalOrganization,
@@ -16,6 +18,9 @@ const migrationSql = readFileSync(
   join(import.meta.dir, "../migrations/0006_v0_foundation_cutover.sql"),
   "utf8",
 );
+const packageJson = JSON.parse(readFileSync(join(import.meta.dir, "../package.json"), "utf8")) as {
+  scripts?: Record<string, string>;
+};
 
 describe("personal organization backfill helpers", () => {
   test("creates deterministic personal organization identifiers per user", () => {
@@ -109,6 +114,53 @@ describe("item label backfill helpers", () => {
     expect(migrationSql).toContain('WHERE "label" IS NULL OR "label" = \'\';');
     expect(migrationSql).toContain('ALTER TABLE "items" ALTER COLUMN "label" SET NOT NULL;');
     expect(migrationSql).not.toContain("Server-managed labels require app-layer decryption");
+  });
+
+  test("runtime backfill decrypts server-managed payloads and updates migrated labels", async () => {
+    const encryptionKey = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
+      "base64",
+    );
+    const encrypted = await serverEncrypt(
+      new TextEncoder().encode(
+        JSON.stringify({
+          v: 1,
+          label: "Backfilled from payload",
+          kind: "opaque",
+          fields: { value: "secret" },
+        }),
+      ),
+      encryptionKey,
+      1,
+    );
+
+    const updates: Array<{ id: string; label: string }> = [];
+    const db = {
+      listServerManagedItems: async () => [
+        {
+          id: "item-1",
+          label: migratedItemLabel("item-1"),
+          serverCiphertext: encrypted.ciphertext,
+          serverIv: encrypted.iv,
+          serverKeyVersion: encrypted.keyVersion,
+        },
+      ],
+      updateItemLabel: async (id: string, label: string) => {
+        updates.push({ id, label });
+      },
+    } as const;
+
+    const result = await backfillServerManagedItemLabels({
+      db,
+      encryptionKey,
+    });
+
+    expect(result).toEqual({ scanned: 1, updated: 1 });
+    expect(updates).toEqual([{ id: "item-1", label: "Backfilled from payload" }]);
+  });
+
+  test("db migrate script runs the roadmap runtime backfill", () => {
+    expect(packageJson.scripts?.["db:migrate"]).toContain("roadmap-backfill.ts");
+    expect(packageJson.scripts?.["db:push"]).toContain("roadmap-backfill.ts");
   });
 });
 

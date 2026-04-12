@@ -1,4 +1,18 @@
 import type { KdfParams, StorageMode } from "@abadge/core";
+import { serverDecrypt } from "@abadge/crypto/server";
+
+export interface ServerManagedItemLabelBackfillRecord {
+  id: string;
+  label: string;
+  serverCiphertext: string | null;
+  serverIv: string | null;
+  serverKeyVersion: number | null;
+}
+
+export interface ServerManagedItemLabelBackfillStore {
+  listServerManagedItems(): Promise<ServerManagedItemLabelBackfillRecord[]>;
+  updateItemLabel(itemId: string, label: string): Promise<void>;
+}
 
 export interface LegacyUserSeed {
   id: string;
@@ -151,6 +165,42 @@ export function resolveServerManagedBackfillLabel(
   }
 
   return migratedItemLabel(itemId);
+}
+
+export async function backfillServerManagedItemLabels(input: {
+  db: ServerManagedItemLabelBackfillStore;
+  encryptionKey: string;
+}): Promise<{ scanned: number; updated: number }> {
+  const records = await input.db.listServerManagedItems();
+  let updated = 0;
+
+  for (const record of records) {
+    if (record.label !== migratedItemLabel(record.id)) {
+      continue;
+    }
+
+    if (!record.serverCiphertext || !record.serverIv || record.serverKeyVersion == null) {
+      continue;
+    }
+
+    const decrypted = await serverDecrypt(
+      {
+        ciphertext: record.serverCiphertext,
+        iv: record.serverIv,
+        keyVersion: record.serverKeyVersion,
+      },
+      input.encryptionKey,
+    );
+    const label = resolveServerManagedBackfillLabel(record.id, decrypted);
+    if (label === record.label) {
+      continue;
+    }
+
+    await input.db.updateItemLabel(record.id, label);
+    updated += 1;
+  }
+
+  return { scanned: records.length, updated };
 }
 
 export function roadmapAgentKind(

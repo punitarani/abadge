@@ -24,7 +24,6 @@ import { loadConfig } from "./config";
 import { daemonAuthHeaders } from "./daemon";
 
 type SessionTrpcClient = ReturnType<typeof createNodeTrpcClient>;
-const OPERATOR_TOKEN_PREFIX = "abo_";
 
 function getPrincipalSecret(config: PrincipalConfig | CliConfig): string {
   const secret = config.principalSecret ?? config.authToken;
@@ -227,9 +226,7 @@ function readNumber(body: RawDeviceCodeResponse, snake: string, camel: string): 
 }
 
 function sessionHeadersFromToken(token: string): Record<string, string> {
-  return token.startsWith(OPERATOR_TOKEN_PREFIX)
-    ? { "X-Abadge-Operator-Token": token }
-    : { Authorization: `Bearer ${token}` };
+  return { Authorization: `Bearer ${token}` };
 }
 
 let tokenFromStdinPromise: Promise<string> | null = null;
@@ -255,11 +252,6 @@ export async function resolveSessionConfig(
 ): Promise<SessionConfig> {
   const config = requireSessionBaseConfig();
   const useTokenStdin = options.tokenStdin ?? process.argv.includes("--token-stdin");
-  const operatorToken = process.env.ABADGE_OPERATOR_TOKEN;
-  if (operatorToken) {
-    return { ...config, sessionHeaders: sessionHeadersFromToken(operatorToken) };
-  }
-
   const sessionToken = process.env.ABADGE_SESSION_TOKEN;
   if (sessionToken) {
     return { ...config, sessionHeaders: sessionHeadersFromToken(sessionToken) };

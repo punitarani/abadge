@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { DeviceAuthorizationError, exchangeDeviceToken, requestDeviceCode } from "./client";
+import {
+  DeviceAuthorizationError,
+  exchangeDeviceToken,
+  requestDeviceCode,
+  resolveSessionConfig,
+} from "./client";
 
 const originalFetch = globalThis.fetch;
+const originalEnv = { ...process.env };
 type FetchInput = Parameters<typeof fetch>[0];
 
 function mockFetch(
@@ -19,6 +25,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
 });
 
 describe("device authorization client", () => {
@@ -152,4 +159,25 @@ describe("device authorization client", () => {
       expect(error.code).toBe(code);
     });
   }
+});
+
+describe("resolveSessionConfig", () => {
+  test("accepts bearer session tokens from the standard session env var", async () => {
+    process.env.ABADGE_API_URL = "https://api.abadge.io";
+    process.env.ABADGE_SESSION_TOKEN = "session-token";
+
+    await expect(resolveSessionConfig()).resolves.toMatchObject({
+      sessionHeaders: { Authorization: "Bearer session-token" },
+    });
+  });
+
+  test("ignores the legacy operator-token env var in favor of bearer session auth", async () => {
+    process.env.ABADGE_API_URL = "https://api.abadge.io";
+    process.env.ABADGE_OPERATOR_TOKEN = "abo_test_operator_token";
+    process.env.ABADGE_SESSION_TOKEN = "session-token";
+
+    await expect(resolveSessionConfig()).resolves.toMatchObject({
+      sessionHeaders: { Authorization: "Bearer session-token" },
+    });
+  });
 });
