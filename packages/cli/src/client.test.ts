@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   DeviceAuthorizationError,
   createAgentApiClient,
@@ -237,6 +240,31 @@ describe("createAgentApiClient", () => {
     const client = await createAgentApiClient();
     expect(client).toBeDefined();
     client.disconnect();
+  });
+
+  test("creates a client from ABADGE_PRIVATE_KEY_PATH env var (file-based JWK)", async () => {
+    const keyPair = (await crypto.subtle.generateKey("Ed25519", true, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const jwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+
+    const keyFilePath = join(tmpdir(), `abadge-test-key-${Date.now()}.json`);
+    writeFileSync(keyFilePath, JSON.stringify(jwk), { mode: 0o600 });
+
+    process.env.ABADGE_API_URL = "https://api.abadge.io";
+    process.env.ABADGE_AGENT_ID = "agent-2";
+    process.env.ABADGE_PRIVATE_KEY_PATH = keyFilePath;
+
+    mockTrpcConnect();
+
+    try {
+      const client = await createAgentApiClient();
+      expect(client).toBeDefined();
+      client.disconnect();
+    } finally {
+      unlinkSync(keyFilePath);
+    }
   });
 
   test("creates a client from ABADGE_AUTH_TOKEN legacy env var", async () => {
