@@ -2,7 +2,7 @@ import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
 import { AbadgeAgentClient, AbadgeApiError, AbadgeUserClient } from "@abadge/sdk";
 import { createNodeTrpcClient } from "@abadge/trpc/client";
 import type { CliConfig, SessionConfig } from "./config";
-import { loadConfig, requireConfig } from "./config";
+import { loadConfig } from "./config";
 import { daemonAuthHeaders } from "./daemon";
 
 // ---------------------------------------------------------------------------
@@ -177,35 +177,78 @@ export async function createUserApiClient(
 }
 
 /**
- * Create an agent API client using the local keypair config or legacy credentials.
+ * Create an agent API client using env vars, config file, or legacy credentials.
  *
- * Reads `localAgents.cli` from the CLI config for keypair auth. Falls back to
- * legacy `principalSecret` / `authToken` for migration.
+ * Resolution order:
+ * 1. ABADGE_PRIVATE_KEY (inline JWK string) + ABADGE_AGENT_ID + ABADGE_API_URL
+ * 2. ABADGE_PRIVATE_KEY_PATH (file path) + ABADGE_AGENT_ID + ABADGE_API_URL
+ * 3. Config file localAgents.cli
+ * 4. ABADGE_AUTH_TOKEN (legacy API key, deprecated)
  */
 export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
-  const config = requireConfig();
-  const agentConfig = config.localAgents?.cli;
+  const env = process.env;
+  const config = loadConfig();
+  const apiUrl = env.ABADGE_API_URL ?? config?.apiUrl;
 
-  // Fall back to legacy principalId/principalSecret for migration
-  if (!agentConfig) {
+  // 1. Inline JWK from env
+  if (env.ABADGE_PRIVATE_KEY && env.ABADGE_AGENT_ID) {
+    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
+    const client = new AbadgeAgentClient({
+      apiUrl,
+      agentId: env.ABADGE_AGENT_ID,
+      privateKey: env.ABADGE_PRIVATE_KEY,
+    });
+    await client.connect();
+    return client;
+  }
+
+  // 2. JWK file path from env
+  if (env.ABADGE_PRIVATE_KEY_PATH && env.ABADGE_AGENT_ID) {
+    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
+    const { readFileSync } = await import("node:fs");
+    const jwk = JSON.parse(readFileSync(env.ABADGE_PRIVATE_KEY_PATH, "utf-8"));
+    const client = new AbadgeAgentClient({
+      apiUrl,
+      agentId: env.ABADGE_AGENT_ID,
+      privateKey: jwk,
+    });
+    await client.connect();
+    return client;
+  }
+
+  // 3. Config file
+  if (config) {
+    const agentConfig = config.localAgents?.cli;
+    if (agentConfig) {
+      const { readFileSync } = await import("node:fs");
+      const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
+      const client = new AbadgeAgentClient({
+        apiUrl: config.apiUrl,
+        agentId: agentConfig.agentId,
+        privateKey: privateKeyJwk,
+      });
+      await client.connect();
+      return client;
+    }
+
+    // Legacy principalSecret/authToken from config
     const secret = config.principalSecret ?? config.authToken;
     if (secret) {
       return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: secret });
     }
-    throw new Error(
-      "No local CLI agent configured. Run `abadge agent register --kind local_cli` first.",
-    );
   }
 
-  const { readFileSync } = await import("node:fs");
-  const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
-  const client = new AbadgeAgentClient({
-    apiUrl: config.apiUrl,
-    agentId: agentConfig.agentId,
-    privateKey: privateKeyJwk,
-  });
-  await client.connect();
-  return client;
+  // 4. Legacy API key from env
+  if (env.ABADGE_AUTH_TOKEN) {
+    if (!apiUrl) throw new Error("ABADGE_API_URL is required.");
+    return new AbadgeAgentClient({ apiUrl, apiKey: env.ABADGE_AUTH_TOKEN });
+  }
+
+  throw new Error(
+    "No agent credentials found.\n" +
+      "hint: Set ABADGE_API_URL + ABADGE_AGENT_ID + ABADGE_PRIVATE_KEY env vars,\n" +
+      "      or run `abadge agent register --kind local_cli` to configure via config file.",
+  );
 }
 
 export async function requestDeviceCode(apiUrl: string): Promise<DeviceCodeResult> {

@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
   DeviceAuthorizationError,
+  createAgentApiClient,
   exchangeDeviceToken,
   requestDeviceCode,
   resolveSessionConfig,
 } from "./client";
+import * as configModule from "./config";
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -179,5 +181,89 @@ describe("resolveSessionConfig", () => {
     await expect(resolveSessionConfig()).resolves.toMatchObject({
       sessionHeaders: { Authorization: "Bearer session-token" },
     });
+  });
+});
+
+describe("createAgentApiClient", () => {
+  /** Mock fetch to handle tRPC batch calls made during client.connect(). */
+  function mockTrpcConnect(): void {
+    mockFetch(async (input) => {
+      const url = String(input);
+      if (url.includes("auth.createChallenge")) {
+        return jsonResponse([
+          {
+            result: {
+              data: { challengeId: "chal-1", challenge: "test-challenge" },
+            },
+          },
+        ]);
+      }
+      if (url.includes("auth.exchangeSession")) {
+        return jsonResponse([
+          {
+            result: {
+              data: {
+                session: {
+                  token: "abs_test_session_token",
+                  expiresAt: new Date(
+                    Date.now() + 15 * 60 * 1000,
+                  ).toISOString(),
+                },
+              },
+            },
+          },
+        ]);
+      }
+      return jsonResponse({ error: "unexpected" }, 500);
+    });
+  }
+
+  test("creates a client from ABADGE_PRIVATE_KEY env var (inline JWK)", async () => {
+    const keyPair = (await crypto.subtle.generateKey("Ed25519", true, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const jwk = await crypto.subtle.exportKey(
+      "jwk",
+      keyPair.privateKey,
+    );
+
+    process.env.ABADGE_API_URL = "https://api.abadge.io";
+    process.env.ABADGE_AGENT_ID = "agent-1";
+    process.env.ABADGE_PRIVATE_KEY = JSON.stringify(jwk);
+
+    mockTrpcConnect();
+
+    const client = await createAgentApiClient();
+    expect(client).toBeDefined();
+    client.disconnect();
+  });
+
+  test("creates a client from ABADGE_AUTH_TOKEN legacy env var", async () => {
+    process.env.ABADGE_API_URL = "https://api.abadge.io";
+    process.env.ABADGE_AUTH_TOKEN = "abl_legacy_test_token";
+
+    const client = await createAgentApiClient();
+    expect(client).toBeDefined();
+  });
+
+  test("throws a helpful error when no agent credentials are found", async () => {
+    // Clear all relevant env vars
+    delete process.env.ABADGE_PRIVATE_KEY;
+    delete process.env.ABADGE_PRIVATE_KEY_PATH;
+    delete process.env.ABADGE_AGENT_ID;
+    delete process.env.ABADGE_AUTH_TOKEN;
+    delete process.env.ABADGE_API_URL;
+
+    // Mock loadConfig to return null (no config file)
+    const spy = spyOn(configModule, "loadConfig").mockReturnValue(null);
+
+    try {
+      await expect(createAgentApiClient()).rejects.toThrow(
+        "No agent credentials found.",
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
