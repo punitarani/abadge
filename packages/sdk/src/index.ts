@@ -65,3 +65,5 @@ export type {
   VaultBootstrapInput,
   VaultResult,
 } from "./types";
+export { resolveFieldValue } from "@abadge/core";
+export { SecretValue } from "./secret-value";

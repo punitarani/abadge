@@ -13,7 +13,9 @@ import type {
   ErrorCode,
   Permission,
   PermissionFilters,
+  SecretValue,
 } from "./index";
+import { resolveFieldValue } from "./index";
 
 type Assert<T extends true> = T;
 
@@ -80,5 +82,9 @@ type _BackcompatHasAccessReveal = Assert<
 type _ErrorCodeIsTyped = Assert<AbadgeApiError["code"] extends ErrorCode | string ? true : false>;
 type _ErrorCodeIncludesKnown = Assert<"VAULT_NOT_FOUND" extends ErrorCode ? true : false>;
 type _ErrorCodeIncludesForbidden = Assert<"FORBIDDEN" extends ErrorCode ? true : false>;
+type _SecretValueReveal = Assert<ReturnType<SecretValue["reveal"]> extends string ? true : false>;
+type _ResolveFieldValue = Assert<
+  ReturnType<typeof resolveFieldValue> extends string ? true : false
+>;
 
 export const sdkPublicApiTypecheck = true;
