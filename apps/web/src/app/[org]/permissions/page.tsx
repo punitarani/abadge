@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
 type CapabilityFilter = "all" | Capability;
@@ -498,11 +498,7 @@ function PermissionRow({
           !expired && !expiringSoon && "text-muted-foreground",
         )}
       >
-        {permission.expiresAt
-          ? expired
-            ? "Expired"
-            : formatRelativeTime(permission.expiresAt)
-          : "Never"}
+        {permission.expiresAt ? (expired ? "Expired" : formatDate(permission.expiresAt)) : "Never"}
       </TableCell>
       <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
         {permission.grantedBy.slice(0, 12)}
