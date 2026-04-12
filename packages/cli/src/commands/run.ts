@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
-import { daemonExecEnv, daemonExpandEnv } from "../daemon";
+import { daemonExpandEnv } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
 
@@ -32,20 +32,34 @@ export function createRunCommand(): Command {
           const client = await createAgentApiClient();
 
           if (opts.expandEnv) {
-            // Expand all fields into separate env vars via daemon
-            const mounted = await client.accessMount(opts.item, "env");
-            const res = await daemonExpandEnv(
-              mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
-              mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
-              mounted.storageMode === "server_managed" ? mounted.payload : null,
-              executable,
-              command.slice(1),
-            );
-            process.exit(res.exitCode);
+            // --expand-env requires daemon (daemonless support deferred to v0.1)
+            try {
+              const mounted = await client.accessMount(opts.item, "env");
+              const res = await daemonExpandEnv(
+                mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
+                mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
+                mounted.storageMode === "server_managed" ? mounted.payload : null,
+                executable,
+                command.slice(1),
+              );
+              process.exit(res.exitCode);
+            } catch (expandErr) {
+              throw new Error(
+                "--expand-env requires the local daemon.\n" +
+                  "hint: Start it with: abadge daemon start\n" +
+                  "hint: Daemonless --expand-env support is coming in v0.1.",
+              );
+            }
           } else {
             const secretValue = await resolveSecretValue(client, opts.item, "env", opts.field);
-            const res = await daemonExecEnv(secretValue, opts.envVar, executable, command.slice(1));
-            process.exit(res.exitCode);
+            const proc = Bun.spawn([executable, ...command.slice(1)], {
+              env: { ...process.env, [opts.envVar]: secretValue },
+              stdout: "inherit",
+              stderr: "inherit",
+              stdin: "inherit",
+            });
+            const exitCode = await proc.exited;
+            process.exit(exitCode);
           }
         } catch (err) {
           error(errorMessage(err, "Failed to run command."));

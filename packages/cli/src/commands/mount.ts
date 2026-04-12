@@ -1,6 +1,8 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
-import { daemonExecMount } from "../daemon";
 import { error, errorMessage, success } from "../output";
 import { resolveSecretValue } from "../secret";
 
@@ -14,8 +16,13 @@ export function createMountCommand(): Command {
       try {
         const client = await createAgentApiClient();
         const secretValue = await resolveSecretValue(client, opts.item, "file", opts.field);
-        const res = await daemonExecMount(secretValue, opts.path);
-        success(`Mounted at: ${res.path}`);
+
+        const targetPath =
+          opts.path ?? join(tmpdir(), `abadge-${crypto.randomUUID()}`);
+        mkdirSync(dirname(targetPath), { recursive: true });
+        writeFileSync(targetPath, secretValue, { mode: 0o600 });
+
+        success(`Mounted at: ${targetPath}`);
       } catch (err) {
         error(errorMessage(err, "Failed to mount item."));
         process.exit(1);
