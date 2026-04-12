@@ -243,8 +243,15 @@ describe("createAgentApiClient", () => {
     process.env.ABADGE_API_URL = "https://api.abadge.io";
     process.env.ABADGE_AUTH_TOKEN = "abl_legacy_test_token";
 
-    const client = await createAgentApiClient();
-    expect(client).toBeDefined();
+    // Mock loadConfig to return null so we test path 4 (env var), not path 3 (config file)
+    const spy = spyOn(configModule, "loadConfig").mockReturnValue(null);
+
+    try {
+      const client = await createAgentApiClient();
+      expect(client).toBeDefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("throws a helpful error when no agent credentials are found", async () => {
