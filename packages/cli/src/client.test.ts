@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  DeviceAuthorizationError,
   createAgentApiClient,
+  DeviceAuthorizationError,
   exchangeDeviceToken,
   requestDeviceCode,
   resolveSessionConfig,
@@ -208,9 +208,7 @@ describe("createAgentApiClient", () => {
               data: {
                 session: {
                   token: "abs_test_session_token",
-                  expiresAt: new Date(
-                    Date.now() + 15 * 60 * 1000,
-                  ).toISOString(),
+                  expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
                 },
               },
             },
@@ -226,10 +224,7 @@ describe("createAgentApiClient", () => {
       "sign",
       "verify",
     ])) as CryptoKeyPair;
-    const jwk = await crypto.subtle.exportKey(
-      "jwk",
-      keyPair.privateKey,
-    );
+    const jwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
 
     process.env.ABADGE_API_URL = "https://api.abadge.io";
     process.env.ABADGE_AGENT_ID = "agent-1";
@@ -294,9 +289,7 @@ describe("createAgentApiClient", () => {
     const spy = spyOn(configModule, "loadConfig").mockReturnValue(null);
 
     try {
-      await expect(createAgentApiClient()).rejects.toThrow(
-        "No agent credentials found.",
-      );
+      await expect(createAgentApiClient()).rejects.toThrow("No agent credentials found.");
     } finally {
       spy.mockRestore();
     }

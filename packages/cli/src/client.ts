@@ -223,7 +223,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
       const { readFileSync } = await import("node:fs");
       const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
       const client = new AbadgeAgentClient({
-        apiUrl,
+        apiUrl: apiUrl ?? config.apiUrl,
         agentId: agentConfig.agentId,
         privateKey: privateKeyJwk,
       });

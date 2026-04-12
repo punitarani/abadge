@@ -43,7 +43,7 @@ export function createRunCommand(): Command {
                 command.slice(1),
               );
               process.exit(res.exitCode);
-            } catch (expandErr) {
+            } catch {
               throw new Error(
                 "--expand-env requires the local daemon.\n" +
                   "hint: Start it with: abadge daemon start\n" +

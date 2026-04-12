@@ -17,8 +17,7 @@ export function createMountCommand(): Command {
         const client = await createAgentApiClient();
         const secretValue = await resolveSecretValue(client, opts.item, "file", opts.field);
 
-        const targetPath =
-          opts.path ?? join(tmpdir(), `abadge-${crypto.randomUUID()}`);
+        const targetPath = opts.path ?? join(tmpdir(), `abadge-${crypto.randomUUID()}`);
         mkdirSync(dirname(targetPath), { recursive: true });
         writeFileSync(targetPath, secretValue, { mode: 0o600 });
 

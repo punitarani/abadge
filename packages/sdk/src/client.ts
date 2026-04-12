@@ -226,12 +226,12 @@ function toBase64url(bytes: ArrayBuffer): string {
     .replace(/=/g, "");
 }
 
-function parseJwkString(raw: string): JsonWebKey {
+function parseJwkString(raw: string): Ed25519PrivateKeyJwk {
   const parsed: unknown = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
   }
-  return parsed as JsonWebKey;
+  return parsed as Ed25519PrivateKeyJwk;
 }
 
 async function resolvePrivateKey(
@@ -243,7 +243,7 @@ async function resolvePrivateKey(
   if (typeof privateKey === "string") {
     return crypto.subtle.importKey(
       "jwk",
-      parseJwkString(privateKey),
+      parseJwkString(privateKey) as never,
       { name: "Ed25519" },
       false,
       ["sign"],

@@ -69,8 +69,9 @@ describe("resolveSecretValue", () => {
         storageMode: "zero_knowledge" as const,
         encryptedItemKey: "encrypted-key",
         ciphertext: "encrypted-data",
+        cryptoVersion: 1,
       }),
-    } as Pick<AbadgeAgentClient, "accessMount"> as AbadgeAgentClient;
+    } as unknown as AbadgeAgentClient;
 
     const result = resolveSecretValue(client, "item_zk", "env");
 

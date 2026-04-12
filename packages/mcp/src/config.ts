@@ -39,9 +39,7 @@ export function loadConfig(): McpConfig {
     throw new Error("ABADGE_API_URL is required (env or ~/.abadge/config.json)");
   }
   if (!agentId) {
-    throw new Error(
-      "ABADGE_AGENT_ID is required (env or ~/.abadge/config.json).",
-    );
+    throw new Error("ABADGE_AGENT_ID is required (env or ~/.abadge/config.json).");
   }
   if (!privateKey && !privateKeyPath) {
     throw new Error(
