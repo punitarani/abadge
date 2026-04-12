@@ -88,8 +88,8 @@ export default function RegisterPage() {
     <AuthShell>
       <div className="space-y-6">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
-          <p className="text-sm text-muted-foreground">Start managing your agent credentials.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+          <p className="text-sm text-muted-foreground">Start managing your credentials securely.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -99,11 +99,11 @@ export default function RegisterPage() {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">Full name</Label>
             <Input
               id="name"
               type="text"
-              placeholder="Your name"
+              placeholder="Your full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
