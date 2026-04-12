@@ -2,6 +2,7 @@
 
 export type { SQL } from "drizzle-orm";
 export { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+export { migrate } from "drizzle-orm/postgres-js/migrator";
 export { createDb, type Database } from "./client";
 export * from "./roadmap-backfill";
 export * from "./schema";
