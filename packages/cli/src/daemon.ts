@@ -81,6 +81,18 @@ export async function daemonExecEnv(
   return withDaemonClient((client) => client.execEnv(secretValue, envVar, command, args));
 }
 
+export async function daemonExpandEnv(
+  encryptedItemKey: string | null,
+  ciphertext: string | null,
+  serverPayload: unknown,
+  command: string,
+  args: string[],
+): Promise<EnvExecResult> {
+  return withDaemonClient((client) =>
+    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args),
+  );
+}
+
 export async function daemonExecMount(
   secretValue: string,
   path?: string,

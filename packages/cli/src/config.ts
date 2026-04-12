@@ -2,15 +2,26 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+export interface LocalAgentConfig {
+  agentId: string;
+  privateKeyPath: string;
+}
+
 export interface CliConfig {
   apiUrl: string;
   activeOrgId?: string;
   activeProfileId?: string;
-  /** Legacy local agent config (will be removed when agent register is done). */
+  localAgents?: {
+    cli?: LocalAgentConfig;
+    mcp?: LocalAgentConfig;
+  };
+  /** @deprecated Legacy local agent config kept for migration. */
   principalId?: string;
+  /** @deprecated Legacy local agent config kept for migration. */
   principalSecret?: string;
+  /** @deprecated Legacy local agent config kept for migration. */
   operatorUserId?: string;
-  /** Legacy alias used by older CLI/MCP config readers. */
+  /** @deprecated Legacy alias used by older CLI/MCP config readers. */
   authToken?: string;
 }
 
@@ -33,6 +44,7 @@ function normalizeConfig(config: Partial<CliConfig>): CliConfig | null {
     apiUrl,
     activeOrgId: str(config.activeOrgId),
     activeProfileId: str(config.activeProfileId),
+    localAgents: config.localAgents,
     principalId: str(config.principalId),
     principalSecret,
     operatorUserId: str(config.operatorUserId),
@@ -58,6 +70,7 @@ function writeConfig(normalized: CliConfig): void {
         apiUrl: normalized.apiUrl,
         activeOrgId: normalized.activeOrgId,
         activeProfileId: normalized.activeProfileId,
+        localAgents: normalized.localAgents,
         principalId: normalized.principalId,
         principalSecret: normalized.principalSecret,
         operatorUserId: normalized.operatorUserId,
@@ -108,22 +121,6 @@ export function requireConfig(): CliConfig {
 }
 
 export type SessionConfig = CliConfig & { sessionHeaders: Record<string, string> };
-
-export type PrincipalConfig = CliConfig & { principalId: string; principalSecret: string };
-
-export function requirePrincipalConfig(): PrincipalConfig {
-  const config = requireConfig();
-  if (!config.principalId || !config.principalSecret) {
-    console.error("No local CLI principal configured. Run `abadge login` first.");
-    return process.exit(1) as never;
-  }
-  return {
-    ...config,
-    principalId: config.principalId,
-    principalSecret: config.principalSecret,
-    authToken: config.principalSecret,
-  };
-}
 
 export function requireActiveOrgId(): string {
   const config = requireConfig();

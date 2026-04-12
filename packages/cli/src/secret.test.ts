@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MultiFieldItemError } from "@abadge/core";
-import type { ApiClient } from "./client";
+import type { AbadgeAgentClient } from "@abadge/sdk";
 import { resolveSecretValue } from "./secret";
 
 describe("resolveSecretValue", () => {
@@ -29,7 +29,7 @@ describe("resolveSecretValue", () => {
           },
         },
       }),
-    } as Pick<ApiClient, "getItem" | "accessMount"> as ApiClient;
+    } as Pick<AbadgeAgentClient, "accessMount"> as AbadgeAgentClient;
 
     await expect(resolveSecretValue(client, "item_123", "env")).resolves.toBe("super-secret");
   });
@@ -56,7 +56,7 @@ describe("resolveSecretValue", () => {
           },
         },
       }),
-    } as Pick<ApiClient, "getItem" | "accessMount"> as ApiClient;
+    } as Pick<AbadgeAgentClient, "accessMount"> as AbadgeAgentClient;
 
     await expect(resolveSecretValue(client, "item_123", "env", "password")).resolves.toBe(
       "super-secret",
@@ -85,7 +85,7 @@ describe("resolveSecretValue", () => {
           },
         },
       }),
-    } as Pick<ApiClient, "getItem" | "accessMount"> as ApiClient;
+    } as Pick<AbadgeAgentClient, "accessMount"> as AbadgeAgentClient;
 
     await expect(resolveSecretValue(client, "item_123", "env")).rejects.toBeInstanceOf(
       MultiFieldItemError,

@@ -1,6 +1,10 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import { createUserApiClient } from "../client";
+import { loadConfig, updateConfig } from "../config";
 import { error, errorMessage, json, success, table, warn } from "../output";
 
 export function createAgentCommand(): Command {
@@ -10,37 +14,96 @@ export function createAgentCommand(): Command {
     .command("register")
     .description("Register a new agent")
     .requiredOption("-n, --name <name>", "Agent name")
-    .option("-k, --kind <kind>", "Agent kind", "remote_agent")
+    .option("-k, --kind <kind>", "Agent kind", "local_cli")
     .option("-d, --description <text>", "Agent description")
+    .option("--legacy-api-key", "Use legacy API key auth instead of Ed25519 keypair")
     .option("--json", "Output as JSON")
-    .action(async (opts: { name: string; kind: string; description?: string; json?: boolean }) => {
-      if (!AGENT_KINDS.includes(opts.kind as AgentKind)) {
-        error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
-        process.exit(1);
-      }
-      const kind = opts.kind as AgentKind;
-
-      try {
-        const client = await createSessionApiClient();
-        const result = await client.createAgent({
-          name: opts.name,
-          kind,
-          metadata: opts.description ? { description: opts.description } : {},
-        });
-
-        if (opts.json) {
-          json(result);
-        } else {
-          success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-          console.log("");
-          warn("Save this API key — it will NOT be shown again:");
-          console.log(`  ${result.apiKey}`);
+    .action(
+      async (opts: {
+        name: string;
+        kind: string;
+        description?: string;
+        legacyApiKey?: boolean;
+        json?: boolean;
+      }) => {
+        if (!AGENT_KINDS.includes(opts.kind as AgentKind)) {
+          error(`--kind must be one of: ${AGENT_KINDS.join(", ")}`);
+          process.exit(1);
         }
-      } catch (err) {
-        error(errorMessage(err, "Failed to register agent."));
-        process.exit(1);
-      }
-    });
+        const kind = opts.kind as AgentKind;
+
+        try {
+          const client = await createUserApiClient();
+          const useKeypair = !opts.legacyApiKey;
+
+          if (useKeypair) {
+            // Generate Ed25519 keypair — cast needed because TS DOM lib
+            // doesn't have Ed25519-specific overloads for generateKey.
+            const genKey = crypto.subtle.generateKey as (
+              algorithm: { name: string },
+              extractable: boolean,
+              keyUsages: string[],
+            ) => Promise<{ publicKey: CryptoKey; privateKey: CryptoKey }>;
+            const keypair = await genKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+            const publicKeyJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
+            const privateKeyJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
+            const publicKeyBase64 = publicKeyJwk.x!; // Ed25519 public key as base64url
+
+            const result = await client.createAgent({
+              name: opts.name,
+              kind,
+              publicKey: publicKeyBase64,
+              metadata: opts.description ? { description: opts.description } : {},
+            });
+
+            // Store private key
+            const agentsDir = join(homedir(), ".abadge", "agents");
+            mkdirSync(agentsDir, { recursive: true, mode: 0o700 });
+            const keyPath = join(agentsDir, `${result.agent.id}.ed25519.jwk`);
+            writeFileSync(keyPath, JSON.stringify(privateKeyJwk), { mode: 0o600 });
+
+            // Update config with local agent info
+            const configSlot = kind === "local_mcp" ? "mcp" : "cli";
+            updateConfig({
+              localAgents: {
+                ...loadConfig()?.localAgents,
+                [configSlot]: {
+                  agentId: result.agent.id,
+                  privateKeyPath: keyPath,
+                },
+              },
+            });
+
+            if (opts.json) {
+              json({ agent: result.agent, privateKeyPath: keyPath });
+            } else {
+              success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+              success(`Private key saved to ${keyPath}`);
+            }
+          } else {
+            // Legacy API key flow
+            const result = await client.createAgent({
+              name: opts.name,
+              kind,
+              authMethod: "legacy_api_key",
+              metadata: opts.description ? { description: opts.description } : {},
+            });
+
+            if (opts.json) {
+              json(result);
+            } else {
+              success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+              console.log("");
+              warn("Save this API key — it will NOT be shown again:");
+              console.log(`  ${result.apiKey}`);
+            }
+          }
+        } catch (err) {
+          error(errorMessage(err, "Failed to register agent."));
+          process.exit(1);
+        }
+      },
+    );
 
   cmd
     .command("list")
@@ -48,7 +111,7 @@ export function createAgentCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const agents = (await client.listAgents()).agents;
 
         if (opts.json) {
@@ -79,7 +142,7 @@ export function createAgentCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const result = await client.rotateAgent(id);
 
         if (opts.json) {
@@ -102,7 +165,7 @@ export function createAgentCommand(): Command {
     .argument("<id>", "Agent ID")
     .action(async (id: string) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         await client.revokeAgent(id);
         success(`Agent ${id} revoked.`);
       } catch (err) {

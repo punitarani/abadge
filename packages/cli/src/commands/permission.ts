@@ -1,7 +1,7 @@
 import { CAPABILITIES, type Capability } from "@abadge/core";
 import type { CreatePermissionInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import { createUserApiClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createPermissionCommand(): Command {
@@ -30,7 +30,7 @@ export function createPermissionCommand(): Command {
         const capability = opts.capability as Capability;
 
         try {
-          const client = await createSessionApiClient();
+          const client = await createUserApiClient();
           const result = await client.createPermission({
             agentId: opts.agentId,
             itemId: opts.itemId,
@@ -58,7 +58,7 @@ export function createPermissionCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: { agentId?: string; itemId?: string; json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const permissions = (
           await client.listPermissions({
             agentId: opts.agentId,
@@ -93,7 +93,7 @@ export function createPermissionCommand(): Command {
     .argument("<id>", "Permission ID")
     .action(async (id: string) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         await client.revokePermission(id);
         success(`Permission ${id} revoked.`);
       } catch (err) {

@@ -1,7 +1,7 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
 import type { CreateItemInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import { createUserApiClient } from "../client";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
@@ -95,7 +95,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: CreateItemOptions) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const values = await readCreateItemValues(opts);
         const result = await client.createItem(await buildCreateItemInput(values));
         if (opts.json) {
@@ -116,7 +116,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const items = (await client.listItems()).items;
 
         if (opts.json) {
@@ -146,7 +146,7 @@ export function createItemCommand(): Command {
     .option("--reveal", "Decrypt zero-knowledge item locally")
     .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const item = (await client.getItem(id)).item;
 
         if (!opts.reveal || item.storageMode !== "zero_knowledge") {
@@ -172,7 +172,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const currentItem = (await client.getItem(id)).item;
         const label = await prompt("Label: ");
         const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
@@ -235,7 +235,7 @@ export function createItemCommand(): Command {
       }
 
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         await client.deleteItem(id);
         success(`Item ${id} deleted.`);
       } catch (err) {

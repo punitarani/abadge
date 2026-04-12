@@ -3,9 +3,10 @@ import {
   DeviceAuthorizationError,
   exchangeDeviceToken,
   getBearerSession,
+  logoutViaTrpc,
+  recordLoginViaTrpc,
   requestDeviceCode,
   resolveSessionConfig,
-  SessionApiClient,
 } from "../client";
 import { clearConfig, loadConfig, saveConfig } from "../config";
 import { daemonClearAuthSession, daemonSetAuthSession } from "../daemon";
@@ -62,11 +63,10 @@ async function completeDeviceLogin(
   expiresAt: string,
   printToken: boolean,
 ): Promise<{ userId: string }> {
-  const sessionClient = new SessionApiClient({
+  await recordLoginViaTrpc({
     apiUrl,
     sessionHeaders: { Authorization: `Bearer ${accessToken}` },
   });
-  await sessionClient.recordLogin();
   const session = await getBearerSession(apiUrl, accessToken);
   const userId = session.user?.id ?? session.session?.userId;
   if (!userId) {
@@ -259,8 +259,7 @@ export function createLogoutCommand(): Command {
       try {
         if (config) {
           try {
-            const client = new SessionApiClient(await resolveSessionConfig());
-            await client.logout();
+            await logoutViaTrpc(await resolveSessionConfig());
           } catch {
             // Logout is best-effort because the daemon session may already be gone.
           }

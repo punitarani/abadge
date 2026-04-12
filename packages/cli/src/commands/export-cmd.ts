@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { createSessionApiClient, createUserApiClient } from "../client";
+import { createUserApiClient } from "../client";
 import { error, errorMessage, warn } from "../output";
 
 function toEnvKey(label: string): string {
@@ -35,9 +35,8 @@ function printEntries(entries: Array<{ key: string; value: string }>, format: st
 }
 
 async function runExport(format: string): Promise<void> {
-  const sessionClient = await createSessionApiClient();
   const userClient = await createUserApiClient();
-  const items = (await sessionClient.listItems()).items;
+  const items = (await userClient.listItems()).items;
 
   const exported: Array<{ key: string; value: string }> = [];
 

@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requirePrincipalConfig } from "../config";
+import { createAgentApiClient } from "../client";
 import { daemonExecMount } from "../daemon";
 import { error, errorMessage, success } from "../output";
 import { resolveSecretValue } from "../secret";
@@ -13,7 +12,7 @@ export function createMountCommand(): Command {
     .option("--path <path>", "Target mount path")
     .action(async (opts: { item: string; field?: string; path?: string }) => {
       try {
-        const client = new ApiClient(requirePrincipalConfig());
+        const client = await createAgentApiClient();
         const secretValue = await resolveSecretValue(client, opts.item, "file", opts.field);
         const res = await daemonExecMount(secretValue, opts.path);
         success(`Mounted at: ${res.path}`);

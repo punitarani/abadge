@@ -1,151 +1,40 @@
 import { DEVICE_AUTH_CLIENT_ID } from "@abadge/auth";
-import type {
-  AgentListResult,
-  AgentResult,
-  AgentRotateResult,
-  AgentWithKey,
-  AuditFilters,
-  AuditListResult,
-  CreateAgentInput,
-  CreateItemInput,
-  CreatePermissionInput,
-  ItemListResult,
-  ItemResult,
-  PermissionFilters,
-  PermissionListResult,
-  PermissionResult,
-  SuccessResult,
-  UpdateItemInput,
-} from "@abadge/sdk";
 import { AbadgeAgentClient, AbadgeApiError, AbadgeUserClient } from "@abadge/sdk";
 import { createNodeTrpcClient } from "@abadge/trpc/client";
-import type { CliConfig, PrincipalConfig, SessionConfig } from "./config";
-import { loadConfig } from "./config";
+import type { CliConfig, SessionConfig } from "./config";
+import { loadConfig, requireConfig } from "./config";
 import { daemonAuthHeaders } from "./daemon";
 
-type SessionTrpcClient = ReturnType<typeof createNodeTrpcClient>;
+// ---------------------------------------------------------------------------
+// Lightweight tRPC helpers for auth operations not covered by the SDK clients
+// (recordLogin, logout). These are only used during device-code login/logout.
+// ---------------------------------------------------------------------------
 
-function getPrincipalSecret(config: PrincipalConfig | CliConfig): string {
-  const secret = config.principalSecret ?? config.authToken;
-  if (!secret) {
-    throw new Error("Local agent credential is required.");
+type AuthTrpcClient = ReturnType<typeof createNodeTrpcClient>;
+
+/** @internal Record a login event via the session-authenticated tRPC client. */
+export async function recordLoginViaTrpc(config: SessionConfig): Promise<void> {
+  const client: AuthTrpcClient = createNodeTrpcClient({
+    baseUrl: config.apiUrl,
+    headers: config.sessionHeaders,
+  });
+  try {
+    await (client as any).auth.recordLogin.mutate();
+  } catch (error) {
+    throw AbadgeApiError.fromUnknown(error, "Failed to record login");
   }
-  return secret;
 }
 
-export class ApiClient extends AbadgeAgentClient {
-  constructor(config: PrincipalConfig | CliConfig) {
-    super({
-      apiUrl: config.apiUrl,
-      apiKey: getPrincipalSecret(config),
-    });
-  }
-}
-
-export class SessionApiClient {
-  private readonly client: SessionTrpcClient;
-
-  constructor(config: SessionConfig) {
-    this.client = createNodeTrpcClient({
-      baseUrl: config.apiUrl,
-      headers: config.sessionHeaders,
-    });
-  }
-
-  async createItem(data: CreateItemInput): Promise<{ id: string }> {
-    return this.call(() => this.client.items.create.mutate(data), "Failed to create item");
-  }
-
-  async listItems(): Promise<ItemListResult> {
-    return this.call(() => this.client.items.list.query(), "Failed to list items");
-  }
-
-  async getItem(id: string): Promise<ItemResult> {
-    return this.call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
-  }
-
-  async deleteItem(id: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.items.delete.mutate({ itemId: id }),
-      "Failed to delete item",
-    );
-  }
-
-  async updateItem(
-    id: string,
-    data: UpdateItemInput,
-  ): Promise<{ ok: boolean; contentVersion: number }> {
-    return this.call(
-      () => this.client.items.update.mutate({ itemId: id, data }),
-      "Failed to update item",
-    );
-  }
-
-  async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
-    return this.call(() => this.client.agents.create.mutate(data), "Failed to create agent");
-  }
-
-  async listAgents(): Promise<AgentListResult> {
-    return this.call(() => this.client.agents.list.query(), "Failed to list agents");
-  }
-
-  async rotateAgent(id: string): Promise<AgentRotateResult> {
-    return this.call(
-      () => this.client.agents.rotate.mutate({ agentId: id }),
-      "Failed to rotate agent",
-    );
-  }
-
-  async getAgent(id: string): Promise<AgentResult> {
-    return this.call(() => this.client.agents.get.query({ agentId: id }), "Failed to fetch agent");
-  }
-
-  async revokeAgent(id: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.agents.revoke.mutate({ agentId: id }),
-      "Failed to revoke agent",
-    );
-  }
-
-  async createPermission(data: CreatePermissionInput): Promise<PermissionResult> {
-    return this.call(
-      () => this.client.permissions.create.mutate(data),
-      "Failed to create permission",
-    );
-  }
-
-  async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
-    return this.call(
-      () => this.client.permissions.list.query(filters),
-      "Failed to list permissions",
-    );
-  }
-
-  async revokePermission(id: string): Promise<SuccessResult> {
-    return this.call(
-      () => this.client.permissions.revoke.mutate({ permissionId: id }),
-      "Failed to revoke permission",
-    );
-  }
-
-  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
-    return this.call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
-  }
-
-  async recordLogin(): Promise<SuccessResult> {
-    return this.call(() => this.client.auth.recordLogin.mutate(), "Failed to record login");
-  }
-
-  async logout(): Promise<SuccessResult> {
-    return this.call(() => this.client.auth.logout.mutate(), "Failed to record logout");
-  }
-
-  private async call<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
-    try {
-      return await operation();
-    } catch (error) {
-      throw AbadgeApiError.fromUnknown(error, fallback);
-    }
+/** @internal Record a logout event via the session-authenticated tRPC client. */
+export async function logoutViaTrpc(config: SessionConfig): Promise<void> {
+  const client: AuthTrpcClient = createNodeTrpcClient({
+    baseUrl: config.apiUrl,
+    headers: config.sessionHeaders,
+  });
+  try {
+    await (client as any).auth.logout.mutate();
+  } catch (error) {
+    throw AbadgeApiError.fromUnknown(error, "Failed to record logout");
   }
 }
 
@@ -270,10 +159,14 @@ export async function resolveSessionConfig(
   }
 }
 
+/**
+ * @deprecated Use {@link createUserApiClient} instead. This wrapper exists only
+ * to ease the migration of callers that previously used `SessionApiClient`.
+ */
 export async function createSessionApiClient(
   options: { tokenStdin?: boolean } = {},
-): Promise<SessionApiClient> {
-  return new SessionApiClient(await resolveSessionConfig(options));
+): Promise<AbadgeUserClient> {
+  return createUserApiClient(options);
 }
 
 export async function createUserApiClient(
@@ -283,6 +176,38 @@ export async function createUserApiClient(
   const authHeader = config.sessionHeaders?.Authorization ?? "";
   const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
   return new AbadgeUserClient({ apiUrl: config.apiUrl, sessionToken });
+}
+
+/**
+ * Create an agent API client using the local keypair config or legacy credentials.
+ *
+ * Reads `localAgents.cli` from the CLI config for keypair auth. Falls back to
+ * legacy `principalSecret` / `authToken` for migration.
+ */
+export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
+  const config = requireConfig();
+  const agentConfig = config.localAgents?.cli;
+
+  // Fall back to legacy principalId/principalSecret for migration
+  if (!agentConfig) {
+    const secret = config.principalSecret ?? config.authToken;
+    if (secret) {
+      return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: secret });
+    }
+    throw new Error(
+      'No local CLI agent configured. Run `abadge agent register --kind local_cli` first.',
+    );
+  }
+
+  const { readFileSync } = await import("node:fs");
+  const privateKeyJwk = JSON.parse(readFileSync(agentConfig.privateKeyPath, "utf-8"));
+  const client = new AbadgeAgentClient({
+    apiUrl: config.apiUrl,
+    agentId: agentConfig.agentId,
+    privateKey: privateKeyJwk,
+  });
+  await client.connect();
+  return client;
 }
 
 export async function requestDeviceCode(apiUrl: string): Promise<DeviceCodeResult> {

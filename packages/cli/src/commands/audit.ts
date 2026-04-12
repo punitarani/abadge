@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import { createUserApiClient } from "../client";
 import { error, errorMessage, json, table } from "../output";
 
 function parseLimit(value: string | undefined): number | undefined {
@@ -19,7 +19,7 @@ export function createAuditCommand(): Command {
     .option("--cursor <cursor>", "Pagination cursor")
     .action(async (opts: { json?: boolean; limit?: string; cursor?: string }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const response = await client.getAudit({
           limit: parseLimit(opts.limit),
           cursor: opts.cursor,

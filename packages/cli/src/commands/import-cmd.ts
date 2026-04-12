@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import type { AbadgeUserClient } from "@abadge/sdk";
+import { createUserApiClient } from "../client";
 import { error, errorMessage, success, warn } from "../output";
 
 interface EnvEntry {
@@ -29,7 +30,7 @@ function validateKind(kind: string): kind is ItemKind {
 }
 
 async function importEntry(
-  client: Awaited<ReturnType<typeof createSessionApiClient>>,
+  client: AbadgeUserClient,
   entry: EnvEntry,
   kind: ItemKind,
   opts: { dryRun?: boolean; overwrite?: boolean },
@@ -81,7 +82,7 @@ async function runImport(
     process.exit(1);
   }
 
-  const client = await createSessionApiClient();
+  const client = await createUserApiClient();
   const existing = (await client.listItems()).items;
   const existingLabels = new Set(existing.map((i) => i.label));
 
