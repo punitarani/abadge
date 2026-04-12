@@ -4,10 +4,9 @@
 
 | Kind | Locality | Auth Method | Can Decrypt ZK | Description |
 |------|----------|-------------|----------------|-------------|
-| `device` | local | Session token | Yes (via daemon) | User's registered device |
 | `local_cli` | local | Session token | Yes (via daemon) | CLI installation |
 | `local_mcp` | local | Session token | Yes (via daemon) | Local MCP server |
-| `remote_agent` | remote | API key | No | Hosted agent, cloud worker, webhook |
+| `remote` | remote | API key | No | Hosted agent, cloud worker, webhook |
 
 ## Capabilities
 
@@ -17,7 +16,6 @@
 | `reveal_plaintext` | Receive decrypted plaintext | Not allowed | Remote + Local |
 | `mount_env` | Inject as env var in subprocess | Local only (daemon) | Local only (daemon) |
 | `mount_file` | Write to temp file | Local only (daemon) | Local only (daemon) |
-| `use_without_reveal` | Use without seeing value (future: sign, mint) | Future | Future |
 
 ## Permission Validation Rules
 
@@ -27,8 +25,8 @@ When creating a permission, the server enforces:
 2. **Remote + ZK + any**: Denied. Remote agents cannot access ZK items at all.
 3. **Remote + managed + reveal**: Allowed. This is the primary remote use case.
 4. **Remote + managed + mount**: Denied. Remote agents can't mount locally.
-5. **Local + ZK + any non-future capability**: Allowed. Daemon handles decryption.
-6. **Local + managed + any non-future capability**: Allowed.
+5. **Local + ZK + supported capability**: Allowed. Daemon handles decryption.
+6. **Local + managed + supported capability**: Allowed.
 
 ```mermaid
 flowchart TD
@@ -45,10 +43,7 @@ flowchart TD
   CAP1 -->|read_ciphertext| OK1["ALLOWED"]
   CAP1 -->|reveal_plaintext| DENY2["DENIED<br/>Cannot reveal ZK"]
   CAP1 -->|mount_env / mount_file| OK2["ALLOWED"]
-  CAP1 -->|use_without_reveal| DENY3["DENIED<br/>Future capability"]
-
-  CAP2 -->|any non-future| OK3["ALLOWED"]
-  CAP2 -->|use_without_reveal| DENY4["DENIED<br/>Future capability"]
+  CAP2 -->|reveal_plaintext / mount_env / mount_file| OK3["ALLOWED"]
 
   CAP3 -->|reveal_plaintext| OK4["ALLOWED"]
   CAP3 -->|any other| DENY5["DENIED<br/>Remote: reveal only"]
@@ -59,8 +54,6 @@ flowchart TD
   style OK4 fill:#dfd,stroke:#3c3
   style DENY1 fill:#fdd,stroke:#c33
   style DENY2 fill:#fdd,stroke:#c33
-  style DENY3 fill:#fdd,stroke:#c33
-  style DENY4 fill:#fdd,stroke:#c33
   style DENY5 fill:#fdd,stroke:#c33
 ```
 

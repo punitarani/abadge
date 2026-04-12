@@ -93,7 +93,7 @@ Auth: `sessionProcedure`
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `name` | string | yes | Display name |
-| `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
+| `kind` | enum | yes | `local_cli`, `local_mcp`, `remote` |
 | `authMethod` | enum | no | `public_key_session` or `legacy_api_key` |
 | `publicKey` | string | no | Serialized JWK public key |
 | `issueBootstrapToken` | boolean | no | Issue one-time bootstrap token |

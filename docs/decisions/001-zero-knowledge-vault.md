@@ -37,8 +37,8 @@ Master Password → Argon2id → KEK → wraps → Root Key → wraps → Item D
 
 Agents are split into two classes:
 
-- **Local** (device, local_cli, local_mcp): Can access ZK items through the local daemon which holds the unlocked root key.
-- **Remote** (remote_agent): Cannot decrypt ZK items. Can only access `server_managed` items via `reveal_plaintext` capability.
+- **Local** (local_cli, local_mcp): Can access ZK items through the local daemon which holds the unlocked root key.
+- **Remote** (remote): Cannot decrypt ZK items. Can only access `server_managed` items via `reveal_plaintext` capability.
 
 ### Local Daemon (vaultd)
 

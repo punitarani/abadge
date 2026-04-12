@@ -175,11 +175,10 @@ Denied requests are audited and return an error. The order ensures no decryption
 | `reveal_plaintext` | N/A | N/A | Allowed | Allowed |
 | `mount_env` | Allowed | **Denied** | Allowed | **Denied** |
 | `mount_file` | Allowed | **Denied** | Allowed | **Denied** |
-| `use_without_reveal` | Allowed | **Denied** | Allowed | Allowed |
 
 **Key restrictions**:
 - Remote agents can never access zero-knowledge items (no decryption capability)
-- Remote agents can only `reveal_plaintext` or `use_without_reveal` on server-managed items
+- Remote agents can only `reveal_plaintext` on server-managed items
 - Mount capabilities require a local runtime to inject secrets into
 
 ---

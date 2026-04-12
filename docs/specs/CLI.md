@@ -184,8 +184,8 @@ Defaults:
 * legacy API keys are opt-in only
 
 ```bash
-abadge agent register --name "ci bot" --kind remote_agent
-abadge agent register --name "legacy bot" --kind remote_agent --legacy-api-key
+abadge agent register --name "ci bot" --kind remote
+abadge agent register --name "legacy bot" --kind remote --legacy-api-key
 abadge agent register --name "dev laptop" --kind local_cli --json
 ```
 

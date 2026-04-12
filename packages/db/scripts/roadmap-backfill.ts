@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import "dotenv/config";
 import postgres from "postgres";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { backfillServerManagedItemLabels } from "../src/roadmap-backfill";
 import { items } from "../src/schema/items";
@@ -40,7 +40,7 @@ try {
             serverKeyVersion: items.serverKeyVersion,
           })
           .from(items)
-          .where(and(eq(items.storageMode, "server_managed"), isNull(items.deletedAt))),
+          .where(eq(items.storageMode, "server_managed")),
       updateItemLabel: (itemId, label) =>
         db.update(items).set({ label }).where(eq(items.id, itemId)).then(() => undefined),
     },

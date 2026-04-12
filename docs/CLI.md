@@ -185,7 +185,7 @@ Creates a new agent and prints the one-time API key.
 
 ```bash
 abadge agent register --name "dev laptop" --kind local_cli
-abadge agent register --name "ci bot" --kind remote_agent --description "deploy runner"
+abadge agent register --name "ci bot" --kind remote --description "deploy runner"
 ```
 
 Flags:

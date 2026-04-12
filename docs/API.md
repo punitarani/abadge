@@ -169,7 +169,7 @@ Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
+| `kind` | enum | yes | `local_cli`, `local_mcp`, `remote` |
 | `name` | string | yes | Display name |
 | `authMethod` | enum | no | `public_key_session` or `legacy_api_key` (default: `legacy_api_key`) |
 | `publicKey` | string | no | JWK-serialized public key for direct enrollment |
@@ -233,7 +233,7 @@ Auth: `sessionProcedure`
 |------|------|----------|-------------|
 | `agentId` | string | yes | Agent receiving access |
 | `itemId` | string | yes | Target item |
-| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
+| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` |
 | `expiresAt` | string | no | ISO timestamp for permission expiry |
 
 Creation-time enforcement rejects:

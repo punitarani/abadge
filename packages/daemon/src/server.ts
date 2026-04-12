@@ -46,7 +46,7 @@ function rpcOk(id: number | string, result: unknown): JsonRpcResponse {
 type RpcHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
 function normalizeAuthType(type: unknown): DaemonAuthType | null {
-  return type === "better_auth_session" || type === "operator_token" ? type : null;
+  return type === "better_auth_session" ? type : null;
 }
 
 function isAuthExpired(auth: DaemonAuthState): boolean {
@@ -73,10 +73,7 @@ function buildAuthHeaders(auth: DaemonAuthState | null): DaemonAuthHeaders {
   return {
     type: auth.type,
     expiresAt: auth.expiresAt,
-    headers:
-      auth.type === "operator_token"
-        ? { "X-Abadge-Operator-Token": auth.token }
-        : { Authorization: `Bearer ${auth.token}` },
+    headers: { Authorization: `Bearer ${auth.token}` },
   };
 }
 

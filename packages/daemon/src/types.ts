@@ -13,7 +13,7 @@ export interface DaemonConfig {
   apiUrl: string;
 }
 
-export type DaemonAuthType = "better_auth_session" | "operator_token";
+export type DaemonAuthType = "better_auth_session";
 
 export interface DaemonAuthState {
   type: DaemonAuthType;

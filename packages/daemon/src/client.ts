@@ -68,22 +68,22 @@ export class DaemonClient {
     });
   }
 
-  /** Store a short-lived operator auth token in daemon memory. */
+  /** Store a short-lived bearer session token in daemon memory. */
   async setAuthSession(session: DaemonAuthState): Promise<DaemonAuthStatus> {
     return (await this.send("auth.setSession", { ...session })) as DaemonAuthStatus;
   }
 
-  /** Clear daemon-held operator auth. */
+  /** Clear daemon-held session auth. */
   async clearAuthSession(): Promise<DaemonAuthStatus> {
     return (await this.send("auth.clearSession")) as DaemonAuthStatus;
   }
 
-  /** Get daemon-held operator auth status. */
+  /** Get daemon-held session auth status. */
   async authStatus(): Promise<DaemonAuthStatus> {
     return (await this.send("auth.status")) as DaemonAuthStatus;
   }
 
-  /** Return request headers for the daemon-held operator auth token. */
+  /** Return request headers for the daemon-held session token. */
   async authHeaders(): Promise<DaemonAuthHeaders> {
     return (await this.send("auth.getHeaders")) as DaemonAuthHeaders;
   }

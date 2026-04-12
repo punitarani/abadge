@@ -118,7 +118,7 @@ An agent identity that can request access to items.
 |---|---|---|---|
 | `id` | text | PK | Agent ID |
 | `userId` | text | FK → user, NOT NULL | Owner |
-| `kind` | text | NOT NULL | `device`, `local_cli`, `local_mcp`, `remote_agent` |
+| `kind` | text | NOT NULL | `local_cli`, `local_mcp`, `remote` |
 | `locality` | text | NOT NULL | `local` or `remote` (derived from kind) |
 | `authMethod` | text | NOT NULL | `public_key_session` or `legacy_api_key` |
 | `name` | text | NOT NULL | Human-readable name |
@@ -132,8 +132,8 @@ An agent identity that can request access to items.
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 
 **Locality mapping**:
-- `device`, `local_cli`, `local_mcp` → `local`
-- `remote_agent` → `remote`
+- `local_cli`, `local_mcp` → `local`
+- `remote` → `remote`
 
 ---
 
@@ -161,7 +161,6 @@ Links a principal to an item with a specific capability.
 | `reveal_plaintext` | Decrypt and return value | Server-managed | Server-managed |
 | `mount_env` | Inject as environment variable | Both modes | Never |
 | `mount_file` | Write to temp file (0600) | Both modes | Never |
-| `use_without_reveal` | Acknowledge existence only | Both modes | Server-managed |
 
 ---
 

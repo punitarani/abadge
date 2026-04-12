@@ -175,12 +175,11 @@ An immutable record of every access attempt and management operation.
 
 | Value | Locality | Description |
 |-------|----------|-------------|
-| `device` | `local` | A physical device (laptop, server) |
 | `local_cli` | `local` | The abadge CLI tool |
 | `local_mcp` | `local` | An MCP server running locally |
-| `remote_agent` | `remote` | An external service, CI runner, or cloud function |
+| `remote` | `remote` | An external service, CI runner, or cloud function |
 
-**Locality derivation rule:** `device`, `local_cli`, `local_mcp` → `local`. `remote_agent` → `remote`. This is enforced at creation time and cannot be overridden.
+**Locality derivation rule:** `local_cli`, `local_mcp` → `local`. `remote` → `remote`. This is enforced at creation time and cannot be overridden.
 
 ### Capability
 
@@ -190,7 +189,6 @@ An immutable record of every access attempt and management operation.
 | `reveal_plaintext` | Server-managed items | Decrypt and return plaintext via API |
 | `mount_env` | Both modes, local agents only | Inject secret into subprocess environment variable |
 | `mount_file` | Both modes, local agents only | Write secret to temporary file (0600 permissions) |
-| `use_without_reveal` | Both modes | Use the secret without ever seeing it (future: OAuth proxy, form fill) |
 
 ### Capability Access Matrix
 
@@ -202,11 +200,10 @@ This is the core authorization table. It defines what is possible given an agent
 | `reveal_plaintext` | Denied | **Allowed** | **Denied** | **Allowed** |
 | `mount_env` | **Allowed** | **Allowed** | **Denied** | Denied |
 | `mount_file` | **Allowed** | **Allowed** | **Denied** | Denied |
-| `use_without_reveal` | **Allowed** | **Allowed** | **Denied** | **Allowed** |
 
 **Key rules:**
 1. Remote agents can never access ZK items (they cannot decrypt).
-2. Remote agents can only use `reveal_plaintext` or `use_without_reveal` on server-managed items.
+2. Remote agents can only use `reveal_plaintext` on server-managed items.
 3. `read_ciphertext` only makes sense for ZK items (returns encrypted blob for local decryption).
 4. `reveal_plaintext` only makes sense for server-managed items (server must decrypt).
 5. `mount_env` and `mount_file` require a local runtime to inject/write the secret.

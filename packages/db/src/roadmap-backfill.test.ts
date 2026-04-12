@@ -116,7 +116,7 @@ describe("item label backfill helpers", () => {
     expect(migrationSql).not.toContain("Server-managed labels require app-layer decryption");
   });
 
-  test("runtime backfill decrypts server-managed payloads and updates migrated labels", async () => {
+  test("runtime backfill decrypts server-managed payloads and updates migrated labels, including deleted rows", async () => {
     const encryptionKey = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString(
       "base64",
     );
@@ -143,6 +143,13 @@ describe("item label backfill helpers", () => {
           serverIv: encrypted.iv,
           serverKeyVersion: encrypted.keyVersion,
         },
+        {
+          id: "item-deleted-1",
+          label: migratedItemLabel("item-deleted-1"),
+          serverCiphertext: encrypted.ciphertext,
+          serverIv: encrypted.iv,
+          serverKeyVersion: encrypted.keyVersion,
+        },
       ],
       updateItemLabel: async (id: string, label: string) => {
         updates.push({ id, label });
@@ -154,8 +161,11 @@ describe("item label backfill helpers", () => {
       encryptionKey,
     });
 
-    expect(result).toEqual({ scanned: 1, updated: 1 });
-    expect(updates).toEqual([{ id: "item-1", label: "Backfilled from payload" }]);
+    expect(result).toEqual({ scanned: 2, updated: 2 });
+    expect(updates).toEqual([
+      { id: "item-1", label: "Backfilled from payload" },
+      { id: "item-deleted-1", label: "Backfilled from payload" },
+    ]);
   });
 
   test("db migrate script runs the roadmap runtime backfill", () => {

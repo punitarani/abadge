@@ -33,7 +33,7 @@ function startTestServer(): { client: DaemonClient } {
 }
 
 describe("daemon auth session state", () => {
-  test("keeps operator auth in memory and clears it on request", async () => {
+  test("keeps bearer-session auth in memory and clears it on request", async () => {
     const { client } = startTestServer();
 
     await expect(client.authStatus()).resolves.toEqual({
@@ -67,18 +67,18 @@ describe("daemon auth session state", () => {
     await expect(client.authHeaders()).rejects.toThrow("Not logged in. Run `abadge login` first.");
   });
 
-  test("returns operator-token headers for automation auth", async () => {
+  test("always returns bearer auth headers for daemon-managed session auth", async () => {
     const { client } = startTestServer();
 
     await client.setAuthSession({
-      type: "operator_token",
-      token: "abo_test_operator_token",
+      type: "better_auth_session",
+      token: "session-token",
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
 
     await expect(client.authHeaders()).resolves.toMatchObject({
-      type: "operator_token",
-      headers: { "X-Abadge-Operator-Token": "abo_test_operator_token" },
+      type: "better_auth_session",
+      headers: { Authorization: "Bearer session-token" },
     });
   });
 });

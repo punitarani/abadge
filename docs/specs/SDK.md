@@ -238,7 +238,7 @@ Register a new agent. Returns the API key exactly once.
 
 ```typescript
 async createAgent(data: {
-  kind: "device" | "local_cli" | "local_mcp" | "remote_agent";
+  kind: "local_cli" | "local_mcp" | "remote";
   name: string;
   metadata?: Record<string, unknown>;
 }): Promise<{
@@ -503,9 +503,9 @@ The SDK re-exports all domain types from `@abadge/core`:
 // Enums / unions
 export type ItemKind = "login" | "api_key" | "token" | "json" | "certificate" | "ssh_key" | "opaque";
 export type StorageMode = "zero_knowledge" | "server_managed";
-export type AgentKind = "device" | "local_cli" | "local_mcp" | "remote_agent";
+export type AgentKind = "local_cli" | "local_mcp" | "remote";
 export type AgentLocality = "local" | "remote";
-export type Capability = "read_ciphertext" | "reveal_plaintext" | "mount_env" | "mount_file" | "use_without_reveal";
+export type Capability = "read_ciphertext" | "reveal_plaintext" | "mount_env" | "mount_file";
 export type AuditEventType = "profile.create" | "profile.rotate" | "item.export" | ... ;
 export type AuditResult = "allowed" | "denied" | "expired" | "revoked";
 
@@ -569,7 +569,7 @@ const { id: itemId } = await client.createItem({
 
 // Register an agent
 const { agent, apiKey } = await client.createAgent({
-  kind: "remote_agent",
+  kind: "remote",
   name: "github-actions-deploy",
 });
 // Store apiKey securely — it won't be shown again
