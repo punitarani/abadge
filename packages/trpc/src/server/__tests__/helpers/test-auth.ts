@@ -10,7 +10,8 @@ import { TEST_ENV } from "./test-env";
  * Mirrors the production config in packages/auth/src/server.ts but omits
  * social providers, device authorization, and openAPI (not needed for tests).
  */
-export function createTestAuth(db: Database) {
+// biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
+export function createTestAuth(db: Database): any {
   return betterAuth({
     database: drizzleAdapter(db, { provider: "pg" }),
     baseURL: TEST_ENV.ABADGE_API_URL,
@@ -34,5 +35,4 @@ export function createTestAuth(db: Database) {
   });
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
-export type TestAuth = ReturnType<typeof createTestAuth> & { api: any };
+export type TestAuth = ReturnType<typeof createTestAuth>;
