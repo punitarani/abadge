@@ -16,7 +16,12 @@ import { agents as agentRecords, items, permissions as permissionRecords } from 
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure } from "../init";
+import {
+  createTrpcRouter,
+  requireAgentOwnership,
+  requireOrgRole,
+  scopedSessionProcedure,
+} from "../init";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -53,6 +58,19 @@ const createPermission = (input: CreatePermissionInput) =>
         }),
       );
     }
+
+    const callerRole = yield* Effect.tryPromise(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* Effect.tryPromise(() =>
+      requireAgentOwnership(
+        ctx.db,
+        input.agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
 
     const [item] = yield* Effect.tryPromise(() =>
       ctx.db
@@ -243,6 +261,19 @@ const revokePermission = (permissionId: string) =>
         }),
       );
     }
+
+    const callerRole = yield* Effect.tryPromise(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* Effect.tryPromise(() =>
+      requireAgentOwnership(
+        ctx.db,
+        permission.agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
 
     yield* Effect.tryPromise(() =>
       ctx.db.delete(permissionRecords).where(eq(permissionRecords.id, permissionId)),

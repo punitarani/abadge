@@ -83,3 +83,18 @@ export function resolveFieldValues(
     resolvedFields.map((field) => [field, payload?.fields?.[field] as string]),
   );
 }
+
+export function payloadToSecret(payload: unknown, field?: string): string {
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  if (payload && typeof payload === "object") {
+    const record = payload as { fields?: Record<string, unknown> };
+    if (record.fields && typeof record.fields === "object") {
+      return resolveFieldValue(record, field);
+    }
+  }
+
+  return JSON.stringify(payload);
+}

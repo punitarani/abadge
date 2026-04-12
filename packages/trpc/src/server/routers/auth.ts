@@ -455,7 +455,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
 
 const createAgentChallenge = (input: CreateAgentChallengeInput) =>
   Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
+    const ctx = yield* BaseRequestContextTag;
     const [agent] = (yield* tryAsync(() =>
       ctx.db
         .select()
@@ -463,7 +463,6 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .where(
           and(
             eq(agentRecords.id, input.agentId),
-            eq(agentRecords.createdBy, ctx.identity.userId),
             eq(agentRecords.enabled, true),
             isNull(agentRecords.revokedAt),
           ),
@@ -727,10 +726,10 @@ export const authRouter = createTrpcRouter({
     .input(strictSchema(EnrollAgentSchema))
     .output(strictSchema(AgentEnrollmentResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, enrollAgent(input))),
-  createChallenge: sessionProcedure
+  createChallenge: publicProcedure
     .input(strictSchema(CreateAgentChallengeSchema))
     .output(strictSchema(AgentChallengeResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgentChallenge(input))),
+    .mutation(({ ctx, input }) => runBaseEffect(ctx, createAgentChallenge(input))),
   exchangeSession: publicProcedure
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))

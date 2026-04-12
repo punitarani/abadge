@@ -114,7 +114,7 @@ interface SdkTrpcClient {
   auth: {
     createChallenge: TrpcMutation<{ agentId: string }, AgentChallengeResult>;
     exchangeSession: TrpcMutation<
-      { agentId: string; challengeId: string; signature: string },
+      { agentId: string; challengeId: string; challenge: string; signature: string },
       AgentSessionResult
     >;
     enroll: TrpcMutation<{ bootstrapToken: string; publicKey: string }, AgentEnrollmentResult>;
@@ -816,6 +816,7 @@ export class AbadgeAgentClient {
       sessionResult = await unauthClient.auth.exchangeSession.mutate({
         agentId,
         challengeId,
+        challenge,
         signature,
       });
     } catch (error) {

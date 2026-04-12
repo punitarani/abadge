@@ -25,6 +25,21 @@ import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect"
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 
+function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
+  if (result === "expired") {
+    return new ForbiddenError({
+      code: "PERMISSION_EXPIRED",
+      message: "Permission has expired",
+      hint: "Renew the permission or request a new grant before retrying.",
+    });
+  }
+  return new ForbiddenError({
+    code: "PERMISSION_DENIED",
+    message: "No valid permission",
+    hint: defaultHint,
+  });
+}
+
 const failMissingServerManagedData = (
   itemId: string,
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
@@ -91,14 +106,14 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
     );
 
     if (!permission) {
-      return false;
+      return "denied" as const;
     }
 
     if (permission.expiresAt && permission.expiresAt < new Date()) {
-      return false;
+      return "expired" as const;
     }
 
-    return true;
+    return "allowed" as const;
   });
 
 const loadAccessibleItem = (itemId: string) =>
@@ -177,28 +192,27 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       );
     }
 
-    const hasPermission = yield* checkPermission(
+    const permResult = yield* checkPermission(
       ctx.identity.agentId,
       input.itemId,
       "read_ciphertext",
     );
-    if (!hasPermission) {
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.ciphertext",
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-          hint: "Grant read_ciphertext on this item to the agent before retrying.",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant read_ciphertext on this item to the agent before retrying.",
+        ),
       );
     }
 
@@ -244,28 +258,27 @@ const accessReveal = (input: RevealAccessInput) =>
       );
     }
 
-    const hasPermission = yield* checkPermission(
+    const permResult = yield* checkPermission(
       ctx.identity.agentId,
       input.itemId,
       "reveal_plaintext",
     );
-    if (!hasPermission) {
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.reveal",
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-          hint: "Grant reveal_plaintext on this item to the agent before retrying.",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant reveal_plaintext on this item to the agent before retrying.",
+        ),
       );
     }
 
@@ -322,24 +335,23 @@ const accessMount = (input: MountAccessInput) =>
 
     const item = yield* loadAccessibleItem(input.itemId);
     const capability: Capability = input.mountType === "env" ? "mount_env" : "mount_file";
-    const hasPermission = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
-    if (!hasPermission) {
+    const permResult = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-          hint: "Grant the matching mount capability on this item to the agent before retrying.",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant the matching mount capability on this item to the agent before retrying.",
+        ),
       );
     }
 

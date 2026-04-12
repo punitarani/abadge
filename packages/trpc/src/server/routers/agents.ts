@@ -223,6 +223,16 @@ const rotateAgent = (agentId: string) =>
       );
     }
 
+    if (agent.authMethod !== "legacy_api_key") {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Only legacy API key agents support key rotation",
+          hint: "Public-key agents use keypair enrollment. Rotate the keypair instead.",
+        }),
+      );
+    }
+
     const prefix = API_KEY_PREFIX[agent.locality as "local" | "remote"];
     const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
 
