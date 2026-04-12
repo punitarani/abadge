@@ -1,7 +1,7 @@
 import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull, or } from "@abadge/db";
-import { principals as agentRecords, agentSessions, auditLog } from "@abadge/db/schema";
+import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
@@ -50,12 +50,12 @@ interface VerifyApiKeyResult {
 
 type ActiveAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "authMethod" | "secretHash"
+  "id" | "organizationId" | "createdBy" | "locality" | "authMethod" | "secretHash"
 >;
 
 type MigratedAgent = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "enabled" | "revokedAt"
+  "id" | "organizationId" | "createdBy" | "locality" | "enabled" | "revokedAt"
 >;
 
 type ActiveAgentSession = Pick<
@@ -65,7 +65,7 @@ type ActiveAgentSession = Pick<
 
 type AgentSessionAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "enabled" | "revokedAt"
+  "id" | "organizationId" | "createdBy" | "locality" | "enabled" | "revokedAt"
 >;
 
 function unauthorized(message: string): UnauthorizedError {
@@ -94,12 +94,13 @@ function touchAgent(ctx: BaseRequestContext, agentId: string): void {
 }
 
 function toAgentIdentity(
-  agent: Pick<typeof agentRecords.$inferSelect, "id" | "userId" | "locality">,
+  agent: Pick<typeof agentRecords.$inferSelect, "id" | "organizationId" | "createdBy" | "locality">,
 ): AgentIdentity {
   return {
     kind: "agent",
     agentId: agent.id,
-    agentUserId: agent.userId,
+    agentUserId: agent.createdBy,
+    agentOrganizationId: agent.organizationId,
     agentLocality: agent.locality,
   };
 }
@@ -117,16 +118,18 @@ function auditAgentSessionReject(
   input: {
     userId: string;
     agentId: string;
+    organizationId: string;
     result: "denied" | "expired" | "revoked";
     reason: string;
   },
 ): Effect.Effect<void, Error> {
   return tryAsync(() =>
     ctx.db
-      .insert(auditLog)
+      .insert(auditLogs)
       .values({
+        organizationId: input.organizationId,
         userId: input.userId,
-        principalId: input.agentId,
+        agentId: input.agentId,
         eventType: "agent.session_reject",
         result: input.result,
         meta: { reason: input.reason },
@@ -146,7 +149,8 @@ const verifyLocalAgentIdentity = (
       ctx.db
         .select({
           id: agentRecords.id,
-          userId: agentRecords.userId,
+          organizationId: agentRecords.organizationId,
+          createdBy: agentRecords.createdBy,
           locality: agentRecords.locality,
           authMethod: agentRecords.authMethod,
           secretHash: agentRecords.secretHash,
@@ -209,7 +213,8 @@ const verifyLegacyAgentIdentity = (
       ctx.db
         .select({
           id: agentRecords.id,
-          userId: agentRecords.userId,
+          organizationId: agentRecords.organizationId,
+          createdBy: agentRecords.createdBy,
           locality: agentRecords.locality,
           enabled: agentRecords.enabled,
           revokedAt: agentRecords.revokedAt,
@@ -232,6 +237,7 @@ const verifyLegacyAgentIdentity = (
       kind: "agent",
       agentId: legacyAgentId,
       agentUserId: legacyUserId,
+      agentOrganizationId: "",
       agentLocality: "remote",
     };
   });
@@ -267,6 +273,7 @@ const verifyAgentSessionIdentity = (
       yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
+        organizationId: "",
         result: "expired",
         reason: "session_expired",
       });
@@ -277,7 +284,8 @@ const verifyAgentSessionIdentity = (
       ctx.db
         .select({
           id: agentRecords.id,
-          userId: agentRecords.userId,
+          organizationId: agentRecords.organizationId,
+          createdBy: agentRecords.createdBy,
           locality: agentRecords.locality,
           enabled: agentRecords.enabled,
           revokedAt: agentRecords.revokedAt,
@@ -286,7 +294,7 @@ const verifyAgentSessionIdentity = (
         .where(
           and(
             eq(agentRecords.id, sessionRecord.agentId),
-            eq(agentRecords.userId, sessionRecord.userId),
+            eq(agentRecords.createdBy, sessionRecord.userId),
           ),
         )
         .limit(1),
@@ -296,6 +304,7 @@ const verifyAgentSessionIdentity = (
       yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
+        organizationId: "",
         result: "denied",
         reason: "session_agent_not_found",
       });
@@ -304,8 +313,9 @@ const verifyAgentSessionIdentity = (
 
     if (!agent.enabled) {
       yield* auditAgentSessionReject(ctx, {
-        userId: agent.userId,
+        userId: agent.createdBy,
         agentId: agent.id,
+        organizationId: agent.organizationId,
         result: "denied",
         reason: "session_agent_disabled",
       });
@@ -314,8 +324,9 @@ const verifyAgentSessionIdentity = (
 
     if (agent.revokedAt) {
       yield* auditAgentSessionReject(ctx, {
-        userId: agent.userId,
+        userId: agent.createdBy,
         agentId: agent.id,
+        organizationId: agent.organizationId,
         result: "revoked",
         reason: "session_agent_revoked",
       });
@@ -326,6 +337,19 @@ const verifyAgentSessionIdentity = (
     touchAgentSession(ctx, sessionRecord.id);
     return toAgentIdentity(agent);
   });
+
+async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
+  const orgIdHeader = ctx.req.headers.get("X-Abadge-Org-Id");
+  if (orgIdHeader) return orgIdHeader;
+
+  const [firstMembership] = await ctx.db
+    .select({ organizationId: member.organizationId })
+    .from(member)
+    .where(eq(member.userId, userId))
+    .limit(1);
+
+  return firstMembership?.organizationId ?? "";
+}
 
 export const resolveSessionIdentity = (
   ctx: BaseRequestContext,
@@ -339,9 +363,11 @@ export const resolveSessionIdentity = (
 
     const sessionUserId = session?.user?.id ?? session?.session?.userId;
     if (sessionUserId) {
+      const organizationId = yield* tryAsync(() => resolveUserOrgId(ctx, sessionUserId));
       return {
         kind: "session" as const,
         userId: sessionUserId,
+        organizationId,
         authMethod: "browser_session",
       };
     }
@@ -371,9 +397,11 @@ const resolveBearerSessionIdentity = (
 
     const sessionUserId = sessionLookup?.user?.id ?? sessionLookup?.session?.userId;
     if (sessionUserId) {
+      const organizationId = yield* tryAsync(() => resolveUserOrgId(ctx, sessionUserId));
       return {
         kind: "session" as const,
         userId: sessionUserId,
+        organizationId,
         authMethod: "bearer_session",
       };
     }

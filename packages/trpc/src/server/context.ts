@@ -24,6 +24,7 @@ export interface BaseRequestContext {
 export interface SessionIdentity {
   kind: "session";
   userId: string;
+  organizationId: string;
   authMethod: "browser_session" | "bearer_session";
 }
 
@@ -31,6 +32,7 @@ export interface AgentIdentity {
   kind: "agent";
   agentId: string;
   agentUserId: string;
+  agentOrganizationId: string;
   agentLocality: "local" | "remote";
 }
 

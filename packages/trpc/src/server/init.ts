@@ -1,7 +1,7 @@
-import { ForbiddenError } from "@abadge/core";
+import { ForbiddenError, NotFoundError } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
-import { member } from "@abadge/db/schema";
+import { agents, member } from "@abadge/db/schema";
 import { initTRPC } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
@@ -76,7 +76,13 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
   }
 });
 
-export const scopedSessionProcedure = (_scope: string) => sessionProcedure;
+export const scopedSessionProcedure = (_scope: string) =>
+  sessionProcedure.use(async ({ ctx, next }) => {
+    if (ctx.identity.organizationId) {
+      await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
+    }
+    return next({ ctx });
+  });
 
 export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
@@ -91,3 +97,35 @@ export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
     throw toTrpcError(error);
   }
 });
+
+export async function requireAgentOwnership(
+  db: Database,
+  agentId: string,
+  userId: string,
+  orgId: string,
+  userRole: string,
+): Promise<void> {
+  if (roleRank(userRole) >= roleRank("admin")) return;
+
+  const [agent] = await db
+    .select({ createdBy: agents.createdBy })
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.organizationId, orgId)))
+    .limit(1);
+
+  if (!agent) {
+    throw new NotFoundError({
+      code: "AGENT_NOT_FOUND",
+      message: "Agent not found",
+      hint: "Check the agent ID and make sure it belongs to this organization.",
+    });
+  }
+
+  if (agent.createdBy !== userId) {
+    throw new ForbiddenError({
+      code: "MEMBER_AGENT_OWNERSHIP",
+      message: "Cannot manage permissions on an agent you did not create",
+      hint: "Members can only manage permissions on agents they created. Ask an admin.",
+    });
+  }
+}

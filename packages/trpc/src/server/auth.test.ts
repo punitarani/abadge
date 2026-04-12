@@ -4,13 +4,29 @@ import { resolveSessionIdentity } from "./auth";
 import type { BaseRequestContext } from "./context";
 import { createTrpcCallerFactory, createTrpcRouter, scopedSessionProcedure } from "./init";
 
+function createMockDb(): BaseRequestContext["db"] {
+  let callCount = 0;
+  const results = [
+    [{ organizationId: "org_mock" }],
+    [{ role: "owner" }],
+  ];
+  const mockQuery = {
+    from: () => mockQuery,
+    where: () => mockQuery,
+    limit: () => Promise.resolve(results[callCount++] ?? []),
+  };
+  return {
+    select: () => mockQuery,
+  } as unknown as BaseRequestContext["db"];
+}
+
 function createMockContext(headers?: HeadersInit): BaseRequestContext {
   return {
     req: new Request("http://localhost/trpc/vault.get", { headers }),
     resHeaders: new Headers(),
     env: {} as BaseRequestContext["env"],
     validatedEnv: {} as BaseRequestContext["validatedEnv"],
-    db: {} as BaseRequestContext["db"],
+    db: createMockDb(),
     auth: {
       api: {
         getSession: async () => null,
@@ -52,6 +68,7 @@ describe("resolveSessionIdentity", () => {
       authMethod: "browser_session",
       kind: "session",
       userId: "user_from_get_session",
+      organizationId: "org_mock",
     });
   });
 
@@ -68,6 +85,7 @@ describe("resolveSessionIdentity", () => {
       authMethod: "bearer_session",
       kind: "session",
       userId: "user_from_session",
+      organizationId: "org_mock",
     });
   });
 
