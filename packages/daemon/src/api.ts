@@ -20,7 +20,7 @@ export async function fetchVaultMeta(
     return data.vault;
   } catch (error) {
     const normalized = normalizeTrpcError(error);
-    if (normalized.httpStatus === 404 || normalized.appCode === "VAULT_NOT_FOUND") {
+    if (normalized.httpStatus === 404 || normalized.code === "VAULT_NOT_FOUND") {
       return null;
     }
     throw new Error(normalized.message || "Failed to fetch vault metadata");

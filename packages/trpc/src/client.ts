@@ -18,7 +18,7 @@ export interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;
   trpcCode?: string;
-  appCode?: string;
+  code?: string;
   issues?: unknown;
 }
 
@@ -132,7 +132,7 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
     message: trpcError.message || "Request failed",
     httpStatus: typeof data?.httpStatus === "number" ? data.httpStatus : undefined,
     trpcCode: typeof data?.code === "string" ? data.code : undefined,
-    appCode: typeof data?.appCode === "string" ? data.appCode : undefined,
+    code: typeof data?.code === "string" ? data.code : undefined,
     issues: data?.issues,
   };
 }

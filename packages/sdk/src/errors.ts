@@ -94,7 +94,7 @@ export class AbadgeApiError extends Error {
     const normalized = normalizeTrpcError(error);
     return new AbadgeApiError(
       normalized.httpStatus ?? 500,
-      normalized.appCode ?? normalized.trpcCode ?? "UNKNOWN",
+      normalized.code ?? normalized.trpcCode ?? "UNKNOWN",
       normalized.message || fallback,
       normalized.hint,
       normalized.meta,

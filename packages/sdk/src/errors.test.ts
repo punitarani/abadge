@@ -8,8 +8,7 @@ describe("AbadgeApiError", () => {
         message: "Remote agents cannot mount env vars",
         data: {
           httpStatus: 400,
-          code: "BAD_REQUEST",
-          appCode: "INVALID_CAPABILITY_LOCALITY",
+          code: "INVALID_CAPABILITY_LOCALITY",
           hint: "Use reveal_plaintext or register a local agent.",
           meta: {
             capability: "mount_env",
