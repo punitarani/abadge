@@ -13,8 +13,16 @@ export async function resolveSecret(
   const result = await client.accessMount(itemId, mountType, field);
 
   if (result.storageMode === "zero_knowledge") {
-    const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext);
-    return payloadToSecret(decrypted.payload, field);
+    try {
+      const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext);
+      return payloadToSecret(decrypted.payload, field);
+    } catch {
+      throw new Error(
+        "Zero-knowledge items require the local daemon for decryption.\n" +
+          "hint: Start the daemon with: abadge daemon start && abadge profile unlock\n" +
+          "hint: Or use a server-managed profile for MCP access.",
+      );
+    }
   }
 
   return payloadToSecret(result.payload, field);

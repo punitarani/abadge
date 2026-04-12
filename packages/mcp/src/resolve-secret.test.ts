@@ -38,4 +38,16 @@ describe("resolveSecret", () => {
       MultiFieldItemError,
     );
   });
+
+  test("returns a clear error when daemon is unavailable for ZK items", async () => {
+    const client = {
+      accessMount: async () => ({
+        storageMode: "zero_knowledge" as const,
+        encryptedItemKey: "encrypted-key",
+        ciphertext: "encrypted-data",
+      }),
+    };
+
+    await expect(resolveSecret(client as never, "item_zk", "env")).rejects.toThrow(/daemon/i);
+  });
 });

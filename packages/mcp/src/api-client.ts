@@ -11,11 +11,20 @@ export async function getApiClient(config: McpConfig): Promise<AbadgeAgentClient
   const key = `${config.apiUrl}::${config.agentId}`;
 
   if (!cached || cachedKey !== key) {
-    const jwk = JSON.parse(readFileSync(config.privateKeyPath, "utf-8")) as Ed25519PrivateKeyJwk;
+    let privateKey: Ed25519PrivateKeyJwk | string;
+    if (config.privateKey) {
+      // Inline JWK string — pass directly to SDK (which now accepts strings)
+      privateKey = config.privateKey;
+    } else if (config.privateKeyPath) {
+      privateKey = JSON.parse(readFileSync(config.privateKeyPath, "utf-8")) as Ed25519PrivateKeyJwk;
+    } else {
+      throw new Error("No private key configured (privateKey or privateKeyPath required).");
+    }
+
     cached = new AbadgeAgentClient({
       apiUrl: config.apiUrl,
       agentId: config.agentId,
-      privateKey: jwk,
+      privateKey,
     });
     cachedKey = key;
     connected = false;
