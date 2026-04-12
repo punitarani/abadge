@@ -120,12 +120,12 @@ Successful authentication updates `lastUsedAt` on the agent record.
 ## SecretValue Opaque Type
 
 The SDK uses a `SecretValue` opaque type to prevent accidental logging or serialization of secret
-data. The type requires an explicit `.reveal()` call to access the underlying string value:
+data. The type requires an explicit `.expose()` call to access the underlying string value:
 
 ```ts
 const result = await agent.accessReveal(itemId);
 // result.value is a SecretValue — cannot be directly logged or serialized
-const plaintext = result.value.reveal(); // explicit unwrap
+const plaintext = result.value.expose(); // explicit unwrap
 ```
 
 This ensures secrets are not accidentally included in log output, error messages, or JSON

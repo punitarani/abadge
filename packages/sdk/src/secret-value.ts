@@ -1,6 +1,6 @@
 import { inspect } from "node:util";
 
-const REDACTED_SECRET = "[REDACTED_SECRET]";
+const REDACTED_SECRET = "[REDACTED]";
 
 export class SecretValue {
   readonly #value: string;
@@ -9,7 +9,7 @@ export class SecretValue {
     this.#value = value;
   }
 
-  reveal(): string {
+  expose(): string {
     return this.#value;
   }
 

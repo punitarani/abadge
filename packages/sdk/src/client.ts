@@ -2,7 +2,9 @@ import type { ErrorCode } from "@abadge/core";
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
+  AgentBootstrapTokenResult,
   AgentChallengeResult,
+  AgentEnrollmentResult,
   AgentListResult,
   AgentResult,
   AgentRotateResult,
@@ -115,6 +117,11 @@ interface SdkTrpcClient {
       { agentId: string; challengeId: string; signature: string },
       AgentSessionResult
     >;
+    enroll: TrpcMutation<
+      { bootstrapToken: string; publicKey: string },
+      AgentEnrollmentResult
+    >;
+    issueBootstrapToken: TrpcMutation<{ agentId: string }, AgentBootstrapTokenResult>;
   };
   vault: {
     bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
@@ -439,6 +446,21 @@ export class AbadgeUserClient {
    */
   async revokeAgent(id: string): Promise<SuccessResult> {
     return call(() => this.client.agents.revoke.mutate({ agentId: id }), "Failed to revoke agent");
+  }
+
+  /**
+   * Issue a one-time bootstrap token for a public-key agent that has not yet enrolled.
+   * The token is shown exactly once and expires after 10 minutes.
+   *
+   * @param agentId - Agent ID
+   * @returns The bootstrap token (prefix `abe_`) and expiration
+   * @throws {AbadgeApiError} AGENT_NOT_FOUND, AGENT_ALREADY_ENROLLED
+   */
+  async issueBootstrapToken(agentId: string): Promise<AgentBootstrapTokenResult> {
+    return call(
+      () => this.client.auth.issueBootstrapToken.mutate({ agentId }),
+      "Failed to issue bootstrap token",
+    );
   }
 
   // -- Permissions ----------------------------------------------------------
@@ -828,6 +850,24 @@ export class AbadgeAgentClient {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  // -- Enrollment -----------------------------------------------------------
+
+  /**
+   * Enroll a public-key agent using a one-time bootstrap token.
+   * The agent's Ed25519 public key is registered with the server.
+   *
+   * @param bootstrapToken - One-time bootstrap token (prefix `abe_`)
+   * @param publicKey - Base64url-encoded Ed25519 public key
+   * @returns Enrollment confirmation with agent ID and enrolled timestamp
+   * @throws {AbadgeApiError} BOOTSTRAP_TOKEN_INVALID, BOOTSTRAP_TOKEN_EXPIRED
+   */
+  async enroll(bootstrapToken: string, publicKey: string): Promise<AgentEnrollmentResult> {
+    return call(
+      () => this.client.auth.enroll.mutate({ bootstrapToken, publicKey }),
+      "Failed to enroll agent",
+    );
   }
 
   // -- Self -----------------------------------------------------------------
