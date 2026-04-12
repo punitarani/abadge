@@ -20,11 +20,13 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
 export default function ProfileDetailPage(): React.ReactElement {
   const params = useParams<{ org: string; id: string }>();
   const orgSlug = params.org;
   const profileId = params.id;
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
 
   const profileQuery = useQuery({
@@ -34,18 +36,21 @@ export default function ProfileDetailPage(): React.ReactElement {
   });
 
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const permissionsQuery = useQuery({
-    queryKey: dashboardQueryKeys.permissions(),
+    queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.permissions.list.query({}),
+    enabled: !!activeOrgId,
   });
 
   const profile = profileQuery.data?.profile ?? null;
@@ -190,6 +195,8 @@ function ItemsSection({
   items: ItemSummary[];
   orgSlug: string;
 }): React.ReactElement {
+  // Items are scoped to the organization, not individual profiles.
+  // The API does not expose a profileId on ItemSummary, so we show all org items here.
   const preview = items.slice(0, 4);
 
   return (

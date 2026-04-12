@@ -68,7 +68,12 @@ export default function OrgLayout({ children }: { children: React.ReactNode }): 
 
   // UserJot analytics identify
   useEffect(() => {
-    if (USERJOT_PROJECT_ID && session?.user) {
+    if (
+      USERJOT_PROJECT_ID &&
+      session?.user &&
+      typeof window !== "undefined" &&
+      window.uj?.identify
+    ) {
       window.uj.identify({
         id: session.user.id,
         email: session.user.email,

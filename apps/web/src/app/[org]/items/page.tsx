@@ -45,6 +45,7 @@ export default function ItemsListPage(): React.ReactElement {
   const params = useParams<{ org: string }>();
   const orgSlug = params.org;
   const searchParams = useSearchParams();
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
   const [search, setSearch] = useState("");
@@ -52,13 +53,15 @@ export default function ItemsListPage(): React.ReactElement {
   const [createOpen, setCreateOpen] = useState(searchParams.get("create") === "true");
 
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const permissionsQuery = useQuery({
-    queryKey: dashboardQueryKeys.permissions(),
+    queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.permissions.list.query({}),
+    enabled: !!activeOrgId,
   });
 
   const items = itemsQuery.data?.items ?? [];

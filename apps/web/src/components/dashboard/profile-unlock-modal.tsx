@@ -41,7 +41,6 @@ export function ProfileUnlockModal({
 }: ProfileUnlockModalProps): React.ReactElement {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [keepUnlocked, setKeepUnlocked] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -153,16 +152,6 @@ export function ProfileUnlockModal({
               This is the password you set when you first created this profile.
             </p>
           </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={keepUnlocked}
-              onChange={(e) => setKeepUnlocked(e.target.checked)}
-              className="rounded border-border"
-            />
-            Keep unlocked for 30 minutes
-          </label>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>

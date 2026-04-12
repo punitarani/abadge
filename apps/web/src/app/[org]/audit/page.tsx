@@ -221,6 +221,11 @@ export default function AuditPage(): React.ReactElement {
       return result;
     },
     enabled: !!activeOrgId,
+    // Prevent automatic refetches from duplicating accumulated entries.
+    // Each cursor-based page is a distinct query key, so pagination still works.
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   // Reset pagination when filters change
@@ -239,12 +244,14 @@ export default function AuditPage(): React.ReactElement {
 
   // Lookup data
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
+    enabled: !!activeOrgId,
   });
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),

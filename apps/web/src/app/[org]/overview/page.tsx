@@ -242,18 +242,21 @@ export default function OverviewPage(): React.ReactElement {
   });
 
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const permissionsQuery = useQuery({
-    queryKey: dashboardQueryKeys.permissions(),
+    queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.permissions.list.query({}),
+    enabled: !!activeOrgId,
   });
 
   const auditInput = { limit: 5 };

@@ -35,6 +35,7 @@ import { buildAuditItemLabelMap, resolveAuditDisplayValue } from "@/lib/audit-di
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
+import { useOrgStore } from "@/stores/org-store";
 
 const KIND_LABELS: Record<string, string> = {
   local_cli: "Local CLI",
@@ -54,6 +55,7 @@ export default function AgentDetailPage(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const [rotatedKey, setRotatedKey] = useState<string | null>(null);
 
   const agentQuery = useQuery({
@@ -63,13 +65,15 @@ export default function AgentDetailPage(): React.ReactElement {
   });
 
   const permissionsQuery = useQuery({
-    queryKey: dashboardQueryKeys.permissions(),
+    queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.permissions.list.query({}),
+    enabled: !!activeOrgId,
   });
 
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const auditInput = { agentId, limit: 5 as const };
@@ -105,7 +109,9 @@ export default function AgentDetailPage(): React.ReactElement {
   const revokeMutation = useMutation({
     mutationFn: () => browserTrpcClient.agents.revoke.mutate({ agentId }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.agents() });
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
+      });
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.agent(agentId) });
       toast.success("Agent revoked.");
       router.push(`/${orgSlug}/agents`);
@@ -338,12 +344,15 @@ function GrantedPermissionsSection({
   orgSlug: string;
 }): React.ReactElement {
   const queryClient = useQueryClient();
+  const orgId = useOrgStore((s) => s.activeOrgId);
 
   const revokeMutation = useMutation({
     mutationFn: (permissionId: string) =>
       browserTrpcClient.permissions.revoke.mutate({ permissionId }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.permissions() });
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.orgPermissions(orgId ?? ""),
+      });
       toast.success("Permission revoked.");
     },
     onError: (error) => {

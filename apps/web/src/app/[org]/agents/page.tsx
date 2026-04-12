@@ -63,6 +63,7 @@ export default function AgentsListPage(): React.ReactElement {
   const params = useParams<{ org: string }>();
   const orgSlug = params.org;
   const searchParams = useSearchParams();
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
   const [search, setSearch] = useState("");
@@ -72,8 +73,9 @@ export default function AgentsListPage(): React.ReactElement {
   const [createOpen, setCreateOpen] = useState(searchParams.get("create") === "true");
 
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const agents = agentsQuery.data?.agents ?? [];

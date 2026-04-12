@@ -243,6 +243,7 @@ export default function PermissionsListPage(): React.ReactElement {
   const params = useParams<{ org: string }>();
   const orgSlug = params.org;
   const searchParams = useSearchParams();
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
   const [search, setSearch] = useState("");
@@ -255,16 +256,19 @@ export default function PermissionsListPage(): React.ReactElement {
   const queryClient = useQueryClient();
 
   const permissionsQuery = useQuery({
-    queryKey: dashboardQueryKeys.permissions(),
+    queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.permissions.list.query({}),
+    enabled: !!activeOrgId,
   });
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
+    enabled: !!activeOrgId,
   });
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
+    enabled: !!activeOrgId,
   });
 
   const permissions = permissionsQuery.data?.permissions ?? [];
@@ -312,7 +316,9 @@ export default function PermissionsListPage(): React.ReactElement {
     mutationFn: (permissionId: string) =>
       browserTrpcClient.permissions.revoke.mutate({ permissionId }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.permissions() });
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
+      });
       toast.success("Permission revoked.");
     },
     onError: (error) => {
