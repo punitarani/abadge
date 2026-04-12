@@ -36,7 +36,9 @@ const createAgent = (input: CreateAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const locality = agentLocalityForKind(input.kind);
-    const authMethod = input.authMethod ?? "legacy_api_key";
+    // Default to public_key_session per v0 roadmap. legacy_api_key remains
+    // available but must be requested explicitly.
+    const authMethod = input.authMethod ?? "public_key_session";
     const id = crypto.randomUUID();
 
     let secretHash: string | null = null;

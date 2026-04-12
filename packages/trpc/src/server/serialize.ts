@@ -1,8 +1,17 @@
-import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Vault } from "@abadge/core";
+import type {
+  Agent,
+  AuditEntry,
+  ItemDetail,
+  ItemSummary,
+  Permission,
+  Profile,
+  Vault,
+} from "@abadge/core";
 import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
-import type { auditLog, grants, items, principals, vaults } from "@abadge/db/schema";
+import type { auditLog, grants, items, principals, profiles, vaults } from "@abadge/db/schema";
 
 type VaultRow = typeof vaults.$inferSelect;
+type ProfileRow = typeof profiles.$inferSelect;
 type ItemRow = typeof items.$inferSelect;
 type AgentRow = typeof principals.$inferSelect;
 type PermissionRow = typeof grants.$inferSelect;
@@ -82,6 +91,23 @@ export function getAuditEventTypeFilters(
     default:
       return [normalized];
   }
+}
+
+export function serializeProfile(row: ProfileRow): Profile {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    name: row.name,
+    description: row.description ?? null,
+    storageMode: row.storageMode,
+    wrappedRootKey: row.wrappedRootKey ?? null,
+    kdfSalt: row.kdfSalt ?? null,
+    kdfParams: row.kdfParams ? (row.kdfParams as Profile["kdfParams"]) : null,
+    recoveryWrappedRootKey: row.recoveryWrappedRootKey ?? null,
+    keyVersion: row.keyVersion,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 export function serializeVault(row: VaultRow): Vault {

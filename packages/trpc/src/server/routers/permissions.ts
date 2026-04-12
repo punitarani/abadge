@@ -1,10 +1,14 @@
 import {
+  type AgentLocality,
   BadRequestError,
+  type Capability,
   type CreatePermissionInput,
   CreatePermissionSchema,
+  getAllowedCapabilities,
   NotFoundError,
   PermissionListResultSchema,
   PermissionResultSchema,
+  type StorageMode,
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, or } from "@abadge/db";
@@ -65,22 +69,34 @@ const createPermission = (input: CreatePermissionInput) =>
       );
     }
 
-    if (agent.locality === "remote" && item.storageMode === "zero_knowledge") {
-      return yield* Effect.fail(
-        new BadRequestError({
-          code: "INVALID_CAPABILITY",
-          message: "Remote agents cannot access zero-knowledge items",
-          hint: "Choose a server-managed item when granting permissions to remote agents.",
-        }),
-      );
-    }
+    const agentLocality = agent.locality as AgentLocality;
+    const itemStorageMode = item.storageMode as StorageMode;
+    const capability = input.capability as Capability;
+    const allowedCaps = getAllowedCapabilities(agentLocality, itemStorageMode);
 
-    if (agent.locality === "remote" && input.capability !== "reveal_plaintext") {
+    if (!allowedCaps.includes(capability)) {
+      // If the capability is not allowed for this locality in ANY storage mode,
+      // the restriction is locality-based; otherwise it is storage-mode-based.
+      const allowedForOtherMode = getAllowedCapabilities(
+        agentLocality,
+        itemStorageMode === "zero_knowledge" ? "server_managed" : "zero_knowledge",
+      );
+
+      if (!allowedForOtherMode.includes(capability)) {
+        return yield* Effect.fail(
+          new BadRequestError({
+            code: "INVALID_CAPABILITY_LOCALITY",
+            message: `${agentLocality} agents cannot use the '${capability}' capability`,
+            hint: "Choose a capability supported by this agent's locality.",
+          }),
+        );
+      }
+
       return yield* Effect.fail(
         new BadRequestError({
-          code: "INVALID_CAPABILITY",
-          message: "Remote agents can only have reveal_plaintext capability",
-          hint: "Grant reveal_plaintext or switch the agent to a local runtime.",
+          code: "INVALID_CAPABILITY_STORAGE",
+          message: `'${capability}' is not available for ${itemStorageMode} items`,
+          hint: "Choose a capability that matches this item's storage mode.",
         }),
       );
     }

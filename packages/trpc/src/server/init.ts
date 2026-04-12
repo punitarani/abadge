@@ -1,8 +1,50 @@
+import { ForbiddenError } from "@abadge/core";
+import type { Database } from "@abadge/db";
+import { and, eq } from "@abadge/db";
+import { member } from "@abadge/db/schema";
 import { initTRPC } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
 import type { AgentRequestContext, BaseRequestContext, SessionRequestContext } from "./context";
 import { getTrpcErrorData, toTrpcError } from "./errors";
+
+const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
+
+export function roleRank(role: string): number {
+  return ROLE_RANK[role] ?? 0;
+}
+
+/** Returns the caller's role if they are a member of the org with at least minRole; throws ForbiddenError otherwise. */
+export async function requireOrgRole(
+  db: Database,
+  orgId: string,
+  userId: string,
+  minRole: "owner" | "admin" | "member",
+): Promise<string> {
+  const [row] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.organizationId, orgId), eq(member.userId, userId)))
+    .limit(1);
+
+  if (!row) {
+    throw new ForbiddenError({
+      code: "MEMBER_INSUFFICIENT_ROLE",
+      message: "You are not a member of this organization",
+      hint: "Join the organization before performing this action.",
+    });
+  }
+
+  if (roleRank(row.role) < roleRank(minRole)) {
+    throw new ForbiddenError({
+      code: "MEMBER_INSUFFICIENT_ROLE",
+      message: "Insufficient role",
+      hint: `This action requires the '${minRole}' role or higher.`,
+    });
+  }
+
+  return row.role;
+}
 
 const t = initTRPC.context<BaseRequestContext>().create({
   errorFormatter({ shape, error }) {
