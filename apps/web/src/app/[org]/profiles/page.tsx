@@ -26,7 +26,7 @@ import { useOrgStore } from "@/stores/org-store";
 type StorageFilter = "all" | "zero_knowledge" | "server_managed";
 type VaultStatusFilter = "all" | "unlocked" | "locked";
 
-const TABLE_COL_COUNT = 7;
+const TABLE_COL_COUNT = 5;
 
 export default function ProfilesListPage(): React.ReactElement {
   const params = useParams<{ org: string }>();
@@ -44,24 +44,7 @@ export default function ProfilesListPage(): React.ReactElement {
     enabled: !!activeOrgId,
   });
 
-  const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
-    queryFn: () => browserTrpcClient.items.list.query(),
-  });
-
-  const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
-    queryFn: () => browserTrpcClient.agents.list.query(),
-  });
-
   const profiles = profilesQuery.data?.profiles ?? [];
-  const items = itemsQuery.data?.items ?? [];
-  const agents = agentsQuery.data?.agents ?? [];
-
-  /* Item counts per profile are not available from ItemSummary (no profileId).
-     Show total org item count as fallback. */
-  const totalItemCount = items.length;
-  const totalAgentCount = agents.length;
 
   const filtered = useMemo(() => {
     let result = profiles;
@@ -107,13 +90,13 @@ export default function ProfilesListPage(): React.ReactElement {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative min-w-[200px] max-w-xs flex-1">
           <MagnifyingGlass className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search profiles..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            className="h-8 pl-8 text-sm"
           />
         </div>
 
@@ -148,8 +131,6 @@ export default function ProfilesListPage(): React.ReactElement {
               <TableHead>Profile name</TableHead>
               <TableHead>ID</TableHead>
               <TableHead>Storage</TableHead>
-              <TableHead>Items</TableHead>
-              <TableHead>Agents</TableHead>
               <TableHead>Vault</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
@@ -189,8 +170,6 @@ export default function ProfilesListPage(): React.ReactElement {
                   isUnlocked={
                     profile.storageMode === "zero_knowledge" ? isProfileUnlocked(profile.id) : null
                   }
-                  totalItemCount={totalItemCount}
-                  totalAgentCount={totalAgentCount}
                   isDefault={profile.name === "default"}
                 />
               ))
@@ -206,15 +185,11 @@ function ProfileRow({
   profile,
   orgSlug,
   isUnlocked,
-  totalItemCount,
-  totalAgentCount,
   isDefault,
 }: {
   profile: Profile;
   orgSlug: string;
   isUnlocked: boolean | null;
-  totalItemCount: number;
-  totalAgentCount: number;
   isDefault: boolean;
 }): React.ReactElement {
   return (
@@ -239,22 +214,6 @@ function ProfileRow({
         <Badge variant={profile.storageMode === "zero_knowledge" ? "default" : "secondary"}>
           {profile.storageMode === "zero_knowledge" ? "ZK" : "Server"}
         </Badge>
-      </TableCell>
-      <TableCell>
-        <Link
-          href={`/${orgSlug}/items`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-        >
-          {totalItemCount}
-        </Link>
-      </TableCell>
-      <TableCell>
-        <Link
-          href={`/${orgSlug}/agents`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-        >
-          {totalAgentCount}
-        </Link>
       </TableCell>
       <TableCell>
         <VaultStatusDot status={isUnlocked} />

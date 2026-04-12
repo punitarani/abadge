@@ -105,10 +105,6 @@ export default function ProfileDetailPage(): React.ReactElement {
           <p className="mt-1 text-sm text-muted-foreground">
             ID: <span className="font-mono">{profile.id.slice(0, 12)}...</span>
             {" · "}
-            {items.length} items
-            {" · "}
-            {agents.length} agents
-            {" · "}
             Created {formatDate(profile.createdAt)}
           </p>
         </div>

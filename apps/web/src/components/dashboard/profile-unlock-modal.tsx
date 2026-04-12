@@ -161,7 +161,7 @@ export function ProfileUnlockModal({
               onChange={(e) => setKeepUnlocked(e.target.checked)}
               className="rounded border-border"
             />
-            Keep unlocked for 15 minutes
+            Keep unlocked for 30 minutes
           </label>
 
           <DialogFooter>

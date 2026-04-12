@@ -12,6 +12,7 @@ import {
 } from "react";
 import { ProfileUnlockModal } from "@/components/dashboard/profile-unlock-modal";
 import { MasterPasswordModal } from "@/components/master-password-modal";
+import { useOrgStore } from "@/stores/org-store";
 import { browserTrpcClient } from "./trpc-browser";
 
 /** Auto-lock timeout for per-profile keys (30 minutes). */
@@ -44,6 +45,8 @@ interface VaultContextValue {
 const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+  const activeOrgName = useOrgStore((s) => s.activeOrgName);
+
   /* Legacy vault state */
   const [rootKey, setRootKey] = useState<Uint8Array | null>(null);
   const [vaultExists, setVaultExists] = useState<boolean | null>(null);
@@ -210,7 +213,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
               setProfileUnlockTarget({
                 profileId,
                 profileName: result.profile.name,
-                orgName: result.profile.organizationId,
+                orgName: activeOrgName ?? result.profile.organizationId,
               });
             })
             .catch((err) => {
@@ -234,7 +237,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
         setLegacyModalOpen(true);
       });
     },
-    [rootKey, profileKeys, resetProfileTimer],
+    [rootKey, profileKeys, resetProfileTimer, activeOrgName],
   );
 
   /* ---- Modal callbacks ---- */
