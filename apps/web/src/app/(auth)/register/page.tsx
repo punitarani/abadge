@@ -7,6 +7,7 @@ import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordStrength } from "@/components/ui/password-strength";
 import type { SocialProvider } from "@/lib/auth-client";
 import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
@@ -16,6 +17,7 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
@@ -30,6 +32,16 @@ export default function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (password.length < 12) {
+      setError("Password must be at least 12 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -41,7 +53,7 @@ export default function RegisterPage() {
       if (signUpError) {
         setError(signUpError.message ?? "Registration failed");
       } else {
-        router.push("/items");
+        router.push("/onboarding");
       }
     } catch {
       setError("An unexpected error occurred");
@@ -58,7 +70,7 @@ export default function RegisterPage() {
       const currentURL = new URL(window.location.href);
       const { error: socialError } = await authClient.signIn.social({
         provider,
-        callbackURL: `${currentURL.origin}/items`,
+        callbackURL: `${currentURL.origin}/onboarding`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
@@ -109,14 +121,26 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Password (min. 12 chars)</Label>
             <Input
               id="password"
               type="password"
-              placeholder="Min 8 characters"
-              minLength={8}
+              placeholder="Min 12 characters"
+              minLength={12}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <PasswordStrength password={password} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-password">Confirm password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              placeholder="Repeat password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
               required
             />
           </div>

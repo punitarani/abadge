@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
-import { Inter, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { AppProviders } from "@/lib/trpc-provider";
 import { cn } from "@/lib/utils";
