@@ -9,20 +9,10 @@ ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "kind" text;--> statement-breakpoin
 ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "tags" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 UPDATE "items" SET "tags" = '[]'::jsonb WHERE "tags" IS NULL;--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'items_organization_id_organization_id_fk'
-  ) THEN
-    ALTER TABLE "items"
-    ADD CONSTRAINT "items_organization_id_organization_id_fk"
-    FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
-    ON DELETE set null ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
+ALTER TABLE "items"
+ADD CONSTRAINT "items_organization_id_organization_id_fk"
+FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
+ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "profiles" (
   "id" text PRIMARY KEY NOT NULL,
@@ -39,35 +29,15 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'profiles_organization_id_organization_id_fk'
-  ) THEN
-    ALTER TABLE "profiles"
-    ADD CONSTRAINT "profiles_organization_id_organization_id_fk"
-    FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
+ALTER TABLE "profiles"
+ADD CONSTRAINT "profiles_organization_id_organization_id_fk"
+FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'items_profile_id_profiles_id_fk'
-  ) THEN
-    ALTER TABLE "items"
-    ADD CONSTRAINT "items_profile_id_profiles_id_fk"
-    FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id")
-    ON DELETE set null ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
+ALTER TABLE "items"
+ADD CONSTRAINT "items_profile_id_profiles_id_fk"
+FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id")
+ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "agents" (
   "id" text PRIMARY KEY NOT NULL,
@@ -88,31 +58,15 @@ CREATE TABLE IF NOT EXISTS "agents" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'agents_organization_id_organization_id_fk'
-  ) THEN
-    ALTER TABLE "agents"
-    ADD CONSTRAINT "agents_organization_id_organization_id_fk"
-    FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
+ALTER TABLE "agents"
+ADD CONSTRAINT "agents_organization_id_organization_id_fk"
+FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'agents_created_by_user_id_fk'
-  ) THEN
-    ALTER TABLE "agents"
-    ADD CONSTRAINT "agents_created_by_user_id_fk"
-    FOREIGN KEY ("created_by") REFERENCES "public"."user"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
+ALTER TABLE "agents"
+ADD CONSTRAINT "agents_created_by_user_id_fk"
+FOREIGN KEY ("created_by") REFERENCES "public"."user"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "permissions" (
   "id" text PRIMARY KEY NOT NULL,
@@ -125,53 +79,25 @@ CREATE TABLE IF NOT EXISTS "permissions" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'permissions_organization_id_organization_id_fk'
-  ) THEN
-    ALTER TABLE "permissions"
-    ADD CONSTRAINT "permissions_organization_id_organization_id_fk"
-    FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
+ALTER TABLE "permissions"
+ADD CONSTRAINT "permissions_organization_id_organization_id_fk"
+FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'permissions_agent_id_agents_id_fk'
-  ) THEN
-    ALTER TABLE "permissions"
-    ADD CONSTRAINT "permissions_agent_id_agents_id_fk"
-    FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
+ALTER TABLE "permissions"
+ADD CONSTRAINT "permissions_agent_id_agents_id_fk"
+FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'permissions_item_id_items_id_fk'
-  ) THEN
-    ALTER TABLE "permissions"
-    ADD CONSTRAINT "permissions_item_id_items_id_fk"
-    FOREIGN KEY ("item_id") REFERENCES "public"."items"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
+ALTER TABLE "permissions"
+ADD CONSTRAINT "permissions_item_id_items_id_fk"
+FOREIGN KEY ("item_id") REFERENCES "public"."items"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'permissions_granted_by_user_id_fk'
-  ) THEN
-    ALTER TABLE "permissions"
-    ADD CONSTRAINT "permissions_granted_by_user_id_fk"
-    FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id")
-    ON DELETE cascade ON UPDATE no action;
-  END IF;
-END
-$$;--> statement-breakpoint
+ALTER TABLE "permissions"
+ADD CONSTRAINT "permissions_granted_by_user_id_fk"
+FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id")
+ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "audit_logs" (
   "id" bigserial PRIMARY KEY NOT NULL,
@@ -404,4 +330,33 @@ SELECT setval(
   pg_get_serial_sequence('"audit_logs"', 'id'),
   COALESCE((SELECT MAX("id") FROM "audit_logs"), 1),
   true
-);
+);--> statement-breakpoint
+
+ALTER TABLE "principals" ALTER COLUMN "auth_method" DROP DEFAULT;--> statement-breakpoint
+
+ALTER TABLE "grants"
+ADD CONSTRAINT "grants_granted_by_user_id_fk"
+FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+
+ALTER TABLE IF EXISTS "agent_credential_permissions" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "agent_credential_permissions" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "agent_group_members" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "agent_group_members" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "agent_groups" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "agent_groups" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "auto_grants" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "auto_grants" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "broker_sessions" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "broker_sessions" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "connectors" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "connectors" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "approvals" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "approvals" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "policies" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "policies" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "credentials" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "credentials" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "apikey" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "apikey" CASCADE;--> statement-breakpoint
+ALTER TABLE IF EXISTS "access_log" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE IF EXISTS "access_log" CASCADE;

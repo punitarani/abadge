@@ -53,10 +53,6 @@ ALTER TABLE "agent_enrollment_tokens"
 ADD CONSTRAINT "agent_enrollment_tokens_agent_id_principals_id_fk"
 FOREIGN KEY ("agent_id") REFERENCES "public"."principals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
-ALTER TABLE "deviceCode"
-ADD CONSTRAINT "deviceCode_user_id_user_id_fk"
-FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-
 ALTER TABLE "agent_enrollment_tokens"
 ADD CONSTRAINT "agent_enrollment_tokens_user_id_user_id_fk"
 FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -64,6 +60,10 @@ FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UP
 ALTER TABLE "agent_enrollment_tokens"
 ADD CONSTRAINT "agent_enrollment_tokens_created_by_user_id_fk"
 FOREIGN KEY ("created_by") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+
+ALTER TABLE "deviceCode"
+ADD CONSTRAINT "deviceCode_user_id_user_id_fk"
+FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
 ALTER TABLE "agent_session_challenges"
 ADD CONSTRAINT "agent_session_challenges_agent_id_principals_id_fk"
