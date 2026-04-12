@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
+import { BadRequestError, NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
 import { Effect } from "effect";
 import { getTrpcErrorData, toTrpcError } from "./errors";
 
@@ -54,5 +54,28 @@ describe("toTrpcError", () => {
 
     expect(error.code).toBe("UNAUTHORIZED");
     expect(error.message).toBe("Unauthorized");
+  });
+
+  test("preserves hint and meta for caller-facing transport formatting", () => {
+    const error = toTrpcError(
+      new BadRequestError({
+        code: "INVALID_CAPABILITY_LOCALITY",
+        message: "Remote agents cannot mount env vars",
+        hint: "Use reveal_plaintext or register a local agent.",
+        meta: {
+          capability: "mount_env",
+          locality: "remote",
+        },
+      }),
+    );
+
+    expect(getTrpcErrorData(error)).toEqual({
+      appCode: "INVALID_CAPABILITY_LOCALITY",
+      hint: "Use reveal_plaintext or register a local agent.",
+      meta: {
+        capability: "mount_env",
+        locality: "remote",
+      },
+    });
   });
 });

@@ -14,6 +14,8 @@ interface NormalizedTrpcError {
   httpStatus?: number;
   trpcCode?: string;
   appCode?: string;
+  hint?: string;
+  meta?: Readonly<Record<string, unknown>>;
   issues?: unknown;
 }
 
@@ -96,6 +98,11 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
     httpStatus: typeof data?.httpStatus === "number" ? data.httpStatus : undefined,
     trpcCode: typeof data?.code === "string" ? data.code : undefined,
     appCode: typeof data?.appCode === "string" ? data.appCode : undefined,
+    hint: typeof data?.hint === "string" ? data.hint : undefined,
+    meta:
+      data?.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+        ? (data.meta as Record<string, unknown>)
+        : undefined,
     issues: data?.issues,
   };
 }
