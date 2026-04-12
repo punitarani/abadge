@@ -62,8 +62,8 @@ export interface AbadgeAgentKeypairConfig {
   apiUrl: string;
   /** Agent ID registered in Abadge. */
   agentId: string;
-  /** Ed25519 private key (CryptoKey or JWK). */
-  privateKey: CryptoKey | Ed25519PrivateKeyJwk;
+  /** Ed25519 private key (CryptoKey, JWK object, or JSON-serialized JWK string). */
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk | string;
 }
 
 /** Legacy API key auth for agents. */
@@ -226,9 +226,24 @@ function toBase64url(bytes: ArrayBuffer): string {
     .replace(/=/g, "");
 }
 
-async function resolvePrivateKey(privateKey: CryptoKey | Ed25519PrivateKeyJwk): Promise<CryptoKey> {
+async function resolvePrivateKey(
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk | string,
+): Promise<CryptoKey> {
   if (privateKey instanceof CryptoKey) {
     return privateKey;
+  }
+  if (typeof privateKey === "string") {
+    const parsed: unknown = JSON.parse(privateKey);
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
+    }
+    return crypto.subtle.importKey(
+      "jwk",
+      parsed as JsonWebKey,
+      { name: "Ed25519" },
+      false,
+      ["sign"],
+    );
   }
   return crypto.subtle.importKey("jwk", privateKey as never, { name: "Ed25519" }, false, ["sign"]);
 }
@@ -782,6 +797,13 @@ export class AbadgeAgentClient {
     } else {
       // Keypair config — build an unauth client; connect() will set the token
       this.client = buildUnauthTrpcClient(config.apiUrl);
+      // Fail fast: validate string keys at construction time rather than at connect()
+      if (typeof config.privateKey === "string") {
+        const parsed: unknown = JSON.parse(config.privateKey);
+        if (!parsed || typeof parsed !== "object") {
+          throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
+        }
+      }
     }
   }
 
