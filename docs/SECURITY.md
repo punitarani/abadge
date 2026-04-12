@@ -24,7 +24,7 @@ The server never sees plaintext. All cryptographic operations happen in the brow
 
 ```
 Master Password → Argon2id (64 MiB, 3 iterations) → KEK (32 bytes)
-KEK → unwraps → Root Key (32 bytes, per vault)
+KEK → unwraps → Root Key (32 bytes, per profile)
 Root Key → unwraps → DEK (32 bytes, per item)
 DEK → decrypts → Item Payload
 ```
@@ -57,7 +57,7 @@ The API worker encrypts and decrypts with a shared key.
 | Server breach exposure | Ciphertext only (unusable) | Plaintext if `ENCRYPTION_KEY` also compromised |
 | Remote agent access | Not supported | `reveal_plaintext` only |
 | Local agent access | `read_ciphertext`, `mount_env`, `mount_file` | `reveal_plaintext`, `mount_env`, `mount_file` |
-| Setup complexity | Requires master password + vault | Just store the secret |
+| Setup complexity | Requires master password + profile | Just store the secret |
 
 ---
 
@@ -72,54 +72,29 @@ The API worker encrypts and decrypts with a shared key.
 
 **Dashboard**: Standard cookie-based sessions with CSRF protection via Better Auth. Supports Google and GitHub OAuth.
 
-**CLI**: The CLI initiates a device authorization flow -- user approves in the browser, CLI receives a bearer token. The token is held in daemon memory only; the config file never stores a human bearer token.
-
-### Operator Automation Tokens
-
-Fully non-interactive operator automation uses scoped `abo_...` tokens.
-
-- Token value is shown once
-- Server stores only the token hash and prefix in `operator_tokens`
-- Default TTL is 24 hours
-- Maximum TTL is 30 days
-- Revoked and expired tokens fail closed
-- Token issuance and revocation are legacy maintenance flows, not part of the v0 public `@abadge/core`, SDK, dashboard, or CLI auth contract
-- Public CLI/API session auth uses Better Auth browser or bearer sessions instead of `X-Abadge-Operator-Token`
-
-Scopes are coarse and route-bound:
-
-```text
-items:read
-items:write
-agents:read
-agents:write
-permissions:read
-permissions:write
-audit:read
-vault:read
-vault:write
-```
+**CLI**: The CLI initiates a device authorization flow — user approves in the browser, CLI receives a bearer token. The token is held in daemon memory only; the config file never stores a human bearer token.
 
 ### Agent Authentication
 
-Agents authenticate using one of two methods:
+Agents authenticate using one of two methods.
 
-#### Public Key Sessions (Default)
+#### Public Key Sessions (Preferred)
 
-The preferred method for all new agents.
+The default for all new agents.
 
 ```
-1. User issues bootstrap token (abe_..., 10-min TTL)
+1. User registers agent with issueBootstrapToken: true (or provides publicKey directly)
 2. Agent generates Ed25519 keypair locally
-3. Agent enrolls with bootstrap token + public key
+3. Agent enrolls with bootstrap token + public key  (abe_..., 10-min TTL)
 4. For each session:
-   a. Agent requests challenge (abc_..., 1-min TTL)
+   a. Agent requests challenge (abc_..., 60-second TTL)
    b. Agent signs challenge with private key
    c. Server verifies Ed25519 signature
    d. Server issues session token (abs_..., 15-min TTL)
+5. SDK schedules background refresh at T-2 minutes before expiry
 ```
 
-**Storage**: Private key stored locally with `0600` permissions. Public key stored on server. Session tokens stored as SHA-256 hashes.
+**Storage**: Private key stored locally with `0600` permissions. Public key stored on server. Session tokens stored as SHA-256 hashes. No long-lived secrets are stored on disk for keypair agents.
 
 #### Legacy API Keys (Migration Only)
 
@@ -142,14 +117,31 @@ Successful authentication updates `lastUsedAt` on the agent record.
 
 ---
 
+## SecretValue Opaque Type
+
+The SDK uses a `SecretValue` opaque type to prevent accidental logging or serialization of secret
+data. The type requires an explicit `.reveal()` call to access the underlying string value:
+
+```ts
+const result = await agent.accessReveal(itemId);
+// result.value is a SecretValue — cannot be directly logged or serialized
+const plaintext = result.value.reveal(); // explicit unwrap
+```
+
+This ensures secrets are not accidentally included in log output, error messages, or JSON
+serialization.
+
+---
+
 ## Authorization
 
 ### Permission Model
 
-Access requires an explicit grant or a matching auto-grant rule linking an agent to an item with a specific capability. There are no wildcards, no default permissions, and no implicit inheritance.
+Access requires an explicit permission linking an agent to an item with a specific capability.
+There are no wildcards, no default permissions, and no implicit inheritance.
 
 ```
-Agent + Item + Capability → Explicit Grant or Auto-Grant Match → Access
+Agent + Item + Capability → Explicit Permission → Access
 ```
 
 ### Decision Flow
@@ -157,13 +149,12 @@ Agent + Item + Capability → Explicit Grant or Auto-Grant Match → Access
 Every access request follows this exact order:
 
 1. **Authenticate** the bearer token
-2. **Resolve** the target item (must belong to the same user as the agent)
-3. **Check** for an explicit grant matching (agent, item, capability)
-4. **Fallback** to auto-grant rules if no explicit grant exists
-5. **Verify** the grant has not expired
-6. **Enforce** locality and storage mode constraints
-7. **Audit** the attempt (before returning any data)
-8. **Decrypt** only if all checks passed
+2. **Resolve** the target item (must belong to the same org as the agent)
+3. **Check** for an explicit permission matching (agent, item, capability)
+4. **Verify** the permission has not expired
+5. **Enforce** locality and storage mode constraints
+6. **Audit** the attempt (before returning any data)
+7. **Decrypt** only if all checks passed
 
 Denied requests are audited and return an error. The order ensures no decryption happens unless fully authorized.
 
@@ -185,19 +176,23 @@ Denied requests are audited and return an error. The order ensures no decryption
 
 ## Delivery Modes
 
-How secrets reach agents -- designed to minimize exposure.
+How secrets reach agents — designed to minimize exposure.
 
 ### Environment Injection (`mount_env`)
 
-Secret is passed as an environment variable to a spawned subprocess. The secret exists only in process memory -- never written to disk. The parent process does not retain the value after spawning.
+Secret is passed as an environment variable to a spawned subprocess. The secret exists only in
+process memory — never written to disk. The parent process does not retain the value after spawning.
 
 ### File Mounting (`mount_file`)
 
-Secret is written to a temporary file with `0600` permissions (owner read/write only). The daemon restricts mount paths to the OS temp directory (`os.tmpdir()`), rejecting any path outside it. The MCP server auto-deletes after 5 minutes. The CLI returns the path for manual cleanup.
+Secret is written to a temporary file with `0600` permissions (owner read/write only). The daemon
+restricts mount paths to the OS temp directory (`os.tmpdir()`), rejecting any path outside it. The
+MCP server auto-deletes after 5 minutes. The CLI returns the path for manual cleanup.
 
 ### Direct Reveal (`reveal_plaintext`)
 
-Secret value returned over HTTPS in the API response. Used by remote agents that cannot use local injection. Available only for server-managed items.
+Secret value returned over HTTPS in the API response. Used by remote agents that cannot use local
+injection. Available only for server-managed items.
 
 ### MCP Secret Handling
 
@@ -205,8 +200,8 @@ The MCP server adds additional protections for AI model contexts:
 
 - Secrets are injected into subprocess env vars, never passed to the LLM
 - stdout/stderr is scanned and the secret value is replaced with `[REDACTED]`
-- Output is truncated to 4KB to prevent memory issues
-- The `mount_secret` tool returns only the file path, never the content
+- Output is truncated to 4 KB to prevent memory issues
+- `mount_secret` returns only an opaque `mountId`, never the file path or content
 
 ---
 
@@ -230,11 +225,11 @@ The MCP server adds additional protections for AI model contexts:
 | Permissions | Create, revoke, revoke cascade |
 | Access | Ciphertext read, reveal, env mount, file mount |
 
-Auth lifecycle events include `auth.login`, `auth.logout`, `auth.token_issue`, and `auth.token_revoke`.
-
 ### Audit Entry Fields
 
-Each entry records: user, agent (if applicable), item (if applicable), event type, result (`allowed`/`denied`/`expired`/`revoked`), delivery mode, IP address, timestamp, and a `meta` JSON blob.
+Each entry records: user, agent (if applicable), item (if applicable), event type, result
+(`allowed`/`denied`/`expired`/`revoked`/`cascade`), delivery mode, IP address, timestamp, and a
+`meta` JSON blob.
 
 ---
 
@@ -264,7 +259,7 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 |---|---|---|
 | CLI config directory | `~/.abadge/` | `0700` |
 | CLI config file | `~/.abadge/config.json` | `0600` |
-| Agent private keys | `~/.abadge/*.key` | `0600` |
+| Agent private keys | `~/.abadge/agents/*.jwk` | `0600` |
 | Daemon socket | `~/.abadge/vaultd.sock` | `0600` |
 | Mounted secret files | OS tmpdir | `0600` |
 
@@ -328,16 +323,14 @@ block-beta
 
 | Data | Stored Form | Retrievable? |
 |---|---|---|
-| Vault root key | KEK-wrapped ciphertext | Only by master password holder |
+| Profile root key | KEK-wrapped ciphertext | Only by master password holder |
 | Recovery key | Shown once, wraps root key | Never stored in plaintext |
-| ZK item value | XChaCha20-Poly1305 ciphertext | Only by vault owner |
+| ZK item value | XChaCha20-Poly1305 ciphertext | Only by profile owner |
 | Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
 | Agent API key | SHA-256 hash + prefix | Shown once at creation |
-| Operator automation token | SHA-256 hash + prefix | Shown once at creation |
 | Agent session token | SHA-256 hash | Shown once at exchange |
 | Bootstrap token | SHA-256 hash | Shown once at issuance |
-| Challenge token | SHA-256 hash | Used once, 1-min TTL |
-| Connector config | AES-256-GCM ciphertext + IV | By server on authorized request |
+| Challenge token | SHA-256 hash | Used once, 60-second TTL |
 | Audit entries | Metadata only | Via audit API (no secrets) |
 
 ---

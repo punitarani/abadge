@@ -28,17 +28,17 @@ See [`docs/release/cli.md`](./release/cli.md) for the release and installer flow
 
 ## Configuration
 
-Config lives at `~/.abadge/config.json`. The CLI stores a user session for control-plane commands
-and a local CLI agent key for principal-authenticated access commands:
+Config lives at `~/.abadge/config.json`. Key fields:
 
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "sessionCookie": "...",
-  "principalId": "agt_...",
-  "principalSecret": "abg_..."
+  "activeOrgId": "org_...",
+  "activeProfileId": "prof_..."
 }
 ```
+
+The bearer session token is held in daemon memory only and is never written to disk.
 
 The local daemon socket is `~/.abadge/vaultd.sock`.
 
@@ -46,15 +46,15 @@ The local daemon socket is `~/.abadge/vaultd.sock`.
 
 ### `abadge login`
 
-Interactive device-code login. Opens the approval URL in the browser, then stores `apiUrl` and the
-Better Auth bearer token in daemon memory. Ensures a reusable local CLI agent exists for `run` and
-`mount`.
+Device-code login. Opens the approval URL in the browser, then stores `apiUrl` in config and holds
+the Better Auth bearer token in daemon memory. Does not auto-register an agent.
 
 ```bash
+abadge login
 abadge login --api-url http://localhost:8787
 ```
 
-The `--password` flag has been removed. Authentication is device-code only.
+After logging in, register an agent explicitly with `abadge agent register`.
 
 ### `abadge logout`
 
@@ -66,9 +66,7 @@ abadge logout
 
 ### `abadge daemon start`
 
-Starts the local daemon process if it is not already running. The CLI spawns the current `abadge`
-entrypoint in an internal daemon-serve mode, so the same command works in development and in a
-compiled binary.
+Starts the local daemon process if it is not already running.
 
 ```bash
 abadge daemon start
@@ -116,11 +114,80 @@ abadge vault status
 
 ### `abadge vault change-password`
 
-Prompts for the current password and the replacement password, then updates the wrapped vault key
-through the daemon and control plane.
+Prompts for the current and new password, then re-wraps the vault key.
 
 ```bash
 abadge vault change-password
+```
+
+### `abadge org create`
+
+Creates a new organization.
+
+```bash
+abadge org create --name "Acme"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--name, -n` | Organization display name |
+| `--json` | Print raw JSON |
+
+### `abadge org list`
+
+Lists organizations the current user belongs to.
+
+```bash
+abadge org list
+abadge org list --json
+```
+
+### `abadge org use <id>`
+
+Sets the active organization for subsequent commands.
+
+```bash
+abadge org use org_...
+```
+
+### `abadge org members`
+
+Lists members of the active organization.
+
+```bash
+abadge org members
+```
+
+### `abadge profile create`
+
+Creates a new credential profile within the active organization.
+
+```bash
+abadge profile create --name "production"
+abadge profile create --name "staging" --storage-mode server_managed
+```
+
+| Flag | Description |
+|------|-------------|
+| `--name, -n` | Profile display name |
+| `--storage-mode` | `zero_knowledge` or `server_managed` |
+| `--json` | Print raw JSON |
+
+### `abadge profile list`
+
+Lists profiles in the active organization.
+
+```bash
+abadge profile list
+abadge profile list --json
+```
+
+### `abadge profile use <name>`
+
+Sets the active profile for subsequent item commands.
+
+```bash
+abadge profile use production
 ```
 
 ### `abadge item create`
@@ -130,8 +197,8 @@ items are sent as payloads to the control plane.
 
 ```bash
 abadge item create
-abadge item create --label "OpenAI" --kind api_key --value sk-... --storage-mode zero_knowledge
-abadge item create --label "Deploy token" --kind token --value abc --storage-mode server_managed
+abadge item create --label "OpenAI" --kind api_key --storage-mode server_managed
+abadge item create --label "Deploy SSH key" --kind ssh_key --storage-mode zero_knowledge
 ```
 
 Flags:
@@ -139,7 +206,7 @@ Flags:
 | Flag | Description |
 |------|-------------|
 | `--name`, `--label` | Item label |
-| `--kind` | Item kind |
+| `--kind` | Item kind (`opaque`, `api_key`, `login`, `token`, `ssh_key`, `certificate`, `json`) |
 | `--value` | Secret value (rejected on TTY to prevent shell history leaks; pipe from stdin instead) |
 | `--storage-mode` | `zero_knowledge` or `server_managed` |
 | `--json` | Print raw JSON |
@@ -181,19 +248,18 @@ abadge item delete <item-id> --force
 
 ### `abadge agent register`
 
-Creates a new agent and prints the one-time API key.
+Registers a new agent (does not auto-run on login). Defaults to keypair auth
+(`public_key_session`) and issues a bootstrap token for enrollment.
 
 ```bash
-abadge agent register --name "dev laptop" --kind local_cli
-abadge agent register --name "ci bot" --kind remote --description "deploy runner"
+abadge agent register --kind local_cli
+abadge agent register --name "ci bot" --kind remote
 ```
-
-Flags:
 
 | Flag | Description |
 |------|-------------|
 | `--name, -n` | Agent display name |
-| `--kind, -k` | Agent kind |
+| `--kind, -k` | `local_cli`, `local_mcp`, or `remote` |
 | `--description, -d` | Optional metadata description |
 | `--json` | Print raw JSON |
 
@@ -208,43 +274,41 @@ abadge agent list --json
 
 ### `abadge agent rotate <id>`
 
-Rotates an agent API key and prints the new one-time key.
+Rotates an agent API key (legacy API key agents only) and prints the new one-time key.
 
 ```bash
 abadge agent rotate <agent-id>
-abadge agent rotate <agent-id> --json
 ```
 
 ### `abadge agent revoke <id>`
 
-Revokes an agent.
+Revokes an agent and invalidates all active sessions.
 
 ```bash
 abadge agent revoke <agent-id>
 ```
 
-### `abadge permission create`
+### `abadge permission grant`
 
-Creates an explicit permission.
+Creates an explicit permission granting a capability to an agent for an item.
 
 ```bash
-abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
-abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
+abadge permission grant --agent <agent-id> --item <item-id> --capability reveal_plaintext
+abadge permission grant --agent <agent-id> --item <item-id> --capability mount_env
+abadge permission grant --agent <agent-id> --item <item-id> --capability mount_env --expires-at 2026-12-31T00:00:00Z
 ```
-
-Flags:
 
 | Flag | Description |
 |------|-------------|
-| `--agent-id` | Target agent |
-| `--item-id` | Target item |
-| `--capability` | Allowed capability |
+| `--agent`, `--agent-id` | Target agent |
+| `--item`, `--item-id` | Target item |
+| `--capability` | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file` |
 | `--expires-at` | Optional ISO timestamp expiry |
 | `--json` | Print raw JSON |
 
 ### `abadge permission list`
 
-Lists permissions.
+Lists permissions, optionally filtered.
 
 ```bash
 abadge permission list
@@ -255,7 +319,7 @@ abadge permission list --json
 
 ### `abadge permission revoke <id>`
 
-Revokes a permission.
+Revokes a permission immediately.
 
 ```bash
 abadge permission revoke <permission-id>
@@ -263,30 +327,52 @@ abadge permission revoke <permission-id>
 
 ### `abadge run`
 
-Resolves a secret value, injects it into a subprocess through the daemon, and exits with the child
+Resolves a secret value and injects it into a subprocess via the daemon. Exits with the child
 process exit code.
 
 ```bash
 abadge run --item <item-id> -- npm run deploy
+abadge run --item <item-id> --field password -- psql "$DB_HOST"
 abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 ```
 
-Notes:
-
-* defaults to `ABADGE_SECRET`
-* zero-knowledge items are decrypted locally through the daemon
-* server-managed items are fetched through the access router first
+| Flag | Description |
+|------|-------------|
+| `--item` | Item ID |
+| `--field` | Named field to inject (for multi-field items) |
+| `--env-var` | Environment variable name (default: `ABADGE_SECRET`) |
 
 ### `abadge mount`
 
-Resolves a secret and asks the daemon to mount it as a temporary file.
+Resolves a secret and asks the daemon to mount it as a temporary file (0600 permissions).
 
 ```bash
 abadge mount --item <item-id>
+abadge mount --item <item-id> --field private_key
 abadge mount --item <item-id> --path /tmp/my-secret.txt
 ```
 
-The daemon chooses the file path and the CLI prints it.
+The daemon chooses the file path; the CLI prints it for use in subsequent commands.
+
+### `abadge import <file>`
+
+Imports secrets from an `.env` file, creating one item per variable.
+
+```bash
+abadge import .env
+abadge import secrets.env --storage-mode server_managed
+```
+
+### `abadge export`
+
+Exports items as an `.env` file or JSON. Only works with server-managed items (zero-knowledge items
+require local decryption through the daemon).
+
+```bash
+abadge export
+abadge export --format json
+abadge export --format env > secrets.env
+```
 
 ### `abadge audit`
 
@@ -304,3 +390,4 @@ abadge audit --json
 | `--help, -h` | Show help |
 | `--version, -v` | Show version |
 | `--json` | Print machine-readable output on commands that support it |
+| `--token-stdin` | Read a bearer session token from stdin for this command |

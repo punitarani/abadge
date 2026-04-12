@@ -2,9 +2,9 @@
 
 ## Overview
 
-abadge is a credential control plane for agent access. Users own vaults and items, register
-agents, permission per-item capabilities, and inspect every access attempt through an append-only
-audit log.
+abadge is a credential control plane for agent access. Users belong to organizations, store secrets
+in encrypted profiles, register agents, grant per-item capabilities, and inspect every access
+attempt through an append-only audit log.
 
 The system keeps one synchronous control plane:
 
@@ -21,9 +21,9 @@ The system keeps one synchronous control plane:
   Query + tRPC provider
 * **CLI**: local operator tool that talks to the control plane through `@abadge/sdk`, ships as a
   compiled Unix binary, and runs the daemon through an internal `abadge daemon serve` mode
-* **SDK**: `AbadgeClient`, implemented directly on top of the shared tRPC client
-* **MCP**: local Model Context Protocol server that uses the same tRPC access path as other
-  agents
+* **SDK**: `AbadgeUserClient` (session auth) and `AbadgeAgentClient` (agent auth), implemented
+  on top of the shared tRPC client
+* **MCP**: local Model Context Protocol server that uses the same tRPC access path as other agents
 * **Daemon**: local zero-knowledge vault runtime that unlocks, encrypts, decrypts, mounts files,
   and spawns subprocesses
 * **Database**: single Postgres instance accessed through Drizzle
@@ -96,10 +96,12 @@ flowchart LR
 * server callers for tests and internal use
 * tRPC error normalization
 
-The application router is split into seven domain routers:
+The application router is split into domain routers:
 
 * `auth`
-* `vault`
+* `organizations`
+* `profiles`
+* `vault` (legacy; retained for web app compatibility)
 * `items`
 * `agents`
 * `permissions`
@@ -133,9 +135,62 @@ Procedure middleware then adds identity:
 * Effect Schema definitions
 * derived `Type` and encoded boundary types
 * constants for item kinds, capabilities, audit types, and localities
-* tagged domain errors
+* tagged domain errors with `{ code, message, hint, meta }` envelope
+* `STANDARD_FIELDS_BY_KIND` and `CAPABILITY_MATRIX`
+* `resolveFieldValue` / `expandFieldSelection` for field delivery
 
 Every public procedure declares both input and output schemas. No custom transformer is used.
+
+## Data model
+
+### Organizations
+
+Better Auth `organization` table. Every user receives a personal organization on first login.
+Agents and permissions are scoped to an org. Org deletion cascades to agents and their active
+sessions.
+
+### Profiles
+
+Org-scoped encryption boundaries. Each profile has a `storageMode` (`zero_knowledge` or
+`server_managed`) and, for zero-knowledge profiles, a `wrappedRootKey` (encrypted by the user's
+master password). Items belong to a profile.
+
+Profiles replace the old single-user `vault` concept. The legacy `vault.*` procedures are retained
+for web app compatibility but will be removed in a future release.
+
+### Items
+
+Credential items stored within a profile. Two storage modes:
+
+* `zero_knowledge` — client encrypted; server stores only ciphertext and wrapped item keys
+* `server_managed` — server encrypts with `ENCRYPTION_KEY` using AES-256-GCM
+
+Items have a `kind` that determines their standard field set (see [`docs/FIELDS.md`](./FIELDS.md)).
+Soft-deleted via `deletedAt`.
+
+### Agents
+
+Service accounts registered per organization. Auth methods:
+
+* `public_key_session` (preferred) — Ed25519 keypair with short-lived `abs_...` sessions (15-min
+  TTL, background refresh at T-2 minutes)
+* `legacy_api_key` — static `abl_`/`abg_` key, SHA-256 hash stored
+
+Revoking an agent invalidates all active sessions immediately.
+
+### Permissions
+
+Agent × item capability grants, scoped to an org. Each permission specifies one capability from:
+`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`.
+
+Permissions reference `grantedBy` (user) and support an optional `expiresAt`. Deleting an item
+marks associated permissions invalid (cascade).
+
+### Audit log
+
+Append-only with no foreign key constraints. Every access attempt (allowed or denied) is recorded
+with: `userId`, `agentId`, `itemId`, `eventType`, `result`, `deliveryMode`, `meta`, `ipAddress`,
+`occurredAt`.
 
 ## Data flow
 
@@ -159,24 +214,24 @@ Every public procedure declares both input and output schemas. No custom transfo
 
 ### Zero-knowledge flow
 
-1. browser or daemon unlocks the vault locally
+1. browser or daemon unlocks the profile locally using the master password
 2. local runtime encrypts or decrypts item payloads
 3. API stores ciphertext and wrapped item keys
 4. remote agents never receive zero-knowledge plaintext
 
-## Persistence model
+### Field delivery flow
 
-Core persisted entities:
+1. agent calls `access.reveal` or `access.mount` with optional `field` parameter
+2. `resolveFieldValue(payload, field?)` in `@abadge/core/secret-delivery` resolves the field
+3. if no field specified and item has one string field, it is returned automatically
+4. if no field specified and item has multiple string fields, `MULTI_FIELD_ITEM` is returned with
+   available fields in the hint
 
-* `vaults`
-* `items`
-* `agents`
-* `permissions`
-* `audit_log`
-* `operator_tokens` (legacy maintenance data, not part of the public v0 auth surface)
-* Better Auth tables
+## Cascade behavior
 
-Current runtime logic depends on explicit permissions and does not use a background job system.
+* Agent revoked → all active `agent_sessions` are invalidated
+* Item deleted → all permissions for that item become invalid
+* Member removed from org → agents owned by that member are revoked
 
 ## Boundaries
 

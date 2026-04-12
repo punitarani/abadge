@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This repo builds abadge: an agent credential firewall. Users store secrets in encrypted vaults, register agent principals, grant per-item capabilities, and control how agents consume secrets -- with a full audit trail and zero-knowledge encryption. Keep the codebase small, explicit, and security-first.
+This repo builds abadge: an agent credential firewall. Users belong to organizations, store secrets in encrypted profiles, register agents, grant per-item capabilities, and control how agents consume secrets -- with a full audit trail and zero-knowledge encryption. Keep the codebase small, explicit, and security-first.
 
 ## Prime directives
 
-1. Preserve the product model: users store secrets in vaults, register agent principals, grant per-item capabilities, and inspect a full audit trail.
+1. Preserve the product model: users belong to organizations, store secrets in profiles, register agents, grant per-item capabilities, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
-3. Preserve the security model: zero-knowledge vault encryption (client-side), server-managed encryption (AES-256-GCM), hashed legacy agent API keys, short-lived agent session tokens (prefix `abs_`), explicit grant checks, capability enforcement, immutable audit logging.
+3. Preserve the security model: zero-knowledge profile encryption (client-side), server-managed encryption (AES-256-GCM), hashed legacy agent API keys, short-lived agent session tokens (prefix `abs_`), explicit permission checks, capability enforcement, immutable audit logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
 5. When docs and code disagree, code wins. Then fix the docs.
 
@@ -55,7 +55,7 @@ Owns:
 
 * Hono app with REST v1 routes and tRPC catch-all (`/trpc/*`)
 * Better Auth catch-all route (`/api/auth/*`)
-* REST routes: vault, items, agents, permissions, access, audit
+* tRPC routers: auth, organizations, profiles, vault (legacy), items, agents, permissions, access, audit
 * rate limiting middleware (auth: 60/min, tRPC/v1: 100/min)
 * CORS via Better Auth trusted origins
 * health check endpoint
@@ -91,8 +91,9 @@ Owns:
 
 * shared domain types (ItemPayload, Agent, Permission, AuditEntry, Vault, etc.)
 * Effect Schema schemas (CreateItemSchema, CreateAgentSchema, CreatePermissionSchema, CiphertextAccessSchema, RevealAccessSchema, MountAccessSchema, AuditQuerySchema, VaultBootstrapSchema, etc.)
-* constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, PRINCIPAL_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, token prefixes and TTLs)
-* error shapes (BadRequestError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError, ConflictError, RateLimitError)
+* constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, PRINCIPAL_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, STANDARD_FIELDS_BY_KIND, CAPABILITY_MATRIX, token prefixes and TTLs)
+* error shapes (BadRequestError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError, ConflictError, RateLimitError, FieldNotFoundError, MultiFieldItemError) — all carry `{ code, message, hint, meta }`
+* field delivery helpers: `resolveFieldValue`, `expandFieldSelection`, `listStringFields` in `secret-delivery.ts`
 
 ### packages/crypto
 
@@ -110,11 +111,12 @@ Owns:
 
 Owns:
 
-* tRPC router: auth, vault, items, agents, permissions, access, audit
-* middleware: session procedure (user auth), agent procedure (agent auth)
+* tRPC router: auth, organizations, profiles, vault (legacy), items, agents, permissions, access, audit
+* middleware: session procedure (user auth), agent procedure (agent auth), `requireOrgRole()` RBAC middleware
 * Effect integration for resolving session/agent identity
 * server-side encryption/decryption dispatch (ZK passthrough vs server-managed AES-GCM)
-* grant/capability enforcement
+* permission/capability enforcement
+* cascade handlers: `onAgentRevoked()`, `onItemDeleted()`, `onMemberRemoved()`
 * audit log writes (append-only, every access attempt)
 * request context creation (DB, auth, env validation)
 
@@ -127,8 +129,8 @@ Does not own:
 
 Owns:
 
-* schema (vaults, items, principals, grants, auditLog, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
-* indexes (vaults: unique user\_id; items: user\_id, vault\_id; grants: unique principal+item+capability; audit\_log: user\_id, principal\_id, item\_id, occurred\_at; agent\_sessions: token\_hash, agent\_id, user\_id, expires\_at)
+* schema (vaults, profiles, items, agents, permissions, audit\_logs, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
+* indexes (profiles: unique orgId+name; items: orgId, profileId; permissions: unique agentId+itemId+capability; audit\_logs: userId, agentId, itemId, occurredAt; agentSessions: tokenHash, agentId, userId, expiresAt)
 * database client factory
 * migrations config
 
@@ -161,7 +163,7 @@ Owns:
 
 Does not own:
 
-* grant/capability checks (that's in the API/tRPC layer)
+* permission/capability checks (that's in the API/tRPC layer)
 * audit log storage (that's in the API/tRPC layer)
 * UI
 
@@ -169,24 +171,29 @@ Does not own:
 
 Owns:
 
-* command parsing and routing (login, vault, item, agent, permission, run, mount, audit, daemon)
-* user config (~/.abadge/config.json)
+* command parsing and routing (login, logout, daemon, vault, item, agent, permission, run, mount, audit, org, profile, import, export)
+* user config (~/.abadge/config.json): `apiUrl`, `activeOrgId`, `activeProfileId`
 * terminal output formatting
-* interactive login flow (device code)
+* interactive login flow (device code); login does NOT auto-register an agent
+* `--value` rejected on TTY (prevents shell history leaks; stdin pipe instead)
+* error hints rendered from `AbadgeApiError.hint`
 
 Does not own:
 
 * secret execution (delegates to daemon)
-* grant decisions (delegates to API)
+* permission decisions (delegates to API)
 
 ### packages/mcp
 
 Owns:
 
 * MCP server setup and tool registration (stdio transport)
-* tools: list\_items, request\_access, run\_with\_secret, mount\_secret, get\_audit
-* daemon client integration for local decryption
-* API client for remote access
+* tools: `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`
+* auth: keypair-backed (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`) or legacy API key (`ABADGE_AUTH_TOKEN`)
+* `run_with_secret`: in-process capture + secret redaction + 4 KB output cap
+* `mount_secret`: returns opaque `mountId` (file path never returned to model); auto-cleanup after 5 min
+* orphan cleanup on startup (removes `abadge-*` temp dirs older than 10 minutes)
+* daemon client integration for local decryption of ZK items
 
 Does not own:
 
@@ -197,10 +204,12 @@ Does not own:
 
 Owns:
 
-* TypeScript API client (@abadge/sdk, class AbadgeClient)
+* TypeScript API client (@abadge/sdk): `AbadgeUserClient` (session auth), `AbadgeAgentClient` (agent auth)
+* `AbadgeAgentClient`: keypair-backed Ed25519 session exchange with background T-2min refresh; `connect()` / `disconnect()` lifecycle; `field` parameter on `accessReveal` and `accessMount`
+* `AbadgeUserClient`: org management (`createOrganization`, `listOrganizations`, etc.), profile management (`createProfile`, `listProfiles`, etc.)
 * tRPC client wrapper for Node.js
-* typed error class (AbadgeApiError with statusCode + code)
-* public API surface covering vault, items, agents, permissions, access, audit
+* typed error class (`AbadgeApiError` with `statusCode`, `code`, `hint`, `meta`, `issues`)
+* public API surface covering organizations, profiles, vault (legacy), items, agents, permissions, access, audit
 
 Does not own:
 
@@ -212,28 +221,33 @@ Does not own:
 * No plaintext secret storage. ZK items use client-side XChaCha20-Poly1305; server\_managed items use AES-256-GCM.
 * No plaintext API key storage. Keys are SHA-256 hashed; only the prefix is stored for lookup.
 * No plaintext session token storage. Agent session tokens are hashed before storage.
-* No item access without an explicit grant (principal + item + capability).
-* No cross-user item access. Items and principals are scoped to their owning user.
+* No item access without an explicit permission (agent + item + capability).
+* No cross-org item access. Items and agents are scoped to their owning organization.
 * Every allowed and denied agent access attempt must be logged in audit\_log.
-* No wildcard grants for v1. Each grant is (principal, item, capability).
+* No wildcard permissions for v1. Each permission is (agent, item, capability).
 * No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed.
 * No raw SQL unless Drizzle cannot express the query and the reason is documented inline.
 * Audit log is append-only with no foreign key constraints.
 * The server never sees root keys or plaintext for zero\_knowledge items. KDF and unwrapping happen client-side only (browser, CLI, daemon).
 * Daemon socket must be 0600. Mounted secret files must be 0600.
 * Agent session tokens have a 15-minute default TTL. Bootstrap tokens expire in 10 minutes. Challenges expire in 60 seconds.
+* `AbadgeAgentClient` keypair-backed sessions auto-refresh at T-2 minutes before expiry; no long-lived secret is stored on disk.
+* Error envelopes use `{ code, message, hint, meta? }` — all four fields on every domain error.
+* The `field` parameter on `access.reveal` and `access.mount` is resolved by `resolveFieldValue` in `@abadge/core/secret-delivery`; never duplicated in routers.
 
 ## Data model summary
 
-* `vaults` — one per user. Stores wrappedRootKey, kdfSalt, kdfParams (Argon2id), recoveryWrappedRootKey, keyVersion. Unique index on userId.
-* `items` — secrets. Two storage modes: `zero_knowledge` (encryptedItemKey, keyNonce, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt.
-* `principals` — agents/devices. Fields: kind (device, local\_cli, local\_mcp, remote\_agent), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
-* `grants` — explicit capability grants. Composite unique index on (principalId, itemId, capability). Optional expiresAt. References grantedBy user.
-* `auditLog` — append-only. Fields: userId, principalId, itemId, eventType, result (allowed/denied/expired/revoked), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
-* `agentEnrollmentTokens` — one-time bootstrap tokens for remote public-key agents. Hashed token, expiresAt (10 min), usedAt.
+* `organization` — org-scoped isolation boundary (Better Auth table). Every user gets a personal org on first login. Agents and permissions are scoped to an org.
+* `profiles` — encryption boundaries within an org. Fields: orgId, name, storageMode (zero\_knowledge or server\_managed), wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion. One profile can hold many items.
+* `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, keyNonce, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt.
+* `agents` — service accounts scoped to an org. Fields: orgId, kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
+* `permissions` — explicit capability grants. Fields: agentId, itemId, capability (read\_ciphertext, reveal\_plaintext, mount\_env, mount\_file), expiresAt, grantedBy. Composite unique index on (agentId, itemId, capability).
+* `audit_logs` — append-only. Fields: userId, agentId, itemId, eventType, result (allowed/denied/expired/revoked/cascade), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
+* `agentEnrollmentTokens` — one-time bootstrap tokens for public-key agents. Hashed token, expiresAt (10 min), usedAt.
 * `agentSessionChallenges` — short-lived signed challenge material for session exchange. Hashed challenge, expiresAt (60s), usedAt.
 * `agentSessions` — short-lived access tokens (prefix `abs_`). Hashed token, expiresAt (15 min default), revokedAt, lastUsedAt.
-* `organization`, `member`, `invitation` — org structure (Better Auth).
+* `vaults` — legacy per-user vault records retained for web app compatibility; superseded by `profiles`.
+* `member`, `invitation` — org membership (Better Auth).
 * `user`, `session`, `account`, `verification`, `deviceCode` — auth tables (Better Auth).
 
 ## Main flows to protect
@@ -241,7 +255,7 @@ Does not own:
 ### Item create (zero\_knowledge)
 
 * validate input with Effect Schema (CreateItemSchema)
-* client derives KEK from password via Argon2id, unwraps root key
+* client derives KEK from password via Argon2id, unwraps profile root key
 * client generates random 32-byte per-item DEK
 * client encrypts payload with DEK (XChaCha20-Poly1305), wraps DEK with root key (XChaCha20-Poly1305)
 * client sends encryptedItemKey + ciphertext to API
@@ -257,9 +271,10 @@ Does not own:
 ### Agent registration
 
 * validate with Effect Schema (CreateAgentSchema)
-* default authMethod: legacy\_api\_key produces an API key (shown once, SHA-256 hash stored)
-* public\_key\_session agents may provide a publicKey at creation or enroll later via bootstrap token
-* bootstrap tokens (prefix `abe_`) issued for unenrolled remote public-key agents, 10-minute TTL
+* default authMethod: `public_key_session`
+* `public_key_session` agents must provide `publicKey` or `issueBootstrapToken: true`
+* `legacy_api_key` agents receive a one-time API key (shown once, SHA-256 hash stored)
+* bootstrap tokens (prefix `abe_`) issued for unenrolled public-key agents, 10-minute TTL
 
 ### Agent session exchange (public\_key\_session)
 
@@ -267,17 +282,18 @@ Does not own:
 * agent signs challenge with Ed25519 private key
 * API verifies signature against stored public key
 * API issues session token (prefix `abs_`, 15-minute TTL)
+* `AbadgeAgentClient` schedules background refresh at T-2 minutes before expiry
 
 ### Agent item access
 
 * authenticate bearer token: try agent session (by `abs_` prefix) first, then legacy API key hash lookup
-* resolve principal, verify enabled and not revoked
-* resolve item for same user, verify not deleted
-* check for matching grant (principalId + itemId + requested capability)
-* check grant expiration
+* resolve agent, verify enabled and not revoked
+* resolve item for same org, verify not deleted
+* check for matching permission (agentId + itemId + requested capability)
+* check permission expiration
 * for `read_ciphertext`: return encrypted blob (local agents only, ZK items only)
-* for `reveal_plaintext`: server decrypts server\_managed item, returns plaintext
-* for `mount_env` / `mount_file`: return data appropriate for local injection
+* for `reveal_plaintext`: server decrypts server\_managed item, returns field value via `resolveFieldValue`
+* for `mount_env` / `mount_file`: return data appropriate for local injection; field resolved by `resolveFieldValue`
 * append audit event for every outcome (allowed, denied, expired, revoked)
 
 ### Local daemon injection
@@ -387,7 +403,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 * **New CLI command or changed flags** -> update `docs/CLI.md`
 * **New MCP tool or changed tool behavior** -> update `docs/MCP.md`
 * **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md`
-* **Security model change** (new auth method, changed encryption, new grant type) -> update `docs/SECURITY.md`
+* **Security model change** (new auth method, changed encryption, new permission type) -> update `docs/SECURITY.md`
 * **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md`
 * **Changed invariant or working rule** -> update this file (`AGENTS.md`)
 
@@ -409,6 +425,8 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | `docs/CLI.md` | Developers using the CLI | Command reference with examples |
 | `docs/MCP.md` | AI agent integrators | MCP tool reference and security model |
 | `docs/SECURITY.md` | Security reviewers and integrators | Encryption, auth, authorization, audit, capabilities |
+| `docs/FIELDS.md` | API consumers | Field delivery model, standard fields by item kind |
+| `docs/ERRORS.md` | API consumers and SDK users | All error codes with HTTP status, description, and SDK handling |
 | `docs/DEVELOPMENT.md` | New contributors | Setup, commands, package structure, how to add features |
 | `docs/CI.md` | Maintainers | CI behavior and optional tooling (e.g. Turborepo remote cache env) |
 
