@@ -8,14 +8,14 @@ import type {
   Vault,
 } from "@abadge/core";
 import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
-import type { auditLog, grants, items, principals, profiles, vaults } from "@abadge/db/schema";
+import type { agents, auditLogs, items, permissions, profiles, vaults } from "@abadge/db/schema";
 
 type VaultRow = typeof vaults.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
 type ItemRow = typeof items.$inferSelect;
-type AgentRow = typeof principals.$inferSelect;
-type PermissionRow = typeof grants.$inferSelect;
-type AuditRow = typeof auditLog.$inferSelect;
+type AgentRow = typeof agents.$inferSelect;
+type PermissionRow = typeof permissions.$inferSelect;
+type AuditRow = typeof auditLogs.$inferSelect;
 
 export const LEGACY_AUDIT_EVENT_TYPES = [
   "principal.create",
@@ -170,11 +170,13 @@ export function serializeItemDetail(row: ItemRow): ItemDetail {
 export function serializeAgent(row: AgentRow): Agent {
   return {
     id: row.id,
-    userId: row.userId,
+    organizationId: row.organizationId,
+    createdBy: row.createdBy,
     kind: row.kind,
     locality: row.locality,
     authMethod: row.authMethod,
     name: row.name,
+    description: row.description ?? null,
     publicKeyConfigured: row.publicKey !== null,
     keyPrefix: row.secretPrefix,
     enabled: row.enabled,
@@ -188,11 +190,12 @@ export function serializeAgent(row: AgentRow): Agent {
 export function serializePermission(row: PermissionRow): Permission {
   return {
     id: row.id,
-    agentId: row.principalId,
+    organizationId: row.organizationId,
+    agentId: row.agentId,
     itemId: row.itemId,
     capability: row.capability,
     expiresAt: row.expiresAt?.toISOString() ?? null,
-    createdBy: row.grantedBy,
+    grantedBy: row.grantedBy,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -200,12 +203,17 @@ export function serializePermission(row: PermissionRow): Permission {
 export function serializeAuditEntry(row: AuditRow): AuditEntry {
   return {
     id: row.id,
+    organizationId: row.organizationId,
     userId: row.userId,
-    agentId: row.principalId,
+    agentId: row.agentId,
     itemId: row.itemId,
+    profileId: row.profileId,
+    surface: row.surface,
     eventType: normalizeAuditEventType(row.eventType),
     result: row.result as AuditEntry["result"],
     deliveryMode: row.deliveryMode,
+    field: row.field,
+    purpose: row.purpose,
     meta: row.meta,
     ipAddress: row.ipAddress,
     occurredAt: row.occurredAt.toISOString(),

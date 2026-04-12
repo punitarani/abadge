@@ -250,9 +250,8 @@ export const ItemDetailSchema = Schema.Union(
 
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
-  userId: Schema.optional(NonEmptyString),
-  organizationId: Schema.optional(NonEmptyString),
-  createdBy: Schema.optional(NonEmptyString),
+  organizationId: NonEmptyString,
+  createdBy: NonEmptyString,
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
   authMethod: PrincipalAuthMethodSchema,
@@ -334,29 +333,28 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
 
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
-  organizationId: Schema.optional(NonEmptyString),
+  organizationId: NonEmptyString,
   agentId: NonEmptyString,
   itemId: NonEmptyString,
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  createdBy: NonEmptyString,
-  grantedBy: Schema.optional(NonEmptyString),
+  grantedBy: NonEmptyString,
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
-  organizationId: Schema.optional(NonEmptyString),
+  organizationId: NonEmptyString,
   userId: NonEmptyString,
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
-  profileId: Schema.optional(Schema.NullOr(Schema.String)),
-  surface: Schema.optional(Schema.NullOr(Schema.String)),
+  profileId: Schema.NullOr(Schema.String),
+  surface: Schema.NullOr(Schema.String),
   eventType: AuditEventTypeSchema,
   result: AuditResultSchema,
-  field: Schema.optional(Schema.NullOr(Schema.String)),
-  purpose: Schema.optional(Schema.NullOr(Schema.String)),
   deliveryMode: Schema.NullOr(Schema.String),
+  field: Schema.NullOr(Schema.String),
+  purpose: Schema.NullOr(Schema.String),
   meta: JsonRecord,
   ipAddress: Schema.NullOr(Schema.String),
   occurredAt: IsoDateString,
