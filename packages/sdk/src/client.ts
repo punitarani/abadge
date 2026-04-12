@@ -117,10 +117,7 @@ interface SdkTrpcClient {
       { agentId: string; challengeId: string; signature: string },
       AgentSessionResult
     >;
-    enroll: TrpcMutation<
-      { bootstrapToken: string; publicKey: string },
-      AgentEnrollmentResult
-    >;
+    enroll: TrpcMutation<{ bootstrapToken: string; publicKey: string }, AgentEnrollmentResult>;
     issueBootstrapToken: TrpcMutation<{ agentId: string }, AgentBootstrapTokenResult>;
   };
   vault: {

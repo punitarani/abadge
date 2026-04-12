@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
-import { Command } from "commander";
 import type { AbadgeUserClient } from "@abadge/sdk";
+import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { error, errorMessage, success, warn } from "../output";
 

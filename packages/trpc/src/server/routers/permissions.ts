@@ -225,7 +225,12 @@ const revokePermission = (permissionId: string) =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(and(eq(agentRecords.id, permission.agentId), eq(agentRecords.organizationId, ctx.identity.organizationId)))
+        .where(
+          and(
+            eq(agentRecords.id, permission.agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
+        )
         .limit(1),
     );
 
