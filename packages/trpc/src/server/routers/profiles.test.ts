@@ -79,6 +79,7 @@ function makeMockSessionCtx(overrides: {
     identity: {
       kind: "session" as const,
       userId: "user-1",
+      organizationId: "org-1",
       authMethod: "browser_session" as const,
     },
   };

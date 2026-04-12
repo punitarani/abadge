@@ -185,6 +185,7 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     );
 
     yield* logSessionAudit({
+      organizationId: profile.organizationId,
       userId,
       eventType: "profile.create",
       result: "allowed",
@@ -226,6 +227,7 @@ const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePas
     );
 
     yield* logSessionAudit({
+      organizationId: profile.organizationId,
       userId,
       eventType: "profile.rotate",
       result: "allowed",
@@ -305,6 +307,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     }
 
     yield* logSessionAudit({
+      organizationId: profile.organizationId,
       userId,
       eventType: "profile.rotate",
       result: "allowed",

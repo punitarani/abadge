@@ -12,11 +12,13 @@ describe("audit display helpers", () => {
     const agents: Agent[] = [
       {
         id: "agent_123",
-        userId: "user_123",
+        organizationId: "org_123",
+        createdBy: "user_123",
         kind: "local_cli",
         locality: "local",
         authMethod: "legacy_api_key",
         name: "Deploy bot",
+        description: null,
         publicKeyConfigured: false,
         keyPrefix: "abl_123",
         enabled: true,

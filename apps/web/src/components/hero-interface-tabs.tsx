@@ -317,7 +317,7 @@ const views: SurfaceView[] = [
         <span className="flex flex-col">
           <span>Human sessions manage control-plane calls.</span>
           <span>Local and remote agents use short-lived abs_ sessions.</span>
-          <span>The same AbadgeClient class supports both personas.</span>
+          <span>Agents use short-lived abs_ sessions with Ed25519 keypair auth.</span>
         </span>
       </Footnote>
     ),
@@ -343,13 +343,13 @@ const views: SurfaceView[] = [
           <>
             <ShellLine>
               <span className="text-[#111827]">import </span>
-              <span>{`{ AbadgeClient }`}</span>
+              <span>{`{ AbadgeAgentClient }`}</span>
               <span> from </span>
               <span className="text-[#4f7df7]">"@abadge/sdk"</span>
               <span>;</span>
             </ShellLine>
             <ShellLine>
-              <span className="text-[#111827]">const client = new AbadgeClient</span>
+              <span className="text-[#111827]">const agent = new AbadgeAgentClient</span>
               <span>{`({`}</span>
             </ShellLine>
             <ShellLine indent={1}>
@@ -357,10 +357,24 @@ const views: SurfaceView[] = [
               <span className="text-[#4f7df7]">"https://api.abadge.io"</span>
               <span>{`,`}</span>
             </ShellLine>
-            <ShellLine indent={1}>{`token: agentSessionToken,`}</ShellLine>
+            <ShellLine indent={1}>
+              <span>{`agentId: `}</span>
+              <span className="text-[#4f7df7]">"agent_..."</span>
+              <span>{`,`}</span>
+            </ShellLine>
+            <ShellLine indent={1}>
+              <span>{`privateKey: `}</span>
+              <span className="text-[#4f7df7]">ed25519PrivateKey</span>
+              <span>{`,`}</span>
+            </ShellLine>
             <ShellLine>{`});`}</ShellLine>
             <ShellLine>
-              <span className="text-[#111827]">const mount = await client.</span>
+              <span className="text-[#111827]">await agent.</span>
+              <span className="text-[#4f7df7]">connect</span>
+              <span>{`();`}</span>
+            </ShellLine>
+            <ShellLine>
+              <span className="text-[#111827]">const mount = await agent.</span>
               <span className="text-[#4f7df7]">accessMount</span>
               <span>{`(`}</span>
             </ShellLine>
@@ -370,7 +384,7 @@ const views: SurfaceView[] = [
             </ShellLine>
             <ShellLine>{`);`}</ShellLine>
             <ShellLine tone="muted">
-              returns zero-knowledge blobs for local injection flows
+              keypair session auto-refreshes; returns blobs for local injection
             </ShellLine>
           </>
         ),

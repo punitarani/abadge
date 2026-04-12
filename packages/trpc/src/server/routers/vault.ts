@@ -52,6 +52,7 @@ const bootstrapVault = (input: VaultBootstrapInput) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId,
       eventType: "profile.create",
       result: "allowed",
@@ -111,6 +112,7 @@ const changePassword = (input: ChangePasswordInput) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId,
       eventType: "profile.rotate",
       result: "allowed",
@@ -198,6 +200,7 @@ const rotateKey = (input: RotateKeyInput) =>
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId,
       eventType: "profile.rotate",
       result: "allowed",

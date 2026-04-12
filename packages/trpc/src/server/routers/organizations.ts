@@ -139,6 +139,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     );
 
     yield* logSessionAudit({
+      organizationId: orgId,
       userId,
       eventType: "profile.create",
       result: "allowed",

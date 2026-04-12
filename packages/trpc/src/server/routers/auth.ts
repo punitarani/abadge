@@ -27,7 +27,7 @@ import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/s
 import { and, eq, isNull } from "@abadge/db";
 import {
   agentEnrollmentTokens,
-  principals as agentRecords,
+  agents as agentRecords,
   agentSessionChallenges,
   agentSessions,
 } from "@abadge/db/schema";
@@ -52,8 +52,10 @@ import { serializeAgent } from "../serialize";
 type OwnedAgentRow = Pick<
   typeof agentRecords.$inferSelect,
   | "id"
-  | "userId"
+  | "organizationId"
+  | "createdBy"
   | "name"
+  | "description"
   | "kind"
   | "locality"
   | "authMethod"
@@ -148,7 +150,8 @@ const rejectSessionExchange = (
   Effect.gen(function* () {
     const ctx = yield* BaseRequestContextTag;
     yield* logBaseAudit({
-      userId: agent.userId,
+      organizationId: agent.organizationId,
+      userId: agent.createdBy,
       agentId: agent.id,
       eventType: "agent.session_reject",
       result,
@@ -203,7 +206,7 @@ const loadOwnedAgent = (agentId: string) =>
       ctx.db
         .select()
         .from(agentRecords)
-        .where(and(eq(agentRecords.id, agentId), eq(agentRecords.userId, ctx.identity.userId)))
+        .where(and(eq(agentRecords.id, agentId), eq(agentRecords.createdBy, ctx.identity.userId)))
         .limit(1),
     )) as Array<OwnedAgentRow>;
 
@@ -217,6 +220,7 @@ const loadOwnedAgent = (agentId: string) =>
 const recordLogin = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   yield* logSessionAudit({
+    organizationId: ctx.identity.organizationId,
     userId: ctx.identity.userId,
     eventType: "auth.login",
     result: "allowed",
@@ -234,6 +238,7 @@ const recordLogout = Effect.gen(function* () {
   );
 
   yield* logSessionAudit({
+    organizationId: ctx.identity.organizationId,
     userId: ctx.identity.userId,
     eventType: "auth.logout",
     result: "allowed",
@@ -296,7 +301,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
       ctx.db.insert(agentEnrollmentTokens).values({
         id: crypto.randomUUID(),
         agentId: agent.id,
-        userId: agent.userId,
+        userId: agent.createdBy,
         createdBy: ctx.identity.userId,
         tokenHash,
         expiresAt,
@@ -304,6 +309,7 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
     );
 
     yield* logSessionAudit({
+      organizationId: agent.organizationId,
       userId: ctx.identity.userId,
       agentId: agent.id,
       eventType: "agent.bootstrap_issue",
@@ -358,7 +364,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         .select()
         .from(agentRecords)
         .where(
-          and(eq(agentRecords.id, bootstrap.agentId), eq(agentRecords.userId, bootstrap.userId)),
+          and(eq(agentRecords.id, bootstrap.agentId), eq(agentRecords.createdBy, bootstrap.userId)),
         )
         .limit(1),
     )) as Array<OwnedAgentRow>;
@@ -397,7 +403,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
           .where(
             and(
               eq(agentRecords.id, agent.id),
-              eq(agentRecords.userId, agent.userId),
+              eq(agentRecords.createdBy, agent.createdBy),
               eq(agentRecords.enabled, true),
               isNull(agentRecords.revokedAt),
               isNull(agentRecords.publicKey),
@@ -428,7 +434,8 @@ const enrollAgent = (input: EnrollAgentInput) =>
     }
 
     yield* logBaseAudit({
-      userId: agent.userId,
+      organizationId: agent.organizationId,
+      userId: agent.createdBy,
       agentId: agent.id,
       eventType: "agent.enroll",
       result: "allowed",
@@ -456,7 +463,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .where(
           and(
             eq(agentRecords.id, input.agentId),
-            eq(agentRecords.userId, ctx.identity.userId),
+            eq(agentRecords.createdBy, ctx.identity.userId),
             eq(agentRecords.enabled, true),
             isNull(agentRecords.revokedAt),
           ),
@@ -530,7 +537,8 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
 
     if (!challengeRecord) {
       yield* logBaseAudit({
-        userId: agent.userId,
+        organizationId: agent.organizationId,
+        userId: agent.createdBy,
         agentId: agent.id,
         eventType: "agent.session_reject",
         result: "denied",
@@ -548,7 +556,8 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
 
     if (challengeRecord.expiresAt <= new Date()) {
       yield* logBaseAudit({
-        userId: agent.userId,
+        organizationId: agent.organizationId,
+        userId: agent.createdBy,
         agentId: agent.id,
         eventType: "agent.session_reject",
         result: "expired",
@@ -569,7 +578,8 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     );
     if (!validSignature) {
       yield* logBaseAudit({
-        userId: agent.userId,
+        organizationId: agent.organizationId,
+        userId: agent.createdBy,
         agentId: agent.id,
         eventType: "agent.session_reject",
         result: "denied",
@@ -611,7 +621,7 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
         await tx.insert(agentSessions).values({
           id: crypto.randomUUID(),
           agentId: agent.id,
-          userId: agent.userId,
+          userId: agent.createdBy,
           tokenHash,
           expiresAt,
         });
@@ -622,7 +632,8 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
 
     if (!claimedChallenge) {
       yield* logBaseAudit({
-        userId: agent.userId,
+        organizationId: agent.organizationId,
+        userId: agent.createdBy,
         agentId: agent.id,
         eventType: "agent.session_reject",
         result: "denied",
@@ -639,7 +650,8 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     }
 
     yield* logBaseAudit({
-      userId: agent.userId,
+      organizationId: agent.organizationId,
+      userId: agent.createdBy,
       agentId: agent.id,
       eventType: "agent.session_issue",
       result: "allowed",
@@ -689,6 +701,7 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: sessionRecord.userId,
       agentId: sessionRecord.agentId,
       eventType: "agent.session_revoke",
