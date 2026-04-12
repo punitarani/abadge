@@ -17,7 +17,7 @@ import type {
   SuccessResult,
   UpdateItemInput,
 } from "@abadge/sdk";
-import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
+import { AbadgeAgentClient, AbadgeApiError, AbadgeUserClient } from "@abadge/sdk";
 import { createNodeTrpcClient } from "@abadge/trpc/client";
 import type { CliConfig, PrincipalConfig, SessionConfig } from "./config";
 import { loadConfig } from "./config";
@@ -274,6 +274,15 @@ export async function createSessionApiClient(
   options: { tokenStdin?: boolean } = {},
 ): Promise<SessionApiClient> {
   return new SessionApiClient(await resolveSessionConfig(options));
+}
+
+export async function createUserApiClient(
+  options: { tokenStdin?: boolean } = {},
+): Promise<AbadgeUserClient> {
+  const config = await resolveSessionConfig(options);
+  const authHeader = config.sessionHeaders?.Authorization ?? "";
+  const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+  return new AbadgeUserClient({ apiUrl: config.apiUrl, sessionToken });
 }
 
 export async function requestDeviceCode(apiUrl: string): Promise<DeviceCodeResult> {

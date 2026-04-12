@@ -24,9 +24,7 @@ describe("profilesRouter public surface", () => {
 // ---------------------------------------------------------------------------
 
 import { ConflictError, ForbiddenError } from "@abadge/core";
-import { Effect } from "effect";
 import type { SessionRequestContext } from "../context";
-import { SessionRequestContextTag } from "../effect";
 
 function makeMockSessionCtx(overrides: {
   selectProfile?: Record<string, unknown> | null;
@@ -57,7 +55,7 @@ function makeMockSessionCtx(overrides: {
   const chains = [memberChain, profileChain, memberChain, itemChain];
 
   const db: Record<string, unknown> = {
-    select: (...args: unknown[]) => {
+    select: () => {
       const chain = chains[callIdx] ?? itemChain;
       callIdx++;
       return chain;
@@ -89,7 +87,7 @@ function makeMockSessionCtx(overrides: {
 describe("profiles delete rejects when profile has active items", () => {
   test("ConflictError with PROFILE_NOT_EMPTY when items exist", async () => {
     // Simulate: profile exists, caller is owner, but items exist
-    const ctx = makeMockSessionCtx({
+    const _ctx = makeMockSessionCtx({
       selectProfile: {
         id: "profile-1",
         organizationId: "org-1",
@@ -108,9 +106,6 @@ describe("profiles delete rejects when profile has active items", () => {
       memberRole: "owner",
     });
 
-    // We run just the Effect logic to test it.
-    // Since this requires proper Effect context, we test through Effect directly.
-    const { profiles: profilesModule } = await import("@abadge/db/schema");
     // Simplest test: check error code exists in the error class hierarchy
     const err = new ConflictError({
       code: "PROFILE_NOT_EMPTY",

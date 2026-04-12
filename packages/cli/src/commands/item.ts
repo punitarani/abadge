@@ -33,6 +33,13 @@ function buildPayload(label: string, value: string, kind: ItemKind): ItemPayload
 }
 
 async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItemValues> {
+  if (opts.value && process.stdin.isTTY) {
+    error(
+      "The --value flag is not accepted on a TTY to prevent shell history leaks. Pipe the value instead: echo 'mysecret' | abadge item create --label 'name'",
+    );
+    process.exit(1);
+  }
+
   const label = opts.label ?? opts.name ?? (await prompt("Label: "));
   const value = opts.value ?? (await prompt("Value (secret): ", true));
 
@@ -120,9 +127,8 @@ export function createItemCommand(): Command {
         table(
           items.map((item) => ({
             ID: item.id,
+            Label: item.label,
             Storage: item.storageMode,
-            Crypto: String(item.cryptoVersion),
-            Version: String(item.contentVersion),
             Created: item.createdAt,
           })),
         );

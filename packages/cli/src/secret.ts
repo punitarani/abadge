@@ -1,5 +1,4 @@
 import { resolveFieldValue } from "@abadge/core";
-import { AbadgeApiError } from "@abadge/sdk";
 import type { ApiClient } from "./client";
 import { daemonDecrypt } from "./daemon";
 
@@ -47,18 +46,5 @@ export async function resolveSecretValue(
   mountType: "env" | "file",
   field?: string,
 ): Promise<string> {
-  try {
-    const item = (await client.getItem(itemId)).item;
-    if (item.storageMode === "zero_knowledge") {
-      return decryptMountedPayload(item.encryptedItemKey, item.ciphertext, field);
-    }
-
-    return resolveMountedSecret(client, itemId, mountType, field);
-  } catch (error) {
-    if (!(error instanceof AbadgeApiError) || error.code !== "UNAUTHORIZED") {
-      throw error;
-    }
-
-    return resolveMountedSecret(client, itemId, mountType, field);
-  }
+  return resolveMountedSecret(client, itemId, mountType, field);
 }

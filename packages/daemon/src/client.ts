@@ -159,4 +159,37 @@ export class DaemonClient {
   async execCleanup(path: string): Promise<{ ok: boolean }> {
     return (await this.send("exec.cleanup", { path })) as { ok: boolean };
   }
+
+  /**
+   * Spawn a subprocess with all item fields injected as environment variables.
+   * Decrypts the item if encryptedItemKey+ciphertext are provided, or uses
+   * serverPayload directly if the caller already has the decrypted payload.
+   */
+  async expandEnv(
+    encryptedItemKey: string | null,
+    ciphertext: string | null,
+    serverPayload: unknown,
+    command: string,
+    args?: string[],
+  ): Promise<EnvExecResult> {
+    return (await this.send("exec.expandEnv", {
+      encryptedItemKey: encryptedItemKey ?? undefined,
+      ciphertext: ciphertext ?? undefined,
+      serverPayload,
+      command,
+      args,
+    })) as EnvExecResult;
+  }
+}
+
+/** Convenience wrapper: create a default-socket client and call exec.expandEnv. */
+export async function daemonExpandEnv(
+  encryptedItemKey: string | null,
+  ciphertext: string | null,
+  serverPayload: unknown,
+  command: string,
+  args: string[],
+): Promise<{ exitCode: number }> {
+  const client = new DaemonClient();
+  return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args);
 }

@@ -3,10 +3,14 @@ import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
 import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand } from "./commands/daemon";
+import { createExportCommand } from "./commands/export-cmd";
+import { createImportCommand } from "./commands/import-cmd";
 import { createItemCommand } from "./commands/item";
 import { createLoginCommand, createLogoutCommand } from "./commands/login";
 import { createMountCommand } from "./commands/mount";
+import { createOrgCommand } from "./commands/org";
 import { createPermissionCommand } from "./commands/permission";
+import { createProfileCommand } from "./commands/profile";
 import { createRunCommand } from "./commands/run";
 import { createVaultCommand } from "./commands/vault";
 
@@ -26,6 +30,10 @@ program.addCommand(createPermissionCommand());
 program.addCommand(createRunCommand());
 program.addCommand(createMountCommand());
 program.addCommand(createAuditCommand());
+program.addCommand(createOrgCommand());
+program.addCommand(createProfileCommand());
+program.addCommand(createImportCommand());
+program.addCommand(createExportCommand());
 
 export { program };
 

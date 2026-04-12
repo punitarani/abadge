@@ -10,7 +10,7 @@ import { resolveSecret } from "../resolve-secret.js";
 export const toolName = "mount_secret";
 
 export const toolDescription =
-  "Mount a secret as a temporary file with restricted permissions (0600). Returns only the file path — never the secret content. Auto-cleans after 5 minutes, or call release_mount to clean up early.";
+  "Mount a secret as a temp file with 0600 permissions. Returns an opaque mountId — the file path is never returned to the model. Clean up with release_mount(mountId) or wait for auto-cleanup after 5 minutes.";
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to mount"),
@@ -19,10 +19,10 @@ export const toolInputSchema = z.object({
   purpose: z.string().optional().describe("Why this credential is needed"),
 });
 
-/** Active mounts keyed by file path, storing dir and cleanup timer. */
+/** Active mounts keyed by opaque mountId. */
 export const activeMounts = new Map<
   string,
-  { dir: string; timer: ReturnType<typeof setTimeout> }
+  { filePath: string; dir: string; timer: ReturnType<typeof setTimeout> }
 >();
 
 async function cleanupMount(filePath: string, dir: string): Promise<void> {
@@ -30,12 +30,12 @@ async function cleanupMount(filePath: string, dir: string): Promise<void> {
   await rmdir(dir).catch(() => {});
 }
 
-export function releaseMount(filePath: string): boolean {
-  const entry = activeMounts.get(filePath);
+export function releaseMount(mountId: string): boolean {
+  const entry = activeMounts.get(mountId);
   if (!entry) return false;
   clearTimeout(entry.timer);
-  activeMounts.delete(filePath);
-  void cleanupMount(filePath, entry.dir);
+  activeMounts.delete(mountId);
+  void cleanupMount(entry.filePath, entry.dir);
   return true;
 }
 
@@ -58,20 +58,16 @@ export async function handler(
 
   await writeFile(filePath, secret, { mode: 0o600 });
 
+  const mountId = randomBytes(16).toString("hex");
   const timer = setTimeout(
     () => {
-      activeMounts.delete(filePath);
+      activeMounts.delete(mountId);
       void cleanupMount(filePath, dir);
     },
     5 * 60 * 1000,
   );
 
-  activeMounts.set(filePath, { dir, timer });
+  activeMounts.set(mountId, { filePath, dir, timer });
 
-  return JSON.stringify({
-    path: filePath,
-    permissions: "0600",
-    message:
-      "Secret mounted. File will be auto-cleaned after 5 minutes. Use release_mount to clean up early.",
-  });
+  return JSON.stringify({ mountId, permissions: "0600", expiresIn: "5 minutes" });
 }

@@ -1,8 +1,5 @@
-import { hostname } from "node:os";
-import { AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
 import {
-  ApiClient,
   DeviceAuthorizationError,
   exchangeDeviceToken,
   getBearerSession,
@@ -15,27 +12,6 @@ import { daemonClearAuthSession, daemonSetAuthSession } from "../daemon";
 import { error, errorMessage, json, success, warn } from "../output";
 import { prompt } from "../prompt";
 import { ensureDaemonStarted } from "./daemon";
-
-interface AgentRecord {
-  id: string;
-  userId: string;
-  kind: string;
-  locality: string;
-  name: string;
-  enabled: boolean;
-  revokedAt: string | null;
-}
-
-interface AgentRegistration {
-  agent: AgentRecord;
-  apiKey: string;
-}
-
-type LocalCliAgentResult = {
-  agentId: string;
-  apiKey: string;
-  action: "reused" | "rotated" | "created";
-};
 
 interface LoginOptions {
   apiUrl?: string;
@@ -80,143 +56,12 @@ async function openBrowser(url: string): Promise<boolean> {
   }
 }
 
-function isNotFoundError(error: unknown): error is AbadgeApiError {
-  return error instanceof AbadgeApiError && error.statusCode === 404;
-}
-
-function isUnauthorizedError(error: unknown): error is AbadgeApiError {
-  return error instanceof AbadgeApiError && error.statusCode === 401;
-}
-
-function isReusableLocalCliAgent(agent: AgentRecord, sessionUserId: string): boolean {
-  return (
-    agent.userId === sessionUserId &&
-    agent.kind === "local_cli" &&
-    agent.locality === "local" &&
-    agent.enabled &&
-    agent.revokedAt == null
-  );
-}
-
-async function getExistingLocalCliAgent(
-  client: SessionApiClient,
-  existingAgentId: string | undefined,
-  sessionUserId: string,
-): Promise<AgentRecord | null> {
-  if (!existingAgentId) {
-    return null;
-  }
-
-  try {
-    const agent = (await client.getAgent(existingAgentId)).agent as AgentRecord;
-    return isReusableLocalCliAgent(agent, sessionUserId) ? agent : null;
-  } catch (err) {
-    if (isNotFoundError(err)) {
-      return null;
-    }
-    throw err;
-  }
-}
-
-async function reuseExistingAgentKey(
-  apiUrl: string,
-  sessionUserId: string,
-  existingAgentKey: string | undefined,
-): Promise<LocalCliAgentResult | null> {
-  if (!existingAgentKey) {
-    return null;
-  }
-
-  try {
-    const currentAgent = (
-      await new ApiClient({
-        apiUrl,
-        principalSecret: existingAgentKey,
-      }).getCurrentAgent()
-    ).agent as AgentRecord;
-
-    if (!isReusableLocalCliAgent(currentAgent, sessionUserId)) {
-      return null;
-    }
-
-    return {
-      agentId: currentAgent.id,
-      apiKey: existingAgentKey,
-      action: "reused",
-    };
-  } catch (err) {
-    if (isUnauthorizedError(err)) {
-      return null;
-    }
-    throw err;
-  }
-}
-
-async function rotateExistingAgent(
-  client: SessionApiClient,
-  agentId: string,
-): Promise<LocalCliAgentResult | null> {
-  try {
-    const rotated = await client.rotateAgent(agentId);
-    return {
-      agentId,
-      apiKey: rotated.apiKey,
-      action: "rotated",
-    };
-  } catch (err) {
-    if (isNotFoundError(err)) {
-      return null;
-    }
-    throw err;
-  }
-}
-
-async function createLocalCliAgent(client: SessionApiClient): Promise<LocalCliAgentResult> {
-  const deviceName = hostname().trim() || "local-machine";
-  const result = (await client.createAgent({
-    kind: "local_cli",
-    name: `cli-${deviceName}`,
-    metadata: {
-      hostname: deviceName,
-      platform: process.platform,
-    },
-  })) as AgentRegistration;
-
-  return { agentId: result.agent.id, apiKey: result.apiKey, action: "created" };
-}
-
-async function ensureLocalCliAgent(
-  apiUrl: string,
-  sessionUserId: string,
-  client: SessionApiClient,
-  existingAgentId?: string,
-  existingAgentKey?: string,
-): Promise<LocalCliAgentResult> {
-  const existingAgent = await getExistingLocalCliAgent(client, existingAgentId, sessionUserId);
-  if (!existingAgent) {
-    return createLocalCliAgent(client);
-  }
-
-  const reusedAgent = await reuseExistingAgentKey(apiUrl, sessionUserId, existingAgentKey);
-  if (reusedAgent) {
-    return reusedAgent;
-  }
-
-  const rotatedAgent = await rotateExistingAgent(client, existingAgent.id);
-  if (rotatedAgent) {
-    return rotatedAgent;
-  }
-
-  return createLocalCliAgent(client);
-}
-
 async function completeDeviceLogin(
   apiUrl: string,
   accessToken: string,
   expiresAt: string,
   printToken: boolean,
-): Promise<{ userId: string; agent: LocalCliAgentResult | null }> {
-  const existing = loadConfig();
+): Promise<{ userId: string }> {
   const sessionClient = new SessionApiClient({
     apiUrl,
     sessionHeaders: { Authorization: `Bearer ${accessToken}` },
@@ -228,14 +73,6 @@ async function completeDeviceLogin(
     throw new Error("Authenticated successfully but could not determine the session user.");
   }
 
-  saveConfig({
-    apiUrl,
-    operatorUserId: userId,
-    principalId: existing?.principalId,
-    principalSecret: existing?.principalSecret,
-  });
-
-  let agent: LocalCliAgentResult | null = null;
   if (!printToken) {
     await ensureDaemonStarted();
     await daemonSetAuthSession({
@@ -243,24 +80,10 @@ async function completeDeviceLogin(
       token: accessToken,
       expiresAt,
     });
-
-    agent = await ensureLocalCliAgent(
-      apiUrl,
-      userId,
-      sessionClient,
-      existing?.principalId,
-      existing?.principalSecret,
-    );
   }
 
-  saveConfig({
-    apiUrl,
-    operatorUserId: userId,
-    principalId: agent?.agentId ?? existing?.principalId,
-    principalSecret: agent?.apiKey ?? existing?.principalSecret,
-  });
-
-  return { userId, agent };
+  saveConfig({ apiUrl });
+  return { userId };
 }
 
 function getNextPollInterval(err: unknown, interval: number): number {
@@ -328,7 +151,6 @@ async function startDeviceLogin(opts: LoginOptions): Promise<void> {
 
   if (!opts.noOpenBrowser) {
     await prompt("Press Enter to open a browser...");
-    // Open the base verification URL — user types the code on the web page
     const opened = await openBrowser(device.verificationUri);
     if (!opened) {
       warn("Could not open a browser. Navigate to the URL above.");
@@ -342,14 +164,10 @@ async function startDeviceLogin(opts: LoginOptions): Promise<void> {
     device.intervalSeconds,
     device.expiresAt,
   );
-  const completed = await completeDeviceLogin(apiUrl, result.accessToken, result.expiresAt, false);
+  await completeDeviceLogin(apiUrl, result.accessToken, result.expiresAt, false);
 
-  success("Logged in successfully.");
-  if (completed.agent?.action === "created") {
-    success(`Registered local CLI agent ${completed.agent.agentId}.`);
-  } else if (completed.agent?.action === "rotated") {
-    success(`Refreshed local CLI agent ${completed.agent.agentId}.`);
-  }
+  success("Logged in.");
+  success("Run `abadge agent register --kind local_cli` to register a local agent.");
 }
 
 async function pollDeviceLogin(opts: PollOptions): Promise<void> {
@@ -374,13 +192,11 @@ async function pollDeviceLogin(opts: PollOptions): Promise<void> {
       expires_at: result.expiresAt,
       token_loaded_in_daemon: !opts.printToken,
       access_token: opts.printToken ? result.accessToken : undefined,
-      agent_id: completed.agent?.agentId ?? null,
-      agent_action: completed.agent?.action ?? null,
     });
     return;
   }
 
-  success("Logged in successfully.");
+  success("Logged in.");
   if (opts.printToken) {
     warn("Save this short-lived session token securely. It will not be shown again:");
     console.log(`  ${result.accessToken}`);

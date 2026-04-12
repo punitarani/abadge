@@ -1,6 +1,15 @@
-import { chmodSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandFieldSelection, resolveFieldValue } from "@abadge/core";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { defaultPidPath, defaultSocketPath } from "./paths";
@@ -90,10 +99,40 @@ function resolveAuthExpiry(expiresAt: unknown): string {
   return new Date(Math.min(requested, capped)).toISOString();
 }
 
+/**
+ * Clean up orphaned abadge-* temp directories left behind by crashed sessions.
+ * Any entry older than 10 minutes is removed.
+ */
+async function cleanupOrphanedMounts(): Promise<void> {
+  const tmp = tmpdir();
+  try {
+    const entries = readdirSync(tmp);
+    for (const entry of entries) {
+      if (!entry.startsWith("abadge-")) continue;
+      const fullPath = join(tmp, entry);
+      try {
+        const stat = statSync(fullPath);
+        const ageMs = Date.now() - stat.mtimeMs;
+        if (ageMs > 10 * 60 * 1000) {
+          rmSync(fullPath, { recursive: true, force: true });
+        }
+      } catch {
+        // file already gone
+      }
+    }
+  } catch {
+    // tmpdir not accessible
+  }
+}
+
 function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
   let auth: DaemonAuthState | null = null;
 
   return {
+    // The daemon does NOT auto-refresh sessions. The CLI is responsible for
+    // refreshing the session token and calling auth.setSession with the new
+    // token before the stored one expires. The daemon only tracks whether the
+    // stored session is expired and surfaces AUTH_REQUIRED errors accordingly.
     "auth.setSession": async (params): Promise<DaemonAuthStatus> => {
       const token = params.token as string | undefined;
       const type = normalizeAuthType(params.type);
@@ -198,6 +237,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "item.decrypt": async (params) => {
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
+      const field = params.field as string | undefined;
       if (!encryptedItemKey || !ciphertext) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
@@ -206,6 +246,11 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
       requireUnlocked(vault);
       const payload = vault.decrypt(encryptedItemKey, ciphertext);
+      if (field !== undefined) {
+        // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+        const resolved = resolveFieldValue(payload as any, field);
+        return { payload: resolved };
+      }
       return { payload };
     },
 
@@ -237,6 +282,52 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       const proc = Bun.spawn([command, ...args], {
         // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
         env: { ...process.env, [envVar]: secretValue },
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "inherit",
+      });
+      const exitCode = await proc.exited;
+      return { exitCode, signal: proc.signalCode ?? undefined };
+    },
+
+    "exec.expandEnv": async (params): Promise<EnvExecResult> => {
+      const encryptedItemKey = params.encryptedItemKey as string | undefined;
+      const ciphertext = params.ciphertext as string | undefined;
+      const serverPayload = params.serverPayload;
+      const command = params.command as string | undefined;
+      const args = (params.args as string[]) ?? [];
+      if (!command) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "command is required" };
+      }
+
+      let payload: unknown;
+      if (encryptedItemKey && ciphertext) {
+        requireUnlocked(vault);
+        payload = vault.decrypt(encryptedItemKey, ciphertext);
+      } else if (serverPayload !== undefined) {
+        payload = serverPayload;
+      } else {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "Either encryptedItemKey+ciphertext or serverPayload is required",
+        };
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+      const fields = expandFieldSelection(payload as any);
+      // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+      const payloadFields = (payload as any)?.fields ?? {};
+      const extraEnv: Record<string, string> = {};
+      for (const fieldName of fields) {
+        const value = payloadFields[fieldName];
+        if (typeof value === "string") {
+          extraEnv[fieldName] = value;
+        }
+      }
+
+      const proc = Bun.spawn([command, ...args], {
+        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
+        env: { ...process.env, ...extraEnv },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -345,6 +436,9 @@ export function startServer(config: DaemonConfig): DaemonServer {
   vault.setAutoLockCallback(() => {
     console.log("[vaultd] Auto-locked after inactivity");
   });
+
+  // Clean up temp files left behind by previous crashed sessions
+  void cleanupOrphanedMounts();
 
   mkdirSync(dirname(config.socketPath), { recursive: true });
 
