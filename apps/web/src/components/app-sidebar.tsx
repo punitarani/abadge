@@ -1,10 +1,18 @@
 "use client";
 
-import { Bot, KeyRound, LifeBuoy, ScrollText, Send, Settings, ShieldCheck } from "lucide-react";
+import {
+  Bot,
+  Columns3,
+  KeyRound,
+  LayoutDashboard,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { NavSecondary } from "@/components/nav-secondary";
+import { useParams, usePathname } from "next/navigation";
+import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
@@ -12,50 +20,27 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-const navSections = [
-  {
-    label: "Vault",
-    items: [{ href: "/items", label: "Items", icon: KeyRound }],
-  },
-  {
-    label: "Access",
-    items: [
-      { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/permissions", label: "Permissions", icon: ShieldCheck },
-    ],
-  },
-  {
-    label: "Observability",
-    items: [{ href: "/audit", label: "Audit log", icon: ScrollText }],
-  },
-  {
-    label: "Account",
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
-  },
-];
-
-const secondaryItems = [
-  {
-    title: "Support",
-    url: "mailto:support@abadge.io",
-    icon: LifeBuoy,
-  },
-  {
-    title: "Feedback",
-    url: "https://abadge.userjot.com/",
-    icon: Send,
-  },
+const navItems = [
+  { path: "overview", label: "Overview", icon: LayoutDashboard },
+  { path: "profiles", label: "Profiles", icon: Columns3 },
+  { path: "items", label: "Items", icon: KeyRound },
+  { path: "agents", label: "Agents", icon: Bot },
+  { path: "permissions", label: "Permissions", icon: ShieldCheck },
+  { path: "audit", label: "Audit log", icon: ScrollText },
+  { path: "settings", label: "Settings", icon: Settings },
 ];
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
+  const params = useParams<{ org: string }>();
+  const orgSlug = params.org ?? "";
 
   return (
     <Sidebar collapsible="none" className="h-svh!" {...props}>
@@ -63,7 +48,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href="/items">
+              <Link href={`/${orgSlug}/overview`}>
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                   <Image src="/abadge-icon-white.svg" alt="abadge" width={16} height={16} />
                 </div>
@@ -75,28 +60,30 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <SidebarSeparator />
+        <OrgSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        {navSections.map((section) => (
-          <SidebarGroup key={section.label}>
-            <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {section.items.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={pathname.startsWith(item.href)}>
-                      <Link href={item.href}>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.map((item) => {
+                const href = `/${orgSlug}/${item.path}`;
+                const isActive = pathname.startsWith(href);
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={href}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-        <NavSecondary items={secondaryItems} className="mt-auto" />
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser />

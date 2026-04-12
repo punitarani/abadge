@@ -1,58 +1,60 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Script from "next/script";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { VaultProvider } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
-// biome-ignore lint/style/noRestrictedGlobals: Next.js replaces NEXT_PUBLIC_ at build time
-const USERJOT_PROJECT_ID = process.env.NEXT_PUBLIC_USERJOT_PROJECT_ID;
-
-declare global {
-  interface Window {
-    uj: {
-      init: (projectId: string, options: Record<string, unknown>) => void;
-      identify: (user: Record<string, string | undefined>) => void;
-    };
-    $ujq: unknown[];
-  }
-}
-
-function DashboardShell({ children }: { children: React.ReactNode }): React.ReactElement {
-  return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <div className="px-8 py-6">{children}</div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
-}
-
-function AuthenticatedDashboard({ children }: { children: React.ReactNode }): React.ReactElement {
+/**
+ * Legacy dashboard layout. Redirects to org-scoped routes or onboarding.
+ * Kept so that old routes like /items still work temporarily.
+ * Renders the dashboard shell while determining the redirect target,
+ * then navigates once hydration and auth are settled.
+ */
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const activeOrgSlug = useOrgStore((s) => s.activeOrgSlug);
+  const [hydrated, setHydrated] = useState(false);
 
+  // Wait for Zustand persist rehydration from localStorage
   useEffect(() => {
-    if (!isPending && !session) {
+    // If already rehydrated (synchronous), set immediately
+    if (useOrgStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    const unsub = useOrgStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+    return unsub;
+  }, []);
+
+  // Redirect once we know auth + org state
+  useEffect(() => {
+    if (sessionPending || !hydrated) return;
+
+    if (!session) {
       router.push("/login");
+      return;
     }
-  }, [isPending, session, router]);
 
-  useEffect(() => {
-    if (USERJOT_PROJECT_ID && session?.user) {
-      window.uj.identify({
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-      });
+    if (activeOrgSlug) {
+      router.push(`/${activeOrgSlug}/overview`);
+    } else {
+      router.push("/onboarding");
     }
-  }, [session?.user]);
+  }, [sessionPending, session, hydrated, activeOrgSlug, router]);
 
-  if (isPending || !session) {
+  // Show the dashboard shell while determining redirect so users don't see a flash
+  if (sessionPending || !hydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading...</div>
@@ -60,27 +62,24 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
     );
   }
 
-  return (
-    <VaultProvider>
-      <DashboardShell>{children}</DashboardShell>
-      {USERJOT_PROJECT_ID && (
-        <>
-          <Script id="userjot-loader" strategy="afterInteractive">
-            {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
-          </Script>
-          <Script id="userjot-init" strategy="afterInteractive">
-            {`window.uj.init('${USERJOT_PROJECT_ID}',{widget:true,position:'right',theme:'auto'});`}
-          </Script>
-        </>
-      )}
-    </VaultProvider>
-  );
-}
+  // If authenticated but redirect hasn't happened yet, render the shell with children
+  // This prevents a blank page flash during navigation
+  if (session) {
+    return (
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="px-8 py-6">
+            <VaultProvider>{children}</VaultProvider>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}): React.ReactElement {
-  return <AuthenticatedDashboard>{children}</AuthenticatedDashboard>;
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="text-sm text-muted-foreground">Redirecting...</div>
+    </div>
+  );
 }
