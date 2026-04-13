@@ -43,13 +43,13 @@ function runCommand(
   return new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] }) as ChildProcess;
 
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
+    const stdoutChunks: Uint8Array[] = [];
+    const stderrChunks: Uint8Array[] = [];
 
-    child.stdout?.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Uint8Array) => {
       stdoutChunks.push(chunk);
     });
-    child.stderr?.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Uint8Array) => {
       stderrChunks.push(chunk);
     });
 
@@ -65,7 +65,7 @@ function runCommand(
     };
 
     child.on("error", (err: Error) => {
-      stderrChunks.push(Buffer.from(`[spawn error] ${err.message}\n`));
+      stderrChunks.push(new TextEncoder().encode(`[spawn error] ${err.message}\n`));
       finish(1);
     });
     child.on("close", (code: number | null) => {
