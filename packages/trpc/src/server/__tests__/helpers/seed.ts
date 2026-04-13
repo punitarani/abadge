@@ -10,14 +10,7 @@ import {
   toBase64,
 } from "@abadge/crypto/shared";
 import type { Database } from "@abadge/db";
-import {
-  agentSessions,
-  agents,
-  items,
-  permissions,
-  principals,
-  profiles,
-} from "@abadge/db/schema";
+import { agentSessions, agents, items, permissions, principals, profiles } from "@abadge/db/schema";
 import { getTestHelpers, type TestAuth } from "./test-auth";
 import { TEST_ENV } from "./test-env";
 
@@ -91,7 +84,7 @@ export interface SeedOrgResult {
 }
 
 export async function seedOrg(
-  db: Database,
+  _db: Database,
   auth: TestAuth,
   userId: string,
   overrides?: { name?: string; slug?: string },

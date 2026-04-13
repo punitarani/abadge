@@ -22,9 +22,7 @@ interface TestHelpers {
   }): Promise<Record<string, unknown>>;
   deleteUser(userId: string): Promise<void>;
   deleteOrganization?(orgId: string): Promise<void>;
-  login(opts: {
-    userId: string;
-  }): Promise<{
+  login(opts: { userId: string }): Promise<{
     session: Record<string, unknown>;
     user: Record<string, unknown>;
     headers: Headers;
@@ -32,10 +30,7 @@ interface TestHelpers {
     token: string;
   }>;
   getAuthHeaders(opts: { userId: string }): Promise<Headers>;
-  getCookies(opts: {
-    userId: string;
-    domain?: string;
-  }): Promise<unknown[]>;
+  getCookies(opts: { userId: string; domain?: string }): Promise<unknown[]>;
   getOTP?(identifier: string): string | undefined;
   clearOTPs?(): void;
 }
@@ -79,9 +74,7 @@ export type TestAuth = ReturnType<typeof createTestAuth>;
  * Organization helpers (saveOrganization, addMember, etc.) are asserted
  * as present because our test auth config always includes the organization plugin.
  */
-export async function getTestHelpers(
-  auth: TestAuth,
-): Promise<Required<TestHelpers>> {
+export async function getTestHelpers(auth: TestAuth): Promise<Required<TestHelpers>> {
   const ctx = await auth.$context;
   return ctx.test as Required<TestHelpers>;
 }
