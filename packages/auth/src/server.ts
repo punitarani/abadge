@@ -1,4 +1,5 @@
 import type { Database } from "@abadge/db";
+import { auditLogs } from "@abadge/db";
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -53,6 +54,30 @@ export function createAuth(db: Database, env: AuthEnv): any {
       github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     },
     trustedOrigins: getTrustedOrigins(env),
+    databaseHooks: {
+      session: {
+        create: {
+          after: async (session) => {
+            const activeOrgId = session.activeOrganizationId as string | undefined;
+            if (!activeOrgId) return;
+
+            try {
+              await db.insert(auditLogs).values({
+                organizationId: activeOrgId,
+                userId: session.userId,
+                eventType: "auth.login",
+                result: "allowed",
+                ipAddress: session.ipAddress ?? null,
+                surface: "auth",
+                meta: {},
+              });
+            } catch {
+              // Audit writes must not break authentication
+            }
+          },
+        },
+      },
+    },
     plugins: [
       organization({
         allowUserToCreateOrganization: true,
