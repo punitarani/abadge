@@ -20,7 +20,7 @@
     "docker:down": "docker compose down",
     "docker:reset": "docker compose down -v && docker compose up -d",
     "dev:vars": "doppler run -- bash scripts/generate-dev-vars.sh",
-    "api:dev:worker": "bun run dev:vars && cd apps/api && wrangler dev --local --no-live-reload",
+    "api:dev:worker": "bun run dev:vars && cd apps/api && bunx wrangler dev --local --no-live-reload",
     "api:clean:worker": "rm -rf apps/api/.wrangler",
     "cli": "bun packages/cli/bin/abadge.ts",
     "mcp": "doppler run -- bun packages/mcp/src/index.ts",
