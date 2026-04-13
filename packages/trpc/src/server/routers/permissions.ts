@@ -2,6 +2,7 @@ import {
   type AgentLocality,
   BadRequestError,
   type Capability,
+  ConflictError,
   type CreatePermissionInput,
   CreatePermissionSchema,
   getAllowedCapabilities,
@@ -138,6 +139,19 @@ const createPermission = (input: CreatePermissionInput) =>
         grantedBy: ctx.identity.userId,
         createdAt,
       }),
+    ).pipe(
+      Effect.catchIf(
+        (e: unknown) =>
+          typeof e === "object" && e !== null && "code" in e && (e as { code: unknown }).code === "23505",
+        () =>
+          Effect.fail(
+            new ConflictError({
+              code: "PERMISSION_ALREADY_EXISTS",
+              message: "Permission already exists for this agent, item, and capability",
+              hint: "Revoke the existing permission first, or use a different capability.",
+            }),
+          ),
+      ),
     );
 
     yield* logSessionAudit({

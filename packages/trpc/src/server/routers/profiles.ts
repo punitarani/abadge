@@ -139,6 +139,18 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
         createdAt: now,
         updatedAt: now,
       }),
+    ).pipe(
+      Effect.catchIf(
+        (e: Error) => "code" in e && (e as { code: unknown }).code === "23505",
+        () =>
+          Effect.fail(
+            new ConflictError({
+              code: "PROFILE_ALREADY_EXISTS",
+              message: `A profile named '${name}' already exists in this organization`,
+              hint: "Choose a different name or delete the existing profile.",
+            }),
+          ),
+      ),
     );
 
     const [created] = yield* tryAsync(() =>
