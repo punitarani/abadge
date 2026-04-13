@@ -1,4 +1,11 @@
-import { ConflictError, NotFoundError, SuccessResultSchema } from "@abadge/core";
+import {
+  ConflictError,
+  NotFoundError,
+  SuccessResultSchema,
+  INVITE_TOKEN_PREFIX,
+  INVITE_TOKEN_TTL_MS,
+} from "@abadge/core";
+import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, eq, inArray, isNull } from "@abadge/db";
 import { invitation, items, member, organization, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
@@ -29,9 +36,8 @@ const UpdateOrganizationSchema = Schema.Struct({
   logo: Schema.optional(Schema.String),
 });
 
-const InviteMemberSchema = Schema.Struct({
+const CreateInviteSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
-  email: Schema.String.pipe(Schema.minLength(1)),
   role: Schema.optional(Schema.Literal("owner", "admin", "member")),
 });
 
@@ -90,9 +96,35 @@ const MemberListResultSchema = Schema.Struct({
   members: Schema.Array(MemberDataSchema),
 });
 
-const InviteResultSchema = Schema.Struct({
+const CreateInviteResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   invitationId: Schema.String,
+  token: Schema.String,
+});
+
+const InviteTokenSchema = Schema.Struct({
+  token: Schema.String.pipe(Schema.minLength(1)),
+});
+
+const InviteInfoResultSchema = Schema.Struct({
+  invitationId: Schema.String,
+  organizationName: Schema.String,
+  organizationSlug: Schema.String,
+  role: Schema.String,
+  expiresAt: Schema.String,
+  inviterUserId: Schema.String,
+});
+
+const AcceptInviteResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  organizationId: Schema.String,
+  organizationName: Schema.String,
+  organizationSlug: Schema.String,
+});
+
+const RevokeInviteSchema = Schema.Struct({
+  orgId: Schema.String.pipe(Schema.minLength(1)),
+  invitationId: Schema.String.pipe(Schema.minLength(1)),
 });
 
 /** Creates a URL-safe slug with a random suffix for uniqueness. */
@@ -353,23 +385,25 @@ const listMembers = (orgId: string) =>
     };
   });
 
-const inviteMember = (input: Schema.Schema.Type<typeof InviteMemberSchema>) =>
+const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const { orgId, email, role } = input;
+    const { orgId, role } = input;
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
 
+    const token = generateOpaqueToken(INVITE_TOKEN_PREFIX);
+    const tokenHash = yield* tryAsync(() => hashApiKey(token));
     const invitationId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_MS);
 
     yield* tryAsync(() =>
       ctx.db.insert(invitation).values({
         id: invitationId,
         organizationId: orgId,
-        email,
         role: role ?? "member",
         status: "pending",
+        tokenHash,
         expiresAt,
         inviterId: ctx.identity.userId,
         createdAt: new Date(),
@@ -382,10 +416,236 @@ const inviteMember = (input: Schema.Schema.Type<typeof InviteMemberSchema>) =>
       eventType: "org.invite",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { email, role: role ?? "member", invitationId },
+      meta: { role: role ?? "member", invitationId },
     });
 
-    return { ok: true, invitationId };
+    return { ok: true, invitationId, token };
+  });
+
+const getInviteInfo = (token: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    const tokenHash = yield* tryAsync(() => hashApiKey(token));
+
+    const [row] = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: invitation.id,
+          organizationId: invitation.organizationId,
+          role: invitation.role,
+          expiresAt: invitation.expiresAt,
+          usedAt: invitation.usedAt,
+          inviterId: invitation.inviterId,
+          orgName: organization.name,
+          orgSlug: organization.slug,
+        })
+        .from(invitation)
+        .innerJoin(organization, eq(organization.id, invitation.organizationId))
+        .where(eq(invitation.tokenHash, tokenHash))
+        .limit(1),
+    );
+
+    if (!row) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "INVITE_NOT_FOUND",
+          message: "Invitation not found",
+          hint: "The invite link may be invalid. Ask for a new one.",
+        }),
+      );
+    }
+
+    if (row.usedAt) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "INVITE_ALREADY_USED",
+          message: "This invitation has already been used",
+          hint: "Ask the organization admin for a new invite link.",
+        }),
+      );
+    }
+
+    if (row.expiresAt < new Date()) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "INVITE_EXPIRED",
+          message: "This invitation has expired",
+          hint: "Ask the organization admin for a new invite link.",
+        }),
+      );
+    }
+
+    return {
+      invitationId: row.id,
+      organizationName: row.orgName,
+      organizationSlug: row.orgSlug,
+      role: row.role ?? "member",
+      expiresAt: row.expiresAt.toISOString(),
+      inviterUserId: row.inviterId,
+    };
+  });
+
+const acceptInvite = (token: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    const userId = ctx.identity.userId;
+    const tokenHash = yield* tryAsync(() => hashApiKey(token));
+
+    // Single query: find the invite with org data, verify unused + not expired
+    const [row] = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: invitation.id,
+          organizationId: invitation.organizationId,
+          role: invitation.role,
+          expiresAt: invitation.expiresAt,
+          usedAt: invitation.usedAt,
+          orgName: organization.name,
+          orgSlug: organization.slug,
+        })
+        .from(invitation)
+        .innerJoin(organization, eq(organization.id, invitation.organizationId))
+        .where(eq(invitation.tokenHash, tokenHash))
+        .limit(1),
+    );
+
+    if (!row) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "INVITE_NOT_FOUND",
+          message: "Invitation not found",
+          hint: "The invite link may be invalid. Ask for a new one.",
+        }),
+      );
+    }
+
+    if (row.usedAt) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "INVITE_ALREADY_USED",
+          message: "This invitation has already been used",
+          hint: "Ask the organization admin for a new invite link.",
+        }),
+      );
+    }
+
+    if (row.expiresAt < new Date()) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "INVITE_EXPIRED",
+          message: "This invitation has expired",
+          hint: "Ask the organization admin for a new invite link.",
+        }),
+      );
+    }
+
+    // Check if user is already a member
+    const [existingMember] = yield* tryAsync(() =>
+      ctx.db
+        .select({ id: member.id })
+        .from(member)
+        .where(and(eq(member.organizationId, row.organizationId), eq(member.userId, userId)))
+        .limit(1),
+    );
+
+    if (existingMember) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "ALREADY_MEMBER",
+          message: "You are already a member of this organization",
+          hint: "You can access this organization from your dashboard.",
+        }),
+      );
+    }
+
+    // Atomically mark the invite as used — WHERE usedAt IS NULL prevents double-accept race
+    const updated = yield* tryAsync(() =>
+      ctx.db
+        .update(invitation)
+        .set({ usedAt: new Date(), usedBy: userId, status: "accepted" })
+        .where(and(eq(invitation.id, row.id), isNull(invitation.usedAt)))
+        .returning({ id: invitation.id }),
+    );
+
+    if (updated.length === 0) {
+      // Another request beat us — the invite was just used
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "INVITE_ALREADY_USED",
+          message: "This invitation was just accepted by someone else",
+          hint: "Ask the organization admin for a new invite link.",
+        }),
+      );
+    }
+
+    // Add user as member
+    yield* tryAsync(() =>
+      ctx.db.insert(member).values({
+        id: crypto.randomUUID(),
+        organizationId: row.organizationId,
+        userId,
+        role: row.role ?? "member",
+        createdAt: new Date(),
+      }),
+    );
+
+    yield* logSessionAudit({
+      organizationId: row.organizationId,
+      userId,
+      eventType: "org.invite_accept",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { invitationId: row.id, role: row.role ?? "member" },
+    });
+
+    return {
+      ok: true,
+      organizationId: row.organizationId,
+      organizationName: row.orgName,
+      organizationSlug: row.orgSlug,
+    };
+  });
+
+const revokeInvite = (input: Schema.Schema.Type<typeof RevokeInviteSchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    const { orgId, invitationId } = input;
+
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
+
+    const deleted = yield* tryAsync(() =>
+      ctx.db
+        .delete(invitation)
+        .where(
+          and(
+            eq(invitation.id, invitationId),
+            eq(invitation.organizationId, orgId),
+            isNull(invitation.usedAt),
+          ),
+        )
+        .returning({ id: invitation.id }),
+    );
+
+    if (deleted.length === 0) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "INVITE_NOT_FOUND",
+          message: "Pending invitation not found",
+          hint: "It may have already been used or revoked.",
+        }),
+      );
+    }
+
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.invite_revoke",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { invitationId },
+    });
+
+    return { ok: true };
   });
 
 const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
@@ -507,9 +767,24 @@ export const organizationsRouter = createTrpcRouter({
       .query(({ ctx, input }) => runSessionEffect(ctx, listMembers(input.orgId))),
 
     invite: sessionProcedure
-      .input(strictSchema(InviteMemberSchema))
-      .output(strictSchema(InviteResultSchema))
-      .mutation(({ ctx, input }) => runSessionEffect(ctx, inviteMember(input))),
+      .input(strictSchema(CreateInviteSchema))
+      .output(strictSchema(CreateInviteResultSchema))
+      .mutation(({ ctx, input }) => runSessionEffect(ctx, createInvite(input))),
+
+    getInviteInfo: sessionProcedure
+      .input(strictSchema(InviteTokenSchema))
+      .output(strictSchema(InviteInfoResultSchema))
+      .query(({ ctx, input }) => runSessionEffect(ctx, getInviteInfo(input.token))),
+
+    acceptInvite: sessionProcedure
+      .input(strictSchema(InviteTokenSchema))
+      .output(strictSchema(AcceptInviteResultSchema))
+      .mutation(({ ctx, input }) => runSessionEffect(ctx, acceptInvite(input.token))),
+
+    revokeInvite: sessionProcedure
+      .input(strictSchema(RevokeInviteSchema))
+      .output(strictSchema(SuccessResultSchema))
+      .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeInvite(input))),
 
     remove: sessionProcedure
       .input(strictSchema(RemoveMemberSchema))
