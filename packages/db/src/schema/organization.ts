@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
 export const organization = pgTable("organization", {
@@ -40,10 +40,13 @@ export const invitation = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    email: text("email").notNull(),
+    email: text("email"),
     role: text("role"),
     status: text("status").notNull().default("pending"),
+    tokenHash: text("token_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    usedBy: text("used_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     inviterId: text("inviter_id")
       .notNull()
@@ -51,7 +54,7 @@ export const invitation = pgTable(
   },
   (t) => [
     index("idx_invitation_organization_id").on(t.organizationId),
-    index("idx_invitation_email").on(t.email),
+    uniqueIndex("idx_invitation_token_hash").on(t.tokenHash),
   ],
 );
 
