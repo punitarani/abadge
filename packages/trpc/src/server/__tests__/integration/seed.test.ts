@@ -26,17 +26,22 @@ describe("seed factories", () => {
   // -----------------------------------------------------------------------
   // seedUser
   // -----------------------------------------------------------------------
-  test("seedUser creates a user with a valid session token", async () => {
+  test("seedUser creates a user with a valid session", async () => {
     const auth = createTestAuth(db);
-    const { userId, email, name, headers } = await seedUser(auth);
+    const { userId, email, name, headers, token } = await seedUser(auth);
 
     expect(userId).toBeDefined();
     expect(email).toContain("@test.local");
     expect(name).toBe("Test User");
 
-    const authHeader = assertDefined(headers.get("authorization"), "authorization header");
-    expect(authHeader.startsWith("Bearer ")).toBe(true);
-    expect(authHeader.replace("Bearer ", "").length).toBeGreaterThan(0);
+    // testUtils.login() returns cookie-based headers
+    const cookieHeader = headers.get("cookie");
+    expect(cookieHeader).toBeTruthy();
+    expect(cookieHeader).toContain("better-auth.session_token=");
+
+    // Raw session token also available for Bearer-path testing
+    expect(token).toBeDefined();
+    expect(token.length).toBeGreaterThan(0);
   });
 
   // -----------------------------------------------------------------------

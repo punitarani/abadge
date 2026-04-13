@@ -20,7 +20,7 @@ import {
   principals,
   profiles,
 } from "@abadge/db/schema";
-import type { TestAuth } from "./test-auth";
+import { getTestHelpers, type TestAuth } from "./test-auth";
 import { TEST_ENV } from "./test-env";
 
 // ---------------------------------------------------------------------------
@@ -53,24 +53,34 @@ export interface SeedUserResult {
   email: string;
   name: string;
   headers: Headers;
+  /** Raw session token — use for explicit Bearer-path testing */
+  token: string;
 }
 
 export async function seedUser(
   auth: TestAuth,
-  overrides?: { email?: string; password?: string; name?: string },
+  overrides?: { email?: string; name?: string },
 ): Promise<SeedUserResult> {
+  const helpers = await getTestHelpers(auth);
+
   const email = overrides?.email ?? `user-${uuid()}@test.local`;
-  const password = overrides?.password ?? "test-password-123!";
   const name = overrides?.name ?? "Test User";
 
-  const result = await auth.api.signUpEmail({
-    body: { email, password, name },
-  });
+  // Create user object via factory, then persist to DB
+  const userData = helpers.createUser({ email, name, emailVerified: true });
+  const savedUser = await helpers.saveUser(userData);
+  const userId = savedUser.id as string;
 
-  const headers = new Headers();
-  headers.set("authorization", `Bearer ${result.token}`);
+  // Login creates a session and returns cookie-based headers + raw token
+  const loginResult = await helpers.login({ userId });
 
-  return { userId: result.user.id as string, email, name, headers };
+  return {
+    userId,
+    email,
+    name,
+    headers: loginResult.headers,
+    token: loginResult.token,
+  };
 }
 
 // ---------------------------------------------------------------------------
