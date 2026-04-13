@@ -13,6 +13,13 @@ const OrgIdSchema = Schema.Struct({
 
 const CreateOrganizationSchema = Schema.Struct({
   name: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(255)),
+  slug: Schema.optional(
+    Schema.String.pipe(
+      Schema.minLength(1),
+      Schema.maxLength(48),
+      Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    ),
+  ),
   logo: Schema.optional(Schema.String),
 });
 
@@ -37,6 +44,18 @@ const UpdateMemberRoleSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
   memberId: Schema.String.pipe(Schema.minLength(1)),
   role: Schema.Literal("owner", "admin", "member"),
+});
+
+const CheckSlugSchema = Schema.Struct({
+  slug: Schema.String.pipe(
+    Schema.minLength(1),
+    Schema.maxLength(48),
+    Schema.pattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  ),
+});
+
+const CheckSlugResultSchema = Schema.Struct({
+  available: Schema.Boolean,
 });
 
 const OrgDataSchema = Schema.Struct({
@@ -87,6 +106,21 @@ function toSlug(name: string): string {
   return base ? `${base}-${suffix}` : suffix;
 }
 
+const checkSlug = (slug: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+
+    const [existing] = yield* tryAsync(() =>
+      ctx.db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.slug, slug))
+        .limit(1),
+    );
+
+    return { available: !existing };
+  });
+
 function serializeOrg(row: typeof organization.$inferSelect) {
   return {
     id: row.id,
@@ -103,8 +137,26 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     const userId = ctx.identity.userId;
     const orgId = crypto.randomUUID();
     const profileId = crypto.randomUUID();
-    const slug = toSlug(input.name);
+    const slug = input.slug ?? toSlug(input.name);
     const now = new Date();
+
+    const [existingSlug] = yield* tryAsync(() =>
+      ctx.db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.slug, slug))
+        .limit(1),
+    );
+
+    if (existingSlug) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "SLUG_TAKEN",
+          message: `The slug "${slug}" is already in use`,
+          hint: "Choose a different organization slug.",
+        }),
+      );
+    }
 
     yield* tryAsync(() =>
       ctx.db.insert(organization).values({
@@ -368,6 +420,11 @@ export const organizationsRouter = createTrpcRouter({
     .input(strictSchema(CreateOrganizationSchema))
     .output(strictSchema(CreateOrgResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createOrg(input))),
+
+  checkSlug: sessionProcedure
+    .input(strictSchema(CheckSlugSchema))
+    .output(strictSchema(CheckSlugResultSchema))
+    .query(({ ctx, input }) => runSessionEffect(ctx, checkSlug(input.slug))),
 
   list: sessionProcedure
     .output(strictSchema(OrgListResultSchema))
