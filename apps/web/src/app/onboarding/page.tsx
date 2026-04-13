@@ -12,7 +12,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,48 @@ import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
+
+type SlugStatus = "idle" | "checking" | "available" | "taken";
+
+function SlugStatusIndicator({ status }: { status: SlugStatus }): React.ReactElement | null {
+  if (status === "checking") {
+    return <span className="shrink-0 text-xs text-muted-foreground">Checking...</span>;
+  }
+  if (status === "available") {
+    return <span className="shrink-0 text-xs text-emerald-600">Available</span>;
+  }
+  if (status === "taken") {
+    return <span className="shrink-0 text-xs text-red-600">Taken</span>;
+  }
+  return null;
+}
+
+function useSlugStatus(slug: string): SlugStatus {
+  const [status, setStatus] = useState<SlugStatus>("idle");
+
+  useEffect(() => {
+    if (!slug || slug.length < 2) {
+      setStatus("idle");
+      return;
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      setStatus("idle");
+      return;
+    }
+    setStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const result = await browserTrpcClient.organizations.checkSlug.query({ slug });
+        setStatus(result.available ? "available" : "taken");
+      } catch {
+        setStatus("idle");
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [slug]);
+
+  return status;
+}
 
 function toSlugPreview(name: string): string {
   return name
@@ -71,6 +113,102 @@ function validateStep2Input(
   return null;
 }
 
+interface Step1Params {
+  orgName: string;
+  orgSlug: string;
+  slugStatus: SlugStatus;
+  setActiveOrg: (org: { id: string; slug: string; name: string }) => void;
+  setOrgId: (id: string) => void;
+  setCurrentStep: (step: number) => void;
+  setLoading: (v: boolean) => void;
+  setError: (v: string) => void;
+}
+
+async function submitStep1({
+  orgName,
+  orgSlug,
+  slugStatus,
+  setActiveOrg,
+  setOrgId,
+  setCurrentStep,
+  setLoading,
+  setError,
+}: Step1Params): Promise<void> {
+  if (!orgName.trim()) {
+    setError("Organization name is required");
+    return;
+  }
+  if (slugStatus === "taken") {
+    setError("This slug is already taken. Choose a different one.");
+    return;
+  }
+  setLoading(true);
+  try {
+    const result = await browserTrpcClient.organizations.create.mutate({
+      name: orgName.trim(),
+      slug: orgSlug || undefined,
+    });
+    const org = result.organization;
+    setActiveOrg({ id: org.id, slug: org.slug, name: org.name });
+    setOrgId(org.id);
+    setCurrentStep(1);
+  } catch (err) {
+    setError(getClientErrorMessage(err, "Failed to create organization"));
+  } finally {
+    setLoading(false);
+  }
+}
+
+interface Step2Params {
+  orgId: string;
+  profileName: string;
+  storageMode: "zero_knowledge" | "server_managed";
+  vaultPassword: string;
+  confirmPassword: string;
+  setLoading: (v: boolean) => void;
+  setError: (v: string) => void;
+  onSuccess: () => void;
+}
+
+async function submitStep2({
+  orgId,
+  profileName,
+  storageMode,
+  vaultPassword,
+  confirmPassword,
+  setLoading,
+  setError,
+  onSuccess,
+}: Step2Params): Promise<void> {
+  const validationError = validateStep2Input(
+    profileName,
+    storageMode,
+    vaultPassword,
+    confirmPassword,
+  );
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
+  setLoading(true);
+  try {
+    const profileResult = await browserTrpcClient.profiles.create.mutate({
+      orgId,
+      name: profileName.trim(),
+      storageMode,
+    });
+    if (storageMode === "zero_knowledge") {
+      await bootstrapZkProfile(profileResult.profile.id, vaultPassword);
+    }
+    toast.success("Profile created successfully");
+    onSuccess();
+  } catch (err) {
+    setError(getClientErrorMessage(err, "Failed to create profile"));
+  } finally {
+    setLoading(false);
+  }
+}
+
 export default function OnboardingPage(): React.ReactElement {
   const router = useRouter();
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
@@ -81,8 +219,9 @@ export default function OnboardingPage(): React.ReactElement {
   // Step 1 state
   const [orgName, setOrgName] = useState("");
   const [orgSlug, setOrgSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const slugStatus = useSlugStatus(orgSlug);
   const [orgId, setOrgId] = useState("");
-  const [orgSlugFinal, setOrgSlugFinal] = useState("");
 
   // Step 2 state
   const [profileName, setProfileName] = useState("internal");
@@ -98,70 +237,46 @@ export default function OnboardingPage(): React.ReactElement {
 
   function handleOrgNameChange(value: string): void {
     setOrgName(value);
+    if (!slugEdited) {
+      setOrgSlug(toSlugPreview(value));
+    }
+  }
+
+  function handleSlugChange(value: string): void {
+    setSlugEdited(true);
+    // Intentional: toSlugPreview normalizes input (lowercases, strips invalid chars).
+    // This is correct for a slug field — the user sees their input auto-corrected.
     setOrgSlug(toSlugPreview(value));
   }
 
   async function handleStep1Submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
-
-    if (!orgName.trim()) {
-      setError("Organization name is required");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await browserTrpcClient.organizations.create.mutate({
-        name: orgName.trim(),
-      });
-
-      const org = result.organization;
-      setActiveOrg({ id: org.id, slug: org.slug, name: org.name });
-      setOrgId(org.id);
-      setOrgSlugFinal(org.slug);
-      setCurrentStep(1);
-    } catch (err) {
-      setError(getClientErrorMessage(err, "Failed to create organization"));
-    } finally {
-      setLoading(false);
-    }
+    await submitStep1({
+      orgName,
+      orgSlug,
+      slugStatus,
+      setActiveOrg,
+      setOrgId,
+      setCurrentStep,
+      setLoading,
+      setError,
+    });
   }
 
   async function handleStep2Submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
-
-    const validationError = validateStep2Input(
+    await submitStep2({
+      orgId,
       profileName,
       storageMode,
       vaultPassword,
       confirmPassword,
-    );
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const profileResult = await browserTrpcClient.profiles.create.mutate({
-        orgId,
-        name: profileName.trim(),
-        storageMode,
-      });
-
-      if (storageMode === "zero_knowledge") {
-        await bootstrapZkProfile(profileResult.profile.id, vaultPassword);
-      }
-
-      toast.success("Profile created successfully");
-      router.push(`/${orgSlugFinal}/overview`);
-    } catch (err) {
-      setError(getClientErrorMessage(err, "Failed to create profile"));
-    } finally {
-      setLoading(false);
-    }
+      setLoading,
+      setError,
+      onSuccess: () => router.push("/overview"),
+    });
   }
 
   return (
@@ -221,21 +336,20 @@ export default function OnboardingPage(): React.ReactElement {
 
                     <div className="space-y-1.5">
                       <Label htmlFor="org-slug">Organization slug</Label>
-                      <div className="flex items-center">
-                        <span className="flex h-9 items-center rounded-l-lg border border-r-0 border-border bg-muted px-3 text-sm text-muted-foreground">
-                          api.abadge.io/
-                        </span>
+                      <div className="flex items-center gap-2">
                         <Input
                           id="org-slug"
                           type="text"
                           value={orgSlug}
-                          className="rounded-l-none"
-                          disabled
+                          onChange={(e) => handleSlugChange(e.target.value)}
+                          placeholder="acme-corp"
+                          className="font-mono text-sm"
                         />
+                        <SlugStatusIndicator status={slugStatus} />
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Kebab-case (lowercase, numbers, hyphens). Used in API paths — choose a
-                        stable name you won't change.
+                        Lowercase letters, numbers, and hyphens. Auto-generated from the name — edit
+                        to customize.
                       </p>
                     </div>
                   </div>
