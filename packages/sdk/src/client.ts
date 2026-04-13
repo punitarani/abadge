@@ -42,6 +42,8 @@ export interface AbadgeUserClientConfig {
   apiUrl: string;
   /** User session token. */
   sessionToken: string;
+  /** Active organization ID. Sent as X-Abadge-Org-Id header for org-scoped requests. */
+  orgId?: string;
 }
 
 /**
@@ -130,6 +132,7 @@ interface SdkTrpcClient {
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
     list: TrpcQueryWithoutInput<ItemListResult>;
+    listForAgent: TrpcQueryWithoutInput<ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
       { itemId: string; data: UpdateItemInput },
@@ -160,11 +163,12 @@ interface SdkTrpcClient {
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
+    listForAgent: TrpcQuery<AuditFilters, AuditListResult>;
   };
   profiles: {
     create: TrpcMutation<
       { orgId: string; name: string; description?: string; storageMode?: string },
-      { id: string }
+      { profile: { id: string; name: string; organizationId: string; storageMode: string; keyVersion: number; createdAt: string; updatedAt: string } }
     >;
     list: TrpcQuery<{ orgId: string }, unknown>;
     get: TrpcQuery<{ profileId: string }, unknown>;
@@ -180,7 +184,7 @@ interface SdkTrpcClient {
   organizations: {
     create: TrpcMutation<
       { name: string; slug?: string },
-      { id: string; name: string; slug: string }
+      { organization: { id: string; name: string; slug: string; logo: string | null; createdAt: string }; profileId: string }
     >;
     list: TrpcQueryWithoutInput<{
       organizations: Array<{ id: string; name: string; slug: string; role: string }>;
@@ -228,8 +232,8 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
   }
 }
 
-function buildTrpcClient(apiUrl: string, token: string): SdkTrpcClient {
-  return createNodeTrpcClient({ baseUrl: apiUrl, token }) as unknown as SdkTrpcClient;
+function buildTrpcClient(apiUrl: string, token: string, orgId?: string): SdkTrpcClient {
+  return createNodeTrpcClient({ baseUrl: apiUrl, token, orgId }) as unknown as SdkTrpcClient;
 }
 
 /** Build a tRPC client without auth (for keypair-based pre-auth challenge requests). */
@@ -300,7 +304,8 @@ export class AbadgeUserClient {
 
   constructor(config: AbadgeUserClientConfig | AbadgeClientConfig) {
     const token = "sessionToken" in config ? config.sessionToken : config.token;
-    this.client = buildTrpcClient(config.apiUrl, token);
+    const orgId = "orgId" in config ? config.orgId : undefined;
+    this.client = buildTrpcClient(config.apiUrl, token, orgId);
   }
 
   // -- Vault ----------------------------------------------------------------
@@ -558,10 +563,11 @@ export class AbadgeUserClient {
     name: string;
     slug?: string;
   }): Promise<{ id: string; name: string; slug: string }> {
-    return call(
+    const result = await call(
       () => this.client.organizations.create.mutate(data),
       "Failed to create organization",
     );
+    return result.organization;
   }
 
   /**
@@ -711,8 +717,12 @@ export class AbadgeUserClient {
     name: string;
     description?: string;
     storageMode?: string;
-  }): Promise<{ id: string }> {
-    return call(() => this.client.profiles.create.mutate(data), "Failed to create profile");
+  }): Promise<{ id: string; name: string; storageMode: string }> {
+    const result = await call(
+      () => this.client.profiles.create.mutate(data),
+      "Failed to create profile",
+    );
+    return result.profile;
   }
 
   /**
@@ -972,7 +982,7 @@ export class AbadgeAgentClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return call(() => this.client.items.list.query(), "Failed to list items");
+    return call(() => this.client.items.listForAgent.query(), "Failed to list items");
   }
 
   /**
@@ -997,7 +1007,7 @@ export class AbadgeAgentClient {
    * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
    */
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
-    return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
+    return call(() => this.client.audit.listForAgent.query(filters), "Failed to fetch audit log");
   }
 
   // -- Access ---------------------------------------------------------------
