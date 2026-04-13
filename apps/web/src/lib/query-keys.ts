@@ -16,4 +16,5 @@ export const dashboardQueryKeys = {
   orgPermissions: (orgId: string) => ["permissions", orgId] as const,
   orgAudit: (orgId: string, input: Record<string, unknown>) => ["audit", orgId, input] as const,
   orgMembers: (orgId: string) => ["members", orgId] as const,
+  orgInvites: (orgId: string) => ["invites", orgId] as const,
 };
