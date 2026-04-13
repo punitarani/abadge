@@ -80,3 +80,12 @@ export function tryAsync<A>(operation: () => Promise<A>): Effect.Effect<A, Error
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   });
 }
+
+/** Detect Postgres unique-constraint violations (SQLSTATE 23505).
+ *  Drizzle v0.45+ wraps the original driver error in `.cause`,
+ *  so we check both the error itself and its cause. */
+export function isUniqueViolation(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const code = (e as { code?: unknown }).code ?? (e as { cause?: { code?: unknown } }).cause?.code;
+  return code === "23505";
+}

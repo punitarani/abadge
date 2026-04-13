@@ -10,7 +10,7 @@ import { and, eq, isNull } from "@abadge/db";
 import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
+import { isUniqueViolation, runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
 import { serializeProfile } from "../serialize";
 
@@ -141,7 +141,7 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
       }),
     ).pipe(
       Effect.catchIf(
-        (e: Error) => "code" in e && (e as { code: unknown }).code === "23505",
+        (e: Error) => isUniqueViolation(e),
         () =>
           Effect.fail(
             new ConflictError({

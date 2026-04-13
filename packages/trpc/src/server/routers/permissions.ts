@@ -16,7 +16,7 @@ import { and, eq, or } from "@abadge/db";
 import { agents as agentRecords, items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
+import { isUniqueViolation, runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
 import {
   createTrpcRouter,
   requireAgentOwnership,
@@ -128,7 +128,7 @@ const createPermission = (input: CreatePermissionInput) =>
     const id = crypto.randomUUID();
     const createdAt = new Date();
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.insert(permissionRecords).values({
         id,
         organizationId: ctx.identity.organizationId,
@@ -141,8 +141,7 @@ const createPermission = (input: CreatePermissionInput) =>
       }),
     ).pipe(
       Effect.catchIf(
-        (e: unknown) =>
-          typeof e === "object" && e !== null && "code" in e && (e as { code: unknown }).code === "23505",
+        (e: unknown) => isUniqueViolation(e),
         () =>
           Effect.fail(
             new ConflictError({
