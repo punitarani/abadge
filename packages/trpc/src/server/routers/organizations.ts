@@ -193,6 +193,15 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     yield* logSessionAudit({
       organizationId: orgId,
       userId,
+      eventType: "org.create",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { slug },
+    });
+
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId,
       eventType: "profile.create",
       result: "allowed",
       ipAddress: ctx.ipAddress,
@@ -275,6 +284,15 @@ const updateOrg = (input: Schema.Schema.Type<typeof UpdateOrganizationSchema>) =
       );
     }
 
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.update",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { fields: Object.keys(setValues) },
+    });
+
     return { ok: true };
   });
 
@@ -303,6 +321,14 @@ const deleteOrg = (orgId: string) =>
     }
 
     yield* tryAsync(() => ctx.db.delete(organization).where(eq(organization.id, orgId)));
+
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.delete",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+    });
 
     return { ok: true };
   });
@@ -350,6 +376,15 @@ const inviteMember = (input: Schema.Schema.Type<typeof InviteMemberSchema>) =>
       }),
     );
 
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.invite",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { email, role: role ?? "member", invitationId },
+    });
+
     return { ok: true, invitationId };
   });
 
@@ -380,7 +415,18 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
 
     yield* tryAsync(() => ctx.db.delete(member).where(eq(member.id, memberId)));
 
-    yield* tryAsync(() => onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId, ctx.ipAddress));
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.member_remove",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { removedUserId: target.userId, memberId },
+    });
+
+    yield* tryAsync(() =>
+      onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId, ctx.ipAddress),
+    );
 
     return { ok: true };
   });
@@ -411,6 +457,15 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
     }
 
     yield* tryAsync(() => ctx.db.update(member).set({ role }).where(eq(member.id, memberId)));
+
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      eventType: "org.member_role_change",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+      meta: { memberId, newRole: role },
+    });
 
     return { ok: true };
   });
