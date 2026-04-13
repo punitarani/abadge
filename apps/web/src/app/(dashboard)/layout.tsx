@@ -118,14 +118,14 @@ export default function DashboardLayout({
 
   return (
     <>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <div className="px-8 py-6">
-            <VaultProvider>{children}</VaultProvider>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <VaultProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <div className="px-8 py-6">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
+      </VaultProvider>
       {USERJOT_PROJECT_ID && (
         <>
           <Script id="userjot-loader" strategy="afterInteractive">
