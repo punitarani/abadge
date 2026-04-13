@@ -46,6 +46,29 @@ interface Org {
   createdAt: string;
 }
 
+function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.ReactElement {
+  const dimension = size === "sm" ? "size-5" : "size-6";
+  const textSize = size === "sm" ? "text-[10px]" : "text-xs";
+
+  if (org.logo) {
+    return (
+      <img
+        src={org.logo}
+        alt={org.name}
+        className={`${dimension} rounded-full`}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`flex aspect-square ${dimension} items-center justify-center rounded-full ${textSize} font-medium text-white ${getOrgColor(org.name)}`}
+    >
+      {getOrgInitial(org.name)}
+    </div>
+  );
+}
+
 export function OrgSwitcher(): React.ReactElement {
   const { activeOrgId, setActiveOrg } = useOrgStore();
   const queryClient = useQueryClient();
@@ -90,11 +113,7 @@ export function OrgSwitcher(): React.ReactElement {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div
-                className={`flex aspect-square size-6 items-center justify-center rounded-full text-xs font-medium text-white ${currentOrg ? getOrgColor(currentOrg.name) : "bg-muted"}`}
-              >
-                {currentOrg ? getOrgInitial(currentOrg.name) : "?"}
-              </div>
+              <OrgIcon org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }} />
               <span className="truncate text-sm font-medium">
                 {currentOrg?.name ?? "Select org"}
               </span>
@@ -112,11 +131,7 @@ export function OrgSwitcher(): React.ReactElement {
             <DropdownMenuSeparator />
             {orgs.map((org) => (
               <DropdownMenuItem key={org.id} onClick={() => handleSelect(org)} className="gap-2">
-                <div
-                  className={`flex aspect-square size-5 items-center justify-center rounded-full text-[10px] font-medium text-white ${getOrgColor(org.name)}`}
-                >
-                  {getOrgInitial(org.name)}
-                </div>
+                <OrgIcon org={org} size="sm" />
                 <span className="truncate">{org.name}</span>
                 {org.id === activeOrgId && <Check className="ml-auto size-4" />}
               </DropdownMenuItem>
