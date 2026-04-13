@@ -1,16 +1,8 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { principals } from "@abadge/db/schema";
-import {
-  seedAgent,
-  seedAgentSession,
-  seedOrg,
-  seedUser,
-} from "../helpers/seed";
+import { seedAgent, seedAgentSession, seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import {
-  createAgentCaller,
-  createOperatorCaller,
-} from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 describe("e2e golden path", () => {
@@ -109,8 +101,8 @@ describe("e2e golden path", () => {
       (e) => e.eventType === "access.reveal" && e.result === "allowed",
     );
     expect(revealEntry).toBeDefined();
-    expect(revealEntry!.agentId).toBe(agentId);
-    expect(revealEntry!.itemId).toBe(itemId);
+    expect(revealEntry?.agentId).toBe(agentId);
+    expect(revealEntry?.itemId).toBe(itemId);
   });
 
   test("agent without permission is denied", async () => {
@@ -169,7 +161,7 @@ describe("e2e golden path", () => {
       (e) => e.eventType === "access.reveal" && e.result === "denied",
     );
     expect(deniedEntry).toBeDefined();
-    expect(deniedEntry!.agentId).toBe(agent.agentId);
-    expect(deniedEntry!.itemId).toBe(itemId);
+    expect(deniedEntry?.agentId).toBe(agent.agentId);
+    expect(deniedEntry?.itemId).toBe(itemId);
   });
 });
