@@ -65,8 +65,7 @@ function InviteDetails({ token }: { token: string }): React.ReactElement {
   });
 
   const acceptMutation = useMutation({
-    mutationFn: () =>
-      browserTrpcClient.organizations.members.acceptInvite.mutate({ token }),
+    mutationFn: () => browserTrpcClient.organizations.members.acceptInvite.mutate({ token }),
     onSuccess: (data) => {
       // Switch to the newly joined org so the dashboard shows it immediately
       setActiveOrg({
@@ -126,10 +125,7 @@ function InviteDetails({ token }: { token: string }): React.ReactElement {
           >
             {acceptMutation.isPending ? "Joining..." : "Accept invite"}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push("/items")}
-          >
+          <Button variant="outline" onClick={() => router.push("/items")}>
             Decline
           </Button>
         </div>

@@ -124,7 +124,11 @@ function LoginPageContent() {
         <p className="text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
           <Link
-            href={redirectPath !== "/items" ? `/register?redirect=${encodeURIComponent(redirectPath)}` : "/register"}
+            href={
+              redirectPath !== "/items"
+                ? `/register?redirect=${encodeURIComponent(redirectPath)}`
+                : "/register"
+            }
             className="font-medium text-foreground hover:underline"
           >
             Create one

@@ -190,9 +190,25 @@ interface SdkTrpcClient {
     delete: TrpcMutation<{ orgId: string }, SuccessResult>;
     members: {
       list: TrpcQuery<{ orgId: string }, unknown>;
-      invite: TrpcMutation<{ orgId: string; role?: string }, { ok: boolean; invitationId: string; token: string }>;
-      getInviteInfo: TrpcQuery<{ token: string }, { invitationId: string; organizationName: string; organizationSlug: string; role: string; expiresAt: string; inviterUserId: string }>;
-      acceptInvite: TrpcMutation<{ token: string }, { ok: boolean; organizationId: string; organizationName: string; organizationSlug: string }>;
+      invite: TrpcMutation<
+        { orgId: string; role?: string },
+        { ok: boolean; invitationId: string; token: string }
+      >;
+      getInviteInfo: TrpcQuery<
+        { token: string },
+        {
+          invitationId: string;
+          organizationName: string;
+          organizationSlug: string;
+          role: string;
+          expiresAt: string;
+          inviterUserId: string;
+        }
+      >;
+      acceptInvite: TrpcMutation<
+        { token: string },
+        { ok: boolean; organizationId: string; organizationName: string; organizationSlug: string }
+      >;
       revokeInvite: TrpcMutation<{ orgId: string; invitationId: string }, SuccessResult>;
       remove: TrpcMutation<{ orgId: string; userId: string }, SuccessResult>;
       updateRole: TrpcMutation<{ orgId: string; userId: string; role: string }, SuccessResult>;
@@ -622,16 +638,26 @@ export class AbadgeUserClient {
     );
   }
 
-  async getInviteInfo(
-    token: string,
-  ): Promise<{ invitationId: string; organizationName: string; organizationSlug: string; role: string; expiresAt: string; inviterUserId: string }> {
+  async getInviteInfo(token: string): Promise<{
+    invitationId: string;
+    organizationName: string;
+    organizationSlug: string;
+    role: string;
+    expiresAt: string;
+    inviterUserId: string;
+  }> {
     return call(
       () => this.client.organizations.members.getInviteInfo.query({ token }),
       "Failed to get invite info",
     );
   }
 
-  async acceptInvite(token: string): Promise<{ ok: boolean; organizationId: string; organizationName: string; organizationSlug: string }> {
+  async acceptInvite(token: string): Promise<{
+    ok: boolean;
+    organizationId: string;
+    organizationName: string;
+    organizationSlug: string;
+  }> {
     return call(
       () => this.client.organizations.members.acceptInvite.mutate({ token }),
       "Failed to accept invite",

@@ -323,27 +323,20 @@ function MembersSection({
       </div>
 
       {/* Invite member */}
-      <InviteMemberCard orgId={orgId} queryClient={queryClient} />
+      <InviteMemberCard orgId={orgId} />
     </section>
   );
 }
 
 /* ---- Invite Member ---- */
 
-function InviteMemberCard({
-  orgId,
-  queryClient,
-}: {
-  orgId: string;
-  queryClient: ReturnType<typeof useQueryClient>;
-}): React.ReactElement {
+function InviteMemberCard({ orgId }: { orgId: string }): React.ReactElement {
   const [role, setRole] = useState<"member" | "admin" | "owner">("member");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const inviteMutation = useMutation({
-    mutationFn: () =>
-      browserTrpcClient.organizations.members.invite.mutate({ orgId, role }),
+    mutationFn: () => browserTrpcClient.organizations.members.invite.mutate({ orgId, role }),
     onSuccess: (data) => {
       const link = `${window.location.origin}/invite/accept?token=${encodeURIComponent(data.token)}`;
       setInviteLink(link);
@@ -379,10 +372,7 @@ function InviteMemberCard({
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1.5">
             <Label>Role</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}
-            >
+            <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
