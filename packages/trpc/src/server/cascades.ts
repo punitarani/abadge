@@ -11,6 +11,7 @@ export async function onAgentRevoked(
   agentId: string,
   orgId: string,
   revokedBy: string,
+  ipAddress?: string,
 ): Promise<void> {
   const now = new Date();
   const activeSessions = await db
@@ -34,6 +35,7 @@ export async function onAgentRevoked(
       eventType: "agent.revoke",
       result: "cascade",
       meta: { sessionId: session.id },
+      ipAddress: ipAddress ?? null,
     });
   }
 }
@@ -47,6 +49,7 @@ export async function onItemDeleted(
   itemId: string,
   orgId: string,
   deletedBy: string,
+  ipAddress?: string,
 ): Promise<void> {
   await db.delete(permissions).where(eq(permissions.itemId, itemId));
 
@@ -57,6 +60,7 @@ export async function onItemDeleted(
     eventType: "item.delete_cascade",
     result: "cascade",
     meta: {},
+    ipAddress: ipAddress ?? null,
   });
 }
 
@@ -69,6 +73,7 @@ export async function onMemberRemoved(
   orgId: string,
   userId: string,
   removedBy: string,
+  ipAddress?: string,
 ): Promise<void> {
   await db.insert(auditLogs).values({
     organizationId: orgId,
@@ -76,5 +81,6 @@ export async function onMemberRemoved(
     eventType: "auth.token_revoke",
     result: "cascade",
     meta: { removedUserId: userId },
+    ipAddress: ipAddress ?? null,
   });
 }

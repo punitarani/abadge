@@ -307,7 +307,7 @@ const revokeAgent = (agentId: string) =>
     });
 
     yield* Effect.tryPromise(() =>
-      onAgentRevoked(ctx.db, agentId, ctx.identity.organizationId, ctx.identity.userId),
+      onAgentRevoked(ctx.db, agentId, ctx.identity.organizationId, ctx.identity.userId, ctx.ipAddress),
     );
 
     return { ok: true };

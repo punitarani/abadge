@@ -380,7 +380,7 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
 
     yield* tryAsync(() => ctx.db.delete(member).where(eq(member.id, memberId)));
 
-    yield* tryAsync(() => onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId));
+    yield* tryAsync(() => onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId, ctx.ipAddress));
 
     return { ok: true };
   });

@@ -305,7 +305,7 @@ const deleteItem = (itemId: string) =>
     });
 
     yield* Effect.tryPromise(() =>
-      onItemDeleted(ctx.db, itemId, ctx.identity.organizationId, ctx.identity.userId),
+      onItemDeleted(ctx.db, itemId, ctx.identity.organizationId, ctx.identity.userId, ctx.ipAddress),
     );
 
     return { ok: true };
