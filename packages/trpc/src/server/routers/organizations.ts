@@ -282,16 +282,16 @@ const updateOrg = (input: Schema.Schema.Type<typeof UpdateOrganizationSchema>) =
       yield* tryAsync(() =>
         ctx.db.update(organization).set(setValues).where(eq(organization.id, orgId)),
       );
-    }
 
-    yield* logSessionAudit({
-      organizationId: orgId,
-      userId: ctx.identity.userId,
-      eventType: "org.update",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: { fields: Object.keys(setValues) },
-    });
+      yield* logSessionAudit({
+        organizationId: orgId,
+        userId: ctx.identity.userId,
+        eventType: "org.update",
+        result: "allowed",
+        ipAddress: ctx.ipAddress,
+        meta: { fields: Object.keys(setValues) },
+      });
+    }
 
     return { ok: true };
   });
