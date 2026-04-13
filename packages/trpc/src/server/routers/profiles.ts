@@ -155,6 +155,15 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
       );
     }
 
+    yield* logSessionAudit({
+      organizationId: orgId,
+      userId: ctx.identity.userId,
+      profileId: id,
+      eventType: "profile.create",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+    });
+
     return { profile: serializeProfile(created) };
   });
 
@@ -286,6 +295,15 @@ const setupProfileRecovery = (input: Schema.Schema.Type<typeof ProfileSetupRecov
         .where(eq(profiles.id, profileId)),
     );
 
+    yield* logSessionAudit({
+      organizationId: profile.organizationId,
+      userId: ctx.identity.userId,
+      profileId,
+      eventType: "profile.setup_recovery",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+    });
+
     return { ok: true };
   });
 
@@ -347,7 +365,7 @@ const deleteProfile = (profileId: string) =>
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
 
-    yield* loadProfileForWrite(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId);
 
     const activeItems = yield* tryAsync(() =>
       ctx.db
@@ -368,6 +386,15 @@ const deleteProfile = (profileId: string) =>
     }
 
     yield* tryAsync(() => ctx.db.delete(profiles).where(eq(profiles.id, profileId)));
+
+    yield* logSessionAudit({
+      organizationId: profile.organizationId,
+      userId,
+      profileId,
+      eventType: "profile.delete",
+      result: "allowed",
+      ipAddress: ctx.ipAddress,
+    });
 
     return { ok: true };
   });
