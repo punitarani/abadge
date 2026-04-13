@@ -24,6 +24,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
@@ -41,7 +42,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="none" className="h-svh!" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -86,6 +87,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }
