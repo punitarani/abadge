@@ -14,6 +14,8 @@ export interface NodeTrpcClientOptions {
   baseUrl: string;
   token?: string;
   headers?: unknown;
+  /** Organization ID sent as X-Abadge-Org-Id header for org-scoped requests. */
+  orgId?: string;
 }
 
 export interface NormalizedTrpcError {
@@ -105,6 +107,7 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
           return {
             ...toHeaderRecord(options.headers),
             ...(options.token ? tokenToHeaders(options.token) : {}),
+            ...(options.orgId ? { "X-Abadge-Org-Id": options.orgId } : {}),
           };
         },
       }),
