@@ -337,59 +337,75 @@ function InviteMemberCard({
   orgId: string;
   queryClient: ReturnType<typeof useQueryClient>;
 }): React.ReactElement {
-  const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "admin" | "owner">("member");
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const inviteMutation = useMutation({
-    mutationFn: () => browserTrpcClient.organizations.members.invite.mutate({ orgId, email, role }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgMembers(orgId) });
-      setEmail("");
-      setRole("member");
-      toast.success("Invitation sent.");
+    mutationFn: () =>
+      browserTrpcClient.organizations.members.invite.mutate({ orgId, role }),
+    onSuccess: (data) => {
+      const link = `${window.location.origin}/invite/accept?token=${encodeURIComponent(data.token)}`;
+      setInviteLink(link);
+      setCopied(false);
+      toast.success("Invite link generated.");
     },
     onError: (error) => {
-      toast.error(getClientErrorMessage(error, "Failed to send invitation"));
+      toast.error(getClientErrorMessage(error, "Failed to generate invite link"));
     },
   });
 
-  function handleInvite(e: React.FormEvent): void {
+  function handleGenerate(e: React.FormEvent): void {
     e.preventDefault();
-    if (!email.trim()) return;
+    setInviteLink(null);
     inviteMutation.mutate();
+  }
+
+  async function handleCopy(): Promise<void> {
+    if (!inviteLink) return;
+    await navigator.clipboard.writeText(inviteLink);
+    setCopied(true);
+    toast.success("Copied to clipboard.");
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
     <Card className="p-5">
-      <h3 className="text-sm font-medium mb-3">Invite member</h3>
-      <form onSubmit={handleInvite} className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[200px] space-y-1.5">
-          <Label htmlFor="invite-email">Email</Label>
-          <Input
-            id="invite-email"
-            type="email"
-            placeholder="colleague@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+      <h3 className="text-sm font-medium mb-1">Invite member</h3>
+      <p className="text-xs text-muted-foreground mb-3">
+        Generate a one-time invite link. The link expires in 7 days.
+      </p>
+      <form onSubmit={handleGenerate} className="space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <Label>Role</Label>
+            <Select
+              value={role}
+              onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="owner">Owner</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" size="sm" disabled={inviteMutation.isPending}>
+            {inviteMutation.isPending ? "Generating..." : "Generate link"}
+          </Button>
         </div>
-        <div className="space-y-1.5">
-          <Label>Role</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="member">Member</SelectItem>
-              <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="owner">Owner</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <Button type="submit" size="sm" disabled={inviteMutation.isPending || !email.trim()}>
-          {inviteMutation.isPending ? "Sending..." : "Send invite"}
-        </Button>
+
+        {inviteLink && (
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2">
+            <code className="flex-1 text-xs truncate select-all">{inviteLink}</code>
+            <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        )}
       </form>
     </Card>
   );
