@@ -164,9 +164,35 @@ Input: `{ orgId }`. Returns the member list.
 
 ### `organizations.members.invite`
 
+Auth: `sessionProcedure` (admin+)
+
+Input: `{ orgId, role? }`. Generates a one-time invite link token. Returns `{ ok, invitationId, token }`.
+
+The `token` (prefixed `abi_`) is shown once. Only its SHA-256 hash is stored. The frontend constructs the invite URL: `{APP_URL}/invite/accept?token={token}`.
+
+Invitations expire after 7 days.
+
+### `organizations.members.getInviteInfo`
+
 Auth: `sessionProcedure`
 
-Input: `{ orgId, email, role }`. Returns `{ ok: true }`.
+Input: `{ token }`. Returns `{ invitationId, organizationName, organizationSlug, role, expiresAt, inviterUserId }`.
+
+Requires authentication to prevent info disclosure of org names to unauthenticated users.
+
+### `organizations.members.acceptInvite`
+
+Auth: `sessionProcedure`
+
+Input: `{ token }`. Adds the authenticated user as a member with the invite's role. Returns `{ ok, organizationId, organizationName, organizationSlug }`.
+
+Atomic: uses `WHERE usedAt IS NULL` to prevent double-accept race conditions. Returns org data so the frontend can switch context.
+
+### `organizations.members.revokeInvite`
+
+Auth: `sessionProcedure` (admin+)
+
+Input: `{ orgId, invitationId }`. Deletes an unused invitation. Returns `{ ok: true }`.
 
 ### `organizations.members.remove`
 
