@@ -113,18 +113,36 @@ describe("auth chain integration", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 5. Bearer token auth works for session procedures
+  // 5. Cookie-based auth works for session procedures
   // -------------------------------------------------------------------------
-  test("bearer token auth works for session procedures", async () => {
+  test("cookie-based auth works for session procedures", async () => {
     const user = await seedUser(auth);
     const org = await seedOrg(db, auth, user.userId);
 
-    // seedUser returns headers with Authorization: Bearer <token>
-    const authHeader = user.headers.get("authorization");
-    expect(authHeader).toBeDefined();
-    expect(authHeader?.startsWith("Bearer ")).toBe(true);
+    // seedUser returns cookie-based headers via testUtils.login()
+    const cookieHeader = user.headers.get("cookie");
+    expect(cookieHeader).toBeDefined();
+    expect(cookieHeader).toContain("better-auth.session_token=");
 
+    // Cookie auth exercises auth.api.getSession() in resolveSessionIdentity
     const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
+    const result = await caller.agents.list();
+    expect(result.agents).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. Bearer token auth works as fallback for session procedures
+  // -------------------------------------------------------------------------
+  test("bearer token auth works as fallback for session procedures", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(db, auth, user.userId);
+
+    // Build explicit Bearer headers from the raw session token
+    const bearerHeaders = new Headers();
+    bearerHeaders.set("authorization", `Bearer ${user.token}`);
+
+    // Bearer auth exercises resolveBearerSessionIdentity in resolveSessionIdentity
+    const caller = createOperatorCaller(db, auth, bearerHeaders, org.orgId);
     const result = await caller.agents.list();
     expect(result.agents).toEqual([]);
   });
