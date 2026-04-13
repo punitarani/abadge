@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -41,7 +41,11 @@ function runCommand(
   env: Record<string, string | undefined>,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] }) as ChildProcess;
+    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    // Bun's ChildProcess type omits EventEmitter methods; cast for .on() access
+    const proc = child as unknown as {
+      on(event: string, listener: (...args: unknown[]) => void): void;
+    };
 
     const stdoutChunks: Uint8Array[] = [];
     const stderrChunks: Uint8Array[] = [];
@@ -64,12 +68,13 @@ function runCommand(
       });
     };
 
-    child.on("error", (err: Error) => {
-      stderrChunks.push(new TextEncoder().encode(`[spawn error] ${err.message}\n`));
+    proc.on("error", (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      stderrChunks.push(new TextEncoder().encode(`[spawn error] ${msg}\n`));
       finish(1);
     });
-    child.on("close", (code: number | null) => {
-      finish(code ?? 1);
+    proc.on("close", (code: unknown) => {
+      finish(typeof code === "number" ? code : 1);
     });
   });
 }
