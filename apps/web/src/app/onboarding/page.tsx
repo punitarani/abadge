@@ -24,6 +24,10 @@ import { useOrgStore } from "@/stores/org-store";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
 
+function dicebearUrl(seed: string): string {
+  return `https://api.dicebear.com/9.x/shapes/svg?seed=${encodeURIComponent(seed)}`;
+}
+
 type SlugStatus = "idle" | "checking" | "available" | "taken";
 
 function SlugStatusIndicator({ status }: { status: SlugStatus }): React.ReactElement | null {
@@ -147,8 +151,20 @@ async function submitStep1({
     const result = await browserTrpcClient.organizations.create.mutate({
       name: orgName.trim(),
       slug: orgSlug || undefined,
+      logo: orgSlug ? dicebearUrl(orgSlug) : undefined,
     });
     const org = result.organization;
+
+    // If no custom slug was provided, the server generated one — update the logo with the canonical slug
+    if (!orgSlug && !org.logo) {
+      const logoUrl = dicebearUrl(org.slug);
+      await browserTrpcClient.organizations.update.mutate({
+        orgId: org.id,
+        logo: logoUrl,
+      });
+      org.logo = logoUrl;
+    }
+
     setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
     setOrgId(org.id);
     setCurrentStep(1);
