@@ -41,35 +41,35 @@ const client = new AbadgeUserClient({
 ### Organizations
 
 ```typescript
-client.organizations.create({ name, slug? })
-client.organizations.list()
-client.organizations.get(orgId)
-client.organizations.update(orgId, { name, slug })
-client.organizations.delete(orgId)
-client.organizations.members.list(orgId)
-client.organizations.members.invite(orgId, email, role)
-client.organizations.members.remove(orgId, userId)
-client.organizations.members.updateRole(orgId, userId, role)
+client.createOrganization({ name, slug? })
+client.listOrganizations()
+client.getOrganization(orgId)
+client.updateOrganization(orgId, { name, slug })
+client.deleteOrganization(orgId)
+client.listMembers(orgId)
+client.inviteMember(orgId, email, role)
+client.removeMember(orgId, userId)
+client.updateMemberRole(orgId, userId, role)
 ```
 
 ### Profiles
 
 ```typescript
-client.profiles.create(orgId, { name, description?, storageMode? })
-client.profiles.list(orgId)
-client.profiles.get(profileId)
-client.profiles.bootstrap(profileId, { wrappedRootKey, kdfSalt, kdfParams })
-client.profiles.changePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams })
-client.profiles.setupRecovery(profileId, { recoveryWrappedRootKey })
-client.profiles.rotateKey(profileId, { wrappedRootKey, recoveryWrappedRootKey?, rekeyedItems })
-client.profiles.delete(profileId)
+client.createProfile(orgId, { name, description?, storageMode? })
+client.listProfiles(orgId)
+client.getProfile(profileId)
+client.bootstrapProfile(profileId, { wrappedRootKey, kdfSalt, kdfParams })
+client.changeProfilePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams })
+client.setupProfileRecovery(profileId, { recoveryWrappedRootKey })
+client.rotateProfileKey(profileId, { wrappedRootKey, recoveryWrappedRootKey?, rekeyedItems })
+client.deleteProfile(profileId)
 ```
 
 ### Items
 
 ```typescript
 // Create (zero_knowledge)
-client.items.create({
+client.createItem({
   profileId: string;
   storageMode: "zero_knowledge";
   label: string;
@@ -82,7 +82,7 @@ client.items.create({
 })
 
 // Create (server_managed)
-client.items.create({
+client.createItem({
   profileId: string;
   storageMode: "server_managed";
   label: string;
@@ -91,19 +91,19 @@ client.items.create({
   payload: ItemPayload;
 })
 
-client.items.list(profileId?)
-client.items.get(itemId)
-client.items.update(itemId, data)   // optimistic concurrency via contentVersion
-client.items.delete(itemId)
+client.listItems(profileId?)
+client.getItem(itemId)
+client.updateItem(itemId, data)   // optimistic concurrency via contentVersion
+client.deleteItem(itemId)
 
-// Owner reveal — returns a SecretValue for the requested field
-client.items.ownerReveal(itemId, field?)
+// Owner reveal — returns { payload: ItemPayload } for the requested field
+client.ownerRevealItem(itemId, field?)
 ```
 
 ### Agents
 
 ```typescript
-client.agents.create({
+client.createAgent({
   organizationId: string;
   name: string;
   kind: AgentKind;
@@ -113,33 +113,33 @@ client.agents.create({
   issueBootstrapToken?: boolean;
 })
 
-client.agents.list()
-client.agents.get(agentId)
-client.agents.rotate(agentId)
-client.agents.revoke(agentId)
+client.listAgents()
+client.getAgent(agentId)
+client.rotateAgent(agentId)
+client.revokeAgent(agentId)
 
 // Issue a bootstrap token for an existing agent
-client.auth.issueBootstrapToken(agentId)
+client.issueBootstrapToken(agentId)
 ```
 
 ### Permissions
 
 ```typescript
-client.permissions.create({
+client.createPermission({
   agentId: string;
   itemId: string;
   capability: Capability;
   expiresAt?: string;  // ISO 8601
 })
 
-client.permissions.list({ agentId?, itemId? })
-client.permissions.revoke(permissionId)
+client.listPermissions({ agentId?, itemId? })
+client.revokePermission(permissionId)
 ```
 
 ### Audit
 
 ```typescript
-client.audit.list({
+client.listAuditEntries({
   orgId?: string;
   profileId?: string;
   agentId?: string;
@@ -203,7 +203,7 @@ agent.enroll(bootstrapToken: string, publicKey: string)
 
 These methods enforce the capability matrix and log every attempt.
 
-#### `agent.access.ciphertext(itemId)`
+#### `agent.accessCiphertext(itemId)`
 
 Read the encrypted blob of a ZK item for local decryption.
 
@@ -211,63 +211,45 @@ Read the encrypted blob of a ZK item for local decryption.
 
 ```typescript
 const { encryptedItemKey, keyNonce, ciphertext, contentNonce, cryptoVersion } =
-  await agent.access.ciphertext(itemId);
+  await agent.accessCiphertext(itemId);
 ```
 
-#### `agent.access.reveal(itemId, field?)`
+#### `agent.accessReveal(itemId, field?)`
 
-Decrypt and return a field value from a server-managed item. Returns a `SecretValue`.
+Decrypt and return a field value from a server-managed item. Returns `{ payload: ItemPayload }`.
 
 **Requires:** `reveal_plaintext` permission. Server-managed item only.
 
 ```typescript
-const secret: SecretValue = await agent.access.reveal(itemId);
-const value = secret.expose();  // explicit opt-in to get raw string
+const { payload } = await agent.accessReveal(itemId);
 
 // With a specific field
-const password: SecretValue = await agent.access.reveal(itemId, "password");
+const { payload: fieldPayload } = await agent.accessReveal(itemId, "password");
 ```
 
-#### `agent.access.mount(itemId, mountType, field?)`
+#### `agent.accessMount(itemId, mountType, field?)`
 
 Request item data for local injection (env var or temp file).
 
 **Requires:** `mount_env` or `mount_file` permission. Local agent only.
 
 ```typescript
-const data = await agent.access.mount(itemId, "env", "password");
+const data = await agent.accessMount(itemId, "env", "password");
 ```
 
 ### Other Methods
 
 ```typescript
-agent.agents.self()                    // Get this agent's own record
-agent.items.list(profileId)            // Metadata only
-agent.audit.list(orgId, filters?)      // Structured audit listing
+agent.getSelf()                        // Get this agent's own record
+agent.listItems(profileId)             // Metadata only
+agent.listAuditEntries(orgId, filters?) // Structured audit listing
 ```
 
 ---
 
-## `SecretValue` Opaque Type
+## Return Types
 
-Secret values are wrapped in a `SecretValue` type that prevents accidental logging.
-
-```typescript
-class SecretValue {
-  expose(): string       // Explicit opt-in to get the raw string
-  toString(): string     // Returns "[REDACTED]"
-  toJSON(): string       // Returns "[REDACTED]"
-}
-```
-
-```typescript
-const secret = await agent.access.reveal(itemId);
-
-console.log(secret);             // "[REDACTED]"
-JSON.stringify({ key: secret }); // {"key":"[REDACTED]"}
-
-const raw = secret.expose();     // actual secret value
-```
+`accessReveal` returns `{ payload: ItemPayload }` where `ItemPayload` contains the decrypted item fields. The payload is a plain object, not wrapped in an opaque type.
 
 ---
 
@@ -311,8 +293,7 @@ class AbadgeApiError extends Error {
 import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
 try {
-  const secret = await agent.access.reveal(itemId, "password");
-  const value = secret.expose();
+  const { payload } = await agent.accessReveal(itemId, "password");
 } catch (err) {
   if (err instanceof AbadgeApiError) {
     console.error(`${err.code}: ${err.message}`);
@@ -355,7 +336,6 @@ export { resolveFieldValue } from "@abadge/core/secret-delivery";
 
 // Error
 export { AbadgeApiError } from "./error";
-export { SecretValue } from "./secret-value";
 ```
 
 ---
@@ -373,7 +353,7 @@ const client = new AbadgeUserClient({
 });
 
 // Create a server-managed item
-const { id: itemId } = await client.items.create({
+const { id: itemId } = await client.createItem({
   profileId: "prof_...",
   storageMode: "server_managed",
   label: "GitHub Deploy Token",
@@ -389,7 +369,7 @@ const { id: itemId } = await client.items.create({
 });
 
 // Register an agent (defaults to public_key_session)
-const { agent, bootstrapToken } = await client.agents.create({
+const { agent, bootstrapToken } = await client.createAgent({
   organizationId: "org_...",
   name: "github-actions-deploy",
   kind: "remote",
@@ -397,7 +377,7 @@ const { agent, bootstrapToken } = await client.agents.create({
 });
 
 // Grant reveal_plaintext capability
-await client.permissions.create({
+await client.createPermission({
   agentId: agent.id,
   itemId,
   capability: "reveal_plaintext",
@@ -418,8 +398,8 @@ const agent = new AbadgeAgentClient({
 
 await agent.connect();
 
-const secret = await agent.access.reveal(itemId);
-const token = secret.expose();
+const { payload } = await agent.accessReveal(itemId);
+const token = payload.fields.token;
 
 // Use the token...
 
@@ -429,7 +409,7 @@ agent.disconnect();
 ### Audit: Review access history
 
 ```typescript
-const { entries, nextCursor } = await client.audit.list({
+const { entries, nextCursor } = await client.listAuditEntries({
   itemId,
   limit: 10,
 });

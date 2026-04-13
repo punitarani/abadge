@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
+import { useOrgStore } from "@/stores/org-store";
 
 const KIND_CONFIG: Record<AgentKind, { label: string; description: string }> = {
   local_cli: { label: "Local CLI", description: "Developer machine" },
@@ -51,6 +52,7 @@ interface CreateAgentPanelProps {
 export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): React.ReactElement {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const { activeOrgId } = useOrgStore();
   const formId = useId();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<AgentKind>("local_cli");
@@ -69,7 +71,7 @@ export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): Reac
           bootstrapExpiresAt: result.bootstrapExpiresAt,
         });
         await queryClient.invalidateQueries({
-          queryKey: dashboardQueryKeys.agents(),
+          queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
         });
         toast.success("Agent registered.");
       },

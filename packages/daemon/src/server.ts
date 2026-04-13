@@ -182,8 +182,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
 
       try {
         vault.unlock(password, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("tag") || msg.includes("decrypt") || msg.includes("auth")) {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
+        }
+        throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Unlock failed: ${msg}` };
       }
 
       return { ok: true, keyVersion: vault.keyVersion };
@@ -217,8 +221,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       let result: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown };
       try {
         result = vault.changePassword(oldPassword, newPassword, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("tag") || msg.includes("decrypt") || msg.includes("auth")) {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
+        }
+        throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
       await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, result);
@@ -483,11 +491,12 @@ export function startServer(config: DaemonConfig): DaemonServer {
     },
   });
 
-  // Set socket file permissions to owner-only
+  // Set socket file permissions to owner-only — abort if this fails
   try {
     chmodSync(config.socketPath, 0o600);
-  } catch {
-    console.warn("[vaultd] Could not set socket permissions to 0600");
+  } catch (err) {
+    server.stop(true);
+    throw new Error(`[vaultd] FATAL: Could not set socket permissions to 0600: ${err}`);
   }
 
   return {

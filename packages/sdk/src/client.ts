@@ -858,7 +858,13 @@ export class AbadgeAgentClient {
     this.refreshTimer = setTimeout(() => {
       this.connect().catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[AbadgeAgentClient] Session refresh failed: ${msg}`);
+        console.error(`[AbadgeAgentClient] Session refresh failed: ${msg}. Retrying in 30s...`);
+        this.refreshTimer = setTimeout(() => {
+          this.connect().catch((retryErr: unknown) => {
+            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            console.error(`[AbadgeAgentClient] Session refresh retry failed: ${retryMsg}`);
+          });
+        }, 30_000);
       });
     }, refreshDelay);
   }

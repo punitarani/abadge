@@ -360,8 +360,8 @@ Auth: `sessionProcedure`
 
 Creation-time enforcement rejects:
 
-* remote agent + zero-knowledge item (`REMOTE_AGENT_ZK_FORBIDDEN`)
-* remote agent + capability other than `reveal_plaintext`
+* remote agent + zero-knowledge item (`INVALID_CAPABILITY_STORAGE`)
+* remote agent + capability other than `reveal_plaintext` (`INVALID_CAPABILITY_LOCALITY`)
 
 ### `permissions.list`
 

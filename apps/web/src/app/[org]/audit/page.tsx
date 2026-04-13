@@ -28,6 +28,7 @@ import {
 import {
   buildAuditAgentNameMap,
   buildAuditItemLabelMap,
+  buildProfileNameMap,
   resolveAuditDisplayValue,
 } from "@/lib/audit-display";
 import { dashboardQueryKeys } from "@/lib/query-keys";
@@ -39,10 +40,6 @@ type DateRangeFilter = "7d" | "30d" | "all";
 
 const PAGE_SIZE = 25;
 const COLUMN_COUNT = 7;
-
-function buildProfileNameMap(profiles: Profile[]): Map<string, string> {
-  return new Map(profiles.map((p) => [p.id, p.name]));
-}
 
 function dateRangeThreshold(range: DateRangeFilter): Date | null {
   if (range === "all") return null;

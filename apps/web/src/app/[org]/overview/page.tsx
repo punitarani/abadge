@@ -20,6 +20,7 @@ import {
 import {
   buildAuditAgentNameMap,
   buildAuditItemLabelMap,
+  buildProfileNameMap,
   resolveAuditDisplayValue,
 } from "@/lib/audit-display";
 import { dashboardQueryKeys } from "@/lib/query-keys";
@@ -42,10 +43,6 @@ function resultBadgeVariant(result: string): BadgeVariant {
     default:
       return "secondary";
   }
-}
-
-function buildProfileNameMap(profiles: Profile[]): Map<string, string> {
-  return new Map(profiles.map((p) => [p.id, p.name]));
 }
 
 const AUDIT_COLUMN_COUNT = 6;
@@ -261,8 +258,9 @@ export default function OverviewPage(): React.ReactElement {
 
   const auditInput = { limit: 5 };
   const auditQuery = useQuery({
-    queryKey: dashboardQueryKeys.audit(auditInput),
+    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", auditInput),
     queryFn: () => browserTrpcClient.audit.list.query(auditInput),
+    enabled: !!activeOrgId,
   });
 
   const profiles = profilesQuery.data?.profiles ?? [];

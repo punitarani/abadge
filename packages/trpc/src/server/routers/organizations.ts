@@ -243,7 +243,7 @@ const deleteOrg = (orgId: string) =>
     if (activeItems.length > 0) {
       return yield* Effect.fail(
         new ConflictError({
-          code: "PROFILE_NOT_EMPTY",
+          code: "ORG_NOT_EMPTY",
           message: "Organization still has active items",
           hint: "Delete all items in this organization before deleting it.",
         }),

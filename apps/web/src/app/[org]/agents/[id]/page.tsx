@@ -78,9 +78,9 @@ export default function AgentDetailPage(): React.ReactElement {
 
   const auditInput = { agentId, limit: 5 as const };
   const auditQuery = useQuery({
-    queryKey: dashboardQueryKeys.audit(auditInput),
+    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", auditInput),
     queryFn: () => browserTrpcClient.audit.list.query(auditInput),
-    enabled: !!agentId,
+    enabled: !!activeOrgId && !!agentId,
   });
 
   const agent = agentQuery.data?.agent ?? null;

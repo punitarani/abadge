@@ -1,5 +1,4 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { principals } from "@abadge/db/schema";
 import { seedAgent, seedAgentSession, seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
@@ -59,19 +58,7 @@ describe("e2e golden path", () => {
     });
     expect(permResult.permission).toBeDefined();
 
-    // 7. Insert a principals row so seedAgentSession can satisfy the FK.
-    //    The agents.create tRPC procedure only inserts into the `agents` table,
-    //    not `principals`, but `agentSessions.agentId` references `principals.id`.
-    await db.insert(principals).values({
-      id: agentId,
-      userId: owner.userId,
-      kind: "remote",
-      locality: "remote",
-      authMethod: "legacy_api_key",
-      name: "deploy-bot",
-    });
-
-    // 8. Create an agent session (inserts a hashed token into agentSessions)
+    // 7. Create an agent session (inserts a hashed token into agentSessions)
     const session = await seedAgentSession(db, {
       agentId,
       userId: owner.userId,
@@ -125,7 +112,7 @@ describe("e2e golden path", () => {
     });
     const itemId = itemResult.id;
 
-    // 3. Create an agent via seedAgent (handles both principals + agents tables)
+    // 3. Create an agent via seedAgent
     //    — no permission granted
     const agent = await seedAgent(db, {
       userId: owner.userId,

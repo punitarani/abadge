@@ -206,7 +206,13 @@ const loadOwnedAgent = (agentId: string) =>
       ctx.db
         .select()
         .from(agentRecords)
-        .where(and(eq(agentRecords.id, agentId), eq(agentRecords.createdBy, ctx.identity.userId)))
+        .where(
+          and(
+            eq(agentRecords.id, agentId),
+            eq(agentRecords.createdBy, ctx.identity.userId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
+        )
         .limit(1),
     )) as Array<OwnedAgentRow>;
 

@@ -64,9 +64,9 @@ export default function ItemDetailPage(): React.ReactElement {
 
   const auditInput = { itemId, limit: 5 as const };
   const auditQuery = useQuery({
-    queryKey: dashboardQueryKeys.audit(auditInput),
+    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", auditInput),
     queryFn: () => browserTrpcClient.audit.list.query(auditInput),
-    enabled: !!itemId,
+    enabled: !!activeOrgId && !!itemId,
   });
 
   const item = itemQuery.data?.item ?? null;

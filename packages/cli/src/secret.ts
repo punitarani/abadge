@@ -25,7 +25,7 @@ async function resolveMountedSecret(
   mountType: "env" | "file",
   field?: string,
 ): Promise<string> {
-  const mounted = await client.accessMount(itemId, mountType);
+  const mounted = await client.accessMount(itemId, mountType, field);
   if (mounted.storageMode === "zero_knowledge") {
     return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext, field);
   }

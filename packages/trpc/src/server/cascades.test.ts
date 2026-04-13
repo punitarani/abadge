@@ -48,6 +48,11 @@ function makeMockDb(selectResult: unknown[] = []) {
     return chain;
   };
 
+  chain.delete = (...args: unknown[]) => {
+    calls.push({ op: "delete", args });
+    return chain;
+  };
+
   chain.insert = (...args: unknown[]) => {
     calls.push({ op: "insert", args });
     return chain;
@@ -96,9 +101,12 @@ describe("onAgentRevoked", () => {
 });
 
 describe("onItemDeleted", () => {
-  test("writes a cascade audit entry for the deleted item", async () => {
+  test("cleans up permissions and writes a cascade audit entry", async () => {
     const { db, calls } = makeMockDb();
     await onItemDeleted(db, "item-1", "org-1", "user-1");
+
+    const deleteOps = calls.filter((c) => c.op === "delete");
+    expect(deleteOps.length).toBe(1);
 
     const valueOps = calls.filter((c) => c.op === "values");
     expect(valueOps.length).toBe(1);

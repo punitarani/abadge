@@ -343,14 +343,14 @@ process exit code. Supports field-level delivery for multi-field items and envir
 abadge run --item <item-id> -- npm run deploy
 
 # Inject a specific field from a multi-field item
-abadge run --item <item-id> --field password --env DB_PASSWORD -- psql "$DB_HOST"
+abadge run --item <item-id> --field password --env-var DB_PASSWORD -- psql "$DB_HOST"
 
 # Inject as a named env var
-abadge run --item <item-id> --env OPENAI_API_KEY -- node script.js
+abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 
 # Multiple fields from one item (stacked triples)
-abadge run --item prod-db --field username --env DB_USER \
-           --field password --env DB_PASSWORD -- ./migrate.sh
+abadge run --item prod-db --field username --env-var DB_USER \
+           --field password --env-var DB_PASSWORD -- ./migrate.sh
 
 # Expand every field of a multi-field item into the environment
 abadge run --item my-service-env --expand-env -- ./server
@@ -361,7 +361,7 @@ abadge run --item my-service-env --expand-env -- ./server
 |------|-------------|
 | `--item` | Item ID or label |
 | `--field` | Named field to inject (for multi-field items); can be repeated |
-| `--env` | Environment variable name (default: `ABADGE_SECRET`) |
+| `--env-var` | Environment variable name (default: `ABADGE_SECRET`) |
 | `--expand-env` | Inject every field as a separate env var (field name = var name) |
 
 ### `abadge mount`

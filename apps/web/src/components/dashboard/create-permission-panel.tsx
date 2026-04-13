@@ -18,6 +18,7 @@ import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/s
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
+import { useOrgStore } from "@/stores/org-store";
 
 const CAPABILITY_META: Record<
   Capability,
@@ -225,6 +226,7 @@ export function CreatePermissionPanel({
   onClose,
 }: CreatePermissionPanelProps): React.ReactElement {
   const queryClient = useQueryClient();
+  const { activeOrgId } = useOrgStore();
   const formId = useId();
   const [selectedAgent, setSelectedAgent] = useState("");
   const [selectedItem, setSelectedItem] = useState("");
@@ -232,11 +234,11 @@ export function CreatePermissionPanel({
   const [expiresAt, setExpiresAt] = useState("");
 
   const agentsQuery = useQuery({
-    queryKey: dashboardQueryKeys.agents(),
+    queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.agents.list.query(),
   });
   const itemsQuery = useQuery({
-    queryKey: dashboardQueryKeys.items(),
+    queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
   });
   const createPermission = useMutation({
@@ -249,7 +251,7 @@ export function CreatePermissionPanel({
     onSuccess: async () => {
       resetForm();
       await queryClient.invalidateQueries({
-        queryKey: dashboardQueryKeys.permissions(),
+        queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
       });
       toast.success("Permission granted.");
       handleClose();

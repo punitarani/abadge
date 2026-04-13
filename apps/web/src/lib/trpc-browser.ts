@@ -2,10 +2,12 @@
 
 import { clientEnv } from "@abadge/env/client";
 import { createBrowserTrpcClient, normalizeTrpcError } from "@abadge/trpc/client";
+import { useOrgStore } from "@/stores/org-store";
 
 export const browserTrpcClient: ReturnType<typeof createBrowserTrpcClient> =
   createBrowserTrpcClient({
     baseUrl: clientEnv.ABADGE_API_URL,
+    getOrgId: () => useOrgStore.getState().activeOrgId ?? undefined,
   });
 
 function formatIssue(issue: unknown): string | undefined {

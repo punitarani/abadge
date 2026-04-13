@@ -6,6 +6,8 @@ import type { AppRouter } from "./server/router";
 
 export interface BrowserTrpcClientOptions {
   baseUrl: string;
+  /** Optional callback to resolve the active organization ID for X-Abadge-Org-Id header. */
+  getOrgId?: () => string | undefined;
 }
 
 export interface NodeTrpcClientOptions {
@@ -78,6 +80,10 @@ export function createBrowserTrpcClient(options: BrowserTrpcClientOptions) {
     links: [
       httpBatchLink({
         url,
+        headers() {
+          const orgId = options.getOrgId?.();
+          return orgId ? { "X-Abadge-Org-Id": orgId } : {};
+        },
         fetch: ((input: unknown, init?: unknown) =>
           fetch(input as never, {
             ...(init as RequestInit | undefined),

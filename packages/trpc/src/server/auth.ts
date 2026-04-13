@@ -25,18 +25,9 @@ interface AuthSessionResult {
   } | null;
 }
 
-interface AuthSessionLookupResult {
-  session?: {
-    userId?: string | null;
-  } | null;
-  user?: {
-    id?: string | null;
-  } | null;
-}
-
 interface AuthContextWithSessionLookup {
   internalAdapter: {
-    findSession: (token: string) => Promise<AuthSessionLookupResult | null>;
+    findSession: (token: string) => Promise<AuthSessionResult | null>;
   };
 }
 
@@ -90,7 +81,8 @@ function touchAgent(ctx: BaseRequestContext, agentId: string): void {
     .update(agentRecords)
     .set({ lastUsedAt: new Date() })
     .where(eq(agentRecords.id, agentId))
-    .execute();
+    .execute()
+    .catch(() => {});
 }
 
 function toAgentIdentity(
@@ -110,7 +102,8 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
     .update(agentSessions)
     .set({ lastUsedAt: new Date() })
     .where(eq(agentSessions.id, sessionId))
-    .execute();
+    .execute()
+    .catch(() => {});
 }
 
 function auditAgentSessionReject(
@@ -270,10 +263,17 @@ const verifyAgentSessionIdentity = (
     }
 
     if (sessionRecord.expiresAt <= new Date()) {
+      const [expiredAgent] = (yield* tryAsync(() =>
+        ctx.db
+          .select({ organizationId: agentRecords.organizationId })
+          .from(agentRecords)
+          .where(eq(agentRecords.id, sessionRecord.agentId))
+          .limit(1),
+      )) as Array<{ organizationId: string }>;
       yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
-        organizationId: "",
+        organizationId: expiredAgent?.organizationId ?? "",
         result: "expired",
         reason: "session_expired",
       });
@@ -340,7 +340,23 @@ const verifyAgentSessionIdentity = (
 
 async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
   const orgIdHeader = ctx.req.headers.get("X-Abadge-Org-Id");
-  if (orgIdHeader) return orgIdHeader;
+
+  if (orgIdHeader) {
+    const [membership] = await ctx.db
+      .select({ organizationId: member.organizationId })
+      .from(member)
+      .where(and(eq(member.userId, userId), eq(member.organizationId, orgIdHeader)))
+      .limit(1);
+
+    if (!membership) {
+      throw new UnauthorizedError({
+        code: "MEMBER_INSUFFICIENT_ROLE",
+        message: "You are not a member of this organization",
+        hint: "Check the X-Abadge-Org-Id header value.",
+      });
+    }
+    return orgIdHeader;
+  }
 
   const [firstMembership] = await ctx.db
     .select({ organizationId: member.organizationId })
@@ -348,7 +364,15 @@ async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promis
     .where(eq(member.userId, userId))
     .limit(1);
 
-  return firstMembership?.organizationId ?? "";
+  if (!firstMembership) {
+    throw new UnauthorizedError({
+      code: "UNAUTHORIZED",
+      message: "You do not belong to any organization",
+      hint: "Complete onboarding to create or join an organization.",
+    });
+  }
+
+  return firstMembership.organizationId;
 }
 
 export const resolveSessionIdentity = (
@@ -393,7 +417,7 @@ const resolveBearerSessionIdentity = (
     const authContext = (yield* tryAsync(() => ctx.auth.$context)) as AuthContextWithSessionLookup;
     const sessionLookup = (yield* tryAsync(() =>
       authContext.internalAdapter.findSession(token),
-    )) as AuthSessionLookupResult | null;
+    )) as AuthSessionResult | null;
 
     const sessionUserId = sessionLookup?.user?.id ?? sessionLookup?.session?.userId;
     if (sessionUserId) {

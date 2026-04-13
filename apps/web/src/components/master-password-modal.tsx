@@ -84,8 +84,8 @@ export function MasterPasswordModal({
   async function handleBootstrap(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
-    if (password.length < 8) {
-      setError("Master password must be at least 8 characters");
+    if (password.length < 12) {
+      setError("Master password must be at least 12 characters");
       return;
     }
     if (password !== confirmPassword) {
@@ -109,8 +109,8 @@ export function MasterPasswordModal({
   async function handleRecover(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
-    if (password.length < 8) {
-      setError("New master password must be at least 8 characters");
+    if (password.length < 12) {
+      setError("New master password must be at least 12 characters");
       return;
     }
     if (password !== confirmPassword) {
@@ -271,7 +271,7 @@ export function MasterPasswordModal({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={8}
+                    minLength={12}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -319,7 +319,7 @@ export function MasterPasswordModal({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={8}
+                    minLength={12}
                     autoFocus
                   />
                 </div>

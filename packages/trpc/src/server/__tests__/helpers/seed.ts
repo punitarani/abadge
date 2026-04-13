@@ -10,7 +10,7 @@ import {
   toBase64,
 } from "@abadge/crypto/shared";
 import type { Database } from "@abadge/db";
-import { agentSessions, agents, items, permissions, principals, profiles } from "@abadge/db/schema";
+import { agentSessions, agents, items, permissions, profiles } from "@abadge/db/schema";
 import { getTestHelpers, type TestAuth } from "./test-auth";
 import { TEST_ENV } from "./test-env";
 
@@ -252,21 +252,7 @@ export async function seedAgent(
     keyPair = kp;
   }
 
-  // Insert into BOTH tables with the SAME id.
-  // principals: FK target for agentSessions, agentEnrollmentTokens, agentSessionChallenges
-  // agents: queried by tRPC routers for business logic
-  await db.insert(principals).values({
-    id: agentId,
-    userId: opts.userId,
-    kind,
-    locality,
-    authMethod,
-    name,
-    secretHash,
-    secretPrefix,
-    publicKey,
-  });
-
+  // agents: FK target for agentSessions/agentEnrollmentTokens/agentSessionChallenges and queried by tRPC routers
   await db.insert(agents).values({
     id: agentId,
     organizationId: opts.orgId,

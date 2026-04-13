@@ -16,6 +16,7 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
 export type StorageMode = "zero_knowledge" | "server_managed";
 
@@ -427,6 +428,7 @@ interface CreateItemPanelProps {
 
 export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.ReactElement {
   const queryClient = useQueryClient();
+  const { activeOrgId } = useOrgStore();
   const { requestUnlock } = useVault();
   const formId = useId();
   const [name, setName] = useState("");
@@ -497,7 +499,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
 
       await browserTrpcClient.items.create.mutate(body);
       await queryClient.invalidateQueries({
-        queryKey: dashboardQueryKeys.items(),
+        queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
       });
       toast.success("Item created.");
       setName("");

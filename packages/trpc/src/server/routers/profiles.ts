@@ -94,6 +94,30 @@ const loadProfile = (profileId: string, userId: string) =>
     return profile;
   });
 
+/** Like loadProfile but requires admin role — use for destructive key operations. */
+const loadProfileForWrite = (profileId: string, userId: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+
+    const [profile] = yield* tryAsync(() =>
+      ctx.db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1),
+    );
+
+    if (!profile) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found",
+          hint: "Check the profile ID and make sure it belongs to your organization.",
+        }),
+      );
+    }
+
+    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "admin"));
+
+    return profile;
+  });
+
 const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -160,7 +184,7 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfile(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId);
 
     if (profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -202,7 +226,7 @@ const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePas
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfile(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId);
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -243,7 +267,7 @@ const setupProfileRecovery = (input: Schema.Schema.Type<typeof ProfileSetupRecov
     const ctx = yield* SessionRequestContextTag;
     const { profileId, recoveryWrappedRootKey } = input;
 
-    const profile = yield* loadProfile(profileId, ctx.identity.userId);
+    const profile = yield* loadProfileForWrite(profileId, ctx.identity.userId);
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -271,7 +295,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     const { profileId, wrappedRootKey, recoveryWrappedRootKey, rekeyedItems } = input;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfile(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId);
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -286,25 +310,25 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     const nextKeyVersion = profile.keyVersion + 1;
 
     yield* tryAsync(() =>
-      ctx.db
-        .update(profiles)
-        .set({
-          wrappedRootKey,
-          recoveryWrappedRootKey: recoveryWrappedRootKey ?? profile.recoveryWrappedRootKey,
-          keyVersion: nextKeyVersion,
-          updatedAt: new Date(),
-        })
-        .where(eq(profiles.id, profileId)),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx
+          .update(profiles)
+          .set({
+            wrappedRootKey,
+            recoveryWrappedRootKey: recoveryWrappedRootKey ?? profile.recoveryWrappedRootKey,
+            keyVersion: nextKeyVersion,
+            updatedAt: new Date(),
+          })
+          .where(eq(profiles.id, profileId));
 
-    for (const [itemId, newEncryptedItemKey] of Object.entries(rekeyedItems)) {
-      yield* tryAsync(() =>
-        ctx.db
-          .update(items)
-          .set({ encryptedItemKey: newEncryptedItemKey, updatedAt: new Date() })
-          .where(and(eq(items.id, itemId), eq(items.profileId, profileId))),
-      );
-    }
+        for (const [itemId, newEncryptedItemKey] of Object.entries(rekeyedItems)) {
+          await tx
+            .update(items)
+            .set({ encryptedItemKey: newEncryptedItemKey, updatedAt: new Date() })
+            .where(and(eq(items.id, itemId), eq(items.profileId, profileId)));
+        }
+      }),
+    );
 
     yield* logSessionAudit({
       organizationId: profile.organizationId,
@@ -323,9 +347,7 @@ const deleteProfile = (profileId: string) =>
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfile(profileId, userId);
-
-    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "admin"));
+    yield* loadProfileForWrite(profileId, userId);
 
     const activeItems = yield* tryAsync(() =>
       ctx.db

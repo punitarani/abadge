@@ -17,7 +17,7 @@ Rewrite the credential storage system to be **zero-knowledge first** with an opt
 
 | Mode | Encryption | Who can decrypt | Use case |
 |------|-----------|-----------------|----------|
-| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via libsodium | Only the user (via master password) and their local agents | User secrets, local CLI/MCP usage |
+| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via @noble/ciphers | Only the user (via master password) and their local agents | User secrets, local CLI/MCP usage |
 | `server_managed` (opt-in) | Server-side AES-256-GCM envelope encryption | Server, for authorized remote agent access | Remote agent reveal, hosted workflows |
 
 These are **separate items**, not dual-ciphertext on the same item.

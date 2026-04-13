@@ -78,9 +78,14 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
 
 export const scopedSessionProcedure = (_scope: string) =>
   sessionProcedure.use(async ({ ctx, next }) => {
-    if (ctx.identity.organizationId) {
-      await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
+    if (!ctx.identity.organizationId) {
+      throw new ForbiddenError({
+        code: "FORBIDDEN",
+        message: "Organization context required",
+        hint: "Complete onboarding to create or join an organization.",
+      });
     }
+    await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
     return next({ ctx });
   });
 

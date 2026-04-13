@@ -15,8 +15,8 @@ if (!databaseUrl) {
 }
 
 if (!encryptionKey) {
-  console.error("ENCRYPTION_KEY is not set");
-  process.exit(1);
+  console.log("ENCRYPTION_KEY not set — skipping backfill (migration-only mode)");
+  process.exit(0);
 }
 
 const sql = postgres(databaseUrl, {

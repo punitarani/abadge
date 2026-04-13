@@ -1,6 +1,6 @@
 import type { Database } from "@abadge/db";
 import { and, eq, gt, isNull } from "@abadge/db";
-import { agentSessions, auditLogs } from "@abadge/db/schema";
+import { agentSessions, auditLogs, permissions } from "@abadge/db/schema";
 
 /**
  * Called after agent revocation: invalidates all active sessions for the agent
@@ -39,8 +39,8 @@ export async function onAgentRevoked(
 }
 
 /**
- * Called after an item is soft-deleted: writes a cascade audit entry.
- * Permission rows are handled by ON DELETE CASCADE at the DB level.
+ * Called after an item is soft-deleted: cleans up permissions and writes a cascade audit entry.
+ * Soft delete does not trigger ON DELETE CASCADE — explicitly clean up permissions.
  */
 export async function onItemDeleted(
   db: Database,
@@ -48,6 +48,8 @@ export async function onItemDeleted(
   orgId: string,
   deletedBy: string,
 ): Promise<void> {
+  await db.delete(permissions).where(eq(permissions.itemId, itemId));
+
   await db.insert(auditLogs).values({
     organizationId: orgId,
     userId: deletedBy,

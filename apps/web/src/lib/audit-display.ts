@@ -1,10 +1,14 @@
-import type { Agent, ItemSummary } from "@abadge/core";
+import type { Agent, ItemSummary, Profile } from "@abadge/core";
 
 const AUDIT_FALLBACK_ID_LENGTH = 13;
 
 export interface AuditDisplayValue {
   text: string;
   resolved: boolean;
+}
+
+export function buildProfileNameMap(profiles: Profile[]): Map<string, string> {
+  return new Map(profiles.map((p) => [p.id, p.name]));
 }
 
 export function buildAuditAgentNameMap(agents: Agent[]): Map<string, string> {

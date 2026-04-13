@@ -176,28 +176,28 @@ const rotateKey = (input: RotateKeyInput) =>
 
     const nextKeyVersion = vault.keyVersion + 1;
     yield* Effect.tryPromise(() =>
-      ctx.db
-        .update(vaults)
-        .set({
-          wrappedRootKey: input.wrappedRootKey,
-          recoveryWrappedRootKey: input.recoveryWrappedRootKey ?? vault.recoveryWrappedRootKey,
-          keyVersion: nextKeyVersion,
-          updatedAt: new Date(),
-        })
-        .where(eq(vaults.userId, userId)),
-    );
-
-    for (const [itemId, newEncryptedItemKey] of Object.entries(input.rekeyedItems)) {
-      yield* Effect.tryPromise(() =>
-        ctx.db
-          .update(items)
+      ctx.db.transaction(async (tx) => {
+        await tx
+          .update(vaults)
           .set({
-            encryptedItemKey: newEncryptedItemKey,
+            wrappedRootKey: input.wrappedRootKey,
+            recoveryWrappedRootKey: input.recoveryWrappedRootKey ?? vault.recoveryWrappedRootKey,
+            keyVersion: nextKeyVersion,
             updatedAt: new Date(),
           })
-          .where(and(eq(items.id, itemId), eq(items.userId, userId))),
-      );
-    }
+          .where(eq(vaults.userId, userId));
+
+        for (const [itemId, newEncryptedItemKey] of Object.entries(input.rekeyedItems)) {
+          await tx
+            .update(items)
+            .set({
+              encryptedItemKey: newEncryptedItemKey,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+        }
+      }),
+    );
 
     yield* logSessionAudit({
       organizationId: ctx.identity.organizationId,

@@ -1,6 +1,6 @@
 import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { agents } from "./agents";
 import { user } from "./auth";
-import { principals } from "./principals";
 
 export const agentEnrollmentTokens = pgTable(
   "agent_enrollment_tokens",
@@ -8,7 +8,7 @@ export const agentEnrollmentTokens = pgTable(
     id: text("id").primaryKey(),
     agentId: text("agent_id")
       .notNull()
-      .references(() => principals.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),

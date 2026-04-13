@@ -20,7 +20,7 @@ import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
 import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
+import { createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
@@ -172,18 +172,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     const ctx = yield* SessionRequestContextTag;
     const item = yield* loadOwnedItem(itemId);
 
-    if (item.contentVersion !== input.contentVersion) {
-      return yield* Effect.fail(
-        new ConflictError({
-          code: "STALE_VERSION",
-          message: "Stale version — reload and retry",
-          hint: "Refresh the item details and retry the update with the latest contentVersion.",
-        }),
-      );
-    }
-
     if (input.storageMode === "zero_knowledge") {
-      yield* Effect.tryPromise(() =>
+      const updated = yield* Effect.tryPromise(() =>
         ctx.db
           .update(items)
           .set({
@@ -193,15 +183,26 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(eq(items.id, itemId)),
+          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
+          .returning({ id: items.id }),
       );
+
+      if (updated.length === 0) {
+        return yield* Effect.fail(
+          new ConflictError({
+            code: "STALE_VERSION",
+            message: "Stale version — reload and retry",
+            hint: "Refresh the item details and retry the update with the latest contentVersion.",
+          }),
+        );
+      }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
       const encrypted = yield* Effect.tryPromise(() =>
         serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
       );
 
-      yield* Effect.tryPromise(() =>
+      const updated = yield* Effect.tryPromise(() =>
         ctx.db
           .update(items)
           .set({
@@ -212,8 +213,19 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(eq(items.id, itemId)),
+          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
+          .returning({ id: items.id }),
       );
+
+      if (updated.length === 0) {
+        return yield* Effect.fail(
+          new ConflictError({
+            code: "STALE_VERSION",
+            message: "Stale version — reload and retry",
+            hint: "Refresh the item details and retry the update with the latest contentVersion.",
+          }),
+        );
+      }
     }
 
     yield* logSessionAudit({
@@ -324,11 +336,11 @@ export const itemsRouter = createTrpcRouter({
     .input(strictSchema(UpdateItemInputEnvelopeSchema))
     .output(strictSchema(ItemVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateItem(input.itemId, input.data))),
-  ownerReveal: sessionProcedure
+  ownerReveal: scopedSessionProcedure("items:write")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(RevealAccessResponseSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
-  delete: sessionProcedure
+  delete: scopedSessionProcedure("items:write")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteItem(input.itemId))),
