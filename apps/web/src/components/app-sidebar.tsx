@@ -20,6 +20,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -28,13 +29,30 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-const navItems = [
-  { path: "overview", label: "Overview", icon: LayoutDashboard },
-  { path: "profiles", label: "Profiles", icon: Columns3 },
-  { path: "items", label: "Items", icon: KeyRound },
-  { path: "agents", label: "Agents", icon: Bot },
-  { path: "permissions", label: "Permissions", icon: ShieldCheck },
-  { path: "audit", label: "Audit log", icon: ScrollText },
+const navGroups = [
+  {
+    label: "Secrets",
+    items: [
+      { path: "profiles", label: "Profiles", icon: Columns3 },
+      { path: "items", label: "Items", icon: KeyRound },
+    ],
+  },
+  {
+    label: "Access",
+    items: [
+      { path: "agents", label: "Agents", icon: Bot },
+      { path: "permissions", label: "Permissions", icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "Monitor",
+    items: [
+      { path: "audit", label: "Audit log", icon: ScrollText },
+    ],
+  },
+];
+
+const bottomNavItems = [
   { path: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -63,10 +81,52 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
         <OrgSwitcher />
       </SidebarHeader>
       <SidebarContent>
+        {/* Overview — standalone at top */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
+                  <Link href="/overview">
+                    <LayoutDashboard />
+                    <span>Overview</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Grouped nav sections */}
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((item) => {
+                  const href = `/${item.path}`;
+                  const isActive = pathname.startsWith(href);
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton asChild isActive={isActive}>
+                        <Link href={href}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+
+        {/* Settings — pushed to bottom */}
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {bottomNavItems.map((item) => {
                 const href = `/${item.path}`;
                 const isActive = pathname.startsWith(href);
                 return (
