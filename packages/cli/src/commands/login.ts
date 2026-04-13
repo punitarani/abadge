@@ -63,10 +63,16 @@ async function completeDeviceLogin(
   expiresAt: string,
   printToken: boolean,
 ): Promise<{ userId: string }> {
-  await recordLoginViaTrpc({
-    apiUrl,
-    sessionHeaders: { Authorization: `Bearer ${accessToken}` },
-  });
+  try {
+    await recordLoginViaTrpc({
+      apiUrl,
+      sessionHeaders: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch {
+    // recordLogin is best-effort audit logging; it fails for users
+    // without org membership (new signups pre-onboarding). Login
+    // itself already succeeded at this point.
+  }
   const session = await getBearerSession(apiUrl, accessToken);
   const userId = session.user?.id ?? session.session?.userId;
   if (!userId) {

@@ -54,7 +54,7 @@ async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItem
     process.exit(1);
   }
 
-  const storageMode = opts.storageMode ?? "zero_knowledge";
+  const storageMode = opts.storageMode ?? "server_managed";
   if (storageMode !== "zero_knowledge" && storageMode !== "server_managed") {
     error("Storage mode must be one of: zero_knowledge, server_managed");
     process.exit(1);
@@ -150,7 +150,18 @@ export function createItemCommand(): Command {
         const item = (await client.getItem(id)).item;
 
         if (!opts.reveal || item.storageMode !== "zero_knowledge") {
-          json(item);
+          if (opts.json) {
+            json(item);
+          } else {
+            table([{
+              ID: item.id,
+              Label: item.label,
+              Storage: item.storageMode,
+              Version: String(item.contentVersion),
+              Created: item.createdAt,
+              Updated: item.updatedAt,
+            }]);
+          }
           return;
         }
 

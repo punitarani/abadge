@@ -85,12 +85,18 @@ export function createOrgCommand(): Command {
           ? result
           : ((result as { members?: unknown[] })?.members ?? []);
         table(
-          (members as Array<{ user?: { email?: string }; email?: string; role?: string }>).map(
-            (m) => ({
-              User: m.user?.email ?? m.email ?? "(unknown)",
-              Role: m.role ?? "",
-            }),
-          ),
+          (
+            members as Array<{
+              user?: { name?: string; email?: string };
+              name?: string;
+              email?: string;
+              role?: string;
+              userId?: string;
+            }>
+          ).map((m) => ({
+            User: m.user?.name ?? m.user?.email ?? m.name ?? m.email ?? m.userId ?? "(unknown)",
+            Role: m.role ?? "",
+          })),
         );
       } catch (err) {
         error(errorMessage(err, "Failed to list members."));

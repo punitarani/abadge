@@ -178,7 +178,12 @@ export async function createUserApiClient(
   const config = await resolveSessionConfig(options);
   const authHeader = config.sessionHeaders?.Authorization ?? "";
   const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
-  return new AbadgeUserClient({ apiUrl: config.apiUrl, sessionToken });
+  const cliConfig = loadConfig();
+  return new AbadgeUserClient({
+    apiUrl: config.apiUrl,
+    sessionToken,
+    orgId: cliConfig?.activeOrgId,
+  });
 }
 
 async function connectKeypairClient(
