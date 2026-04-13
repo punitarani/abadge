@@ -43,13 +43,13 @@ function runCommand(
   return new Promise((resolve) => {
     const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
 
-    const stdoutChunks: Uint8Array[] = [];
-    const stderrChunks: Uint8Array[] = [];
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
-    child.stdout?.on("data", (chunk: Uint8Array) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(chunk);
     });
-    child.stderr?.on("data", (chunk: Uint8Array) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderrChunks.push(chunk);
     });
 
