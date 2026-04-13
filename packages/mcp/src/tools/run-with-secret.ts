@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -41,7 +41,7 @@ function runCommand(
   env: Record<string, string | undefined>,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] }) as ChildProcess;
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];

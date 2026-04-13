@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { AGENT_SESSION_PREFIX } from "@abadge/core";
 import { eq } from "@abadge/db";
-import { agentSessions, agents, items, member, organization, principals } from "@abadge/db/schema";
+import { agentSessions, agents, items, member, organization } from "@abadge/db/schema";
 import { seedAgent, seedAgentSession, seedOrg, seedServerItem, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -67,9 +67,9 @@ describe("seed factories", () => {
   });
 
   // -----------------------------------------------------------------------
-  // seedAgent — dual insert into principals + agents
+  // seedAgent — inserts into agents table
   // -----------------------------------------------------------------------
-  test("seedAgent inserts into both principals and agents tables", async () => {
+  test("seedAgent inserts into agents table with correct fields", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
     const { orgId } = await seedOrg(auth, userId);
@@ -83,15 +83,6 @@ describe("seed factories", () => {
     expect(agentId).toBeDefined();
     expect(apiKey).toBeDefined();
 
-    const principal = assertDefined(
-      (await db.select().from(principals).where(eq(principals.id, agentId)))[0],
-      "principals row",
-    );
-    expect(principal.name).toBe(name);
-    expect(principal.userId).toBe(userId);
-    expect(principal.secretHash).toBeDefined();
-    expect(principal.secretPrefix).toBeDefined();
-
     const agent = assertDefined(
       (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
       "agents row",
@@ -99,7 +90,8 @@ describe("seed factories", () => {
     expect(agent.name).toBe(name);
     expect(agent.organizationId).toBe(orgId);
     expect(agent.createdBy).toBe(userId);
-    expect(agent.secretHash).toBe(principal.secretHash);
+    expect(agent.secretHash).toBeDefined();
+    expect(agent.secretPrefix).toBeDefined();
   });
 
   test("seedAgent with public_key_session returns a keyPair", async () => {
@@ -118,16 +110,11 @@ describe("seed factories", () => {
     expect(kp.publicKey).toBeDefined();
     expect(kp.privateKey).toBeDefined();
 
-    const principal = assertDefined(
-      (await db.select().from(principals).where(eq(principals.id, agentId)))[0],
-      "principals row",
-    );
     const agent = assertDefined(
       (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
       "agents row",
     );
 
-    expect(principal.publicKey).toBe(kp.publicKey);
     expect(agent.publicKey).toBe(kp.publicKey);
   });
 
