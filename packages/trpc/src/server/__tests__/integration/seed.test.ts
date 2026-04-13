@@ -6,6 +6,12 @@ import { seedAgent, seedAgentSession, seedOrg, seedServerItem, seedUser } from "
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
+/** Type-narrowing assert: throws if value is nullish, returns narrowed T. */
+function assertDefined<T>(val: T | null | undefined, label = "value"): T {
+  if (val == null) throw new Error(`Expected ${label} to be defined`);
+  return val;
+}
+
 const db = getTestDb();
 
 describe("seed factories", () => {
@@ -28,11 +34,9 @@ describe("seed factories", () => {
     expect(email).toContain("@test.local");
     expect(name).toBe("Test User");
 
-    const authHeader = headers.get("authorization");
-    expect(authHeader).toBeDefined();
-    expect(authHeader?.startsWith("Bearer ")).toBe(true);
-    // Token portion should be non-empty
-    expect(authHeader?.replace("Bearer ", "").length).toBeGreaterThan(0);
+    const authHeader = assertDefined(headers.get("authorization"), "authorization header");
+    expect(authHeader.startsWith("Bearer ")).toBe(true);
+    expect(authHeader.replace("Bearer ", "").length).toBeGreaterThan(0);
   });
 
   // -----------------------------------------------------------------------
@@ -43,14 +47,16 @@ describe("seed factories", () => {
     const { userId } = await seedUser(auth);
     const { orgId, slug } = await seedOrg(db, auth, userId);
 
-    // Verify organization row exists
-    const [org] = await db.select().from(organization).where(eq(organization.id, orgId));
-    expect(org).toBeDefined();
+    const org = assertDefined(
+      (await db.select().from(organization).where(eq(organization.id, orgId)))[0],
+      "organization row",
+    );
     expect(org.slug).toBe(slug);
 
-    // Verify member row with "owner" role
-    const [mem] = await db.select().from(member).where(eq(member.organizationId, orgId));
-    expect(mem).toBeDefined();
+    const mem = assertDefined(
+      (await db.select().from(member).where(eq(member.organizationId, orgId)))[0],
+      "member row",
+    );
     expect(mem.userId).toBe(userId);
     expect(mem.role).toBe("owner");
   });
@@ -72,17 +78,19 @@ describe("seed factories", () => {
     expect(agentId).toBeDefined();
     expect(apiKey).toBeDefined();
 
-    // Verify principals row
-    const [principal] = await db.select().from(principals).where(eq(principals.id, agentId));
-    expect(principal).toBeDefined();
+    const principal = assertDefined(
+      (await db.select().from(principals).where(eq(principals.id, agentId)))[0],
+      "principals row",
+    );
     expect(principal.name).toBe(name);
     expect(principal.userId).toBe(userId);
     expect(principal.secretHash).toBeDefined();
     expect(principal.secretPrefix).toBeDefined();
 
-    // Verify agents row with same id
-    const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-    expect(agent).toBeDefined();
+    const agent = assertDefined(
+      (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
+      "agents row",
+    );
     expect(agent.name).toBe(name);
     expect(agent.organizationId).toBe(orgId);
     expect(agent.createdBy).toBe(userId);
@@ -101,16 +109,21 @@ describe("seed factories", () => {
     });
 
     expect(apiKey).toBeUndefined();
-    expect(keyPair).toBeDefined();
-    expect(keyPair?.publicKey).toBeDefined();
-    expect(keyPair?.privateKey).toBeDefined();
+    const kp = assertDefined(keyPair, "keyPair");
+    expect(kp.publicKey).toBeDefined();
+    expect(kp.privateKey).toBeDefined();
 
-    // Public key stored in both tables
-    const [principal] = await db.select().from(principals).where(eq(principals.id, agentId));
-    const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+    const principal = assertDefined(
+      (await db.select().from(principals).where(eq(principals.id, agentId)))[0],
+      "principals row",
+    );
+    const agent = assertDefined(
+      (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
+      "agents row",
+    );
 
-    expect(principal.publicKey).toBe(keyPair?.publicKey);
-    expect(agent.publicKey).toBe(keyPair?.publicKey);
+    expect(principal.publicKey).toBe(kp.publicKey);
+    expect(agent.publicKey).toBe(kp.publicKey);
   });
 
   // -----------------------------------------------------------------------
@@ -130,16 +143,15 @@ describe("seed factories", () => {
     expect(sessionId).toBeDefined();
     expect(rawToken.startsWith(AGENT_SESSION_PREFIX)).toBe(true);
 
-    // Verify session row exists
-    const [session] = await db.select().from(agentSessions).where(eq(agentSessions.id, sessionId));
-    expect(session).toBeDefined();
+    const session = assertDefined(
+      (await db.select().from(agentSessions).where(eq(agentSessions.id, sessionId)))[0],
+      "agent_sessions row",
+    );
     expect(session.agentId).toBe(agentId);
     expect(session.userId).toBe(userId);
     expect(session.tokenHash).toBeDefined();
     expect(session.tokenHash.length).toBeGreaterThan(0);
-    // tokenHash should NOT be the raw token (it's hashed)
     expect(session.tokenHash).not.toBe(rawToken);
-    // expiresAt should be in the future
     expect(session.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
@@ -156,16 +168,16 @@ describe("seed factories", () => {
     expect(itemId).toBeDefined();
     expect(label).toBeDefined();
 
-    // Verify item row
-    const [item] = await db.select().from(items).where(eq(items.id, itemId));
-    expect(item).toBeDefined();
+    const item = assertDefined(
+      (await db.select().from(items).where(eq(items.id, itemId)))[0],
+      "items row",
+    );
     expect(item.storageMode).toBe("server_managed");
     expect(item.serverCiphertext).not.toBeNull();
     expect(item.serverCiphertext?.length).toBeGreaterThan(0);
     expect(item.serverIv).not.toBeNull();
     expect(item.serverKeyVersion).toBe(1);
 
-    // ZK fields should be null
     expect(item.encryptedItemKey).toBeNull();
     expect(item.ciphertext).toBeNull();
   });

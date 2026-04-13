@@ -31,11 +31,7 @@ export function createOperatorCaller(
   return callerFactory(ctx);
 }
 
-export function createAgentCaller(
-  db: Database,
-  auth: TestAuth,
-  rawToken: string,
-) {
+export function createAgentCaller(db: Database, auth: TestAuth, rawToken: string) {
   const headers = new Headers();
   headers.set("authorization", `Bearer ${rawToken}`);
 

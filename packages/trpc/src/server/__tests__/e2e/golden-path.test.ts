@@ -98,7 +98,8 @@ describe("e2e golden path", () => {
     expect(auditResult.entries.length).toBeGreaterThanOrEqual(1);
 
     const revealEntry = auditResult.entries.find(
-      (e) => e.eventType === "access.reveal" && e.result === "allowed",
+      (e: { eventType: string; result: string }) =>
+        e.eventType === "access.reveal" && e.result === "allowed",
     );
     expect(revealEntry).toBeDefined();
     expect(revealEntry?.agentId).toBe(agentId);
@@ -158,7 +159,8 @@ describe("e2e golden path", () => {
     expect(auditResult.entries.length).toBeGreaterThanOrEqual(1);
 
     const deniedEntry = auditResult.entries.find(
-      (e) => e.eventType === "access.reveal" && e.result === "denied",
+      (e: { eventType: string; result: string }) =>
+        e.eventType === "access.reveal" && e.result === "denied",
     );
     expect(deniedEntry).toBeDefined();
     expect(deniedEntry?.agentId).toBe(agent.agentId);

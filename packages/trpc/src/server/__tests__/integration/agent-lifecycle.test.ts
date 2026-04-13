@@ -1,17 +1,17 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { generateEd25519KeyPair, signEd25519 } from "@abadge/crypto/shared";
+import type { Database } from "@abadge/db";
 import { eq } from "@abadge/db";
 import { agentEnrollmentTokens, agents, principals } from "@abadge/db/schema";
-import type { Database } from "@abadge/db";
-import { seedOrg, seedUser } from "../helpers/seed";
-import { createTestAuth } from "../helpers/test-auth";
-import type { TestAuth } from "../helpers/test-auth";
-import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
-import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
-import { TEST_ENV } from "../helpers/test-env";
 import type { AppBindings } from "../../context";
 import { createTrpcCallerFactory } from "../../init";
 import { appRouter } from "../../router";
+import { seedOrg, seedUser } from "../helpers/seed";
+import type { TestAuth } from "../helpers/test-auth";
+import { createTestAuth } from "../helpers/test-auth";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
+import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
+import { TEST_ENV } from "../helpers/test-env";
 
 // ---------------------------------------------------------------------------
 // Public (unauthenticated) caller for enrollment / challenge / exchange

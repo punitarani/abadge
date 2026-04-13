@@ -1,12 +1,12 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { AppBindings, BaseRequestContext } from "../../context";
+import { createTrpcCallerFactory } from "../../init";
+import { appRouter } from "../../router";
 import { seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 import { TEST_ENV } from "../helpers/test-env";
-import { createTrpcCallerFactory } from "../../init";
-import { appRouter } from "../../router";
-import type { AppBindings, BaseRequestContext } from "../../context";
 
 const callerFactory = createTrpcCallerFactory(appRouter);
 
@@ -122,7 +122,7 @@ describe("auth chain integration", () => {
     // seedUser returns headers with Authorization: Bearer <token>
     const authHeader = user.headers.get("authorization");
     expect(authHeader).toBeDefined();
-    expect(authHeader!.startsWith("Bearer ")).toBe(true);
+    expect(authHeader?.startsWith("Bearer ")).toBe(true);
 
     const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
     const result = await caller.agents.list();
