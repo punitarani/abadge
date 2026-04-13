@@ -7,7 +7,7 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, eq, inArray, isNull } from "@abadge/db";
-import { invitation, items, member, organization, profiles } from "@abadge/db/schema";
+import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
@@ -97,6 +97,8 @@ const OrgListResultSchema = Schema.Struct({
 const MemberDataSchema = Schema.Struct({
   id: Schema.String,
   userId: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
   role: Schema.String,
   createdAt: Schema.String,
 });
@@ -388,14 +390,27 @@ const listMembers = (orgId: string) =>
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"));
 
-    const members = yield* tryAsync(() =>
-      ctx.db.select().from(member).where(eq(member.organizationId, orgId)),
+    const rows = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          createdAt: member.createdAt,
+          userName: user.name,
+          userEmail: user.email,
+        })
+        .from(member)
+        .leftJoin(user, eq(user.id, member.userId))
+        .where(eq(member.organizationId, orgId)),
     );
 
     return {
-      members: members.map((m) => ({
+      members: rows.map((m) => ({
         id: m.id,
         userId: m.userId,
+        name: m.userName ?? "",
+        email: m.userEmail ?? "",
         role: m.role,
         createdAt: m.createdAt.toISOString(),
       })),

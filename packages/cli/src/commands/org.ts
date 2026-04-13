@@ -80,22 +80,11 @@ export function createOrgCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const result = await client.listMembers(orgId);
-        const members = Array.isArray(result)
-          ? result
-          : ((result as { members?: unknown[] })?.members ?? []);
+        const { members } = await client.listMembers(orgId);
         table(
-          (
-            members as Array<{
-              user?: { name?: string; email?: string };
-              name?: string;
-              email?: string;
-              role?: string;
-              userId?: string;
-            }>
-          ).map((m) => ({
-            User: m.user?.name ?? m.user?.email ?? m.name ?? m.email ?? m.userId ?? "(unknown)",
-            Role: m.role ?? "",
+          members.map((m) => ({
+            User: m.name || m.email || m.userId,
+            Role: m.role,
           })),
         );
       } catch (err) {

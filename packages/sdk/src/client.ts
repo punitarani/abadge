@@ -168,7 +168,17 @@ interface SdkTrpcClient {
   profiles: {
     create: TrpcMutation<
       { orgId: string; name: string; description?: string; storageMode?: string },
-      { profile: { id: string; name: string; organizationId: string; storageMode: string; keyVersion: number; createdAt: string; updatedAt: string } }
+      {
+        profile: {
+          id: string;
+          name: string;
+          organizationId: string;
+          storageMode: string;
+          keyVersion: number;
+          createdAt: string;
+          updatedAt: string;
+        };
+      }
     >;
     list: TrpcQuery<{ orgId: string }, unknown>;
     get: TrpcQuery<{ profileId: string }, unknown>;
@@ -184,7 +194,16 @@ interface SdkTrpcClient {
   organizations: {
     create: TrpcMutation<
       { name: string; slug?: string },
-      { organization: { id: string; name: string; slug: string; logo: string | null; createdAt: string }; profileId: string }
+      {
+        organization: {
+          id: string;
+          name: string;
+          slug: string;
+          logo: string | null;
+          createdAt: string;
+        };
+        profileId: string;
+      }
     >;
     list: TrpcQueryWithoutInput<{
       organizations: Array<{ id: string; name: string; slug: string; role: string }>;
@@ -193,7 +212,10 @@ interface SdkTrpcClient {
     update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
     delete: TrpcMutation<{ orgId: string }, SuccessResult>;
     members: {
-      list: TrpcQuery<{ orgId: string }, unknown>;
+      list: TrpcQuery<
+        { orgId: string },
+        { members: Array<{ id: string; userId: string; name: string; email: string; role: string; createdAt: string }> }
+      >;
       invite: TrpcMutation<
         { orgId: string; role?: string },
         { ok: boolean; invitationId: string; token: string }
@@ -621,7 +643,18 @@ export class AbadgeUserClient {
    *
    * @param orgId - Organization ID
    */
-  async listMembers(orgId: string): Promise<unknown> {
+  async listMembers(
+    orgId: string,
+  ): Promise<{
+    members: Array<{
+      id: string;
+      userId: string;
+      name: string;
+      email: string;
+      role: string;
+      createdAt: string;
+    }>;
+  }> {
     return call(
       () => this.client.organizations.members.list.query({ orgId }),
       "Failed to list members",
