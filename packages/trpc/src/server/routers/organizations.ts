@@ -72,6 +72,15 @@ const OrgDataSchema = Schema.Struct({
   createdAt: Schema.String,
 });
 
+const OrgListItemSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+  logo: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  role: Schema.String,
+});
+
 const CreateOrgResultSchema = Schema.Struct({
   organization: OrgDataSchema,
   profileId: Schema.String,
@@ -82,7 +91,7 @@ const OrgResultSchema = Schema.Struct({
 });
 
 const OrgListResultSchema = Schema.Struct({
-  organizations: Schema.Array(OrgDataSchema),
+  organizations: Schema.Array(OrgListItemSchema),
 });
 
 const MemberDataSchema = Schema.Struct({
@@ -256,23 +265,31 @@ const listOrgs = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   const userId = ctx.identity.userId;
 
-  const memberRows = yield* tryAsync(() =>
+  const rows = yield* tryAsync(() =>
     ctx.db
-      .select({ organizationId: member.organizationId })
+      .select({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        logo: organization.logo,
+        createdAt: organization.createdAt,
+        role: member.role,
+      })
       .from(member)
+      .innerJoin(organization, eq(organization.id, member.organizationId))
       .where(eq(member.userId, userId)),
   );
 
-  if (memberRows.length === 0) {
-    return { organizations: [] };
-  }
-
-  const orgIds = memberRows.map((r) => r.organizationId);
-  const orgs = yield* tryAsync(() =>
-    ctx.db.select().from(organization).where(inArray(organization.id, orgIds)),
-  );
-
-  return { organizations: orgs.map(serializeOrg) };
+  return {
+    organizations: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      logo: r.logo ?? null,
+      createdAt: r.createdAt.toISOString(),
+      role: r.role,
+    })),
+  };
 });
 
 const getOrg = (orgId: string) =>
