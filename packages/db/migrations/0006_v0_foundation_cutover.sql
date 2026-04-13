@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS "audit_logs" (
 CREATE INDEX IF NOT EXISTS "items_organization_id_idx" ON "items" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "items_profile_id_idx" ON "items" USING btree ("profile_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "profiles_organization_id_idx" ON "profiles" USING btree ("organization_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "profiles_name_idx" ON "profiles" USING btree ("organization_id", "name");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "profiles_name_idx" ON "profiles" USING btree ("organization_id", "name");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "agents_organization_id_idx" ON "agents" USING btree ("organization_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "agents_created_by_idx" ON "agents" USING btree ("created_by");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "agents_secret_prefix_idx" ON "agents" USING btree ("secret_prefix");--> statement-breakpoint
@@ -359,4 +359,12 @@ DROP TABLE IF EXISTS "credentials" CASCADE;--> statement-breakpoint
 ALTER TABLE IF EXISTS "apikey" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 DROP TABLE IF EXISTS "apikey" CASCADE;--> statement-breakpoint
 ALTER TABLE IF EXISTS "access_log" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
-DROP TABLE IF EXISTS "access_log" CASCADE;
+DROP TABLE IF EXISTS "access_log" CASCADE;--> statement-breakpoint
+
+-- Re-point agent auth table FKs from principals to agents
+ALTER TABLE "agent_enrollment_tokens" DROP CONSTRAINT IF EXISTS "agent_enrollment_tokens_agent_id_principals_id_fk";--> statement-breakpoint
+ALTER TABLE "agent_session_challenges" DROP CONSTRAINT IF EXISTS "agent_session_challenges_agent_id_principals_id_fk";--> statement-breakpoint
+ALTER TABLE "agent_sessions" DROP CONSTRAINT IF EXISTS "agent_sessions_agent_id_principals_id_fk";--> statement-breakpoint
+ALTER TABLE "agent_enrollment_tokens" ADD CONSTRAINT "agent_enrollment_tokens_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_session_challenges" ADD CONSTRAINT "agent_session_challenges_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agent_sessions" ADD CONSTRAINT "agent_sessions_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;

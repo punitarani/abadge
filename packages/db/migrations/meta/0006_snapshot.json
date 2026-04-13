@@ -1,6 +1,6 @@
 {
-  "id": "a7d332bc-567e-44d1-8cbd-06e44f8eac51",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "5096ebfa-d8cf-45f3-9511-e2f4fd6bd378",
+  "prevId": "a7d332bc-567e-44d1-8cbd-06e44f8eac51",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -106,10 +106,10 @@
         }
       },
       "foreignKeys": {
-        "agent_enrollment_tokens_agent_id_principals_id_fk": {
-          "name": "agent_enrollment_tokens_agent_id_principals_id_fk",
+        "agent_enrollment_tokens_agent_id_agents_id_fk": {
+          "name": "agent_enrollment_tokens_agent_id_agents_id_fk",
           "tableFrom": "agent_enrollment_tokens",
-          "tableTo": "principals",
+          "tableTo": "agents",
           "columnsFrom": [
             "agent_id"
           ],
@@ -227,10 +227,10 @@
         }
       },
       "foreignKeys": {
-        "agent_session_challenges_agent_id_principals_id_fk": {
-          "name": "agent_session_challenges_agent_id_principals_id_fk",
+        "agent_session_challenges_agent_id_agents_id_fk": {
+          "name": "agent_session_challenges_agent_id_agents_id_fk",
           "tableFrom": "agent_session_challenges",
-          "tableTo": "principals",
+          "tableTo": "agents",
           "columnsFrom": [
             "agent_id"
           ],
@@ -364,10 +364,10 @@
         }
       },
       "foreignKeys": {
-        "agent_sessions_agent_id_principals_id_fk": {
-          "name": "agent_sessions_agent_id_principals_id_fk",
+        "agent_sessions_agent_id_agents_id_fk": {
+          "name": "agent_sessions_agent_id_agents_id_fk",
           "tableFrom": "agent_sessions",
-          "tableTo": "principals",
+          "tableTo": "agents",
           "columnsFrom": [
             "agent_id"
           ],
@@ -2653,7 +2653,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
