@@ -41,10 +41,7 @@ export function createProfileCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const result = await client.listProfiles(orgId);
-        const profiles = Array.isArray(result)
-          ? result
-          : ((result as { profiles?: unknown[] })?.profiles ?? [result]);
+        const { profiles } = await client.listProfiles(orgId);
 
         if (opts.json) {
           json(profiles);
@@ -53,18 +50,11 @@ export function createProfileCommand(): Command {
 
         const config = loadConfig();
         table(
-          (
-            profiles as Array<{
-              id?: string;
-              name?: string;
-              storageMode?: string;
-              createdAt?: string;
-            }>
-          ).map((p) => ({
-            ID: p.id ?? "",
-            Name: p.name ?? "",
-            "Storage Mode": p.storageMode ?? "",
-            Created: p.createdAt ?? "",
+          profiles.map((p) => ({
+            ID: p.id,
+            Name: p.name,
+            "Storage Mode": p.storageMode,
+            Created: p.createdAt,
             Active: p.id === config?.activeProfileId ? "✓" : "",
           })),
         );
@@ -82,11 +72,8 @@ export function createProfileCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const result = await client.listProfiles(orgId);
-        const profiles = Array.isArray(result)
-          ? result
-          : ((result as { profiles?: unknown[] })?.profiles ?? []);
-        const profile = (profiles as Array<{ id?: string; name?: string }>).find(
+        const { profiles } = await client.listProfiles(orgId);
+        const profile = profiles.find(
           (p) => p.id === nameOrId || p.name === nameOrId,
         );
         if (!profile) {

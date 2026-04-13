@@ -180,7 +180,10 @@ interface SdkTrpcClient {
         };
       }
     >;
-    list: TrpcQuery<{ orgId: string }, unknown>;
+    list: TrpcQuery<
+      { orgId: string },
+      { profiles: Array<{ id: string; name: string; storageMode: string; organizationId: string; keyVersion: number; createdAt: string; updatedAt: string }> }
+    >;
     get: TrpcQuery<{ profileId: string }, unknown>;
     bootstrap: TrpcMutation<{ profileId: string } & BootstrapVaultInput, { id: string }>;
     changePassword: TrpcMutation<{ profileId: string } & ChangePasswordInput, SuccessResult>;
@@ -763,7 +766,19 @@ export class AbadgeUserClient {
    *
    * @param orgId - Organization ID
    */
-  async listProfiles(orgId: string): Promise<unknown> {
+  async listProfiles(
+    orgId: string,
+  ): Promise<{
+    profiles: Array<{
+      id: string;
+      name: string;
+      storageMode: string;
+      organizationId: string;
+      keyVersion: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }> {
     return call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles");
   }
 
