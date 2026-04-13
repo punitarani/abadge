@@ -12,7 +12,7 @@ async function registerKeypairAgent(
   client: AbadgeUserClient,
   opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
 ): Promise<void> {
-  const genKey = crypto.subtle.generateKey as (
+  const genKey = crypto.subtle.generateKey.bind(crypto.subtle) as (
     algorithm: { name: string },
     extractable: boolean,
     keyUsages: string[],
@@ -20,16 +20,19 @@ async function registerKeypairAgent(
   const keypair = await genKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const publicKeyJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
   const privateKeyJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
-  const publicKeyBase64 = publicKeyJwk.x ?? "";
-  if (!publicKeyBase64) {
+  if (!publicKeyJwk.x) {
     error("Failed to export Ed25519 public key.");
     process.exit(1);
   }
 
+  // Store the full JWK JSON string as publicKey — verifyEd25519 on the server
+  // expects a JSON-serialized JWK, not the raw base64url x value.
+  const publicKeySerialized = JSON.stringify(publicKeyJwk);
+
   const result = await client.createAgent({
     name: opts.name,
     kind: opts.kind,
-    publicKey: publicKeyBase64,
+    publicKey: publicKeySerialized,
     metadata: opts.description ? { description: opts.description } : {},
   });
 
