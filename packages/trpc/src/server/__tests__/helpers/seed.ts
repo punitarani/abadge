@@ -14,8 +14,6 @@ import {
   agentSessions,
   agents,
   items,
-  member,
-  organization,
   permissions,
   principals,
   profiles,
@@ -94,26 +92,19 @@ export interface SeedOrgResult {
 
 export async function seedOrg(
   db: Database,
-  _auth: TestAuth,
+  auth: TestAuth,
   userId: string,
   overrides?: { name?: string; slug?: string },
 ): Promise<SeedOrgResult> {
+  const helpers = await getTestHelpers(auth);
+
   const orgId = uuid();
   const slug = overrides?.slug ?? `org-${uuid()}`;
   const name = overrides?.name ?? "Test Org";
 
-  await db.insert(organization).values({
-    id: orgId,
-    name,
-    slug,
-  });
-
-  await db.insert(member).values({
-    id: uuid(),
-    organizationId: orgId,
-    userId,
-    role: "owner",
-  });
+  // Use testUtils org helpers (available because organization plugin is loaded)
+  await helpers.saveOrganization({ id: orgId, name, slug, createdAt: new Date() });
+  await helpers.addMember({ userId, organizationId: orgId, role: "owner" });
 
   return { orgId, slug };
 }
