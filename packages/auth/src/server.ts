@@ -57,9 +57,12 @@ export function createAuth(db: Database, env: AuthEnv): any {
     databaseHooks: {
       session: {
         create: {
+          // Web logins also trigger recordLogin (surface: "api") via tRPC.
+          // This hook captures CLI device-code and OAuth logins that bypass tRPC.
+          // Duplicates are distinguishable via the surface field.
           after: async (session) => {
-            const activeOrgId = session.activeOrganizationId as string | undefined;
-            if (!activeOrgId) return;
+            const activeOrgId = session.activeOrganizationId;
+            if (typeof activeOrgId !== "string") return;
 
             try {
               await db.insert(auditLogs).values({
