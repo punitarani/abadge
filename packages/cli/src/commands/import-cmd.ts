@@ -66,7 +66,14 @@ async function runImport(
   try {
     content = readFileSync(file, "utf-8");
   } catch (err) {
-    error(errorMessage(err, `Failed to read file: ${file}`));
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      error(`File not found: ${file}`);
+    } else if (code === "EACCES") {
+      error(`Permission denied: ${file}`);
+    } else {
+      error(errorMessage(err, `Failed to read file: ${file}`));
+    }
     process.exit(1);
   }
 
