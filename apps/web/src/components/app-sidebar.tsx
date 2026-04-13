@@ -5,11 +5,12 @@ import {
   Columns3,
   KeyRound,
   LayoutDashboard,
+  LifeBuoy,
   ScrollText,
+  Send,
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
@@ -26,7 +27,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
 
 const navGroups = [
@@ -50,6 +50,11 @@ const navGroups = [
   },
 ];
 
+const secondaryNavItems = [
+  { path: "support", label: "Support", icon: LifeBuoy },
+  { path: "feedback", label: "Feedback", icon: Send },
+];
+
 const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }];
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
@@ -58,22 +63,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href="/overview">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Image src="/abadge-icon-white.svg" alt="abadge" width={16} height={16} />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">Abadge</span>
-                  <span className="truncate text-xs">Dashboard</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <SidebarSeparator />
         <OrgSwitcher />
       </SidebarHeader>
       <SidebarContent>
@@ -118,10 +107,24 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
           </SidebarGroup>
         ))}
 
-        {/* Settings — pushed to bottom */}
+        {/* Secondary nav + Settings — pushed to bottom */}
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
+              {secondaryNavItems.map((item) => {
+                const href = `/${item.path}`;
+                const isActive = pathname.startsWith(href);
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={href}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
               {bottomNavItems.map((item) => {
                 const href = `/${item.path}`;
                 const isActive = pathname.startsWith(href);

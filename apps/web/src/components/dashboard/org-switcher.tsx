@@ -110,9 +110,10 @@ export function OrgSwitcher(): React.ReactElement {
               <OrgIcon
                 org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }}
               />
-              <span className="truncate text-sm font-medium">
-                {currentOrg?.name ?? "Select org"}
-              </span>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">{currentOrg?.name ?? "Select org"}</span>
+                <span className="truncate text-xs">Organization</span>
+              </div>
               <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
