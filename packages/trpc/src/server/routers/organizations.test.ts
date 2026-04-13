@@ -81,6 +81,9 @@ describe("organizationsRouter public surface", () => {
     const procedures = Object.keys(organizationsRouter._def.procedures);
     expect(procedures).toContain("members.list");
     expect(procedures).toContain("members.invite");
+    expect(procedures).toContain("members.getInviteInfo");
+    expect(procedures).toContain("members.acceptInvite");
+    expect(procedures).toContain("members.revokeInvite");
     expect(procedures).toContain("members.remove");
     expect(procedures).toContain("members.updateRole");
   });
