@@ -97,6 +97,29 @@ describe("onAgentRevoked", () => {
     expect(updateOps.length).toBe(2);
     expect(insertOps.length).toBe(2);
     expect(valueOps.length).toBe(2);
+
+    // ipAddress defaults to null when not provided
+    for (const valueOp of valueOps) {
+      const payload = (valueOp?.args?.[0] ?? {}) as Record<string, unknown>;
+      expect(payload.ipAddress).toBeNull();
+    }
+  });
+
+  test("threads ipAddress into each cascade audit entry", async () => {
+    const { db, calls } = makeMockDb([
+      { id: "session-1", userId: "user-2" },
+      { id: "session-2", userId: "user-2" },
+    ]);
+
+    await onAgentRevoked(db, "agent-1", "org-1", "user-1", "203.0.113.1");
+
+    const valueOps = calls.filter((c) => c.op === "values");
+    expect(valueOps.length).toBe(2);
+
+    for (const valueOp of valueOps) {
+      const payload = (valueOp?.args?.[0] ?? {}) as Record<string, unknown>;
+      expect(payload.ipAddress).toBe("203.0.113.1");
+    }
   });
 });
 
@@ -115,6 +138,20 @@ describe("onItemDeleted", () => {
     expect(payload.itemId).toBe("item-1");
     expect(payload.result).toBe("cascade");
     expect(payload.eventType).toBe("item.delete_cascade");
+
+    // ipAddress defaults to null when not provided
+    expect(payload.ipAddress).toBeNull();
+  });
+
+  test("threads ipAddress into the cascade audit entry", async () => {
+    const { db, calls } = makeMockDb();
+    await onItemDeleted(db, "item-1", "org-1", "user-1", "203.0.113.1");
+
+    const valueOps = calls.filter((c) => c.op === "values");
+    expect(valueOps.length).toBe(1);
+
+    const payload = (valueOps[0]?.args?.[0] ?? {}) as Record<string, unknown>;
+    expect(payload.ipAddress).toBe("203.0.113.1");
   });
 });
 
@@ -129,5 +166,19 @@ describe("onMemberRemoved", () => {
     const payload = (valueOps[0]?.args?.[0] ?? {}) as Record<string, unknown>;
     expect(payload.result).toBe("cascade");
     expect((payload.meta as Record<string, unknown>)?.removedUserId).toBe("removed-user");
+
+    // ipAddress defaults to null when not provided
+    expect(payload.ipAddress).toBeNull();
+  });
+
+  test("threads ipAddress into the cascade audit entry", async () => {
+    const { db, calls } = makeMockDb();
+    await onMemberRemoved(db, "org-1", "removed-user", "actor-user", "203.0.113.1");
+
+    const valueOps = calls.filter((c) => c.op === "values");
+    expect(valueOps.length).toBe(1);
+
+    const payload = (valueOps[0]?.args?.[0] ?? {}) as Record<string, unknown>;
+    expect(payload.ipAddress).toBe("203.0.113.1");
   });
 });
