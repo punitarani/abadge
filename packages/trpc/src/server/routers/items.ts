@@ -19,8 +19,14 @@ import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure } from "../init";
+import {
+  AgentRequestContextTag,
+  runAgentEffect,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+} from "../effect";
+import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
@@ -144,6 +150,27 @@ const listItems = Effect.gen(function* () {
       })
       .from(items)
       .where(and(eq(items.organizationId, ctx.identity.organizationId), isNull(items.deletedAt)))
+      .orderBy(desc(items.createdAt)),
+  );
+
+  return { items: result.map(serializeItemSummary) };
+});
+
+const listItemsForAgent = Effect.gen(function* () {
+  const ctx = yield* AgentRequestContextTag;
+  const result = yield* Effect.tryPromise(() =>
+    ctx.db
+      .select({
+        id: items.id,
+        label: items.label,
+        storageMode: items.storageMode,
+        cryptoVersion: items.cryptoVersion,
+        contentVersion: items.contentVersion,
+        createdAt: items.createdAt,
+        updatedAt: items.updatedAt,
+      })
+      .from(items)
+      .where(and(eq(items.organizationId, ctx.identity.agentOrganizationId), isNull(items.deletedAt)))
       .orderBy(desc(items.createdAt)),
   );
 
@@ -334,6 +361,9 @@ export const itemsRouter = createTrpcRouter({
   list: scopedSessionProcedure("items:read")
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
+  listForAgent: agentProcedure
+    .output(strictSchema(ItemListResultSchema))
+    .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),
   get: scopedSessionProcedure("items:read")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))

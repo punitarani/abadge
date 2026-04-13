@@ -7,8 +7,14 @@ import {
 import { and, desc, eq, lt, or, type SQL } from "@abadge/db";
 import { auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, requireOrgRole, roleRank, scopedSessionProcedure } from "../init";
+import {
+  AgentRequestContextTag,
+  runAgentEffect,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+} from "../effect";
+import { agentProcedure, createTrpcRouter, requireOrgRole, roleRank, scopedSessionProcedure } from "../init";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,
@@ -137,6 +143,38 @@ const listAuditEntries = (
     return { entries, nextCursor };
   });
 
+const listAuditEntriesForAgent = (
+  input: AuditQuery,
+  extra: { profileId?: string; surface?: string; field?: string },
+) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+    const conditions = buildAuditConditions(input, {
+      orgId: ctx.identity.agentOrganizationId,
+      userId: ctx.identity.agentUserId,
+      role: "member",
+      profileId: extra.profileId,
+      surface: extra.surface,
+      field: extra.field,
+    });
+
+    const limit = input.limit ?? 50;
+    const result = yield* Effect.tryPromise(() =>
+      ctx.db
+        .select()
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.id))
+        .limit(limit),
+    );
+
+    const entries = result.map(serializeAuditEntry);
+    const lastEntry = entries[entries.length - 1];
+    const nextCursor = entries.length === limit && lastEntry ? String(lastEntry.id) : null;
+
+    return { entries, nextCursor };
+  });
+
 export const auditRouter = createTrpcRouter({
   list: scopedSessionProcedure("audit:read")
     .input(strictSchema(AuditQueryInputSchema))
@@ -145,6 +183,19 @@ export const auditRouter = createTrpcRouter({
       runSessionEffect(
         ctx,
         listAuditEntries(normalizeAuditQuery(input), {
+          profileId: input.profileId,
+          surface: input.surface,
+          field: input.field,
+        }),
+      ),
+    ),
+  listForAgent: agentProcedure
+    .input(strictSchema(AuditQueryInputSchema))
+    .output(strictSchema(AuditListResultSchema))
+    .query(({ ctx, input }) =>
+      runAgentEffect(
+        ctx,
+        listAuditEntriesForAgent(normalizeAuditQuery(input), {
           profileId: input.profileId,
           surface: input.surface,
           field: input.field,
