@@ -2,13 +2,49 @@ import type { Database } from "@abadge/db";
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer, organization } from "better-auth/plugins";
+import { bearer, organization, testUtils } from "better-auth/plugins";
 import { TEST_ENV } from "./test-env";
+
+/**
+ * Mirrors the TestHelpers interface from better-auth/plugins/test-utils.
+ * Organization helpers are optional in the type but always present when
+ * the organization plugin is loaded alongside testUtils.
+ */
+interface TestHelpers {
+  createUser(overrides?: Record<string, unknown>): Record<string, unknown>;
+  createOrganization?(overrides?: Record<string, unknown>): Record<string, unknown>;
+  saveUser(user: Record<string, unknown>): Promise<Record<string, unknown>>;
+  saveOrganization?(org: Record<string, unknown>): Promise<Record<string, unknown>>;
+  addMember?(opts: {
+    userId: string;
+    organizationId: string;
+    role?: string;
+  }): Promise<Record<string, unknown>>;
+  deleteUser(userId: string): Promise<void>;
+  deleteOrganization?(orgId: string): Promise<void>;
+  login(opts: {
+    userId: string;
+  }): Promise<{
+    session: Record<string, unknown>;
+    user: Record<string, unknown>;
+    headers: Headers;
+    cookies: unknown[];
+    token: string;
+  }>;
+  getAuthHeaders(opts: { userId: string }): Promise<Headers>;
+  getCookies(opts: {
+    userId: string;
+    domain?: string;
+  }): Promise<unknown[]>;
+  getOTP?(identifier: string): string | undefined;
+  clearOTPs?(): void;
+}
 
 /**
  * Creates a Better Auth instance wired to the test Postgres database.
  * Mirrors the production config in packages/auth/src/server.ts but omits
  * social providers, device authorization, and openAPI (not needed for tests).
+ * Includes testUtils plugin for factory-based test seeding.
  */
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createTestAuth(db: Database): any {
@@ -31,8 +67,21 @@ export function createTestAuth(db: Database): any {
       }),
       bearer(),
       apiKey(),
+      testUtils(),
     ],
   });
 }
 
 export type TestAuth = ReturnType<typeof createTestAuth>;
+
+/**
+ * Typed accessor for testUtils helpers from the auth context.
+ * Organization helpers (saveOrganization, addMember, etc.) are asserted
+ * as present because our test auth config always includes the organization plugin.
+ */
+export async function getTestHelpers(
+  auth: TestAuth,
+): Promise<Required<TestHelpers>> {
+  const ctx = await auth.$context;
+  return ctx.test as Required<TestHelpers>;
+}
