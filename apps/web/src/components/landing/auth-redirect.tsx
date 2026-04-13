@@ -32,7 +32,7 @@ export function AuthRedirect(): null {
     if (!session) return;
 
     if (activeOrgSlug) {
-      router.replace(`/${activeOrgSlug}/overview`);
+      router.replace("/overview");
     } else {
       router.replace("/onboarding");
     }

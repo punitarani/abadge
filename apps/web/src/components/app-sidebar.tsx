@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -39,8 +39,6 @@ const navItems = [
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org ?? "";
 
   return (
     <Sidebar collapsible="none" className="h-svh!" {...props}>
@@ -48,7 +46,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href={`/${orgSlug}/overview`}>
+              <Link href="/overview">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                   <Image src="/abadge-icon-white.svg" alt="abadge" width={16} height={16} />
                 </div>
@@ -68,7 +66,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const href = `/${orgSlug}/${item.path}`;
+                const href = `/${item.path}`;
                 const isActive = pathname.startsWith(href);
                 return (
                   <SidebarMenuItem key={item.path}>

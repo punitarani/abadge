@@ -1,8 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +13,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
+import { useOrgStore } from "@/stores/org-store";
 
 function getOrgInitial(name: string): string {
   return name.charAt(0).toUpperCase();
@@ -47,9 +47,8 @@ interface Org {
 }
 
 export function OrgSwitcher(): React.ReactElement {
-  const router = useRouter();
-  const params = useParams<{ org: string }>();
-  const currentSlug = params.org;
+  const { activeOrgId, setActiveOrg } = useOrgStore();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
@@ -57,11 +56,13 @@ export function OrgSwitcher(): React.ReactElement {
   });
 
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
-  const currentOrg = orgs.find((o) => o.slug === currentSlug);
+  const currentOrg = orgs.find((o) => o.id === activeOrgId);
 
   function handleSelect(org: Org): void {
-    if (org.slug !== currentSlug) {
-      router.push(`/${org.slug}/overview`);
+    if (org.id !== activeOrgId) {
+      setActiveOrg({ id: org.id, slug: org.slug, name: org.name });
+      // Invalidate all org-scoped queries so they refetch with the new org header
+      queryClient.invalidateQueries();
     }
   }
 
@@ -117,7 +118,7 @@ export function OrgSwitcher(): React.ReactElement {
                   {getOrgInitial(org.name)}
                 </div>
                 <span className="truncate">{org.name}</span>
-                {org.slug === currentSlug && <Check className="ml-auto size-4" />}
+                {org.id === activeOrgId && <Check className="ml-auto size-4" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

@@ -64,7 +64,7 @@ function useCountdown(ttlSeconds: number): number {
 }
 
 function getApprovalRedirect(orgSlug: string | null): string {
-  return orgSlug ? `/${orgSlug}/overview` : "/onboarding";
+  return orgSlug ? "/overview" : "/onboarding";
 }
 
 function DeviceApprovalPageContent(): React.ReactElement {
