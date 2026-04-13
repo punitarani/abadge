@@ -6,7 +6,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, eq, inArray, isNull } from "@abadge/db";
+import { and, eq, isNull } from "@abadge/db";
 import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";

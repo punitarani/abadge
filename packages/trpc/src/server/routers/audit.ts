@@ -14,7 +14,13 @@ import {
   SessionRequestContextTag,
   strictSchema,
 } from "../effect";
-import { agentProcedure, createTrpcRouter, requireOrgRole, roleRank, scopedSessionProcedure } from "../init";
+import {
+  agentProcedure,
+  createTrpcRouter,
+  requireOrgRole,
+  roleRank,
+  scopedSessionProcedure,
+} from "../init";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,

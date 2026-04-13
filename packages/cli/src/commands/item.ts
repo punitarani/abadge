@@ -153,14 +153,16 @@ export function createItemCommand(): Command {
           if (opts.json) {
             json(item);
           } else {
-            table([{
-              ID: item.id,
-              Label: item.label,
-              Storage: item.storageMode,
-              Version: String(item.contentVersion),
-              Created: item.createdAt,
-              Updated: item.updatedAt,
-            }]);
+            table([
+              {
+                ID: item.id,
+                Label: item.label,
+                Storage: item.storageMode,
+                Version: String(item.contentVersion),
+                Created: item.createdAt,
+                Updated: item.updatedAt,
+              },
+            ]);
           }
           return;
         }

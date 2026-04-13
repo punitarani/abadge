@@ -182,7 +182,17 @@ interface SdkTrpcClient {
     >;
     list: TrpcQuery<
       { orgId: string },
-      { profiles: Array<{ id: string; name: string; storageMode: string; organizationId: string; keyVersion: number; createdAt: string; updatedAt: string }> }
+      {
+        profiles: Array<{
+          id: string;
+          name: string;
+          storageMode: string;
+          organizationId: string;
+          keyVersion: number;
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      }
     >;
     get: TrpcQuery<{ profileId: string }, unknown>;
     bootstrap: TrpcMutation<{ profileId: string } & BootstrapVaultInput, { id: string }>;
@@ -217,7 +227,16 @@ interface SdkTrpcClient {
     members: {
       list: TrpcQuery<
         { orgId: string },
-        { members: Array<{ id: string; userId: string; name: string; email: string; role: string; createdAt: string }> }
+        {
+          members: Array<{
+            id: string;
+            userId: string;
+            name: string;
+            email: string;
+            role: string;
+            createdAt: string;
+          }>;
+        }
       >;
       invite: TrpcMutation<
         { orgId: string; role?: string },
@@ -646,9 +665,7 @@ export class AbadgeUserClient {
    *
    * @param orgId - Organization ID
    */
-  async listMembers(
-    orgId: string,
-  ): Promise<{
+  async listMembers(orgId: string): Promise<{
     members: Array<{
       id: string;
       userId: string;
@@ -766,9 +783,7 @@ export class AbadgeUserClient {
    *
    * @param orgId - Organization ID
    */
-  async listProfiles(
-    orgId: string,
-  ): Promise<{
+  async listProfiles(orgId: string): Promise<{
     profiles: Array<{
       id: string;
       name: string;

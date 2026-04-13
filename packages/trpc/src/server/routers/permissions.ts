@@ -16,7 +16,13 @@ import { and, eq, or } from "@abadge/db";
 import { agents as agentRecords, items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { isUniqueViolation, runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
+import {
+  isUniqueViolation,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+  tryAsync,
+} from "../effect";
 import {
   createTrpcRouter,
   requireAgentOwnership,

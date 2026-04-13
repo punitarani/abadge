@@ -10,7 +10,13 @@ import { and, eq, isNull } from "@abadge/db";
 import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { isUniqueViolation, runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
+import {
+  isUniqueViolation,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+  tryAsync,
+} from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
 import { serializeProfile } from "../serialize";
 

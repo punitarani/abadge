@@ -170,7 +170,9 @@ const listItemsForAgent = Effect.gen(function* () {
         updatedAt: items.updatedAt,
       })
       .from(items)
-      .where(and(eq(items.organizationId, ctx.identity.agentOrganizationId), isNull(items.deletedAt)))
+      .where(
+        and(eq(items.organizationId, ctx.identity.agentOrganizationId), isNull(items.deletedAt)),
+      )
       .orderBy(desc(items.createdAt)),
   );
 

@@ -73,9 +73,7 @@ export function createProfileCommand(): Command {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
         const { profiles } = await client.listProfiles(orgId);
-        const profile = profiles.find(
-          (p) => p.id === nameOrId || p.name === nameOrId,
-        );
+        const profile = profiles.find((p) => p.id === nameOrId || p.name === nameOrId);
         if (!profile) {
           error(`Profile '${nameOrId}' not found.`);
           process.exit(1);
