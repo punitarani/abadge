@@ -18,7 +18,7 @@ describe("test callers", () => {
 
   test("operator caller resolves session and lists agents (empty)", async () => {
     const userResult = await seedUser(auth);
-    const orgResult = await seedOrg(db, auth, userResult.userId);
+    const orgResult = await seedOrg(auth, userResult.userId);
     const caller = createOperatorCaller(db, auth, userResult.headers, orgResult.orgId);
 
     const result = await caller.agents.list();

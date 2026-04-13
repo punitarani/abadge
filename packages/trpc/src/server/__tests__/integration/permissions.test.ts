@@ -25,7 +25,7 @@ describe("permissions", () => {
 
   test("create and list permissions", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
@@ -52,7 +52,7 @@ describe("permissions", () => {
 
   test("revoke permission removes it", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
@@ -76,7 +76,7 @@ describe("permissions", () => {
 
   test("capability matrix: remote agent cannot get read_ciphertext", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
@@ -102,7 +102,7 @@ describe("permissions", () => {
 
   test("capability matrix: local agent can get mount_env on server_managed item", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
@@ -123,7 +123,7 @@ describe("permissions", () => {
 
   test("permission with expiry", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });

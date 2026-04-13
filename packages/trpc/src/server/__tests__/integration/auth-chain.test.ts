@@ -45,7 +45,7 @@ describe("auth chain integration", () => {
   // -------------------------------------------------------------------------
   test("valid session resolves to correct userId", async () => {
     const user = await seedUser(auth);
-    const org = await seedOrg(db, auth, user.userId);
+    const org = await seedOrg(auth, user.userId);
     const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
 
     const result = await caller.agents.list();
@@ -90,8 +90,8 @@ describe("auth chain integration", () => {
   // -------------------------------------------------------------------------
   test("X-Abadge-Org-Id selects the correct organization", async () => {
     const user = await seedUser(auth);
-    const org1 = await seedOrg(db, auth, user.userId, { name: "Org One", slug: "org-one" });
-    const org2 = await seedOrg(db, auth, user.userId, { name: "Org Two", slug: "org-two" });
+    const org1 = await seedOrg(auth, user.userId, { name: "Org One", slug: "org-one" });
+    const org2 = await seedOrg(auth, user.userId, { name: "Org Two", slug: "org-two" });
 
     // Create an agent in org1
     const callerOrg1 = createOperatorCaller(db, auth, user.headers, org1.orgId);
@@ -117,7 +117,7 @@ describe("auth chain integration", () => {
   // -------------------------------------------------------------------------
   test("cookie-based auth works for session procedures", async () => {
     const user = await seedUser(auth);
-    const org = await seedOrg(db, auth, user.userId);
+    const org = await seedOrg(auth, user.userId);
 
     // seedUser returns cookie-based headers via testUtils.login()
     const cookieHeader = user.headers.get("cookie");
@@ -135,7 +135,7 @@ describe("auth chain integration", () => {
   // -------------------------------------------------------------------------
   test("bearer token auth works as fallback for session procedures", async () => {
     const user = await seedUser(auth);
-    const org = await seedOrg(db, auth, user.userId);
+    const org = await seedOrg(auth, user.userId);
 
     // Build explicit Bearer headers from the raw session token
     const bearerHeaders = new Headers();

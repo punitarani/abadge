@@ -22,7 +22,7 @@ describe("e2e golden path", () => {
     const owner = await seedUser(auth);
 
     // 2. Create an org
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     // 3. Create an operator caller scoped to the org
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -109,7 +109,7 @@ describe("e2e golden path", () => {
   test("agent without permission is denied", async () => {
     // 1. Create user, org, operator caller
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     // 2. Create a server-managed item

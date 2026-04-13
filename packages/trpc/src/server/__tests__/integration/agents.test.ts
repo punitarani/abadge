@@ -18,7 +18,7 @@ describe("agents CRUD", () => {
 
   test("create legacy API key agent returns one-time key", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const result = await caller.agents.create({
@@ -38,7 +38,7 @@ describe("agents CRUD", () => {
 
   test("create public_key_session agent with bootstrap token", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const result = await caller.agents.create({
@@ -54,7 +54,7 @@ describe("agents CRUD", () => {
 
   test("list agents returns all agents in org", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     await caller.agents.create({
@@ -75,7 +75,7 @@ describe("agents CRUD", () => {
 
   test("rotate legacy API key agent issues new key", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.agents.create({
@@ -95,7 +95,7 @@ describe("agents CRUD", () => {
 
   test("revoke agent disables it", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.agents.create({

@@ -50,7 +50,7 @@ describe("seed factories", () => {
   test("seedOrg creates an org with the user as owner", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
-    const { orgId, slug } = await seedOrg(db, auth, userId);
+    const { orgId, slug } = await seedOrg(auth, userId);
 
     const org = assertDefined(
       (await db.select().from(organization).where(eq(organization.id, orgId)))[0],
@@ -72,7 +72,7 @@ describe("seed factories", () => {
   test("seedAgent inserts into both principals and agents tables", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
-    const { orgId } = await seedOrg(db, auth, userId);
+    const { orgId } = await seedOrg(auth, userId);
 
     const { agentId, name, apiKey } = await seedAgent(db, {
       userId,
@@ -105,7 +105,7 @@ describe("seed factories", () => {
   test("seedAgent with public_key_session returns a keyPair", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
-    const { orgId } = await seedOrg(db, auth, userId);
+    const { orgId } = await seedOrg(auth, userId);
 
     const { agentId, keyPair, apiKey } = await seedAgent(db, {
       userId,
@@ -137,7 +137,7 @@ describe("seed factories", () => {
   test("seedAgentSession creates a valid abs_-prefixed session token", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
-    const { orgId } = await seedOrg(db, auth, userId);
+    const { orgId } = await seedOrg(auth, userId);
     const { agentId } = await seedAgent(db, { userId, orgId });
 
     const { sessionId, rawToken } = await seedAgentSession(db, {
@@ -166,7 +166,7 @@ describe("seed factories", () => {
   test("seedServerItem creates an encrypted item with non-null serverCiphertext", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
-    const { orgId } = await seedOrg(db, auth, userId);
+    const { orgId } = await seedOrg(auth, userId);
 
     const { itemId, label } = await seedServerItem(db, { userId, orgId });
 

@@ -84,7 +84,7 @@ describe("agent lifecycle", () => {
   test("full flow: bootstrap -> enroll -> challenge -> exchange -> access", async () => {
     // Setup: user, org, operator caller
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     const publicCaller = createPublicCaller(db, auth);
 
@@ -133,7 +133,7 @@ describe("agent lifecycle", () => {
   test("expired bootstrap token is rejected", async () => {
     // Setup
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     const publicCaller = createPublicCaller(db, auth);
 
@@ -167,7 +167,7 @@ describe("agent lifecycle", () => {
   test("already-enrolled agent rejects second enrollment", async () => {
     // Setup
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     const publicCaller = createPublicCaller(db, auth);
 
@@ -204,7 +204,7 @@ describe("agent lifecycle", () => {
   test("invalid signature is rejected at exchange", async () => {
     // Setup
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     const publicCaller = createPublicCaller(db, auth);
 
@@ -244,7 +244,7 @@ describe("agent lifecycle", () => {
   test("revoked agent session is rejected", async () => {
     // Setup: full flow through to session exchange
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     const publicCaller = createPublicCaller(db, auth);
 

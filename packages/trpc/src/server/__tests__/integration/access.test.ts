@@ -27,7 +27,7 @@ describe("access", () => {
 
   test("access.reveal returns decrypted payload for authorized agent", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     const item = await seedServerItem(db, {
       userId: owner.userId,
@@ -60,7 +60,7 @@ describe("access", () => {
 
   test("access.reveal with field parameter returns only that field", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     // Use default fields (username, password) so "password" exists
     const item = await seedServerItem(db, {
@@ -94,7 +94,7 @@ describe("access", () => {
 
   test("access.reveal denied without permission", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     const item = await seedServerItem(db, {
       userId: owner.userId,
@@ -123,7 +123,7 @@ describe("access", () => {
 
   test("access.reveal denied with expired permission", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     const item = await seedServerItem(db, {
       userId: owner.userId,
@@ -162,7 +162,7 @@ describe("access", () => {
 
   test("access.ciphertext for local agent with ZK item", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
     const item = await seedZkItem(db, {
@@ -197,7 +197,7 @@ describe("access", () => {
 
   test("access.ciphertext denied for remote agent", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
 
     const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
     const item = await seedZkItem(db, {
@@ -238,7 +238,7 @@ describe("access", () => {
   test("cross-org access is impossible", async () => {
     // Org 1: item lives here
     const owner1 = await seedUser(auth);
-    const org1 = await seedOrg(db, auth, owner1.userId);
+    const org1 = await seedOrg(auth, owner1.userId);
     const item = await seedServerItem(db, {
       userId: owner1.userId,
       orgId: org1.orgId,
@@ -246,7 +246,7 @@ describe("access", () => {
 
     // Org 2: agent lives here
     const owner2 = await seedUser(auth);
-    const org2 = await seedOrg(db, auth, owner2.userId);
+    const org2 = await seedOrg(auth, owner2.userId);
     const agent = await seedAgent(db, {
       userId: owner2.userId,
       orgId: org2.orgId,

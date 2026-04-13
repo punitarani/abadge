@@ -20,7 +20,7 @@ describe("cascade behavior", () => {
 
   test("revoking an agent invalidates its active sessions", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     // Seed agent via helper (inserts into both principals and agents tables)
@@ -73,7 +73,7 @@ describe("cascade behavior", () => {
 
   test("deleting an item writes cascade audit entry", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     // Seed a server_managed item directly

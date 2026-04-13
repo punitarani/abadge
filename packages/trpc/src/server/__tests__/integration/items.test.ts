@@ -20,7 +20,7 @@ describe("items CRUD", () => {
 
   test("create server_managed item and retrieve it", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.items.create({
@@ -43,7 +43,7 @@ describe("items CRUD", () => {
 
   test("update item with optimistic concurrency", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.items.create({
@@ -100,7 +100,7 @@ describe("items CRUD", () => {
 
   test("owner reveal returns decrypted payload", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.items.create({
@@ -121,7 +121,7 @@ describe("items CRUD", () => {
 
   test("delete item soft-deletes it", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const created = await caller.items.create({
@@ -156,7 +156,7 @@ describe("items CRUD", () => {
 
   test("list items excludes soft-deleted items", async () => {
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const item1 = await caller.items.create({

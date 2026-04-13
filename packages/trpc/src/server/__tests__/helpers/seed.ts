@@ -84,7 +84,6 @@ export interface SeedOrgResult {
 }
 
 export async function seedOrg(
-  _db: Database,
   auth: TestAuth,
   userId: string,
   overrides?: { name?: string; slug?: string },

@@ -26,7 +26,7 @@ describe("audit log integration", () => {
   test("every access attempt is logged (allowed and denied)", async () => {
     // Setup: user, org, server item, remote agent, session
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const { itemId } = await seedServerItem(db, {
@@ -89,7 +89,7 @@ describe("audit log integration", () => {
   test("audit query filters by eventType", async () => {
     // Setup: user, org, agent with permission on a server item
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const { itemId } = await seedServerItem(db, {
@@ -136,7 +136,7 @@ describe("audit log integration", () => {
   test("audit query pagination with cursor", async () => {
     // Setup: user, org, agent
     const owner = await seedUser(auth);
-    const org = await seedOrg(db, auth, owner.userId);
+    const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const agent = await seedAgent(db, {
