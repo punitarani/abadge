@@ -4,7 +4,7 @@ import type { Agent, AgentKind, PrincipalAuthMethod } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
 import { Badge } from "@/components/ui/badge";
@@ -60,8 +60,6 @@ function StatusBadge({ agent }: { agent: Agent }): React.ReactElement {
 }
 
 export default function AgentsListPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
@@ -121,8 +119,8 @@ export default function AgentsListPage(): React.ReactElement {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/overview`} className="hover:text-foreground">
-          {activeOrgName ?? orgSlug}
+        <Link href="/overview" className="hover:text-foreground">
+          {activeOrgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Agents</span>
@@ -207,7 +205,6 @@ export default function AgentsListPage(): React.ReactElement {
         isPending={agentsQuery.isPending}
         agents={filteredAgents}
         totalCount={agents.length}
-        orgSlug={orgSlug}
       />
 
       <CreateAgentPanel open={createOpen} onClose={() => setCreateOpen(false)} />
@@ -287,12 +284,10 @@ function AgentsTable({
   isPending,
   agents,
   totalCount,
-  orgSlug,
 }: {
   isPending: boolean;
   agents: Agent[];
   totalCount: number;
-  orgSlug: string;
 }): React.ReactElement {
   return (
     <div className="rounded-lg border border-border">
@@ -334,7 +329,7 @@ function AgentsTable({
             agents.map((agent: Agent) => (
               <TableRow key={agent.id} className="cursor-pointer">
                 <TableCell className="font-medium">
-                  <Link href={`/${orgSlug}/agents/${agent.id}`}>{agent.name}</Link>
+                  <Link href={`/agents/${agent.id}`}>{agent.name}</Link>
                 </TableCell>
                 <TableCell>
                   <KindBadge kind={agent.kind} />
@@ -353,7 +348,7 @@ function AgentsTable({
                 </TableCell>
                 <TableCell className="text-right">
                   <Link
-                    href={`/${orgSlug}/agents/${agent.id}`}
+                    href={`/agents/${agent.id}`}
                     className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     View

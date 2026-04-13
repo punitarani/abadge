@@ -4,7 +4,6 @@ import type { Profile } from "@abadge/core";
 import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,8 +28,6 @@ type VaultStatusFilter = "all" | "unlocked" | "locked";
 const TABLE_COL_COUNT = 5;
 
 export default function ProfilesListPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
 
@@ -81,7 +78,7 @@ export default function ProfilesListPage(): React.ReactElement {
           </p>
         </div>
         <Button size="sm" asChild>
-          <Link href={`/${orgSlug}/overview`}>
+          <Link href="/profiles?create=true">
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             New profile
           </Link>
@@ -166,7 +163,6 @@ export default function ProfilesListPage(): React.ReactElement {
                 <ProfileRow
                   key={profile.id}
                   profile={profile}
-                  orgSlug={orgSlug}
                   isUnlocked={
                     profile.storageMode === "zero_knowledge" ? isProfileUnlocked(profile.id) : null
                   }
@@ -183,12 +179,10 @@ export default function ProfilesListPage(): React.ReactElement {
 
 function ProfileRow({
   profile,
-  orgSlug,
   isUnlocked,
   isDefault,
 }: {
   profile: Profile;
-  orgSlug: string;
   isUnlocked: boolean | null;
   isDefault: boolean;
 }): React.ReactElement {
@@ -196,7 +190,7 @@ function ProfileRow({
     <TableRow>
       <TableCell>
         <Link
-          href={`/${orgSlug}/profiles/${profile.id}`}
+          href={`/profiles/${profile.id}`}
           className="font-medium text-foreground hover:underline"
         >
           {profile.name}

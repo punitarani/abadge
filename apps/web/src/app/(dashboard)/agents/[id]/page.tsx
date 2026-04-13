@@ -49,8 +49,7 @@ const AUTH_LABELS: Record<string, string> = {
 };
 
 export default function AgentDetailPage(): React.ReactElement {
-  const params = useParams<{ org: string; id: string }>();
-  const orgSlug = params.org;
+  const params = useParams<{ id: string }>();
   const agentId = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -114,7 +113,7 @@ export default function AgentDetailPage(): React.ReactElement {
       });
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.agent(agentId) });
       toast.success("Agent revoked.");
-      router.push(`/${orgSlug}/agents`);
+      router.push("/agents");
     },
     onError: (error) => {
       toast.error(getClientErrorMessage(error, "Failed to revoke agent"));
@@ -140,7 +139,6 @@ export default function AgentDetailPage(): React.ReactElement {
   return (
     <AgentDetailContent
       agent={agent}
-      orgSlug={orgSlug}
       rotatedKey={rotatedKey}
       rotateMutation={rotateMutation}
       revokeMutation={revokeMutation}
@@ -155,7 +153,6 @@ export default function AgentDetailPage(): React.ReactElement {
 
 function AgentDetailContent({
   agent,
-  orgSlug,
   rotatedKey,
   rotateMutation,
   revokeMutation,
@@ -166,7 +163,6 @@ function AgentDetailContent({
   onDismissKey,
 }: {
   agent: Agent;
-  orgSlug: string;
   rotatedKey: string | null;
   rotateMutation: { mutate: () => void; isPending: boolean };
   revokeMutation: { mutate: () => void; isPending: boolean };
@@ -183,7 +179,7 @@ function AgentDetailContent({
     <div className="space-y-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/agents`} className="hover:text-foreground">
+        <Link href="/agents" className="hover:text-foreground">
           Agents
         </Link>
         <span>/</span>
@@ -217,11 +213,7 @@ function AgentDetailContent({
       </div>
 
       {/* Granted permissions */}
-      <GrantedPermissionsSection
-        permissions={agentPermissions}
-        itemLabelMap={itemLabelMap}
-        orgSlug={orgSlug}
-      />
+      <GrantedPermissionsSection permissions={agentPermissions} itemLabelMap={itemLabelMap} />
 
       {/* Recent access events */}
       <RecentAccessSection
@@ -337,11 +329,9 @@ function MetadataCard({
 function GrantedPermissionsSection({
   permissions,
   itemLabelMap,
-  orgSlug,
 }: {
   permissions: Permission[];
   itemLabelMap: Map<string, string>;
-  orgSlug: string;
 }): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.activeOrgId);
@@ -365,7 +355,7 @@ function GrantedPermissionsSection({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Granted permissions</h2>
         <Button variant="outline" size="sm" asChild>
-          <Link href={`/${orgSlug}/permissions?create=true`}>+ Grant permission</Link>
+          <Link href="/permissions?create=true">+ Grant permission</Link>
         </Button>
       </div>
 

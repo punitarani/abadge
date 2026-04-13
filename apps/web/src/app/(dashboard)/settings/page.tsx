@@ -3,7 +3,7 @@
 import { Trash, Warning } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -60,8 +60,6 @@ function getInitials(userId: string): string {
 }
 
 export default function SettingsPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
@@ -97,8 +95,8 @@ export default function SettingsPage(): React.ReactElement {
     <div className="space-y-8 max-w-3xl">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/overview`} className="hover:text-foreground">
-          {activeOrgName ?? orgSlug}
+        <Link href="/overview" className="hover:text-foreground">
+          {activeOrgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Settings</span>

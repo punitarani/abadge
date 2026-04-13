@@ -4,7 +4,7 @@ import type { Agent, Capability, ItemSummary, Permission } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
@@ -240,8 +240,6 @@ function PermissionsTable({
 /* ---- Main page ---- */
 
 export default function PermissionsListPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
@@ -338,8 +336,8 @@ export default function PermissionsListPage(): React.ReactElement {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/overview`} className="hover:text-foreground">
-          {activeOrgName ?? orgSlug}
+        <Link href="/overview" className="hover:text-foreground">
+          {activeOrgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Permissions</span>

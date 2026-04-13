@@ -23,8 +23,7 @@ import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
 export default function ProfileDetailPage(): React.ReactElement {
-  const params = useParams<{ org: string; id: string }>();
-  const orgSlug = params.org;
+  const params = useParams<{ id: string }>();
   const profileId = params.id;
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
@@ -90,7 +89,7 @@ export default function ProfileDetailPage(): React.ReactElement {
     <div className="space-y-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/profiles`} className="hover:text-foreground">
+        <Link href="/profiles" className="hover:text-foreground">
           Profiles
         </Link>
         <span>/</span>
@@ -122,14 +121,10 @@ export default function ProfileDetailPage(): React.ReactElement {
       {isZK && <ZKVaultCard unlocked={unlocked} keyVersion={profile.keyVersion} />}
 
       {/* Items section */}
-      <ItemsSection items={items} orgSlug={orgSlug} />
+      <ItemsSection items={items} />
 
       {/* Agents section */}
-      <AgentsSection
-        agents={agents}
-        agentPermissionCounts={agentPermissionCounts}
-        orgSlug={orgSlug}
-      />
+      <AgentsSection agents={agents} agentPermissionCounts={agentPermissionCounts} />
 
       {/* Key management */}
       {isZK && <KeyManagementSection />}
@@ -188,13 +183,7 @@ function InfoBox({ label, value }: { label: string; value: string }): React.Reac
   );
 }
 
-function ItemsSection({
-  items,
-  orgSlug,
-}: {
-  items: ItemSummary[];
-  orgSlug: string;
-}): React.ReactElement {
+function ItemsSection({ items }: { items: ItemSummary[] }): React.ReactElement {
   // Items are scoped to the organization, not individual profiles.
   // The API does not expose a profileId on ItemSummary, so we show all org items here.
   const preview = items.slice(0, 4);
@@ -204,14 +193,11 @@ function ItemsSection({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Items</h2>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/${orgSlug}/items`}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
+          <Link href="/items" className="text-xs text-muted-foreground hover:text-foreground">
             View all {items.length} <ArrowRight className="ml-0.5 inline h-3 w-3" />
           </Link>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/items?create=true`}>
+            <Link href="/items?create=true">
               <Plus className="mr-1 h-3 w-3" />
               New item
             </Link>
@@ -246,7 +232,7 @@ function ItemsSection({
                   </TableCell>
                   <TableCell className="text-right">
                     <Link
-                      href={`/${orgSlug}/items/${item.id}`}
+                      href={`/items/${item.id}`}
                       className="text-xs text-muted-foreground hover:text-foreground"
                     >
                       View
@@ -265,11 +251,9 @@ function ItemsSection({
 function AgentsSection({
   agents,
   agentPermissionCounts,
-  orgSlug,
 }: {
   agents: Agent[];
   agentPermissionCounts: Map<string, number>;
-  orgSlug: string;
 }): React.ReactElement {
   const preview = agents.slice(0, 4);
 
@@ -278,14 +262,11 @@ function AgentsSection({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Agents</h2>
         <div className="flex items-center gap-2">
-          <Link
-            href={`/${orgSlug}/agents`}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
+          <Link href="/agents" className="text-xs text-muted-foreground hover:text-foreground">
             View all {agents.length} <ArrowRight className="ml-0.5 inline h-3 w-3" />
           </Link>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/agents?create=true`}>
+            <Link href="/agents?create=true">
               <Plus className="mr-1 h-3 w-3" />
               Register agent
             </Link>
@@ -324,7 +305,7 @@ function AgentsSection({
                   </TableCell>
                   <TableCell>
                     <Link
-                      href={`/${orgSlug}/permissions`}
+                      href="/permissions"
                       className="text-sm text-muted-foreground hover:text-foreground hover:underline"
                     >
                       {agentPermissionCounts.get(agent.id) ?? 0}
@@ -335,7 +316,7 @@ function AgentsSection({
                   </TableCell>
                   <TableCell className="text-right">
                     <Link
-                      href={`/${orgSlug}/agents/${agent.id}`}
+                      href={`/agents/${agent.id}`}
                       className="text-xs text-muted-foreground hover:text-foreground"
                     >
                       View

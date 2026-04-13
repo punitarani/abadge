@@ -106,7 +106,8 @@ export default function DashboardLayout({
   }, [session?.user]);
 
   // Show loading while auth, orgs, or store hydration are pending
-  const orgReady = hydrated && activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
+  const orgReady =
+    hydrated && activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
   if (sessionPending || !session || orgsLoading || !orgReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">

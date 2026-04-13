@@ -4,7 +4,6 @@ import type { Agent, AuditEntry, Permission, Profile } from "@abadge/core";
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { SummaryCard } from "@/components/dashboard/summary-card";
 import { Badge } from "@/components/ui/badge";
@@ -228,8 +227,6 @@ function RecentEventRow({
 }
 
 export default function OverviewPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
 
   const profilesQuery = useQuery({
@@ -340,16 +337,16 @@ export default function OverviewPage(): React.ReactElement {
         <h2 className="text-sm font-medium">Quick actions</h2>
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/profiles?create=true`}>+ New profile</Link>
+            <Link href="/profiles?create=true">+ New profile</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/items?create=true`}>+ New item</Link>
+            <Link href="/items?create=true">+ New item</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/agents?create=true`}>+ Register agent</Link>
+            <Link href="/agents?create=true">+ Register agent</Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/${orgSlug}/permissions?create=true`}>+ Grant permission</Link>
+            <Link href="/permissions?create=true">+ Grant permission</Link>
           </Button>
         </div>
       </div>
@@ -358,10 +355,7 @@ export default function OverviewPage(): React.ReactElement {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium">Recent access events</h2>
-          <Link
-            href={`/${orgSlug}/audit`}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
+          <Link href="/audit" className="text-sm text-muted-foreground hover:text-foreground">
             View audit log &rarr;
           </Link>
         </div>

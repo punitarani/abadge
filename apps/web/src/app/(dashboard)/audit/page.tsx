@@ -11,7 +11,6 @@ import {
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -176,8 +175,6 @@ function AuditTableBody({
 }
 
 export default function AuditPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
@@ -301,8 +298,8 @@ export default function AuditPage(): React.ReactElement {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/overview`} className="hover:text-foreground">
-          {activeOrgName ?? orgSlug}
+        <Link href="/overview" className="hover:text-foreground">
+          {activeOrgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Audit log</span>

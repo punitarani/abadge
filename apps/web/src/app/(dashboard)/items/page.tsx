@@ -4,7 +4,7 @@ import type { ItemSummary } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
 import { Badge } from "@/components/ui/badge";
@@ -42,8 +42,6 @@ function StorageDot({ mode }: { mode: string }): React.ReactElement {
 }
 
 export default function ItemsListPage(): React.ReactElement {
-  const params = useParams<{ org: string }>();
-  const orgSlug = params.org;
   const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
@@ -103,8 +101,8 @@ export default function ItemsListPage(): React.ReactElement {
     <div className="space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/overview`} className="hover:text-foreground">
-          {activeOrgName ?? orgSlug}
+        <Link href="/overview" className="hover:text-foreground">
+          {activeOrgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Items</span>
@@ -164,7 +162,6 @@ export default function ItemsListPage(): React.ReactElement {
         items={filteredItems}
         totalCount={items.length}
         agentCountsByItem={agentCountsByItem}
-        orgSlug={orgSlug}
       />
 
       <CreateItemPanel open={createOpen} onClose={() => setCreateOpen(false)} />
@@ -221,13 +218,11 @@ function ItemsTable({
   items,
   totalCount,
   agentCountsByItem,
-  orgSlug,
 }: {
   isPending: boolean;
   items: ItemSummary[];
   totalCount: number;
   agentCountsByItem: Map<string, Set<string>>;
-  orgSlug: string;
 }): React.ReactElement {
   return (
     <div className="rounded-lg border border-border">
@@ -267,7 +262,7 @@ function ItemsTable({
             items.map((item: ItemSummary) => (
               <TableRow key={item.id} className="cursor-pointer">
                 <TableCell className="font-medium">
-                  <Link href={`/${orgSlug}/items/${item.id}`}>{item.label}</Link>
+                  <Link href={`/items/${item.id}`}>{item.label}</Link>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   <StorageDot mode={item.storageMode} />
@@ -280,7 +275,7 @@ function ItemsTable({
                 </TableCell>
                 <TableCell className="text-right">
                   <Link
-                    href={`/${orgSlug}/items/${item.id}`}
+                    href={`/items/${item.id}`}
                     className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     View

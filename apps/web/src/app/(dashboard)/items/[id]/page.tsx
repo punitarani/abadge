@@ -37,8 +37,7 @@ import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
 export default function ItemDetailPage(): React.ReactElement {
-  const params = useParams<{ org: string; id: string }>();
-  const orgSlug = params.org;
+  const params = useParams<{ id: string }>();
   const itemId = params.id;
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -88,7 +87,7 @@ export default function ItemDetailPage(): React.ReactElement {
         queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
       });
       toast.success("Item deleted.");
-      router.push(`/${orgSlug}/items`);
+      router.push("/items");
     },
     onError: (error) => {
       toast.error(getClientErrorMessage(error, "Failed to delete item"));
@@ -117,7 +116,7 @@ export default function ItemDetailPage(): React.ReactElement {
     <div className="space-y-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={`/${orgSlug}/items`} className="hover:text-foreground">
+        <Link href="/items" className="hover:text-foreground">
           Items
         </Link>
         <span>/</span>
@@ -190,11 +189,7 @@ export default function ItemDetailPage(): React.ReactElement {
       </div>
 
       {/* Agent permissions */}
-      <AgentPermissionsSection
-        permissions={itemPermissions}
-        agentNameMap={agentNameMap}
-        orgSlug={orgSlug}
-      />
+      <AgentPermissionsSection permissions={itemPermissions} agentNameMap={agentNameMap} />
 
       {/* Recent access events */}
       <RecentAccessSection
@@ -226,11 +221,9 @@ function MetadataCard({
 function AgentPermissionsSection({
   permissions,
   agentNameMap,
-  orgSlug,
 }: {
   permissions: Permission[];
   agentNameMap: Map<string, string>;
-  orgSlug: string;
 }): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.activeOrgId);
@@ -254,7 +247,7 @@ function AgentPermissionsSection({
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">Agent permissions</h2>
         <Button variant="outline" size="sm" asChild>
-          <Link href={`/${orgSlug}/permissions?create=true`}>Grant permission</Link>
+          <Link href="/permissions?create=true">Grant permission</Link>
         </Button>
       </div>
 
