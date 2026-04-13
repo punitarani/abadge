@@ -117,7 +117,7 @@ interface Step1Params {
   orgName: string;
   orgSlug: string;
   slugStatus: SlugStatus;
-  setActiveOrg: (org: { id: string; slug: string; name: string }) => void;
+  setActiveOrg: (org: { id: string; slug: string; name: string; logo: string | null }) => void;
   setOrgId: (id: string) => void;
   setCurrentStep: (step: number) => void;
   setLoading: (v: boolean) => void;
@@ -149,7 +149,7 @@ async function submitStep1({
       slug: orgSlug || undefined,
     });
     const org = result.organization;
-    setActiveOrg({ id: org.id, slug: org.slug, name: org.name });
+    setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
     setOrgId(org.id);
     setCurrentStep(1);
   } catch (err) {

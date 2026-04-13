@@ -60,7 +60,7 @@ export function OrgSwitcher(): React.ReactElement {
 
   function handleSelect(org: Org): void {
     if (org.id !== activeOrgId) {
-      setActiveOrg({ id: org.id, slug: org.slug, name: org.name });
+      setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo });
       // Invalidate all org-scoped queries so they refetch with the new org header
       queryClient.invalidateQueries();
     }
