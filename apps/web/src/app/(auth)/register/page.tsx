@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,12 @@ import { PasswordStrength } from "@/components/ui/password-strength";
 import type { SocialProvider } from "@/lib/auth-client";
 import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
+import { normalizeRedirectPath } from "@/lib/redirect";
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = normalizeRedirectPath(searchParams.get("redirect"), "/onboarding");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -53,7 +56,7 @@ export default function RegisterPage() {
       if (signUpError) {
         setError(signUpError.message ?? "Registration failed");
       } else {
-        router.push("/onboarding");
+        router.push(redirectPath);
       }
     } catch {
       setError("An unexpected error occurred");
@@ -70,7 +73,7 @@ export default function RegisterPage() {
       const currentURL = new URL(window.location.href);
       const { error: socialError } = await authClient.signIn.social({
         provider,
-        callbackURL: `${currentURL.origin}/onboarding`,
+        callbackURL: `${currentURL.origin}${redirectPath}`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
@@ -163,5 +166,22 @@ export default function RegisterPage() {
         </p>
       </div>
     </AuthShell>
+  );
+}
+
+export default function RegisterPage(): React.ReactElement {
+  return (
+    <Suspense
+      fallback={
+        <AuthShell>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </AuthShell>
+      }
+    >
+      <RegisterPageContent />
+    </Suspense>
   );
 }
