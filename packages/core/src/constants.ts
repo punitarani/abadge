@@ -30,20 +30,33 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 export const AUDIT_EVENT_TYPES = [
+  // profile events
   "profile.create",
   "profile.rotate",
   "profile.delete",
   "profile.delete_cascade",
+  "profile.setup_recovery",
+  // item events
   "item.create",
   "item.read",
   "item.update",
   "item.delete",
   "item.delete_cascade",
   "item.export",
+  // auth events
   "auth.login",
   "auth.logout",
+  "auth.signup",
   "auth.token_issue",
   "auth.token_revoke",
+  // org events
+  "org.create",
+  "org.update",
+  "org.delete",
+  "org.invite",
+  "org.member_remove",
+  "org.member_role_change",
+  // agent events
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
@@ -53,9 +66,11 @@ export const AUDIT_EVENT_TYPES = [
   "agent.session_issue",
   "agent.session_reject",
   "agent.session_revoke",
+  // permission events
   "permission.create",
   "permission.revoke",
   "permission.revoke_cascade",
+  // access events
   "access.ciphertext",
   "access.reveal",
   "access.mount_env",

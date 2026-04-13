@@ -102,6 +102,18 @@ describe("AUDIT_EVENT_TYPES", () => {
     expect(AUDIT_EVENT_TYPES).not.toContain("operator_token.create");
     expect(AUDIT_EVENT_TYPES).not.toContain("operator_token.revoke");
   });
+
+  test("includes org, profile, and auth event types for comprehensive audit coverage", () => {
+    expect(AUDIT_EVENT_TYPES).toContain("org.create");
+    expect(AUDIT_EVENT_TYPES).toContain("org.update");
+    expect(AUDIT_EVENT_TYPES).toContain("org.delete");
+    expect(AUDIT_EVENT_TYPES).toContain("org.invite");
+    expect(AUDIT_EVENT_TYPES).toContain("org.member_remove");
+    expect(AUDIT_EVENT_TYPES).toContain("org.member_role_change");
+    expect(AUDIT_EVENT_TYPES).toContain("profile.setup_recovery");
+    expect(AUDIT_EVENT_TYPES).toContain("profile.delete");
+    expect(AUDIT_EVENT_TYPES).toContain("auth.signup");
+  });
 });
 
 describe("CAPABILITY_MATRIX", () => {
