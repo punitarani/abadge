@@ -46,15 +46,11 @@ const navGroups = [
   },
   {
     label: "Monitor",
-    items: [
-      { path: "audit", label: "Audit log", icon: ScrollText },
-    ],
+    items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
   },
 ];
 
-const bottomNavItems = [
-  { path: "settings", label: "Settings", icon: Settings },
-];
+const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }];
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();

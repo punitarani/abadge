@@ -74,7 +74,12 @@ export default function DashboardLayout({
       // Stored org is stale or missing — fall back to first org (orgs.length > 0 checked above)
       const first = orgs[0];
       if (first) {
-        setActiveOrg({ id: first.id, slug: first.slug, name: first.name, logo: first.logo ?? null });
+        setActiveOrg({
+          id: first.id,
+          slug: first.slug,
+          name: first.name,
+          logo: first.logo ?? null,
+        });
       }
     }
   }, [

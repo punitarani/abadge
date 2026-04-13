@@ -51,13 +51,7 @@ function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.
   const textSize = size === "sm" ? "text-[10px]" : "text-xs";
 
   if (org.logo) {
-    return (
-      <img
-        src={org.logo}
-        alt={org.name}
-        className={`${dimension} rounded-full`}
-      />
-    );
+    return <img src={org.logo} alt={org.name} className={`${dimension} rounded-full`} />;
   }
 
   return (
@@ -113,7 +107,9 @@ export function OrgSwitcher(): React.ReactElement {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <OrgIcon org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }} />
+              <OrgIcon
+                org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }}
+              />
               <span className="truncate text-sm font-medium">
                 {currentOrg?.name ?? "Select org"}
               </span>
