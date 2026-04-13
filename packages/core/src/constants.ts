@@ -54,6 +54,8 @@ export const AUDIT_EVENT_TYPES = [
   "org.update",
   "org.delete",
   "org.invite",
+  "org.invite_accept",
+  "org.invite_revoke",
   "org.member_remove",
   "org.member_role_change",
   // agent events
@@ -126,11 +128,13 @@ export const API_KEY_PREFIX = {
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 export const AGENT_CHALLENGE_PREFIX = "abc_";
+export const INVITE_TOKEN_PREFIX = "abi_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
 export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
+export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"): AgentLocality {
@@ -183,5 +187,9 @@ export type ErrorCode =
   | "ITEM_DELETED"
   | "MEMBER_INSUFFICIENT_ROLE"
   | "MEMBER_AGENT_OWNERSHIP"
+  | "INVITE_NOT_FOUND"
+  | "INVITE_EXPIRED"
+  | "INVITE_ALREADY_USED"
+  | "ALREADY_MEMBER"
   | "VALIDATION_ERROR"
   | "INTEGRITY_ERROR";

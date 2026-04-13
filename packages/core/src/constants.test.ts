@@ -11,6 +11,8 @@ import {
   AGENT_SESSION_TTL_MS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
+  INVITE_TOKEN_PREFIX,
+  INVITE_TOKEN_TTL_MS,
   agentLocalityForKind,
   CAPABILITY_MATRIX,
   getAllowedCapabilities,
@@ -136,6 +138,21 @@ describe("CAPABILITY_MATRIX", () => {
     expect(isCapabilityAllowed("reveal_plaintext", "remote", "server_managed")).toBe(true);
     expect(isCapabilityAllowed("mount_env", "remote", "server_managed")).toBe(false);
     expect(isCapabilityAllowed("read_ciphertext", "local", "server_managed")).toBe(false);
+  });
+});
+
+describe("invite token constants", () => {
+  test("exposes invite token prefix", () => {
+    expect(INVITE_TOKEN_PREFIX).toBe("abi_");
+  });
+
+  test("exposes invite token TTL", () => {
+    expect(INVITE_TOKEN_TTL_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  test("includes invite audit events", () => {
+    expect(AUDIT_EVENT_TYPES).toContain("org.invite_accept");
+    expect(AUDIT_EVENT_TYPES).toContain("org.invite_revoke");
   });
 });
 
