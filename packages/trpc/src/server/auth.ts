@@ -399,16 +399,8 @@ export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string):
       meta: { availableOrgIds: memberships.map((m) => m.organizationId) },
     });
   }
-  // Length is exactly 1 by the checks above; the non-null assertion keeps
-  // `noUncheckedIndexedAccess` happy without allocating a redundant check.
-  const [only] = memberships;
-  if (!only) {
-    throw new UnauthorizedError({
-      code: "NO_ORG_MEMBERSHIP",
-      message: "User has no organization membership",
-      hint: "Complete onboarding to create your first organization.",
-    });
-  }
+  // memberships.length === 1 here (0 and >1 branches returned above).
+  const [only] = memberships as [(typeof memberships)[number]];
   return only.organizationId;
 }
 
