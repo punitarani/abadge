@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 interface OneTimeSecretDisplayProps {
@@ -24,7 +25,7 @@ export function OneTimeSecretDisplay({
   expiresAt,
   onDismiss,
 }: OneTimeSecretDisplayProps): React.ReactElement {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [remainingMs, setRemainingMs] = useState<number | null>(() => {
     if (!expiresAt) return null;
     return Math.max(0, new Date(expiresAt).getTime() - Date.now());
@@ -42,10 +43,20 @@ export function OneTimeSecretDisplay({
     return () => clearInterval(interval);
   }, [expiresAt]);
 
+  // TODO(B4.1): add unit test that mocks navigator.clipboard.writeText to
+  // reject and asserts the error state + toast. Requires the web test harness
+  // from task B4.1 (jsdom + @testing-library/react).
   async function handleCopy(): Promise<void> {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyState("copied");
+      setTimeout(() => setCopyState((s) => (s === "copied" ? "idle" : s)), 2000);
+    } catch {
+      setCopyState("error");
+      toast.error(
+        "Couldn't copy — select the value and copy manually (secure context may be required).",
+      );
+    }
   }
 
   const label = type === "bootstrap_token" ? "Bootstrap Token" : "API Key";
@@ -60,9 +71,15 @@ export function OneTimeSecretDisplay({
           variant="outline"
           size="sm"
           onClick={handleCopy}
-          aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+          aria-label={
+            copyState === "copied"
+              ? "Copied to clipboard"
+              : copyState === "error"
+                ? "Copy failed — select manually"
+                : "Copy to clipboard"
+          }
         >
-          {copied ? "Copied" : "Copy"}
+          {copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : "Copy"}
         </Button>
       </div>
 
