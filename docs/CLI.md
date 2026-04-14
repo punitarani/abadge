@@ -378,11 +378,12 @@ The daemon chooses the file path; the CLI prints it for use in subsequent comman
 
 ### `abadge import <file>`
 
-Imports secrets from an `.env` file, creating one item per variable.
+Imports secrets from an `.env` file, creating one server-managed item per variable. Pass `--overwrite` to update existing items (matched by label). Without it, existing labels are skipped with a warning. `--overwrite` refuses to touch zero-knowledge items — delete and re-import, or use `abadge item update`.
 
 ```bash
 abadge import .env
-abadge import secrets.env --storage-mode server_managed
+abadge import secrets.env --kind api_key --overwrite
+abadge import .env --dry-run
 ```
 
 ### `abadge export`

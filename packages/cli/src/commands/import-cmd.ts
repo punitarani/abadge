@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { ITEM_KINDS, type ItemKind } from "@abadge/core";
+import { ITEM_KINDS, type ItemKind, type ItemSummary } from "@abadge/core";
 import type { AbadgeUserClient } from "@abadge/sdk";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
@@ -9,6 +9,19 @@ interface EnvEntry {
   key: string;
   value: string;
 }
+
+export interface ImportOptions {
+  dryRun?: boolean;
+  overwrite?: boolean;
+}
+
+export interface ImportSummary {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+type ImportClient = Pick<AbadgeUserClient, "listItems" | "createItem" | "updateItem">;
 
 function parseEnvFile(content: string): EnvEntry[] {
   return content
@@ -29,33 +42,79 @@ function validateKind(kind: string): kind is ItemKind {
   return ITEM_KINDS.includes(kind as ItemKind);
 }
 
+type ImportOutcome = "created" | "updated" | "skipped";
+
 async function importEntry(
-  client: AbadgeUserClient,
+  client: ImportClient,
   entry: EnvEntry,
   kind: ItemKind,
-  opts: { dryRun?: boolean; overwrite?: boolean },
-  existingLabels: Set<string>,
-): Promise<"created" | "skipped"> {
-  const exists = existingLabels.has(entry.key);
-  if (exists && !opts.overwrite) {
-    warn(`Item '${entry.key}' already exists, skipping (use --overwrite to replace).`);
-    return "skipped";
+  opts: ImportOptions,
+  existing: ItemSummary | undefined,
+): Promise<ImportOutcome> {
+  const payload = { v: 1, label: entry.key, kind, tags: [], fields: { value: entry.value } };
+
+  if (existing) {
+    if (!opts.overwrite) {
+      warn(`Item '${entry.key}' already exists, skipping (use --overwrite to replace).`);
+      return "skipped";
+    }
+    // Import only writes server_managed items. Overwriting a zero_knowledge item
+    // would need the profile unlocked via the daemon to rewrap the new DEK; not
+    // supported for now — users should `abadge item delete` + re-import, or use
+    // `abadge item update` interactively.
+    if (existing.storageMode !== "server_managed") {
+      error(
+        `Cannot overwrite '${entry.key}': existing item uses ${existing.storageMode} storage. Delete it first or use 'abadge item update'.`,
+      );
+      return "skipped";
+    }
+    if (opts.dryRun) {
+      console.log(`  [dry-run] Would overwrite item '${entry.key}'`);
+      return "updated";
+    }
+    try {
+      await client.updateItem(existing.id, {
+        storageMode: "server_managed",
+        payload,
+        contentVersion: existing.contentVersion,
+      });
+      success(`Updated '${entry.key}'`);
+      return "updated";
+    } catch (err) {
+      error(`Failed to update '${entry.key}': ${errorMessage(err, "unknown error")}`);
+      return "skipped";
+    }
   }
+
   if (opts.dryRun) {
-    console.log(`  [dry-run] Would ${exists ? "overwrite" : "create"} item '${entry.key}'`);
+    console.log(`  [dry-run] Would create item '${entry.key}'`);
     return "created";
   }
   try {
-    await client.createItem({
-      storageMode: "server_managed",
-      payload: { v: 1, label: entry.key, kind, tags: [], fields: { value: entry.value } },
-    });
+    await client.createItem({ storageMode: "server_managed", payload });
     success(`Imported '${entry.key}'`);
     return "created";
   } catch (err) {
     error(`Failed to import '${entry.key}': ${errorMessage(err, "unknown error")}`);
     return "skipped";
   }
+}
+
+export async function importEntries(
+  client: ImportClient,
+  entries: EnvEntry[],
+  kind: ItemKind,
+  opts: ImportOptions,
+): Promise<ImportSummary> {
+  const existing = (await client.listItems()).items;
+  const existingByLabel = new Map(existing.map((i) => [i.label, i]));
+
+  const summary: ImportSummary = { created: 0, updated: 0, skipped: 0 };
+  for (const entry of entries) {
+    const outcome = await importEntry(client, entry, kind, opts, existingByLabel.get(entry.key));
+    summary[outcome]++;
+  }
+  return summary;
 }
 
 async function runImport(
@@ -90,20 +149,15 @@ async function runImport(
   }
 
   const client = await createUserApiClient();
-  const existing = (await client.listItems()).items;
-  const existingLabels = new Set(existing.map((i) => i.label));
-
-  let created = 0;
-  let skipped = 0;
-
-  for (const entry of entries) {
-    const result = await importEntry(client, entry, kind, opts, existingLabels);
-    if (result === "created") created++;
-    else skipped++;
-  }
+  const { created, updated, skipped } = await importEntries(client, entries, kind, {
+    dryRun: opts.dryRun,
+    overwrite: opts.overwrite,
+  });
 
   const suffix = opts.dryRun ? " (dry-run)" : "";
-  console.log(`\nImport complete${suffix}: ${created} created, ${skipped} skipped.`);
+  console.log(
+    `\nImport complete${suffix}: ${created} created, ${updated} updated, ${skipped} skipped.`,
+  );
 }
 
 export function createImportCommand(): Command {

@@ -1,0 +1,141 @@
+import { describe, expect, mock, test } from "bun:test";
+import type { ItemSummary, UpdateItemInput } from "@abadge/core";
+import type { CreateItemInput } from "@abadge/sdk";
+import { importEntries } from "./import-cmd";
+
+function itemSummary(overrides: Partial<ItemSummary>): ItemSummary {
+  return {
+    id: "item_1",
+    label: "DATABASE_URL",
+    storageMode: "server_managed",
+    cryptoVersion: 1,
+    contentVersion: 1,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeClient(existing: ItemSummary[] = []) {
+  const listItems = mock(async () => ({ items: existing }));
+  const createItem = mock(async (_data: CreateItemInput) => ({
+    id: "item_new",
+    label: "x",
+    storageMode: "server_managed" as const,
+    cryptoVersion: 1,
+    contentVersion: 1,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  }));
+  const updateItem = mock(async (_id: string, _data: UpdateItemInput) => ({
+    ok: true,
+    contentVersion: 2,
+  }));
+  return { listItems, createItem, updateItem };
+}
+
+describe("importEntries", () => {
+  test("creates new items when label does not exist", async () => {
+    const client = makeClient([]);
+    const summary = await importEntries(client, [{ key: "NEW_VAR", value: "hello" }], "opaque", {
+      overwrite: false,
+    });
+
+    expect(summary).toEqual({ created: 1, updated: 0, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(1);
+    expect(client.updateItem).toHaveBeenCalledTimes(0);
+  });
+
+  test("skips existing items when --overwrite is not set", async () => {
+    const client = makeClient([itemSummary({ id: "item_1", label: "DATABASE_URL" })]);
+    const summary = await importEntries(
+      client,
+      [{ key: "DATABASE_URL", value: "postgres://new" }],
+      "opaque",
+      { overwrite: false },
+    );
+
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1 });
+    expect(client.createItem).toHaveBeenCalledTimes(0);
+    expect(client.updateItem).toHaveBeenCalledTimes(0);
+  });
+
+  test("calls updateItem when label exists and --overwrite is set", async () => {
+    const client = makeClient([
+      itemSummary({ id: "item_1", label: "DATABASE_URL", contentVersion: 3 }),
+    ]);
+    const summary = await importEntries(
+      client,
+      [{ key: "DATABASE_URL", value: "postgres://new" }],
+      "opaque",
+      { overwrite: true },
+    );
+
+    expect(summary).toEqual({ created: 0, updated: 1, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(0);
+    expect(client.updateItem).toHaveBeenCalledTimes(1);
+
+    const call = client.updateItem.mock.calls[0];
+    expect(call?.[0]).toBe("item_1");
+    expect(call?.[1]).toMatchObject({
+      storageMode: "server_managed",
+      contentVersion: 3,
+      payload: {
+        v: 1,
+        label: "DATABASE_URL",
+        kind: "opaque",
+        fields: { value: "postgres://new" },
+      },
+    });
+  });
+
+  test("refuses to overwrite zero_knowledge items even with --overwrite", async () => {
+    const client = makeClient([
+      itemSummary({ id: "item_zk", label: "ZK_SECRET", storageMode: "zero_knowledge" }),
+    ]);
+    const summary = await importEntries(
+      client,
+      [{ key: "ZK_SECRET", value: "anything" }],
+      "opaque",
+      { overwrite: true },
+    );
+
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1 });
+    expect(client.createItem).toHaveBeenCalledTimes(0);
+    expect(client.updateItem).toHaveBeenCalledTimes(0);
+  });
+
+  test("dry-run does not call mutating methods", async () => {
+    const client = makeClient([itemSummary({ id: "item_1", label: "EXISTING" })]);
+    const summary = await importEntries(
+      client,
+      [
+        { key: "EXISTING", value: "v1" },
+        { key: "BRAND_NEW", value: "v2" },
+      ],
+      "opaque",
+      { overwrite: true, dryRun: true },
+    );
+
+    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(0);
+    expect(client.updateItem).toHaveBeenCalledTimes(0);
+  });
+
+  test("mixed batch: creates new, updates existing", async () => {
+    const client = makeClient([itemSummary({ id: "item_db", label: "DB_URL", contentVersion: 2 })]);
+    const summary = await importEntries(
+      client,
+      [
+        { key: "DB_URL", value: "postgres://new" },
+        { key: "API_KEY", value: "sk_123" },
+      ],
+      "opaque",
+      { overwrite: true },
+    );
+
+    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(1);
+    expect(client.updateItem).toHaveBeenCalledTimes(1);
+  });
+});
