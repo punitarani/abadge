@@ -15,9 +15,20 @@ import { error, errorMessage, json, success, table, warn } from "../output";
  * persistence entirely.
  */
 export function configSlotForKind(kind: AgentKind): "cli" | "mcp" | null {
-  if (kind === "local_cli") return "cli";
-  if (kind === "local_mcp") return "mcp";
-  return null;
+  switch (kind) {
+    case "local_cli":
+      return "cli";
+    case "local_mcp":
+      return "mcp";
+    case "remote":
+      return null;
+    default: {
+      // Compile-time exhaustiveness check — a new AGENT_KINDS variant will
+      // fail to typecheck here until this switch is updated.
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
 }
 
 async function registerKeypairAgent(
