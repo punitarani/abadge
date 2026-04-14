@@ -1,18 +1,21 @@
-import type { AbadgeAgentClient } from "@abadge/sdk";
+import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
 import { daemonExpandEnv } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
 
-async function runWithExpandEnv(
+export async function runWithExpandEnv(
   client: AbadgeAgentClient,
   itemId: string,
   executable: string,
   args: string[],
 ): Promise<never> {
+  // accessMount may surface API errors (e.g. PERMISSION_DENIED) that carry a
+  // hint. Resolve the mount first so those propagate untouched; only the
+  // subsequent daemon call gets the daemon-availability fallback.
+  const mounted = await client.accessMount(itemId, "env");
   try {
-    const mounted = await client.accessMount(itemId, "env");
     const res = await daemonExpandEnv(
       mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
       mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
@@ -21,11 +24,15 @@ async function runWithExpandEnv(
       args,
     );
     process.exit(res.exitCode);
-  } catch {
+  } catch (err) {
+    if (err instanceof AbadgeApiError) {
+      throw err;
+    }
     throw new Error(
       "--expand-env requires the local daemon.\n" +
         "hint: Start it with: abadge daemon start\n" +
         "hint: Daemonless --expand-env support is coming in v0.1.",
+      { cause: err },
     );
   }
 }

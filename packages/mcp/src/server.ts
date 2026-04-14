@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { loadConfig, type McpConfig } from "./config.js";
+import { toErrorPayload } from "./errors.js";
 import * as getAudit from "./tools/get-audit.js";
 import * as listItems from "./tools/list-items.js";
 import * as mountSecret from "./tools/mount-secret.js";
@@ -56,9 +57,8 @@ function safeCall(
       ...(hasErrorField(text) ? { isError: true } : {}),
     }))
     .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : "Unknown error";
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+        content: [{ type: "text" as const, text: JSON.stringify(toErrorPayload(err)) }],
         isError: true,
       };
     });
