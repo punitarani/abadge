@@ -269,12 +269,10 @@ interface SdkTrpcClient {
       getInviteInfo: TrpcQuery<
         { token: string },
         {
-          invitationId: string;
           organizationName: string;
           organizationSlug: string;
           role: string;
           expiresAt: string;
-          inviterUserId: string;
         }
       >;
       acceptInvite: TrpcMutation<
@@ -724,12 +722,10 @@ export class AbadgeUserClient {
   }
 
   async getInviteInfo(token: string): Promise<{
-    invitationId: string;
     organizationName: string;
     organizationSlug: string;
     role: string;
     expiresAt: string;
-    inviterUserId: string;
   }> {
     return call(
       () => this.client.organizations.members.getInviteInfo.query({ token }),

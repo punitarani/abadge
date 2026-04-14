@@ -3,6 +3,7 @@ import {
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
   NotFoundError,
+  RateLimitError,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
@@ -127,13 +128,38 @@ const InviteTokenSchema = Schema.Struct({
 });
 
 const InviteInfoResultSchema = Schema.Struct({
-  invitationId: Schema.String,
   organizationName: Schema.String,
   organizationSlug: Schema.String,
   role: Schema.String,
   expiresAt: Schema.String,
-  inviterUserId: Schema.String,
 });
+
+// getInviteInfo is callable by any authenticated user with a token. Without a
+// tighter cap, a determined attacker could enumerate valid invite tokens at
+// the wider 100/min tRPC limit. Rate-limit by caller IP to 10/min. The Map is
+// module-scoped and in-memory (ephemeral across Cloudflare Worker isolates);
+// this is acceptable because brute-forcing opaque 32-byte tokens remains
+// infeasible even at the wider tRPC limit, and a tighter per-isolate cap
+// still massively raises the cost.
+const GET_INVITE_INFO_LIMIT = 10;
+const GET_INVITE_INFO_WINDOW_MS = 60_000;
+const getInviteInfoCounters = new Map<string, { count: number; resetAt: number }>();
+
+function checkGetInviteInfoRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = getInviteInfoCounters.get(key);
+  if (!entry || now > entry.resetAt) {
+    getInviteInfoCounters.set(key, { count: 1, resetAt: now + GET_INVITE_INFO_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= GET_INVITE_INFO_LIMIT;
+}
+
+/** @internal exposed for tests */
+export function _resetGetInviteInfoRateLimit(): void {
+  getInviteInfoCounters.clear();
+}
 
 const AcceptInviteResultSchema = Schema.Struct({
   ok: Schema.Boolean,
@@ -496,17 +522,27 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
 const getInviteInfo = (token: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+
+    // Throttle before paying the hashing cost so rejected attempts are cheap.
+    const rateLimitKey = `${ctx.identity.userId}:${ctx.ipAddress ?? "unknown"}`;
+    if (!checkGetInviteInfoRateLimit(rateLimitKey)) {
+      return yield* Effect.fail(
+        new RateLimitError({
+          code: "RATE_LIMITED",
+          message: "Too many invite lookups",
+          hint: "Wait a minute before retrying the invite link.",
+        }),
+      );
+    }
+
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
 
     const [row] = yield* tryAsync(() =>
       ctx.db
         .select({
-          id: invitation.id,
-          organizationId: invitation.organizationId,
           role: invitation.role,
           expiresAt: invitation.expiresAt,
           usedAt: invitation.usedAt,
-          inviterId: invitation.inviterId,
           orgName: organization.name,
           orgSlug: organization.slug,
         })
@@ -547,12 +583,10 @@ const getInviteInfo = (token: string) =>
     }
 
     return {
-      invitationId: row.id,
       organizationName: row.orgName,
       organizationSlug: row.orgSlug,
       role: row.role ?? "member",
       expiresAt: row.expiresAt.toISOString(),
-      inviterUserId: row.inviterId,
     };
   });
 

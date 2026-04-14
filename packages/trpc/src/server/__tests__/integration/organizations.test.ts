@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "@abadge/db";
 import { member, organization, profiles } from "@abadge/db/schema";
+import { _resetGetInviteInfoRateLimit } from "../../routers/organizations";
 import { seedMember, seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
@@ -263,5 +264,88 @@ describe("organizations.members.list role-gated email", () => {
     // The other fields still come back — only `email` is gated.
     const userIds = result.members.map((m: { userId: string }) => m.userId).sort();
     expect(userIds).toEqual([owner.userId, plainMember.userId].sort());
+  });
+});
+
+/**
+ * `organizations.members.getInviteInfo` is callable by any authenticated user
+ * with a token. Without a tighter cap, a determined attacker could enumerate
+ * valid invite tokens at the wider 100/min tRPC limit. The procedure applies
+ * a per-(user, IP) cap of 10/min; the 11th call within the window must fail
+ * with RATE_LIMITED.
+ */
+describe("organizations.members.getInviteInfo rate limit", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    _resetGetInviteInfoRateLimit();
+    await truncateAll();
+  });
+
+  test("rejects after 10 getInviteInfo calls within the window", async () => {
+    const user = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, user.userId);
+    const caller = createOperatorCaller(db, auth, user.headers, orgId);
+
+    // First 10 calls burn the budget. Each one has a bogus token so the
+    // procedure will ultimately throw — we only assert that it is NOT the
+    // rate-limit error. The outcome of the lookup itself is covered by the
+    // accept-invite flow elsewhere; here we just need to exercise the
+    // counter ten times.
+    for (let i = 0; i < 10; i++) {
+      try {
+        await caller.organizations.members.getInviteInfo({ token: `abi_bogus_${i}` });
+        // Bogus token: a non-throwing result would itself be a bug, but let
+        // the assertion below catch the "wrong-error" case either way.
+      } catch (error: unknown) {
+        const err = error as { code?: string; cause?: { code?: string } };
+        expect(err.cause?.code).not.toBe("RATE_LIMITED");
+      }
+    }
+
+    // The 11th call must be refused with RATE_LIMITED before hitting the DB.
+    try {
+      await caller.organizations.members.getInviteInfo({ token: "abi_bogus_final" });
+      expect.unreachable("rate limit should have refused the 11th call");
+    } catch (error: unknown) {
+      const err = error as { code?: string; cause?: { code?: string } };
+      expect(err.code).toBe("TOO_MANY_REQUESTS");
+      expect(err.cause?.code).toBe("RATE_LIMITED");
+    }
+  });
+
+  test("counter resets after the window expires", async () => {
+    const user = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, user.userId);
+    const caller = createOperatorCaller(db, auth, user.headers, orgId);
+
+    // Burn the budget.
+    for (let i = 0; i < 10; i++) {
+      await caller.organizations.members
+        .getInviteInfo({ token: `abi_bogus_${i}` })
+        .catch(() => undefined);
+    }
+
+    // Confirm we hit the limit.
+    await expect(
+      caller.organizations.members.getInviteInfo({ token: "abi_bogus_11" }),
+    ).rejects.toMatchObject({ cause: { code: "RATE_LIMITED" } });
+
+    // Resetting the counter (as happens at window rollover) clears the limit.
+    _resetGetInviteInfoRateLimit();
+
+    // The next call is allowed through — it will still fail on lookup, but
+    // with a non-rate-limit error.
+    try {
+      await caller.organizations.members.getInviteInfo({ token: "abi_bogus_after_reset" });
+    } catch (error: unknown) {
+      const err = error as { cause?: { code?: string } };
+      expect(err.cause?.code).not.toBe("RATE_LIMITED");
+    }
   });
 });

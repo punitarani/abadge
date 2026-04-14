@@ -176,9 +176,9 @@ Invitations expire after 7 days.
 
 Auth: `sessionProcedure`
 
-Input: `{ token }`. Returns `{ invitationId, organizationName, organizationSlug, role, expiresAt, inviterUserId }`.
+Input: `{ token }`. Returns `{ organizationName, organizationSlug, role, expiresAt }`.
 
-Requires authentication to prevent info disclosure of org names to unauthenticated users.
+Requires authentication to prevent info disclosure of org names to unauthenticated users. Rate-limited to 10 lookups/minute per (user, IP) to discourage brute-force enumeration of invite tokens; excess returns `RATE_LIMITED` / 429. Returned metadata is intentionally narrow — the internal `invitationId` and `inviterUserId` are not exposed because a successful guess would otherwise leak them.
 
 ### `organizations.members.acceptInvite`
 
