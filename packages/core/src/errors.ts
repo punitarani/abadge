@@ -54,6 +54,7 @@ const ErrorCodeSchema = Schema.Literal(
   "ALREADY_MEMBER",
   "VALIDATION_ERROR",
   "INTEGRITY_ERROR",
+  "SESSION_REFRESH_FAILED",
 );
 
 export const ValidationIssueSchema = Schema.Struct({
