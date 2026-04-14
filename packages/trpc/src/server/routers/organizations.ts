@@ -6,7 +6,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, asc, eq, isNull } from "@abadge/db";
 import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -282,6 +282,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     };
   });
 
+// A user with >100 org memberships is an unusual case; the cap is a sanity
+// ceiling so the query/response stays bounded. Ordering by member.createdAt
+// keeps the UI deterministic (earliest-joined first). Cursor pagination can be
+// added later if real usage exceeds the cap.
+const LIST_ORGS_LIMIT = 100;
+
 const listOrgs = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   const userId = ctx.identity.userId;
@@ -298,7 +304,9 @@ const listOrgs = Effect.gen(function* () {
       })
       .from(member)
       .innerJoin(organization, eq(organization.id, member.organizationId))
-      .where(eq(member.userId, userId)),
+      .where(eq(member.userId, userId))
+      .orderBy(asc(member.createdAt))
+      .limit(LIST_ORGS_LIMIT),
   );
 
   return {
