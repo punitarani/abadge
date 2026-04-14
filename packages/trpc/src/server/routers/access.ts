@@ -8,9 +8,12 @@ import {
   BadRequestError,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
+  FieldNotFoundError,
   ForbiddenError,
+  IntegrityError,
   MountAccessResponseSchema,
   MountAccessSchema,
+  MultiFieldItemError,
   NotFoundError,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -19,7 +22,7 @@ import {
 import { serverDecrypt } from "@abadge/crypto/server";
 import { and, eq, isNull } from "@abadge/db";
 import { items, permissions as permissionRecords } from "@abadge/db/schema";
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
@@ -58,7 +61,14 @@ const failMissingServerManagedData = (
       meta: { reason: "item has no server-encrypted data" },
     });
 
-    return yield* Effect.fail(new Error("Item has no server-encrypted data"));
+    return yield* Effect.fail(
+      new IntegrityError({
+        code: "INTEGRITY_ERROR",
+        message: "Server-managed item has no encrypted payload",
+        hint: "This item may need to be re-created; contact support if this persists.",
+        meta: { itemId },
+      }),
+    );
   });
 
 const decryptServerManagedItem = (
@@ -285,11 +295,42 @@ const accessReveal = (input: RevealAccessInput) =>
     const decrypted = yield* decryptServerManagedItem(item, "access.reveal");
     const payload = decodeServerManagedPayload(item.id, decrypted);
 
-    // Resolve field if specified (validates field exists, throws domain error if not)
+    // Resolve field if specified (validates field exists, propagates domain error if not)
     let deliveredPayload = payload;
     if (input.field) {
-      const fieldValue = yield* Effect.try(() => resolveFieldValue(payload, input.field as string));
-      deliveredPayload = { ...payload, fields: { [input.field]: fieldValue } };
+      const field = input.field;
+      const fieldValue = yield* Effect.try({
+        try: () => resolveFieldValue(payload, field),
+        catch: (err) => {
+          if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
+            return err;
+          }
+          return new Cause.UnknownException(err, "field resolution failed");
+        },
+      }).pipe(
+        Effect.tapError((err) => {
+          if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
+            return Effect.succeed(undefined);
+          }
+          return logAgentAudit({
+            organizationId: ctx.identity.agentOrganizationId,
+            userId: ctx.identity.agentUserId,
+            agentId: ctx.identity.agentId,
+            itemId: input.itemId,
+            eventType: "access.reveal",
+            result: "denied",
+            deliveryMode: "reveal",
+            field,
+            purpose: input.purpose,
+            ipAddress: ctx.ipAddress,
+            meta: {
+              reason: err._tag,
+              availableFields: err.meta?.availableFields ?? [],
+            },
+          });
+        }),
+      );
+      deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
     }
 
     yield* logAgentAudit({
@@ -380,11 +421,42 @@ const accessMount = (input: MountAccessInput) =>
     const decrypted = yield* decryptServerManagedItem(item, eventType);
     const payload = decodeServerManagedPayload(item.id, decrypted);
 
-    // Resolve field if specified (validates field exists, throws domain error if not)
+    // Resolve field if specified (validates field exists, propagates domain error if not)
     let deliveredPayload = payload;
     if (input.field) {
-      const fieldValue = yield* Effect.try(() => resolveFieldValue(payload, input.field as string));
-      deliveredPayload = { ...payload, fields: { [input.field]: fieldValue } };
+      const field = input.field;
+      const fieldValue = yield* Effect.try({
+        try: () => resolveFieldValue(payload, field),
+        catch: (err) => {
+          if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
+            return err;
+          }
+          return new Cause.UnknownException(err, "field resolution failed");
+        },
+      }).pipe(
+        Effect.tapError((err) => {
+          if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
+            return Effect.succeed(undefined);
+          }
+          return logAgentAudit({
+            organizationId: ctx.identity.agentOrganizationId,
+            userId: ctx.identity.agentUserId,
+            agentId: ctx.identity.agentId,
+            itemId: input.itemId,
+            eventType,
+            result: "denied",
+            deliveryMode: `mount_${input.mountType}`,
+            field,
+            purpose: input.purpose,
+            ipAddress: ctx.ipAddress,
+            meta: {
+              reason: err._tag,
+              availableFields: err.meta?.availableFields ?? [],
+            },
+          });
+        }),
+      );
+      deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
     }
 
     yield* logAgentAudit({
