@@ -11,7 +11,13 @@ import { invitation, items, member, organization, profiles, user } from "@abadge
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
-import { runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
+import {
+  isUniqueViolation,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+  tryAsync,
+} from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
 
 const OrgIdSchema = Schema.Struct({
@@ -201,36 +207,49 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       );
     }
 
+    // All three inserts must succeed or fail together: a mid-flight failure
+    // would leave the org without a default profile, a state the dashboard
+    // assumes cannot happen. The slug-race loser's unique-violation is
+    // translated below to SLUG_TAKEN (mirrors profiles.create / permissions.create).
     yield* tryAsync(() =>
-      ctx.db.insert(organization).values({
-        id: orgId,
-        name: input.name,
-        slug,
-        logo: input.logo ?? null,
-        createdAt: now,
-      }),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx.insert(organization).values({
+          id: orgId,
+          name: input.name,
+          slug,
+          logo: input.logo ?? null,
+          createdAt: now,
+        });
 
-    yield* tryAsync(() =>
-      ctx.db.insert(member).values({
-        id: crypto.randomUUID(),
-        organizationId: orgId,
-        userId,
-        role: "owner",
-        createdAt: now,
-      }),
-    );
+        await tx.insert(member).values({
+          id: crypto.randomUUID(),
+          organizationId: orgId,
+          userId,
+          role: "owner",
+          createdAt: now,
+        });
 
-    // Create a default zero-knowledge profile for the org.
-    yield* tryAsync(() =>
-      ctx.db.insert(profiles).values({
-        id: profileId,
-        organizationId: orgId,
-        name: "default",
-        storageMode: "zero_knowledge",
-        createdAt: now,
-        updatedAt: now,
+        await tx.insert(profiles).values({
+          id: profileId,
+          organizationId: orgId,
+          name: "default",
+          storageMode: "zero_knowledge",
+          createdAt: now,
+          updatedAt: now,
+        });
       }),
+    ).pipe(
+      Effect.catchIf(
+        (e: Error) => isUniqueViolation(e),
+        () =>
+          Effect.fail(
+            new ConflictError({
+              code: "SLUG_TAKEN",
+              message: `The slug "${slug}" is already in use`,
+              hint: "Choose a different organization slug.",
+            }),
+          ),
+      ),
     );
 
     yield* logSessionAudit({
