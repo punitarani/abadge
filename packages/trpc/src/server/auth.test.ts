@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { BadRequestError, UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
-import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
+import { resolveAgentIdentity, resolveSessionIdentity, resolveUserOrgId } from "./auth";
 import type { BaseRequestContext } from "./context";
 import { createTrpcCallerFactory, createTrpcRouter, scopedSessionProcedure } from "./init";
 
@@ -11,6 +12,7 @@ function createMockDb(): BaseRequestContext["db"] {
     from: () => mockQuery,
     where: () => mockQuery,
     limit: () => Promise.resolve(results[callCount++] ?? []),
+    orderBy: () => Promise.resolve(results[callCount++] ?? []),
   };
   return {
     select: () => mockQuery,
@@ -240,5 +242,130 @@ describe("resolveAgentIdentity legacy API key migration", () => {
       agentOrganizationId: "org_migrated",
       agentLocality: "remote",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveUserOrgId
+// ---------------------------------------------------------------------------
+
+interface OrgIdResolverDbFixture {
+  /** Rows returned by the header-scoped membership lookup (with `.limit(1)`). */
+  headerMemberships?: Array<{ organizationId: string }>;
+  /** Rows returned by the fallback membership lookup (with `.orderBy(...)`). */
+  fallbackMemberships?: Array<{ organizationId: string }>;
+}
+
+/**
+ * Minimal Drizzle-like select builder that returns fixed results depending on
+ * whether the final terminal call was `.limit()` or `.orderBy()`. Matches the
+ * two query shapes in `resolveUserOrgId`.
+ */
+function createOrgIdResolverDb(fixture: OrgIdResolverDbFixture): BaseRequestContext["db"] {
+  const builder = {
+    from() {
+      return this;
+    },
+    where() {
+      return this;
+    },
+    limit() {
+      return Promise.resolve(fixture.headerMemberships ?? []);
+    },
+    orderBy() {
+      return Promise.resolve(fixture.fallbackMemberships ?? []);
+    },
+  };
+  return {
+    select: () => builder,
+  } as unknown as BaseRequestContext["db"];
+}
+
+function createOrgIdResolverContext(
+  fixture: OrgIdResolverDbFixture,
+  headers?: HeadersInit,
+): BaseRequestContext {
+  return {
+    req: new Request("http://localhost/trpc/any", { headers }),
+    resHeaders: new Headers(),
+    env: {} as BaseRequestContext["env"],
+    validatedEnv: {} as BaseRequestContext["validatedEnv"],
+    db: createOrgIdResolverDb(fixture),
+    auth: {
+      api: {
+        getSession: async () => null,
+        verifyApiKey: async () => ({ valid: false }),
+      },
+      $context: Promise.resolve({
+        internalAdapter: { findSession: async () => null },
+      }),
+    } as BaseRequestContext["auth"],
+  };
+}
+
+describe("resolveUserOrgId", () => {
+  test("header + valid membership returns the requested org", async () => {
+    const ctx = createOrgIdResolverContext(
+      { headerMemberships: [{ organizationId: "org_requested" }] },
+      { "X-Abadge-Org-Id": "org_requested" },
+    );
+    await expect(resolveUserOrgId(ctx, "user_1")).resolves.toBe("org_requested");
+  });
+
+  test("header + no membership rejects with ORG_MEMBERSHIP_REQUIRED", async () => {
+    const ctx = createOrgIdResolverContext(
+      { headerMemberships: [] },
+      { "X-Abadge-Org-Id": "org_not_mine" },
+    );
+    try {
+      await resolveUserOrgId(ctx, "user_1");
+      expect.unreachable("expected resolveUserOrgId to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnauthorizedError);
+      expect(err).toMatchObject({
+        code: "ORG_MEMBERSHIP_REQUIRED",
+        message: "Not a member of the requested organization",
+      });
+    }
+  });
+
+  test("no header + 0 memberships rejects with NO_ORG_MEMBERSHIP", async () => {
+    const ctx = createOrgIdResolverContext({ fallbackMemberships: [] });
+    try {
+      await resolveUserOrgId(ctx, "user_orphan");
+      expect.unreachable("expected resolveUserOrgId to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnauthorizedError);
+      expect(err).toMatchObject({
+        code: "NO_ORG_MEMBERSHIP",
+        message: "User has no organization membership",
+      });
+    }
+  });
+
+  test("no header + exactly 1 membership returns that orgId", async () => {
+    const ctx = createOrgIdResolverContext({
+      fallbackMemberships: [{ organizationId: "org_solo" }],
+    });
+    await expect(resolveUserOrgId(ctx, "user_solo")).resolves.toBe("org_solo");
+  });
+
+  test("no header + 2+ memberships rejects with ORG_HEADER_REQUIRED and lists orgIds", async () => {
+    const ctx = createOrgIdResolverContext({
+      fallbackMemberships: [{ organizationId: "org_a" }, { organizationId: "org_b" }],
+    });
+    try {
+      await resolveUserOrgId(ctx, "user_multi");
+      expect.unreachable("expected resolveUserOrgId to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(BadRequestError);
+      expect(err).toMatchObject({
+        code: "ORG_HEADER_REQUIRED",
+        message: "X-Abadge-Org-Id header required for multi-org users",
+      });
+      const meta = (err as BadRequestError).meta as { availableOrgIds: string[] } | undefined;
+      expect(meta?.availableOrgIds).toEqual(expect.arrayContaining(["org_a", "org_b"]));
+      expect(meta?.availableOrgIds).toHaveLength(2);
+    }
   });
 });

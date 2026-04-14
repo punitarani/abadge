@@ -40,7 +40,10 @@ Validation errors include an additional `issues` array:
 | `INVALID_CAPABILITY` | 400 | Requested capability is not a valid enum value |
 | `INVALID_CAPABILITY_LOCALITY` | 400 | Capability is not allowed for this agent locality (e.g. remote agent + `mount_env`) |
 | `INVALID_CAPABILITY_STORAGE` | 400 | Capability is not compatible with the item's storage mode |
+| `ORG_HEADER_REQUIRED` | 400 | User belongs to 2+ orgs; set `X-Abadge-Org-Id`. `meta.availableOrgIds` lists the user's orgs |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
+| `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
+| `ORG_MEMBERSHIP_REQUIRED` | 401 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
 | `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |
 | `AGENT_SESSION_NOT_FOUND` | 401 | `abs_...` session token not found or already expired |
 | `LEGACY_AGENT_UNMIGRATED` | 401 | Legacy API key is valid but has no migrated `agents` row; rotate the credential |

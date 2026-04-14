@@ -1,6 +1,6 @@
-import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
+import { AGENT_SESSION_PREFIX, BadRequestError, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull, or } from "@abadge/db";
+import { and, asc, eq, isNull, or } from "@abadge/db";
 import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
@@ -339,7 +339,23 @@ const verifyAgentSessionIdentity = (
     return toAgentIdentity(agent);
   });
 
-async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
+/**
+ * Resolve the effective organization ID for a user-authenticated request.
+ *
+ * Behavior:
+ *   - If `X-Abadge-Org-Id` is set: verify the user is a member of that org.
+ *   - If absent and the user has 0 memberships: reject with `NO_ORG_MEMBERSHIP`.
+ *   - If absent and the user has exactly 1 membership: return it. The query is
+ *     ordered by `member.createdAt ASC` so the fallback is deterministic.
+ *   - If absent and the user has 2+ memberships: reject with `ORG_HEADER_REQUIRED`
+ *     and list available org IDs in `meta` so the caller can retry with a header.
+ *
+ * Exported for direct unit testing; callers inside this module should prefer
+ * `resolveSessionIdentity` / `resolveBearerSessionIdentity`.
+ *
+ * @internal
+ */
+export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
   const orgIdHeader = ctx.req.headers.get("X-Abadge-Org-Id");
 
   if (orgIdHeader) {
@@ -351,29 +367,49 @@ async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promis
 
     if (!membership) {
       throw new UnauthorizedError({
-        code: "MEMBER_INSUFFICIENT_ROLE",
-        message: "You are not a member of this organization",
-        hint: "Check the X-Abadge-Org-Id header value.",
+        code: "ORG_MEMBERSHIP_REQUIRED",
+        message: "Not a member of the requested organization",
+        hint: "Switch to an organization you belong to.",
       });
     }
     return orgIdHeader;
   }
 
-  const [firstMembership] = await ctx.db
+  // Order by createdAt so the single-membership fallback is deterministic. The
+  // 2+ memberships case is rejected below, so ordering only affects callers
+  // who happen to have exactly one row (and is belt-and-suspenders for races).
+  const memberships = await ctx.db
     .select({ organizationId: member.organizationId })
     .from(member)
     .where(eq(member.userId, userId))
-    .limit(1);
+    .orderBy(asc(member.createdAt));
 
-  if (!firstMembership) {
+  if (memberships.length === 0) {
     throw new UnauthorizedError({
-      code: "UNAUTHORIZED",
-      message: "You do not belong to any organization",
-      hint: "Complete onboarding to create or join an organization.",
+      code: "NO_ORG_MEMBERSHIP",
+      message: "User has no organization membership",
+      hint: "Complete onboarding to create your first organization.",
     });
   }
-
-  return firstMembership.organizationId;
+  if (memberships.length > 1) {
+    throw new BadRequestError({
+      code: "ORG_HEADER_REQUIRED",
+      message: "X-Abadge-Org-Id header required for multi-org users",
+      hint: "Set X-Abadge-Org-Id to the organization context for this request.",
+      meta: { availableOrgIds: memberships.map((m) => m.organizationId) },
+    });
+  }
+  // Length is exactly 1 by the checks above; the non-null assertion keeps
+  // `noUncheckedIndexedAccess` happy without allocating a redundant check.
+  const [only] = memberships;
+  if (!only) {
+    throw new UnauthorizedError({
+      code: "NO_ORG_MEMBERSHIP",
+      message: "User has no organization membership",
+      hint: "Complete onboarding to create your first organization.",
+    });
+  }
+  return only.organizationId;
 }
 
 export const resolveSessionIdentity = (
