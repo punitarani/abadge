@@ -100,11 +100,14 @@ const OrgListResultSchema = Schema.Struct({
   organizations: Schema.Array(OrgListItemSchema),
 });
 
+// `email` is nullable: only owners/admins see teammates' email addresses.
+// Plain members receive `email: null` to avoid enumerating org-internal
+// contact info. See listMembers below.
 const MemberDataSchema = Schema.Struct({
   id: Schema.String,
   userId: Schema.String,
   name: Schema.String,
-  email: Schema.String,
+  email: Schema.NullOr(Schema.String),
   role: Schema.String,
   createdAt: Schema.String,
 });
@@ -415,7 +418,16 @@ const listMembers = (orgId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"));
+    // Gate email disclosure by the caller's role: plain members must not be
+    // able to enumerate teammates' email addresses (mild PII leak + internal
+    // contact list). Strict policy applied uniformly — callers do not see
+    // their own email in this list either; they can read it from their
+    // profile/settings. Owners and admins see all emails so they can manage
+    // membership and invites.
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"),
+    );
+    const canSeeEmail = callerRole === "owner" || callerRole === "admin";
 
     const rows = yield* tryAsync(() =>
       ctx.db
@@ -437,7 +449,7 @@ const listMembers = (orgId: string) =>
         id: m.id,
         userId: m.userId,
         name: m.userName ?? "",
-        email: m.userEmail ?? "",
+        email: canSeeEmail ? (m.userEmail ?? null) : null,
         role: m.role,
         createdAt: m.createdAt.toISOString(),
       })),

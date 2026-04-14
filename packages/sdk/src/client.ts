@@ -694,7 +694,9 @@ export class AbadgeUserClient {
       id: string;
       userId: string;
       name: string;
-      email: string;
+      // null for callers whose role is below admin — the server withholds
+      // teammates' email addresses to prevent org-internal PII enumeration.
+      email: string | null;
       role: string;
       createdAt: string;
     }>;

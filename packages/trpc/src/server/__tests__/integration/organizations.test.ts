@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "@abadge/db";
 import { member, organization, profiles } from "@abadge/db/schema";
-import { seedOrg, seedUser } from "../helpers/seed";
+import { seedMember, seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -185,4 +185,83 @@ describe("organizations.list ordering + pagination", () => {
   // per user, which is prohibitively expensive for the integration suite. The
   // cap is enforced as a constant passed to `.limit()` in `listOrgs`; the
   // behavior is obvious from the query and covered by inspection.
+});
+
+/**
+ * `organizations.members.list` used to return every member's email to every
+ * caller — a plain `member` could enumerate the org's entire contact list.
+ * The fix gates `email` on the caller's role: owners and admins see emails,
+ * plain members receive `email: null` for every row (including their own —
+ * strict policy; users read their own email elsewhere).
+ */
+describe("organizations.members.list role-gated email", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("returns email when caller is owner", async () => {
+    const owner = await seedUser(auth);
+    const plainMember = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, owner.userId);
+    await seedMember(auth, orgId, plainMember.userId, "member");
+
+    const caller = createOperatorCaller(db, auth, owner.headers, orgId);
+    const result = await caller.organizations.members.list({ orgId });
+
+    expect(result.members).toHaveLength(2);
+    const emails = result.members.map((m: { email: string | null }) => m.email).sort();
+    expect(emails).toEqual([owner.email, plainMember.email].sort());
+    // Sanity: nobody's email is null for an owner caller.
+    for (const m of result.members) {
+      expect(m.email).not.toBeNull();
+    }
+  });
+
+  test("returns email when caller is admin", async () => {
+    const owner = await seedUser(auth);
+    const admin = await seedUser(auth);
+    const plainMember = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, owner.userId);
+    await seedMember(auth, orgId, admin.userId, "admin");
+    await seedMember(auth, orgId, plainMember.userId, "member");
+
+    const caller = createOperatorCaller(db, auth, admin.headers, orgId);
+    const result = await caller.organizations.members.list({ orgId });
+
+    expect(result.members).toHaveLength(3);
+    for (const m of result.members) {
+      expect(m.email).not.toBeNull();
+    }
+    const emails = new Set(result.members.map((m: { email: string | null }) => m.email));
+    expect(emails.has(owner.email)).toBe(true);
+    expect(emails.has(admin.email)).toBe(true);
+    expect(emails.has(plainMember.email)).toBe(true);
+  });
+
+  test("returns email: null for every row when caller is plain member", async () => {
+    const owner = await seedUser(auth);
+    const plainMember = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, owner.userId);
+    await seedMember(auth, orgId, plainMember.userId, "member");
+
+    const caller = createOperatorCaller(db, auth, plainMember.headers, orgId);
+    const result = await caller.organizations.members.list({ orgId });
+
+    expect(result.members).toHaveLength(2);
+    // Strict policy: the caller's own email is withheld too. Users can read
+    // their own email from their profile/settings, not the members list.
+    for (const m of result.members) {
+      expect(m.email).toBeNull();
+    }
+    // The other fields still come back — only `email` is gated.
+    const userIds = result.members.map((m: { userId: string }) => m.userId).sort();
+    expect(userIds).toEqual([owner.userId, plainMember.userId].sort());
+  });
 });
