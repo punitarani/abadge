@@ -123,6 +123,11 @@ describe("profiles.rotateKey", () => {
       label: "zk-two-omitted",
     });
 
+    // Capture initial ZK-item state so we can prove the transaction rolled back
+    // cleanly (no partial UPDATE landed before the coverage check threw).
+    const [zk1Initial] = await db.select().from(items).where(eq(items.id, zk1.itemId)).limit(1);
+    const [zk2Initial] = await db.select().from(items).where(eq(items.id, zk2.itemId)).limit(1);
+
     try {
       await caller.profiles.rotateKey({
         profileId: profile.profileId,
@@ -154,6 +159,18 @@ describe("profiles.rotateKey", () => {
       .limit(1);
     expect(profileRow?.wrappedRootKey).toBe("initial-wrapped-root-key");
     expect(profileRow?.keyVersion).toBe(1);
+
+    // Re-read the items rows and confirm their crypto material is unchanged.
+    // Guards against a future regression where the item UPDATE loop executes
+    // before (or independently of) the coverage-check throw.
+    const [zk1After] = await db.select().from(items).where(eq(items.id, zk1.itemId)).limit(1);
+    const [zk2After] = await db.select().from(items).where(eq(items.id, zk2.itemId)).limit(1);
+    expect(zk1After?.encryptedItemKey).toBe(zk1Initial?.encryptedItemKey ?? null);
+    expect(zk1After?.keyNonce).toBe(zk1Initial?.keyNonce ?? null);
+    expect(zk1After?.cryptoVersion).toBe(zk1Initial?.cryptoVersion ?? 1);
+    expect(zk2After?.encryptedItemKey).toBe(zk2Initial?.encryptedItemKey ?? null);
+    expect(zk2After?.keyNonce).toBe(zk2Initial?.keyNonce ?? null);
+    expect(zk2After?.cryptoVersion).toBe(zk2Initial?.cryptoVersion ?? 1);
   });
 
   test("accepts empty rekeyedItems when profile has no ZK items", async () => {

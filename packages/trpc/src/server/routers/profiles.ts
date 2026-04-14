@@ -345,38 +345,36 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
       );
     }
 
-    // Enforce full coverage: every active ZK item in the profile must be rewrapped.
-    // Partial rekeys would silently leave items bound to the old root key — undecryptable post-rotate.
-    const zkItemsInProfile = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: items.id })
-        .from(items)
-        .where(
-          and(
-            eq(items.profileId, profileId),
-            eq(items.storageMode, "zero_knowledge"),
-            isNull(items.deletedAt),
-          ),
-        ),
-    );
-
-    const providedIds = new Set(rekeyedItems.map((r) => r.itemId));
-    const missing = zkItemsInProfile.filter((row) => !providedIds.has(row.id));
-    if (missing.length > 0) {
-      return yield* Effect.fail(
-        new BadRequestError({
-          code: "ROTATE_KEY_INCOMPLETE",
-          message: `Rotate payload missing ${missing.length} ZK item(s) in this profile`,
-          hint: "Client must rewrap every ZK item in the profile before rotating.",
-          meta: { missingItemIds: missing.map((row) => row.id) },
-        }),
-      );
-    }
-
     const nextKeyVersion = profile.keyVersion + 1;
 
+    // Coverage check + updates run in a single tx so a concurrent items.create
+    // between SELECT and UPDATE cannot bypass rewrapping (TOCTOU).
+    // Throwing the domain error inside the tx triggers rollback; tryAsync's
+    // catch preserves the Error instance, and toTrpcError maps it by isDomainError.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const zkItemsInProfile = await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(
+            and(
+              eq(items.profileId, profileId),
+              eq(items.storageMode, "zero_knowledge"),
+              isNull(items.deletedAt),
+            ),
+          );
+
+        const providedIds = new Set(rekeyedItems.map((r) => r.itemId));
+        const missing = zkItemsInProfile.filter((row) => !providedIds.has(row.id));
+        if (missing.length > 0) {
+          throw new BadRequestError({
+            code: "ROTATE_KEY_INCOMPLETE",
+            message: `Rotate payload missing ${missing.length} ZK item(s) in this profile`,
+            hint: "Client must rewrap every ZK item in the profile before rotating.",
+            meta: { missingItemIds: missing.map((row) => row.id) },
+          });
+        }
+
         await tx
           .update(profiles)
           .set({
