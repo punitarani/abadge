@@ -217,22 +217,23 @@ const verifyLegacyAgentIdentity = (
         .limit(1),
     )) as Array<MigratedAgent>;
 
-    if (migratedAgent && (!migratedAgent.enabled || migratedAgent.revokedAt)) {
+    if (!migratedAgent) {
+      return yield* Effect.fail(
+        new UnauthorizedError({
+          code: "LEGACY_AGENT_UNMIGRATED",
+          message: "Legacy API key has no migrated agent record",
+          hint: "Rotate this agent's credentials — legacy keys must be re-registered before they can be used.",
+          meta: { legacyAgentId },
+        }),
+      );
+    }
+
+    if (!migratedAgent.enabled || migratedAgent.revokedAt) {
       return yield* Effect.fail(unauthorized("Invalid API key"));
     }
 
-    if (migratedAgent) {
-      touchAgent(ctx, legacyAgentId);
-      return toAgentIdentity(migratedAgent);
-    }
-
-    return {
-      kind: "agent",
-      agentId: legacyAgentId,
-      agentUserId: legacyUserId,
-      agentOrganizationId: "",
-      agentLocality: "remote",
-    };
+    touchAgent(ctx, legacyAgentId);
+    return toAgentIdentity(migratedAgent);
   });
 
 const verifyAgentSessionIdentity = (

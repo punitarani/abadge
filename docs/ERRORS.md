@@ -43,6 +43,7 @@ Validation errors include an additional `issues` array:
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
 | `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |
 | `AGENT_SESSION_NOT_FOUND` | 401 | `abs_...` session token not found or already expired |
+| `LEGACY_AGENT_UNMIGRATED` | 401 | Legacy API key is valid but has no migrated `agents` row; rotate the credential |
 | `AGENT_CHALLENGE_NOT_FOUND` | 401 | Challenge ID not found or already used |
 | `AGENT_CHALLENGE_EXPIRED` | 401 | Challenge has passed its 60-second TTL |
 | `FORBIDDEN` | 403 | Authenticated but not authorized for this operation |
