@@ -47,7 +47,7 @@ function dateRangeThreshold(range: DateRangeFilter): Date | null {
   return new Date(now - ms);
 }
 
-function rowHighlightClass(result: string): string | undefined {
+function rowHighlightClass(result: AuditResult): string | undefined {
   switch (result) {
     case "denied":
     case "revoked":
