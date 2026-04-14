@@ -409,6 +409,10 @@ describe("onAgentRevoked cascade (transactional)", () => {
     for (const row of cascades) {
       expect(row.ipAddress).toBe(ip);
       expect(row.userId).toBe(owner.userId);
+      // Denormalized forensic field: meta captures the user who owned each
+      // revoked session, so audit queries don't need to join agentSessions
+      // (which has no FK from audit_logs per invariant) to attribute cascades.
+      expect((row.meta as Record<string, unknown>)?.revokedSessionUserId).toBe(owner.userId);
     }
   });
 
