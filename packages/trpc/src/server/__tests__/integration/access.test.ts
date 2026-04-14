@@ -1,6 +1,10 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
 import { auditLogs } from "@abadge/db/schema";
+import type { AppBindings, BaseRequestContext } from "../../context";
+import { createTrpcCallerFactory } from "../../init";
+import { appRouter } from "../../router";
 import {
   seedAgent,
   seedAgentSession,
@@ -14,6 +18,7 @@ import {
 import { createTestAuth } from "../helpers/test-auth";
 import { createAgentCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
+import { TEST_ENV } from "../helpers/test-env";
 
 describe("access", () => {
   const db = getTestDb();
@@ -478,6 +483,84 @@ describe("access", () => {
       expect(rows.length).toBeGreaterThanOrEqual(1);
       const meta = rows[0]?.meta as { reason?: string } | null;
       expect(meta?.reason).toBe("FieldNotFoundError");
+    });
+  });
+
+  describe("audit-write failure does not mask domain error", () => {
+    test("FIELD_NOT_FOUND is preserved even if the denied audit insert throws", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        fields: { username: "admin", password: "s3cret" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "remote",
+      });
+
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "reveal_plaintext",
+        grantedBy: owner.userId,
+      });
+
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+
+      // Wrap db so that any insert into auditLogs throws. All other inserts
+      // and selects pass through unchanged, so bearer-token auth and item
+      // lookup still work.
+      const hijackedDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === "insert") {
+            return (table: unknown) => {
+              if (table === auditLogs) {
+                throw new Error("simulated audit-log insert failure");
+              }
+              return (target as unknown as Database).insert(table as never);
+            };
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      }) as Database;
+
+      const headers = new Headers();
+      headers.set("authorization", `Bearer ${session.rawToken}`);
+      const ctx: BaseRequestContext = {
+        req: new Request("http://test", { headers }),
+        resHeaders: new Headers(),
+        env: { ...TEST_ENV } as AppBindings,
+        validatedEnv: TEST_ENV,
+        db: hijackedDb,
+        auth,
+        ipAddress: "127.0.0.1",
+      };
+      const hijackedCaller = createTrpcCallerFactory(appRouter)(ctx);
+
+      // The denied-audit write inside tapError will throw; the helper's
+      // Effect.catchAll(() => Effect.void) must swallow that and let the
+      // original FIELD_NOT_FOUND propagate to the client.
+      try {
+        await hijackedCaller.access.reveal({ itemId: item.itemId, field: "totp_secret" });
+        expect.unreachable("reveal with unknown field should have thrown");
+      } catch (error: unknown) {
+        const trpcError = error as {
+          code?: string;
+          cause?: { code?: string; meta?: { availableFields?: string[] } };
+        };
+        // Must be FIELD_NOT_FOUND — NOT the audit-write DB error.
+        expect(trpcError.cause?.code).toBe("FIELD_NOT_FOUND");
+        const availableFields = trpcError.cause?.meta?.availableFields ?? [];
+        expect(availableFields).toContain("username");
+      }
     });
   });
 });

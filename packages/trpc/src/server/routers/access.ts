@@ -1,6 +1,7 @@
 import type {
   Capability,
   CiphertextAccessInput,
+  ItemPayload,
   MountAccessInput,
   RevealAccessInput,
 } from "@abadge/core";
@@ -243,6 +244,61 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     };
   });
 
+/**
+ * Run `resolveFieldValue` and, on field-resolution failure, emit a denied audit
+ * row for the given access event type. Audit-write failures are swallowed so
+ * they cannot mask the original domain error reaching the client.
+ */
+const resolveFieldOrDenyAudit = (
+  payload: ItemPayload,
+  field: string,
+  audit: {
+    itemId: string;
+    eventType: "access.reveal" | "access.mount_env" | "access.mount_file";
+    deliveryMode: "reveal" | "mount_env" | "mount_file";
+    purpose?: string;
+  },
+): Effect.Effect<
+  string,
+  FieldNotFoundError | MultiFieldItemError | Cause.UnknownException,
+  AgentRequestContextTag
+> =>
+  Effect.try({
+    try: () => resolveFieldValue(payload, field),
+    catch: (err) => {
+      if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
+        return err;
+      }
+      return new Cause.UnknownException(err, "field resolution failed");
+    },
+  }).pipe(
+    Effect.tapError((err) =>
+      Effect.gen(function* () {
+        if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
+          return;
+        }
+        const ctx = yield* AgentRequestContextTag;
+        // Audit-write failures MUST NOT mask the primary domain error.
+        yield* logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: audit.itemId,
+          eventType: audit.eventType,
+          result: "denied",
+          deliveryMode: audit.deliveryMode,
+          field,
+          purpose: audit.purpose,
+          ipAddress: ctx.ipAddress,
+          meta: {
+            reason: err._tag,
+            availableFields: err.meta?.availableFields ?? [],
+          },
+        }).pipe(Effect.catchAll(() => Effect.void));
+      }),
+    ),
+  );
+
 const accessReveal = (input: RevealAccessInput) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
@@ -299,37 +355,12 @@ const accessReveal = (input: RevealAccessInput) =>
     let deliveredPayload = payload;
     if (input.field) {
       const field = input.field;
-      const fieldValue = yield* Effect.try({
-        try: () => resolveFieldValue(payload, field),
-        catch: (err) => {
-          if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
-            return err;
-          }
-          return new Cause.UnknownException(err, "field resolution failed");
-        },
-      }).pipe(
-        Effect.tapError((err) => {
-          if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
-            return Effect.succeed(undefined);
-          }
-          return logAgentAudit({
-            organizationId: ctx.identity.agentOrganizationId,
-            userId: ctx.identity.agentUserId,
-            agentId: ctx.identity.agentId,
-            itemId: input.itemId,
-            eventType: "access.reveal",
-            result: "denied",
-            deliveryMode: "reveal",
-            field,
-            purpose: input.purpose,
-            ipAddress: ctx.ipAddress,
-            meta: {
-              reason: err._tag,
-              availableFields: err.meta?.availableFields ?? [],
-            },
-          });
-        }),
-      );
+      const fieldValue = yield* resolveFieldOrDenyAudit(payload, field, {
+        itemId: input.itemId,
+        eventType: "access.reveal",
+        deliveryMode: "reveal",
+        purpose: input.purpose,
+      });
       deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
     }
 
@@ -425,37 +456,12 @@ const accessMount = (input: MountAccessInput) =>
     let deliveredPayload = payload;
     if (input.field) {
       const field = input.field;
-      const fieldValue = yield* Effect.try({
-        try: () => resolveFieldValue(payload, field),
-        catch: (err) => {
-          if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
-            return err;
-          }
-          return new Cause.UnknownException(err, "field resolution failed");
-        },
-      }).pipe(
-        Effect.tapError((err) => {
-          if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
-            return Effect.succeed(undefined);
-          }
-          return logAgentAudit({
-            organizationId: ctx.identity.agentOrganizationId,
-            userId: ctx.identity.agentUserId,
-            agentId: ctx.identity.agentId,
-            itemId: input.itemId,
-            eventType,
-            result: "denied",
-            deliveryMode: `mount_${input.mountType}`,
-            field,
-            purpose: input.purpose,
-            ipAddress: ctx.ipAddress,
-            meta: {
-              reason: err._tag,
-              availableFields: err.meta?.availableFields ?? [],
-            },
-          });
-        }),
-      );
+      const fieldValue = yield* resolveFieldOrDenyAudit(payload, field, {
+        itemId: input.itemId,
+        eventType,
+        deliveryMode: `mount_${input.mountType}`,
+        purpose: input.purpose,
+      });
       deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
     }
 
