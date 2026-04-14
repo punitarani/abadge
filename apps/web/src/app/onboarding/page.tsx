@@ -354,7 +354,9 @@ export default function OnboardingPage(): React.ReactElement | null {
       setError,
       onSuccess: () => {
         // Belt-and-suspenders: clear vault password state on success.
-        // B17 will add autoComplete="new-password" and more rigorous clearing.
+        // Paired with the unmount cleanup below (B17) and the autoComplete
+        // attributes on the inputs. We deliberately do NOT clear on error —
+        // the user may want to retry without retyping.
         setVaultPassword("");
         setConfirmPassword("");
         router.push("/overview");
@@ -369,6 +371,17 @@ export default function OnboardingPage(): React.ReactElement | null {
       router.replace("/login?redirect=/onboarding");
     }
   }, [sessionPending, userId, router]);
+
+  // B17: tear-down clearing of vault password state on unmount. Complements
+  // B5's success-path clear. Defense-in-depth only — React state "clearing"
+  // drops the reference but the old string may linger until GC. True zeroing
+  // would require Uint8Array-backed inputs (out of scope for MVP).
+  useEffect(() => {
+    return () => {
+      setVaultPassword("");
+      setConfirmPassword("");
+    };
+  }, []);
 
   // Resume-triage: if the user abandoned onboarding (tab close after org
   // create but before profile bootstrap), skip straight to step 2 for that
@@ -664,6 +677,12 @@ export default function OnboardingPage(): React.ReactElement | null {
                           <Input
                             id="vault-password"
                             type="password"
+                            // B17: non-login-looking name + new-password hint keep the browser's
+                            // credential manager from offering to save a password the server
+                            // never sees. `autoComplete="off"` is ignored by most modern browsers
+                            // on password fields; `new-password` is the standards-blessed hint.
+                            name="abadge-vault-password"
+                            autoComplete="new-password"
                             value={vaultPassword}
                             onChange={(e) => setVaultPassword(e.target.value)}
                             placeholder="Min 12 characters"
@@ -680,6 +699,9 @@ export default function OnboardingPage(): React.ReactElement | null {
                           <Input
                             id="vault-confirm-password"
                             type="password"
+                            // B17: see companion comment on the vault-password input above.
+                            name="abadge-vault-password-confirm"
+                            autoComplete="new-password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             placeholder="Repeat password"
