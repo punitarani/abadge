@@ -58,6 +58,20 @@ const RESERVED_ENV_KEYS = new Set([
   "HOME",
   "USER",
   "SHELL",
+  // Node.js bare-import resolution path (analog of PYTHONPATH).
+  "NODE_PATH",
+  // TLS trust / proxy hijack: redirect or MITM outbound TLS from the child.
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  // Shell loader hijack: alter startup or word-splitting of a spawned shell.
+  "BASH_ENV",
+  "ENV",
+  "IFS",
 ]);
 
 function validateEnvKey(key: string): void {

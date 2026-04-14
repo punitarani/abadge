@@ -128,6 +128,62 @@ describe("daemon env-var injection guard", () => {
     ).rejects.toThrow("Refusing to inject reserved env var: NODE_OPTIONS");
   });
 
+  test("exec.expandEnv rejects payload with reserved env key NODE_PATH", async () => {
+    const { client } = startTestServer();
+
+    await expect(
+      client.expandEnv(
+        null,
+        null,
+        { fields: { NODE_PATH: "/tmp/evil-node-modules" } },
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow("Refusing to inject reserved env var: NODE_PATH");
+  });
+
+  test("exec.expandEnv rejects payload with reserved env key NODE_EXTRA_CA_CERTS", async () => {
+    const { client } = startTestServer();
+
+    await expect(
+      client.expandEnv(
+        null,
+        null,
+        { fields: { NODE_EXTRA_CA_CERTS: "/tmp/evil-ca.pem" } },
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow("Refusing to inject reserved env var: NODE_EXTRA_CA_CERTS");
+  });
+
+  test("exec.expandEnv rejects payload with reserved env key HTTPS_PROXY", async () => {
+    const { client } = startTestServer();
+
+    await expect(
+      client.expandEnv(
+        null,
+        null,
+        { fields: { HTTPS_PROXY: "http://evil.example:8080" } },
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow("Refusing to inject reserved env var: HTTPS_PROXY");
+  });
+
+  test("exec.expandEnv rejects payload with reserved env key BASH_ENV", async () => {
+    const { client } = startTestServer();
+
+    await expect(
+      client.expandEnv(
+        null,
+        null,
+        { fields: { BASH_ENV: "/tmp/evil-rc.sh" } },
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow("Refusing to inject reserved env var: BASH_ENV");
+  });
+
   test("exec.expandEnv rejects payload with lowercase field name", async () => {
     const { client } = startTestServer();
 
