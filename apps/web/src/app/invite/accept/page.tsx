@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,10 +13,34 @@ import { useOrgStore } from "@/stores/org-store";
 function AcceptInviteContent(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  // Capture the token from the URL exactly once, then strip it from the URL
+  // below so it doesn't leak via Referer to any later outbound loads or sit
+  // in browser history. Subsequent renders read the token from this ref.
+  const tokenRef = useRef<string | null>(null);
+  if (tokenRef.current === null) {
+    tokenRef.current = searchParams.get("token") ?? "";
+  }
+  const token = tokenRef.current;
   const { data: session, isPending: sessionPending } = authClient.useSession();
+  const authed = !sessionPending && !!session;
 
-  // Redirect to login if not authenticated, preserving the invite URL
+  // Strip ?token=... from the URL after the first render once we know the
+  // user is authenticated. We keep the token in tokenRef so this component
+  // can still use it, but window.location no longer carries it -- so
+  // subsequent outbound loads and history entries cannot leak it via Referer.
+  // We only strip after auth is resolved; otherwise we still need the token
+  // in the URL to forward it through /login -> /register -> back here.
+  useEffect(() => {
+    if (authed && searchParams.get("token")) {
+      router.replace("/invite/accept", { scroll: false });
+    }
+  }, [authed, searchParams, router]);
+
+  // Redirect to login if not authenticated, preserving the invite token.
+  // The token in the redirect URL is unavoidable for the cross-page handoff,
+  // but /login and /register are served with Referrer-Policy: no-referrer
+  // (see apps/web/next.config.ts) so outbound loads from those pages do not
+  // leak the token via the Referer header.
   if (!sessionPending && !session) {
     const returnPath = `/invite/accept?token=${encodeURIComponent(token)}`;
     router.replace(`/login?redirect=${encodeURIComponent(returnPath)}`);
