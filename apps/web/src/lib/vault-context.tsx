@@ -60,16 +60,14 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
   /* Per-profile key state */
   const [profileKeys, setProfileKeys] = useState<Map<string, Uint8Array>>(new Map());
   const profileTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  /* Mirror of profileKeys for the unmount cleanup closure, which sees stale state otherwise. */
+  /*
+   * Mirrors of profileKeys and rootKey for the unmount cleanup closure, which
+   * sees stale state otherwise. The refs are updated atomically inside every
+   * state setter below, so the "ref mirrors state" invariant is enforced by
+   * the code rather than by React's scheduler.
+   */
   const profileKeysRef = useRef<Map<string, Uint8Array>>(profileKeys);
-  /* Mirror of the current root key for unmount zeroing without re-registering the cleanup. */
   const rootKeyRef = useRef<Uint8Array | null>(rootKey);
-  useEffect(() => {
-    profileKeysRef.current = profileKeys;
-  }, [profileKeys]);
-  useEffect(() => {
-    rootKeyRef.current = rootKey;
-  }, [rootKey]);
 
   /* Profile unlock modal state */
   const [profileUnlockTarget, setProfileUnlockTarget] = useState<{
@@ -121,6 +119,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
         if (key) key.fill(0);
         const next = new Map(prev);
         next.delete(profileId);
+        profileKeysRef.current = next;
         return next;
       });
       profileTimers.current.delete(profileId);
@@ -135,13 +134,16 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     if (rootKey) {
       zeroKey(rootKey);
     }
+    rootKeyRef.current = null;
     setRootKey(null);
     /* Also zero all profile keys */
     setProfileKeys((prev) => {
       for (const key of prev.values()) {
         key.fill(0);
       }
-      return new Map();
+      const next = new Map<string, Uint8Array>();
+      profileKeysRef.current = next;
+      return next;
     });
     for (const timer of profileTimers.current.values()) {
       clearTimeout(timer);
@@ -211,6 +213,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       setProfileKeys((prev) => {
         const next = new Map(prev);
         next.set(profileId, key);
+        profileKeysRef.current = next;
         return next;
       });
       resetProfileTimer(profileId);
@@ -224,6 +227,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       if (key) key.fill(0);
       const next = new Map(prev);
       next.delete(profileId);
+      profileKeysRef.current = next;
       return next;
     });
     const timer = profileTimers.current.get(profileId);
@@ -288,6 +292,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
   /* ---- Modal callbacks ---- */
 
   const handleLegacyUnlockSuccess = useCallback((key: Uint8Array): void => {
+    rootKeyRef.current = key;
     setRootKey(key);
     setLegacyModalOpen(false);
     pendingLegacyUnlock.current?.resolve(key);
