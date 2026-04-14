@@ -71,13 +71,19 @@ describe("cascade behavior", () => {
     expect(row1?.revokedAt).toBeTruthy();
     expect(row2?.revokedAt).toBeTruthy();
 
-    // Verify cascade audit entries exist (eventType: "agent.revoke" with result: "cascade")
+    // Verify cascade audit entries exist (eventType: "agent.revoke_cascade" with result: "cascade")
     const cascadeEntries = await db
       .select()
       .from(auditLogs)
-      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.result, "cascade")));
+      .where(
+        and(
+          eq(auditLogs.agentId, agent.agentId),
+          eq(auditLogs.eventType, "agent.revoke_cascade"),
+          eq(auditLogs.result, "cascade"),
+        ),
+      );
 
-    expect(cascadeEntries.length).toBeGreaterThanOrEqual(2);
+    expect(cascadeEntries.length).toBe(2);
   });
 
   test("deleting an item writes cascade audit entry", async () => {

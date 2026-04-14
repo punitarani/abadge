@@ -32,7 +32,7 @@ export async function onAgentRevoked(
       organizationId: orgId,
       userId: revokedBy,
       agentId,
-      eventType: "agent.revoke",
+      eventType: "agent.revoke_cascade",
       result: "cascade",
       meta: { sessionId: session.id },
       ipAddress: ipAddress ?? null,
