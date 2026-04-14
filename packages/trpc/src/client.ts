@@ -18,6 +18,12 @@ export interface NodeTrpcClientOptions {
   orgId?: string;
 }
 
+/**
+ * Mirrored by `NormalizedTrpcError` in `packages/sdk/src/trpc.ts`. This
+ * workspace package is `private: true`; the SDK is published, so it cannot
+ * depend on this file directly. Any change to fields (hint, meta, new fields)
+ * must be mirrored there.
+ */
 export interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;
