@@ -1,6 +1,14 @@
 -- v0 roadmap foundation cutover
 -- Additive only: create org/profile/agent/permission/audit_log roadmap tables,
 -- preserve legacy tables, and backfill deterministic ownership metadata.
+--
+-- Atomicity: drizzle-orm/pg-core's dialect.migrate wraps the entire set of
+-- migration statements in a single session.transaction(), so every
+-- --> statement-breakpoint below runs inside one outer tx. DO NOT add a
+-- manual BEGIN/COMMIT here -- it would break the outer transaction. All
+-- ADD CONSTRAINT / SET NOT NULL statements below are rewritten to be
+-- idempotent so a partial re-run (e.g., after a driver-level retry) does
+-- not fail with duplicate_object.
 
 ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "organization_id" text;--> statement-breakpoint
 ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "profile_id" text;--> statement-breakpoint
@@ -9,6 +17,7 @@ ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "kind" text;--> statement-breakpoin
 ALTER TABLE "items" ADD COLUMN IF NOT EXISTS "tags" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 UPDATE "items" SET "tags" = '[]'::jsonb WHERE "tags" IS NULL;--> statement-breakpoint
 
+ALTER TABLE "items" DROP CONSTRAINT IF EXISTS "items_organization_id_organization_id_fk";--> statement-breakpoint
 ALTER TABLE "items"
 ADD CONSTRAINT "items_organization_id_organization_id_fk"
 FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
@@ -29,11 +38,13 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
+ALTER TABLE "profiles" DROP CONSTRAINT IF EXISTS "profiles_organization_id_organization_id_fk";--> statement-breakpoint
 ALTER TABLE "profiles"
 ADD CONSTRAINT "profiles_organization_id_organization_id_fk"
 FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
 ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
+ALTER TABLE "items" DROP CONSTRAINT IF EXISTS "items_profile_id_profiles_id_fk";--> statement-breakpoint
 ALTER TABLE "items"
 ADD CONSTRAINT "items_profile_id_profiles_id_fk"
 FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id")
@@ -58,11 +69,13 @@ CREATE TABLE IF NOT EXISTS "agents" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
+ALTER TABLE "agents" DROP CONSTRAINT IF EXISTS "agents_organization_id_organization_id_fk";--> statement-breakpoint
 ALTER TABLE "agents"
 ADD CONSTRAINT "agents_organization_id_organization_id_fk"
 FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
 ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
+ALTER TABLE "agents" DROP CONSTRAINT IF EXISTS "agents_created_by_user_id_fk";--> statement-breakpoint
 ALTER TABLE "agents"
 ADD CONSTRAINT "agents_created_by_user_id_fk"
 FOREIGN KEY ("created_by") REFERENCES "public"."user"("id")
@@ -79,21 +92,25 @@ CREATE TABLE IF NOT EXISTS "permissions" (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
+ALTER TABLE "permissions" DROP CONSTRAINT IF EXISTS "permissions_organization_id_organization_id_fk";--> statement-breakpoint
 ALTER TABLE "permissions"
 ADD CONSTRAINT "permissions_organization_id_organization_id_fk"
 FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id")
 ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
+ALTER TABLE "permissions" DROP CONSTRAINT IF EXISTS "permissions_agent_id_agents_id_fk";--> statement-breakpoint
 ALTER TABLE "permissions"
 ADD CONSTRAINT "permissions_agent_id_agents_id_fk"
 FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id")
 ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
+ALTER TABLE "permissions" DROP CONSTRAINT IF EXISTS "permissions_item_id_items_id_fk";--> statement-breakpoint
 ALTER TABLE "permissions"
 ADD CONSTRAINT "permissions_item_id_items_id_fk"
 FOREIGN KEY ("item_id") REFERENCES "public"."items"("id")
 ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 
+ALTER TABLE "permissions" DROP CONSTRAINT IF EXISTS "permissions_granted_by_user_id_fk";--> statement-breakpoint
 ALTER TABLE "permissions"
 ADD CONSTRAINT "permissions_granted_by_user_id_fk"
 FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id")
@@ -205,7 +222,16 @@ UPDATE "items"
 SET "label" = 'migrated-' || substring("id" from 1 for 8)
 WHERE "label" IS NULL OR "label" = '';--> statement-breakpoint
 
-ALTER TABLE "items" ALTER COLUMN "label" SET NOT NULL;--> statement-breakpoint
+-- Fail loud if the label backfill above missed any row; safe on re-run
+-- because SET NOT NULL is a no-op once the column is already NOT NULL.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "items" WHERE "label" IS NULL) THEN
+    RAISE EXCEPTION 'items.label backfill did not cover every row';
+  END IF;
+  ALTER TABLE "items" ALTER COLUMN "label" SET NOT NULL;
+END
+$$;--> statement-breakpoint
 
 INSERT INTO "agents" (
   "id",
@@ -334,7 +360,8 @@ SELECT setval(
 
 ALTER TABLE "principals" ALTER COLUMN "auth_method" DROP DEFAULT;--> statement-breakpoint
 
-ALTER TABLE "grants"
+ALTER TABLE IF EXISTS "grants" DROP CONSTRAINT IF EXISTS "grants_granted_by_user_id_fk";--> statement-breakpoint
+ALTER TABLE IF EXISTS "grants"
 ADD CONSTRAINT "grants_granted_by_user_id_fk"
 FOREIGN KEY ("granted_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 
