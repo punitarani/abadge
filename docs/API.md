@@ -160,7 +160,7 @@ Input: `{ orgId }`. Deletes the organization and cascades to agents and permissi
 
 Auth: `sessionProcedure`
 
-Input: `{ orgId }`. Returns the member list.
+Input: `{ orgId }`. Returns `{ members }` with `{ id, userId, name, email, role, createdAt }` per member. `email` is `string | null`: populated only when the caller is `owner` or `admin`; `null` for callers with `member` role (applies uniformly, including to the caller's own row — users should read their own email from their profile/session).
 
 ### `organizations.members.invite`
 
