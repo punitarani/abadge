@@ -31,22 +31,9 @@ interface AuthContextWithSessionLookup {
   };
 }
 
-interface VerifyApiKeyResult {
-  valid: boolean;
-  key?: {
-    id?: string;
-    referenceId?: string;
-  };
-}
-
 type ActiveAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
   "id" | "organizationId" | "createdBy" | "locality" | "authMethod" | "secretHash"
->;
-
-type MigratedAgent = Pick<
-  typeof agentRecords.$inferSelect,
-  "id" | "organizationId" | "createdBy" | "locality" | "enabled" | "revokedAt"
 >;
 
 type ActiveAgentSession = Pick<
@@ -179,61 +166,6 @@ const verifyLocalAgentIdentity = (
     }
 
     return null;
-  });
-
-const verifyLegacyAgentIdentity = (
-  ctx: BaseRequestContext,
-  token: string,
-): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
-  Effect.gen(function* () {
-    const result = (yield* tryAsync(() =>
-      ctx.auth.api.verifyApiKey({
-        body: { key: token },
-      }),
-    )) as VerifyApiKeyResult;
-
-    if (!result.valid || !result.key) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const legacyAgentId = result.key.id;
-    const legacyUserId = result.key.referenceId;
-    if (!legacyAgentId || !legacyUserId) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const [migratedAgent] = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: agentRecords.id,
-          organizationId: agentRecords.organizationId,
-          createdBy: agentRecords.createdBy,
-          locality: agentRecords.locality,
-          enabled: agentRecords.enabled,
-          revokedAt: agentRecords.revokedAt,
-        })
-        .from(agentRecords)
-        .where(eq(agentRecords.id, legacyAgentId))
-        .limit(1),
-    )) as Array<MigratedAgent>;
-
-    if (!migratedAgent) {
-      return yield* Effect.fail(
-        new UnauthorizedError({
-          code: "LEGACY_AGENT_UNMIGRATED",
-          message: "Legacy API key has no migrated agent record",
-          hint: "Rotate this agent's credentials — legacy keys must be re-registered before they can be used.",
-          meta: { legacyAgentId },
-        }),
-      );
-    }
-
-    if (!migratedAgent.enabled || migratedAgent.revokedAt) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    touchAgent(ctx, legacyAgentId);
-    return toAgentIdentity(migratedAgent);
   });
 
 const verifyAgentSessionIdentity = (
@@ -477,5 +409,5 @@ export const resolveAgentIdentity = (
       return agentIdentity;
     }
 
-    return yield* verifyLegacyAgentIdentity(ctx, token);
+    return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

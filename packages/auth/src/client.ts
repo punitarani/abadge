@@ -1,4 +1,3 @@
-import { apiKeyClient } from "@better-auth/api-key/client";
 import { deviceAuthorizationClient, organizationClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
@@ -14,6 +13,6 @@ export function createBetterAuthClient(baseURL: string): any {
       credentials: "include",
     },
     // biome-ignore lint/suspicious/noExplicitAny: duplicate @better-auth/core resolutions cause nominal type mismatch
-    plugins: [organizationClient(), apiKeyClient(), deviceAuthorizationClient()] as any[],
+    plugins: [organizationClient(), deviceAuthorizationClient()] as any[],
   });
 }

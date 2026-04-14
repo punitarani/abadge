@@ -35,16 +35,18 @@ describe("getTrustedOrigins", () => {
 });
 
 describe("createAuth", () => {
+  const TEST_ENV = {
+    ABADGE_API_URL: "https://api.abadge.io",
+    ABADGE_APP_URL: "https://abadge.io",
+    BETTER_AUTH_SECRET: "12345678901234567890123456789012",
+    GOOGLE_CLIENT_ID: "google-client-id",
+    GOOGLE_CLIENT_SECRET: "google-client-secret",
+    GITHUB_CLIENT_ID: "github-client-id",
+    GITHUB_CLIENT_SECRET: "github-client-secret",
+  } as const;
+
   it("configures both required social providers", () => {
-    const auth = createAuth({} as Database, {
-      ABADGE_API_URL: "https://api.abadge.io",
-      ABADGE_APP_URL: "https://abadge.io",
-      BETTER_AUTH_SECRET: "12345678901234567890123456789012",
-      GOOGLE_CLIENT_ID: "google-client-id",
-      GOOGLE_CLIENT_SECRET: "google-client-secret",
-      GITHUB_CLIENT_ID: "github-client-id",
-      GITHUB_CLIENT_SECRET: "github-client-secret",
-    });
+    const auth = createAuth({} as Database, TEST_ENV);
 
     expect(auth.options.socialProviders).toEqual({
       google: {
@@ -56,5 +58,21 @@ describe("createAuth", () => {
         clientSecret: "github-client-secret",
       },
     });
+  });
+
+  // Migration 0006 drops the `apikey` table. Any request routed to the Better
+  // Auth apiKey plugin would crash at runtime with `relation "apikey" does not
+  // exist`. v0 uses the `agents` table for all agent credentials.
+  it("does not register the Better Auth apiKey plugin", () => {
+    const auth = createAuth({} as Database, TEST_ENV);
+
+    const pluginIds = (auth.options.plugins ?? []).map((p: { id?: string }) => p.id ?? "");
+    expect(pluginIds).not.toContain("api-key");
+
+    // The plugin exposes `auth.api.verifyApiKey` / `createApiKey` /
+    // `listApiKeys`. None of these should exist on the auth instance.
+    expect(auth.api.verifyApiKey).toBeUndefined();
+    expect(auth.api.createApiKey).toBeUndefined();
+    expect(auth.api.listApiKeys).toBeUndefined();
   });
 });
