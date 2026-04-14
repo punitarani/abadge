@@ -279,6 +279,11 @@ async function resolveOrCreateProfile(
 export default function OnboardingPage(): React.ReactElement | null {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
+  // Stable primitive: Better Auth's useSession() can return a fresh object
+  // reference per render. Depending on session.user.id keeps effects from
+  // re-firing (and redoing organizations.list + per-org profiles.list) on
+  // unrelated renders.
+  const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
 
   // Step management
@@ -360,17 +365,17 @@ export default function OnboardingPage(): React.ReactElement | null {
   // Auth guard — unauthenticated visitors shouldn't see the create-org form.
   // Redirect happens in an effect to avoid side-effects during render.
   useEffect(() => {
-    if (!sessionPending && !session?.user) {
+    if (!sessionPending && !userId) {
       router.replace("/login?redirect=/onboarding");
     }
-  }, [sessionPending, session, router]);
+  }, [sessionPending, userId, router]);
 
   // Resume-triage: if the user abandoned onboarding (tab close after org
   // create but before profile bootstrap), skip straight to step 2 for that
   // org. If they are fully onboarded, redirect to /overview. If they have no
   // orgs, fall through to step 1.
   useEffect(() => {
-    if (sessionPending || !session?.user) return;
+    if (sessionPending || !userId) return;
 
     let cancelled = false;
     (async () => {
@@ -432,7 +437,7 @@ export default function OnboardingPage(): React.ReactElement | null {
     return () => {
       cancelled = true;
     };
-  }, [sessionPending, session, router, setActiveOrg]);
+  }, [sessionPending, userId, router, setActiveOrg]);
 
   if (sessionPending || !session?.user || isCheckingOrgs) {
     return (
