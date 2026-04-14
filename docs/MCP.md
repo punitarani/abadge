@@ -156,6 +156,16 @@ Input: none (optional filters may be supported).
 
 Output: JSON array of audit entries.
 
+## Error responses
+
+Tool errors are returned as JSON text content with the shape:
+
+```json
+{ "error": "Human-readable message", "code": "<domain code>", "hint": "<remediation>", "meta": { ... } }
+```
+
+`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer errors from the control plane). Non-`AbadgeApiError` failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only. LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
+
 ## Security model
 
 The MCP server treats the model as untrusted:
