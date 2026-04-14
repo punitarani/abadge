@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "@abadge/db";
 import { agentSessions, agents, auditLogs, permissions } from "@abadge/db/schema";
-import { onMemberRemoved } from "../../cascades";
+import { onAgentRevoked, onItemDeleted, onMemberRemoved } from "../../cascades";
 import {
   seedAgent,
   seedAgentSession,
@@ -334,5 +334,195 @@ describe("onMemberRemoved cascade (real revocation)", () => {
       .where(and(eq(auditLogs.organizationId, org.orgId), eq(auditLogs.result, "cascade")));
 
     expect(cascades.length).toBe(0);
+  });
+});
+
+describe("onAgentRevoked cascade (transactional)", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("revokes all active sessions and writes one cascade audit per session in a single transaction", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const agent = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
+
+    const active1 = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const active2 = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+
+    // Pre-revoked session: its revokedAt must not be overwritten by the bulk update.
+    const preRevokedAt = new Date(Date.now() - 60_000);
+    const preRevoked = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+      revokedAt: preRevokedAt,
+    });
+
+    const ip = "203.0.113.7";
+    await onAgentRevoked(db, agent.agentId, org.orgId, owner.userId, ip);
+
+    const [row1] = await db
+      .select({ revokedAt: agentSessions.revokedAt })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, active1.sessionId));
+    const [row2] = await db
+      .select({ revokedAt: agentSessions.revokedAt })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, active2.sessionId));
+    const [rowPre] = await db
+      .select({ revokedAt: agentSessions.revokedAt })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, preRevoked.sessionId));
+
+    expect(row1?.revokedAt).toBeTruthy();
+    expect(row2?.revokedAt).toBeTruthy();
+    expect(rowPre?.revokedAt?.getTime()).toBe(preRevokedAt.getTime());
+
+    const cascades = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.organizationId, org.orgId),
+          eq(auditLogs.agentId, agent.agentId),
+          eq(auditLogs.eventType, "agent.revoke_cascade"),
+          eq(auditLogs.result, "cascade"),
+        ),
+      );
+
+    expect(cascades.length).toBe(2);
+    const sessionIds = cascades.map((c) => (c.meta as Record<string, unknown>)?.sessionId).sort();
+    expect(sessionIds).toEqual([active1.sessionId, active2.sessionId].sort());
+    for (const row of cascades) {
+      expect(row.ipAddress).toBe(ip);
+      expect(row.userId).toBe(owner.userId);
+    }
+  });
+
+  test("no-ops when no active sessions exist", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const agent = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
+
+    // Only a pre-revoked session — nothing for the cascade to touch.
+    await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+      revokedAt: new Date(Date.now() - 60_000),
+    });
+
+    await onAgentRevoked(db, agent.agentId, org.orgId, owner.userId);
+
+    const cascades = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.organizationId, org.orgId),
+          eq(auditLogs.agentId, agent.agentId),
+          eq(auditLogs.eventType, "agent.revoke_cascade"),
+          eq(auditLogs.result, "cascade"),
+        ),
+      );
+
+    expect(cascades.length).toBe(0);
+  });
+});
+
+describe("onItemDeleted cascade (transactional)", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("deletes all permissions for the item and writes one cascade audit row", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+
+    const agentA = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
+    const agentB = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
+    const agentC = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
+
+    const target = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const other = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agentA.agentId,
+      itemId: target.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agentB.agentId,
+      itemId: target.itemId,
+      capability: "mount_env",
+      grantedBy: owner.userId,
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agentC.agentId,
+      itemId: target.itemId,
+      capability: "mount_file",
+      grantedBy: owner.userId,
+    });
+    // Unrelated permission on a different item — must survive.
+    const survivor = await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agentA.agentId,
+      itemId: other.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+
+    const ip = "203.0.113.9";
+    await onItemDeleted(db, target.itemId, org.orgId, owner.userId, ip);
+
+    const remainingForTarget = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(eq(permissions.itemId, target.itemId));
+    expect(remainingForTarget.length).toBe(0);
+
+    const remainingForOther = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(eq(permissions.itemId, other.itemId));
+    expect(remainingForOther.map((r) => r.id)).toContain(survivor.permissionId);
+
+    const cascades = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.organizationId, org.orgId),
+          eq(auditLogs.itemId, target.itemId),
+          eq(auditLogs.eventType, "item.delete_cascade"),
+          eq(auditLogs.result, "cascade"),
+        ),
+      );
+    expect(cascades.length).toBe(1);
+    expect(cascades[0]?.ipAddress).toBe(ip);
+    expect(cascades[0]?.userId).toBe(owner.userId);
   });
 });
