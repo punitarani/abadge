@@ -50,6 +50,13 @@
       "when": 1775937600000,
       "tag": "0006_v0_foundation_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776150247814,
+      "tag": "0007_items_org_required",
+      "breakpoints": true
     }
   ]
 }

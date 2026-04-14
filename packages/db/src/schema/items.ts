@@ -9,9 +9,9 @@ export const items = pgTable(
   "items",
   {
     id: text("id").primaryKey(),
-    organizationId: text("organization_id").references(() => organization.id, {
-      onDelete: "set null",
-    }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     profileId: text("profile_id").references(() => profiles.id, { onDelete: "set null" }),
     userId: text("user_id")
       .notNull()
