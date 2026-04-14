@@ -23,7 +23,9 @@ function appendHint(message: string, hint: string | undefined): string {
     return message;
   }
   // Avoid duplicating the hint if the server already folded it into the message.
-  if (message.includes(hint)) {
+  // Anchored to end-of-message so short hints ("Try again.") don't false-positive
+  // when they appear as a substring mid-message.
+  if (message.endsWith(hint)) {
     return message;
   }
   return `${message} — ${hint}`;

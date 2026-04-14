@@ -57,6 +57,18 @@ describe("getClientErrorMessage", () => {
     );
   });
 
+  test("does not dedupe when hint appears mid-message (not anchored at end)", () => {
+    const hint = "Try again.";
+    const err = makeTrpcError({
+      message: `Check the password, ${hint} Please correct and retry.`,
+      code: "BAD_REQUEST",
+      hint,
+    });
+    expect(getClientErrorMessage(err, "Failed")).toBe(
+      `Check the password, ${hint} Please correct and retry. — ${hint}`,
+    );
+  });
+
   test("prefers a formatted validation issue over the top-level message and still appends the hint", () => {
     const err = makeTrpcError({
       message: "Input validation failed",
