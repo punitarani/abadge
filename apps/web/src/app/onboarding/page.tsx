@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrength } from "@/components/ui/password-strength";
 import { ProgressSteps } from "@/components/ui/progress-steps";
+import { authClient } from "@/lib/auth-client";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
 
@@ -213,8 +214,22 @@ async function submitStep2({
       name: profileName.trim(),
       storageMode,
     });
-    if (storageMode === "zero_knowledge") {
-      await bootstrapZkProfile(profileResult.profile.id, vaultPassword);
+    // If bootstrap fails after the profile row is created, delete the orphan so
+    // the user can retry onboarding with the same profile name. Rollback errors
+    // are swallowed (logged only) — the original bootstrap error still surfaces
+    // to the UI.
+    // TODO(B4.1): test rollback path once @testing-library/react is wired into apps/web.
+    try {
+      if (storageMode === "zero_knowledge") {
+        await bootstrapZkProfile(profileResult.profile.id, vaultPassword);
+      }
+    } catch (bootstrapErr) {
+      await browserTrpcClient.profiles.delete
+        .mutate({ profileId: profileResult.profile.id })
+        .catch((rollbackErr: unknown) => {
+          console.warn("[onboarding] Failed to rollback unbootstrapped profile:", rollbackErr);
+        });
+      throw bootstrapErr;
     }
     toast.success("Profile created successfully");
     onSuccess();
@@ -225,8 +240,9 @@ async function submitStep2({
   }
 }
 
-export default function OnboardingPage(): React.ReactElement {
+export default function OnboardingPage(): React.ReactElement | null {
   const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
 
   // Step management
@@ -291,8 +307,30 @@ export default function OnboardingPage(): React.ReactElement {
       confirmPassword,
       setLoading,
       setError,
-      onSuccess: () => router.push("/overview"),
+      onSuccess: () => {
+        // Belt-and-suspenders: clear vault password state on success.
+        // B17 will add autoComplete="new-password" and more rigorous clearing.
+        setVaultPassword("");
+        setConfirmPassword("");
+        router.push("/overview");
+      },
     });
+  }
+
+  // Auth guard — unauthenticated visitors shouldn't see the create-org form.
+  // Redirect happens in an effect to avoid side-effects during render.
+  useEffect(() => {
+    if (!sessionPending && !session?.user) {
+      router.replace("/login?redirect=/onboarding");
+    }
+  }, [sessionPending, session, router]);
+
+  if (sessionPending || !session?.user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-sm text-muted-foreground">Loading...</div>
+      </div>
+    );
   }
 
   return (
