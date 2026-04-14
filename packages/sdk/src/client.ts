@@ -940,6 +940,14 @@ export class AbadgeAgentClient {
    * For keypair-auth agents: performs Ed25519 session exchange and starts the
    * background T-2 minute refresh loop. Must be called before using access methods.
    * For API-key agents: no-op (session is implicit).
+   *
+   * Timer lifecycle: the refresh timer is `.unref()`'d so it does NOT keep the
+   * Node/Bun event loop alive on its own. Long-lived consumers (MCP stdio,
+   * HTTP servers, daemon sockets) stay alive via their own handles and the
+   * refresh still fires. Short-lived consumers (CLI commands) exit cleanly
+   * once their work finishes — without `.unref()` they would hang ~13 min
+   * until the refresh fires. `disconnect()` remains the deterministic cleanup
+   * path for tests and any caller that wants to force teardown.
    */
   async connect(): Promise<void> {
     if (!("agentId" in this.config)) {
@@ -993,8 +1001,18 @@ export class AbadgeAgentClient {
             console.error(`[AbadgeAgentClient] Session refresh retry failed: ${retryMsg}`);
           });
         }, 30_000);
+        // See note in the initial setTimeout call: the retry timer must also
+        // be unref'd so a failed refresh does not keep the event loop alive.
+        this.refreshTimer?.unref?.();
       });
     }, refreshDelay);
+    // Timer is a best-effort background refresh: if the process has no other
+    // work, it should exit cleanly. Long-lived consumers (MCP stdin, HTTP
+    // servers) keep the loop alive via their own handles; the refresh still
+    // fires in those cases. Without .unref() here, CLI commands using this
+    // client hang for ~13 minutes after work finishes (session TTL 15 min,
+    // refresh at T-2 min) unless the caller explicitly invokes disconnect().
+    this.refreshTimer?.unref?.();
   }
 
   /**
