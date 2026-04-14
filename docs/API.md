@@ -317,6 +317,12 @@ Auth: `sessionProcedure`
 
 Input: `{ itemId }`. Soft-deletes the item. Returns `{ ok: true }`.
 
+### `items.listForAgent`
+
+Auth: `agentProcedure` (bearer agent session or legacy API key).
+
+Returns `{ items }` with metadata only (no secret data). Scoped to items the calling agent has at least one `permissions` row on — agents without any grant receive an empty list. Metadata-only endpoint; no per-call audit row (access-path procedures `access.ciphertext` / `access.reveal` / `access.mount` remain the audited boundary).
+
 ### `agents.create`
 
 Auth: `sessionProcedure`
