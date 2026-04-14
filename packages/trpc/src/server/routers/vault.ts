@@ -187,14 +187,16 @@ const rotateKey = (input: RotateKeyInput) =>
           })
           .where(eq(vaults.userId, userId));
 
-        for (const [itemId, newEncryptedItemKey] of Object.entries(input.rekeyedItems)) {
+        for (const r of input.rekeyedItems) {
           await tx
             .update(items)
             .set({
-              encryptedItemKey: newEncryptedItemKey,
+              encryptedItemKey: r.encryptedItemKey,
+              keyNonce: r.keyNonce,
+              cryptoVersion: nextKeyVersion,
               updatedAt: new Date(),
             })
-            .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+            .where(and(eq(items.id, r.itemId), eq(items.userId, userId)));
         }
       }),
     );
@@ -205,7 +207,7 @@ const rotateKey = (input: RotateKeyInput) =>
       eventType: "profile.rotate",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { itemCount: Object.keys(input.rekeyedItems).length },
+      meta: { itemCount: input.rekeyedItems.length },
     });
 
     return { ok: true, keyVersion: nextKeyVersion };

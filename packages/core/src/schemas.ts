@@ -56,10 +56,16 @@ export const RecoverySetupSchema = Schema.Struct({
   recoveryWrappedRootKey: NonEmptyString,
 });
 
+export const RekeyedItemSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  encryptedItemKey: NonEmptyString,
+  keyNonce: NonEmptyString,
+});
+
 export const RotateKeySchema = Schema.Struct({
   wrappedRootKey: NonEmptyString,
   recoveryWrappedRootKey: Schema.optional(Schema.String),
-  rekeyedItems: Schema.Record({ key: Schema.String, value: NonEmptyString }),
+  rekeyedItems: Schema.Array(RekeyedItemSchema),
 });
 
 export const ZeroKnowledgeCreateItemSchema = Schema.Struct({

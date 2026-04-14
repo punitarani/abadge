@@ -44,6 +44,7 @@ import type {
   ProfileResultSchema,
   ProfileSchema,
   RecoverySetupSchema,
+  RekeyedItemSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
   RevokeAgentSessionSchema,
@@ -63,6 +64,7 @@ export type VaultBootstrapInput = TypeOf<typeof VaultBootstrapSchema>;
 export type ChangePasswordInput = TypeOf<typeof ChangePasswordSchema>;
 export type RecoverySetupInput = TypeOf<typeof RecoverySetupSchema>;
 export type RotateKeyInput = TypeOf<typeof RotateKeySchema>;
+export type RekeyedItem = TypeOf<typeof RekeyedItemSchema>;
 export type Profile = TypeOf<typeof ProfileSchema>;
 
 export type ItemPayload = TypeOf<typeof ItemPayloadSchema>;
