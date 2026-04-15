@@ -14,7 +14,10 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "abadge",
+  title: {
+    template: "%s · abadge",
+    default: "abadge — Credential control plane for AI agents",
+  },
   description:
     "Credential control plane for AI agents. Store or connect credentials, allow least-privilege access, and audit every attempt.",
 };
