@@ -38,7 +38,6 @@ export async function truncateAll(): Promise<void> {
       items,
       agents,
       profiles,
-      vaults,
       "deviceCode",
       invitation,
       member,
