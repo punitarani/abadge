@@ -26,7 +26,7 @@ function OverlayStoryFrame({ forceMobile = false }: { forceMobile?: boolean }): 
       <div className="mx-auto flex max-w-5xl items-center justify-between rounded-lg border border-border bg-background p-6">
         <div>
           <h1 className="text-lg font-semibold">Items</h1>
-          <p className="text-sm text-muted-foreground">Secrets stored in your vault</p>
+          <p className="text-sm text-muted-foreground">Secrets stored in your profile</p>
         </div>
         <Button size="sm" onClick={() => setOpen(true)}>
           Open panel
