@@ -293,12 +293,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
-      await updateVaultPassword(
-        config.apiUrl,
-        buildAuthHeaders(auth).headers,
-        profileId,
-        result,
-      );
+      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, profileId, result);
       return { ok: true };
     },
 

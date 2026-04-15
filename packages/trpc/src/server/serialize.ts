@@ -1,11 +1,4 @@
-import type {
-  Agent,
-  AuditEntry,
-  ItemDetail,
-  ItemSummary,
-  Permission,
-  Profile,
-} from "@abadge/core";
+import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Profile } from "@abadge/core";
 import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
 import type { agents, auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 
