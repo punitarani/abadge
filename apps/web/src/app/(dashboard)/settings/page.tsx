@@ -230,6 +230,8 @@ function MembersSection({
   currentUserId: string | undefined;
   queryClient: ReturnType<typeof useQueryClient>;
 }): React.ReactElement {
+  const [memberToRemove, setMemberToRemove] = useState<{ id: string; label: string } | null>(null);
+
   const removeMutation = useMutation({
     mutationFn: (memberId: string) =>
       browserTrpcClient.organizations.members.remove.mutate({ orgId, memberId }),
@@ -308,7 +310,12 @@ function MembersSection({
                           size="sm"
                           className="text-destructive hover:text-destructive"
                           disabled={removeMutation.isPending}
-                          onClick={() => removeMutation.mutate(m.id)}
+                          onClick={() =>
+                            setMemberToRemove({
+                              id: m.id,
+                              label: `${m.userId.slice(0, 8)}...`,
+                            })
+                          }
                         >
                           Remove
                         </Button>
@@ -324,6 +331,39 @@ function MembersSection({
 
       {/* Invite member */}
       <InviteMemberCard orgId={orgId} />
+
+      {/* TODO(B4.1): integration test that member-remove requires the confirmation dialog. */}
+      <AlertDialog
+        open={memberToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setMemberToRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {memberToRemove?.label ?? "member"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke their access to the organization. Their agents will be disabled and
+              permissions deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={removeMutation.isPending}
+              onClick={() => {
+                if (memberToRemove) {
+                  removeMutation.mutate(memberToRemove.id);
+                  setMemberToRemove(null);
+                }
+              }}
+            >
+              Remove member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
@@ -462,7 +502,14 @@ function DangerZoneSection({
         </div>
       </div>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      {/* TODO(B4.1): integration test that confirmText is cleared on dialog close. */}
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setConfirmText("");
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete organization</AlertDialogTitle>

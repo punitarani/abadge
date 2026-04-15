@@ -160,7 +160,7 @@ Input: `{ orgId }`. Deletes the organization and cascades to agents and permissi
 
 Auth: `sessionProcedure`
 
-Input: `{ orgId }`. Returns the member list.
+Input: `{ orgId }`. Returns `{ members }` with `{ id, userId, name, email, role, createdAt }` per member. `email` is `string | null`: populated only when the caller is `owner` or `admin`; `null` for callers with `member` role (applies uniformly, including to the caller's own row — users should read their own email from their profile/session).
 
 ### `organizations.members.invite`
 
@@ -176,9 +176,9 @@ Invitations expire after 7 days.
 
 Auth: `sessionProcedure`
 
-Input: `{ token }`. Returns `{ invitationId, organizationName, organizationSlug, role, expiresAt, inviterUserId }`.
+Input: `{ token }`. Returns `{ organizationName, organizationSlug, role, expiresAt }`.
 
-Requires authentication to prevent info disclosure of org names to unauthenticated users.
+Requires authentication to prevent info disclosure of org names to unauthenticated users. Rate-limited to 10 lookups/minute per (user, IP) to discourage brute-force enumeration of invite tokens; excess returns `RATE_LIMITED` / 429. Returned metadata is intentionally narrow — the internal `invitationId` and `inviterUserId` are not exposed because a successful guess would otherwise leak them.
 
 ### `organizations.members.acceptInvite`
 

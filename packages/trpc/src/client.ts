@@ -18,11 +18,19 @@ export interface NodeTrpcClientOptions {
   orgId?: string;
 }
 
+/**
+ * Mirrored by `NormalizedTrpcError` in `packages/sdk/src/trpc.ts`. This
+ * workspace package is `private: true`; the SDK is published, so it cannot
+ * depend on this file directly. Any change to fields (hint, meta, new fields)
+ * must be mirrored there.
+ */
 export interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;
   trpcCode?: string;
   code?: string;
+  hint?: string;
+  meta?: Readonly<Record<string, unknown>>;
   issues?: unknown;
 }
 
@@ -142,6 +150,11 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
     httpStatus: typeof data?.httpStatus === "number" ? data.httpStatus : undefined,
     trpcCode: typeof data?.code === "string" ? data.code : undefined,
     code: typeof data?.code === "string" ? data.code : undefined,
+    hint: typeof data?.hint === "string" ? data.hint : undefined,
+    meta:
+      data?.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+        ? (data.meta as Record<string, unknown>)
+        : undefined,
     issues: data?.issues,
   };
 }

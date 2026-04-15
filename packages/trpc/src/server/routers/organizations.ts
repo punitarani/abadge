@@ -3,15 +3,22 @@ import {
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
   NotFoundError,
+  RateLimitError,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, asc, eq, isNull } from "@abadge/db";
 import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
-import { runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
+import {
+  isUniqueViolation,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+  tryAsync,
+} from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
 
 const OrgIdSchema = Schema.Struct({
@@ -94,11 +101,14 @@ const OrgListResultSchema = Schema.Struct({
   organizations: Schema.Array(OrgListItemSchema),
 });
 
+// `email` is nullable: only owners/admins see teammates' email addresses.
+// Plain members receive `email: null` to avoid enumerating org-internal
+// contact info. See listMembers below.
 const MemberDataSchema = Schema.Struct({
   id: Schema.String,
   userId: Schema.String,
   name: Schema.String,
-  email: Schema.String,
+  email: Schema.NullOr(Schema.String),
   role: Schema.String,
   createdAt: Schema.String,
 });
@@ -118,13 +128,38 @@ const InviteTokenSchema = Schema.Struct({
 });
 
 const InviteInfoResultSchema = Schema.Struct({
-  invitationId: Schema.String,
   organizationName: Schema.String,
   organizationSlug: Schema.String,
   role: Schema.String,
   expiresAt: Schema.String,
-  inviterUserId: Schema.String,
 });
+
+// getInviteInfo is callable by any authenticated user with a token. Without a
+// tighter cap, a determined attacker could enumerate valid invite tokens at
+// the wider 100/min tRPC limit. Rate-limit by caller IP to 10/min. The Map is
+// module-scoped and in-memory (ephemeral across Cloudflare Worker isolates);
+// this is acceptable because brute-forcing opaque 32-byte tokens remains
+// infeasible even at the wider tRPC limit, and a tighter per-isolate cap
+// still massively raises the cost.
+const GET_INVITE_INFO_LIMIT = 10;
+const GET_INVITE_INFO_WINDOW_MS = 60_000;
+const getInviteInfoCounters = new Map<string, { count: number; resetAt: number }>();
+
+function checkGetInviteInfoRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = getInviteInfoCounters.get(key);
+  if (!entry || now > entry.resetAt) {
+    getInviteInfoCounters.set(key, { count: 1, resetAt: now + GET_INVITE_INFO_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= GET_INVITE_INFO_LIMIT;
+}
+
+/** @internal exposed for tests */
+export function _resetGetInviteInfoRateLimit(): void {
+  getInviteInfoCounters.clear();
+}
 
 const AcceptInviteResultSchema = Schema.Struct({
   ok: Schema.Boolean,
@@ -201,36 +236,49 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       );
     }
 
+    // All three inserts must succeed or fail together: a mid-flight failure
+    // would leave the org without a default profile, a state the dashboard
+    // assumes cannot happen. The slug-race loser's unique-violation is
+    // translated below to SLUG_TAKEN (mirrors profiles.create / permissions.create).
     yield* tryAsync(() =>
-      ctx.db.insert(organization).values({
-        id: orgId,
-        name: input.name,
-        slug,
-        logo: input.logo ?? null,
-        createdAt: now,
-      }),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx.insert(organization).values({
+          id: orgId,
+          name: input.name,
+          slug,
+          logo: input.logo ?? null,
+          createdAt: now,
+        });
 
-    yield* tryAsync(() =>
-      ctx.db.insert(member).values({
-        id: crypto.randomUUID(),
-        organizationId: orgId,
-        userId,
-        role: "owner",
-        createdAt: now,
-      }),
-    );
+        await tx.insert(member).values({
+          id: crypto.randomUUID(),
+          organizationId: orgId,
+          userId,
+          role: "owner",
+          createdAt: now,
+        });
 
-    // Create a default zero-knowledge profile for the org.
-    yield* tryAsync(() =>
-      ctx.db.insert(profiles).values({
-        id: profileId,
-        organizationId: orgId,
-        name: "default",
-        storageMode: "zero_knowledge",
-        createdAt: now,
-        updatedAt: now,
+        await tx.insert(profiles).values({
+          id: profileId,
+          organizationId: orgId,
+          name: "default",
+          storageMode: "zero_knowledge",
+          createdAt: now,
+          updatedAt: now,
+        });
       }),
+    ).pipe(
+      Effect.catchIf(
+        (e: Error) => isUniqueViolation(e),
+        () =>
+          Effect.fail(
+            new ConflictError({
+              code: "SLUG_TAKEN",
+              message: `The slug "${slug}" is already in use`,
+              hint: "Choose a different organization slug.",
+            }),
+          ),
+      ),
     );
 
     yield* logSessionAudit({
@@ -263,6 +311,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     };
   });
 
+// A user with >100 org memberships is an unusual case; the cap is a sanity
+// ceiling so the query/response stays bounded. Ordering by member.createdAt
+// keeps the UI deterministic (earliest-joined first). Cursor pagination can be
+// added later if real usage exceeds the cap.
+const LIST_ORGS_LIMIT = 100;
+
 const listOrgs = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   const userId = ctx.identity.userId;
@@ -279,7 +333,9 @@ const listOrgs = Effect.gen(function* () {
       })
       .from(member)
       .innerJoin(organization, eq(organization.id, member.organizationId))
-      .where(eq(member.userId, userId)),
+      .where(eq(member.userId, userId))
+      .orderBy(asc(member.createdAt))
+      .limit(LIST_ORGS_LIMIT),
   );
 
   return {
@@ -388,7 +444,16 @@ const listMembers = (orgId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"));
+    // Gate email disclosure by the caller's role: plain members must not be
+    // able to enumerate teammates' email addresses (mild PII leak + internal
+    // contact list). Strict policy applied uniformly — callers do not see
+    // their own email in this list either; they can read it from their
+    // profile/settings. Owners and admins see all emails so they can manage
+    // membership and invites.
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"),
+    );
+    const canSeeEmail = callerRole === "owner" || callerRole === "admin";
 
     const rows = yield* tryAsync(() =>
       ctx.db
@@ -410,7 +475,7 @@ const listMembers = (orgId: string) =>
         id: m.id,
         userId: m.userId,
         name: m.userName ?? "",
-        email: m.userEmail ?? "",
+        email: canSeeEmail ? (m.userEmail ?? null) : null,
         role: m.role,
         createdAt: m.createdAt.toISOString(),
       })),
@@ -457,17 +522,27 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
 const getInviteInfo = (token: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+
+    // Throttle before paying the hashing cost so rejected attempts are cheap.
+    const rateLimitKey = `${ctx.identity.userId}:${ctx.ipAddress ?? "unknown"}`;
+    if (!checkGetInviteInfoRateLimit(rateLimitKey)) {
+      return yield* Effect.fail(
+        new RateLimitError({
+          code: "RATE_LIMITED",
+          message: "Too many invite lookups",
+          hint: "Wait a minute before retrying the invite link.",
+        }),
+      );
+    }
+
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
 
     const [row] = yield* tryAsync(() =>
       ctx.db
         .select({
-          id: invitation.id,
-          organizationId: invitation.organizationId,
           role: invitation.role,
           expiresAt: invitation.expiresAt,
           usedAt: invitation.usedAt,
-          inviterId: invitation.inviterId,
           orgName: organization.name,
           orgSlug: organization.slug,
         })
@@ -508,12 +583,10 @@ const getInviteInfo = (token: string) =>
     }
 
     return {
-      invitationId: row.id,
       organizationName: row.orgName,
       organizationSlug: row.orgSlug,
       role: row.role ?? "member",
       expiresAt: row.expiresAt.toISOString(),
-      inviterUserId: row.inviterId,
     };
   });
 

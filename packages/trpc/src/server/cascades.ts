@@ -14,30 +14,34 @@ export async function onAgentRevoked(
   ipAddress?: string,
 ): Promise<void> {
   const now = new Date();
-  const activeSessions = await db
-    .select({ id: agentSessions.id, userId: agentSessions.userId })
-    .from(agentSessions)
-    .where(
-      and(
-        eq(agentSessions.agentId, agentId),
-        isNull(agentSessions.revokedAt),
-        gt(agentSessions.expiresAt, now),
-      ),
+
+  await db.transaction(async (tx) => {
+    const revoked = await tx
+      .update(agentSessions)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(agentSessions.agentId, agentId),
+          isNull(agentSessions.revokedAt),
+          gt(agentSessions.expiresAt, now),
+        ),
+      )
+      .returning({ id: agentSessions.id, userId: agentSessions.userId });
+
+    if (revoked.length === 0) return;
+
+    await tx.insert(auditLogs).values(
+      revoked.map((session) => ({
+        organizationId: orgId,
+        userId: revokedBy,
+        agentId,
+        eventType: "agent.revoke_cascade" as const,
+        result: "cascade" as const,
+        meta: { sessionId: session.id, revokedSessionUserId: session.userId },
+        ipAddress: ipAddress ?? null,
+      })),
     );
-
-  for (const session of activeSessions) {
-    await db.update(agentSessions).set({ revokedAt: now }).where(eq(agentSessions.id, session.id));
-
-    await db.insert(auditLogs).values({
-      organizationId: orgId,
-      userId: revokedBy,
-      agentId,
-      eventType: "agent.revoke_cascade",
-      result: "cascade",
-      meta: { sessionId: session.id },
-      ipAddress: ipAddress ?? null,
-    });
-  }
+  });
 }
 
 /**
@@ -51,16 +55,18 @@ export async function onItemDeleted(
   deletedBy: string,
   ipAddress?: string,
 ): Promise<void> {
-  await db.delete(permissions).where(eq(permissions.itemId, itemId));
+  await db.transaction(async (tx) => {
+    await tx.delete(permissions).where(eq(permissions.itemId, itemId));
 
-  await db.insert(auditLogs).values({
-    organizationId: orgId,
-    userId: deletedBy,
-    itemId,
-    eventType: "item.delete_cascade",
-    result: "cascade",
-    meta: {},
-    ipAddress: ipAddress ?? null,
+    await tx.insert(auditLogs).values({
+      organizationId: orgId,
+      userId: deletedBy,
+      itemId,
+      eventType: "item.delete_cascade",
+      result: "cascade",
+      meta: {},
+      ipAddress: ipAddress ?? null,
+    });
   });
 }
 

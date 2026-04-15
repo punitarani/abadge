@@ -58,6 +58,17 @@ export interface Ed25519PrivateKeyJwk {
   [key: string]: unknown;
 }
 
+/**
+ * Schedules `callback` to run after `delayMs` milliseconds and returns a timer
+ * handle compatible with `clearTimeout`. Defaults to `setTimeout`; test seams
+ * may supply a synchronous or mock scheduler to exercise retry logic without
+ * real timers.
+ */
+export type AbadgeScheduler = (
+  callback: () => void,
+  delayMs: number,
+) => ReturnType<typeof setTimeout>;
+
 /** Keypair-based session auth for agents (preferred). */
 export interface AbadgeAgentKeypairConfig {
   /** API endpoint URL (no trailing slash). */
@@ -66,6 +77,19 @@ export interface AbadgeAgentKeypairConfig {
   agentId: string;
   /** Ed25519 private key (CryptoKey, JWK object, or JSON-serialized JWK string). */
   privateKey: CryptoKey | Ed25519PrivateKeyJwk | string;
+  /**
+   * Optional callback fired whenever a background session refresh attempt
+   * fails. Receives the error and the 0-indexed attempt number. After all
+   * attempts are exhausted, the client flips to `sessionExpired` and outgoing
+   * API calls reject fast with `SESSION_REFRESH_FAILED`.
+   */
+  onSessionError?: (error: Error, attempt: number) => void;
+  /**
+   * Test seam: scheduler used for background refresh + retry timers. Defaults
+   * to `setTimeout`. Production callers should not set this.
+   * @internal
+   */
+  schedulerFn?: AbadgeScheduler;
 }
 
 /** Legacy API key auth for agents. */
@@ -245,12 +269,10 @@ interface SdkTrpcClient {
       getInviteInfo: TrpcQuery<
         { token: string },
         {
-          invitationId: string;
           organizationName: string;
           organizationSlug: string;
           role: string;
           expiresAt: string;
-          inviterUserId: string;
         }
       >;
       acceptInvite: TrpcMutation<
@@ -670,7 +692,9 @@ export class AbadgeUserClient {
       id: string;
       userId: string;
       name: string;
-      email: string;
+      // null for callers whose role is below admin — the server withholds
+      // teammates' email addresses to prevent org-internal PII enumeration.
+      email: string | null;
       role: string;
       createdAt: string;
     }>;
@@ -698,12 +722,10 @@ export class AbadgeUserClient {
   }
 
   async getInviteInfo(token: string): Promise<{
-    invitationId: string;
     organizationName: string;
     organizationSlug: string;
     role: string;
     expiresAt: string;
-    inviterUserId: string;
   }> {
     return call(
       () => this.client.organizations.members.getInviteInfo.query({ token }),
@@ -913,9 +935,21 @@ export class AbadgeUserClient {
  * const secret = await agent.accessReveal("item_id");
  * ```
  */
+/**
+ * Bounded exponential backoff schedule for background session refresh retries.
+ * 5 attempts total: 30s → 60s → 120s → 240s → 300s. After the final failure,
+ * the client flips to `sessionExpired` and outgoing calls reject fast.
+ * @internal
+ */
+export const REFRESH_RETRY_SCHEDULE_MS: readonly number[] = [
+  30_000, 60_000, 120_000, 240_000, 300_000,
+] as const;
+
 export class AbadgeAgentClient {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly config: AbadgeAgentClientConfig | AbadgeClientConfig;
+  private sessionExpired = false;
+  private lastExpiresAtMs = 0;
 
   /** @internal */
   protected client: SdkTrpcClient;
@@ -940,8 +974,37 @@ export class AbadgeAgentClient {
    * For keypair-auth agents: performs Ed25519 session exchange and starts the
    * background T-2 minute refresh loop. Must be called before using access methods.
    * For API-key agents: no-op (session is implicit).
+   *
+   * Timer lifecycle: the refresh timer is `.unref()`'d so it does NOT keep the
+   * Node/Bun event loop alive on its own. Long-lived consumers (MCP stdio,
+   * HTTP servers, daemon sockets) stay alive via their own handles and the
+   * refresh still fires. Short-lived consumers (CLI commands) exit cleanly
+   * once their work finishes — without `.unref()` they would hang ~13 min
+   * until the refresh fires. `disconnect()` remains the deterministic cleanup
+   * path for tests and any caller that wants to force teardown.
+   *
+   * Retry behaviour: a background refresh failure triggers bounded exponential
+   * backoff (see {@link REFRESH_RETRY_SCHEDULE_MS}). After all attempts fail
+   * the client flips to `sessionExpired=true` and outgoing API calls reject
+   * fast with `SESSION_REFRESH_FAILED` instead of flooding the server with
+   * 401s. Calling `connect()` again resets the state and re-runs the exchange.
    */
   async connect(): Promise<void> {
+    // Reset sessionExpired on every successful entry so disconnect()+connect()
+    // recovery works cleanly. If the exchange below throws, this flag stays
+    // false: the caller sees the error synchronously and decides what to do.
+    this.sessionExpired = false;
+    await this.exchangeSessionOnce();
+    this.scheduleRefreshFromExpiry();
+  }
+
+  /**
+   * Performs the two-step Ed25519 session exchange and updates the internal
+   * tRPC client with the fresh session token. Does NOT schedule the next
+   * refresh — that is the caller's responsibility. Throws on failure so both
+   * the initial `connect()` caller and the background refresh can react.
+   */
+  private async exchangeSessionOnce(): Promise<void> {
     if (!("agentId" in this.config)) {
       return;
     }
@@ -976,25 +1039,74 @@ export class AbadgeAgentClient {
 
     const { token: sessionToken, expiresAt } = sessionResult.session;
     this.client = buildTrpcClient(apiUrl, sessionToken);
+    this.lastExpiresAtMs = new Date(expiresAt).getTime();
+  }
 
-    // Schedule refresh at T-2 minutes before expiry
-    const expiresMs = new Date(expiresAt).getTime();
-    const refreshDelay = Math.max(0, expiresMs - Date.now() - 2 * 60 * 1000);
+  /** Schedule the next T-2min refresh based on the most recent session expiry. */
+  private scheduleRefreshFromExpiry(): void {
+    if (!("agentId" in this.config)) {
+      return;
+    }
+    const refreshDelay = Math.max(0, this.lastExpiresAtMs - Date.now() - 2 * 60 * 1000);
+    this.armTimer(refreshDelay, () => {
+      void this.refreshOnce(0);
+    });
+  }
+
+  /**
+   * Run a single refresh attempt. On success, schedule the next T-2min
+   * refresh (attempt counter implicitly resets: subsequent failures start
+   * over at 0). On failure, invoke `onSessionError`, log, and either
+   * schedule the next retry from {@link REFRESH_RETRY_SCHEDULE_MS} or
+   * flip to `sessionExpired` once all retries are exhausted.
+   *
+   * `attempt` is the 0-indexed failure counter: attempt 0 is the initial
+   * T-2min refresh; attempts 1..N consume REFRESH_RETRY_SCHEDULE_MS[0..N-1].
+   * Exhaustion fires after `REFRESH_RETRY_SCHEDULE_MS.length` retries have
+   * all failed.
+   */
+  private async refreshOnce(attempt: number): Promise<void> {
+    try {
+      await this.exchangeSessionOnce();
+      this.scheduleRefreshFromExpiry();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      if ("agentId" in this.config) {
+        this.config.onSessionError?.(error, attempt);
+      }
+      console.error(
+        `[AbadgeAgentClient] Session refresh attempt ${attempt + 1} failed: ${error.message}`,
+      );
+
+      const retryIndex = attempt; // next retry delay to consume
+      if (retryIndex >= REFRESH_RETRY_SCHEDULE_MS.length) {
+        this.sessionExpired = true;
+        console.error(
+          `[AbadgeAgentClient] Session refresh exhausted after ${attempt + 1} attempts (initial + ${REFRESH_RETRY_SCHEDULE_MS.length} retries); client is now in sessionExpired state. Outgoing calls will reject with SESSION_REFRESH_FAILED.`,
+        );
+        return;
+      }
+
+      const delayMs = REFRESH_RETRY_SCHEDULE_MS[retryIndex] ?? 30_000;
+      this.armTimer(delayMs, () => {
+        void this.refreshOnce(attempt + 1);
+      });
+    }
+  }
+
+  /**
+   * Replace the current refresh timer using the configured scheduler (default
+   * `setTimeout`) and `.unref()` it if supported. Centralising timer creation
+   * preserves the B1 event-loop-does-not-hang invariant for every refresh/retry.
+   */
+  private armTimer(delayMs: number, callback: () => void): void {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
-    this.refreshTimer = setTimeout(() => {
-      this.connect().catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[AbadgeAgentClient] Session refresh failed: ${msg}. Retrying in 30s...`);
-        this.refreshTimer = setTimeout(() => {
-          this.connect().catch((retryErr: unknown) => {
-            const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-            console.error(`[AbadgeAgentClient] Session refresh retry failed: ${retryMsg}`);
-          });
-        }, 30_000);
-      });
-    }, refreshDelay);
+    const schedule: AbadgeScheduler =
+      "agentId" in this.config && this.config.schedulerFn ? this.config.schedulerFn : setTimeout;
+    this.refreshTimer = schedule(callback, delayMs);
+    this.refreshTimer?.unref?.();
   }
 
   /**
@@ -1005,6 +1117,25 @@ export class AbadgeAgentClient {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+  }
+
+  /**
+   * Agent-scoped wrapper around the shared `call` helper that fast-rejects
+   * when background session refresh has been exhausted. Keeps the sessionExpired
+   * check in one place rather than leaking into every access method body.
+   */
+  private authedCall<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
+    if (this.sessionExpired) {
+      return Promise.reject(
+        new AbadgeApiError(
+          401,
+          "SESSION_REFRESH_FAILED",
+          "Agent session refresh exhausted; reconnect required",
+          "Call disconnect() + connect() again, or instantiate a fresh AbadgeAgentClient.",
+        ),
+      );
+    }
+    return call(operation, fallback);
   }
 
   // -- Enrollment -----------------------------------------------------------
@@ -1019,7 +1150,7 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} BOOTSTRAP_TOKEN_INVALID, BOOTSTRAP_TOKEN_EXPIRED
    */
   async enroll(bootstrapToken: string, publicKey: string): Promise<AgentEnrollmentResult> {
-    return call(
+    return this.authedCall(
       () => this.client.auth.enroll.mutate({ bootstrapToken, publicKey }),
       "Failed to enroll agent",
     );
@@ -1034,7 +1165,7 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} UNAUTHORIZED
    */
   async getCurrentAgent(): Promise<AgentResult> {
-    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
+    return this.authedCall(() => this.client.agents.self.query(), "Failed to fetch agent");
   }
 
   // -- Items (read-only) ----------------------------------------------------
@@ -1045,7 +1176,7 @@ export class AbadgeAgentClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return call(() => this.client.items.listForAgent.query(), "Failed to list items");
+    return this.authedCall(() => this.client.items.listForAgent.query(), "Failed to list items");
   }
 
   /**
@@ -1058,7 +1189,10 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} ITEM_NOT_FOUND, UNAUTHORIZED
    */
   async getItem(id: string): Promise<ItemResult> {
-    return call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
+    return this.authedCall(
+      () => this.client.items.get.query({ itemId: id }),
+      "Failed to fetch item",
+    );
   }
 
   // -- Audit ----------------------------------------------------------------
@@ -1070,7 +1204,10 @@ export class AbadgeAgentClient {
    * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
    */
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
-    return call(() => this.client.audit.listForAgent.query(filters), "Failed to fetch audit log");
+    return this.authedCall(
+      () => this.client.audit.listForAgent.query(filters),
+      "Failed to fetch audit log",
+    );
   }
 
   // -- Access ---------------------------------------------------------------
@@ -1086,7 +1223,7 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return call(
+    return this.authedCall(
       () => this.client.access.ciphertext.mutate({ itemId }),
       "Failed to access ciphertext",
     );
@@ -1105,7 +1242,7 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessReveal(itemId: string, field?: string): Promise<RevealAccessResponse> {
-    return call(
+    return this.authedCall(
       () => this.client.access.reveal.mutate({ itemId, ...(field ? { field } : {}) }),
       "Failed to reveal item",
     );
@@ -1130,7 +1267,7 @@ export class AbadgeAgentClient {
     mountType: "env" | "file",
     field?: string,
   ): Promise<MountAccessResponse> {
-    return call(
+    return this.authedCall(
       () => this.client.access.mount.mutate({ itemId, mountType, ...(field ? { field } : {}) }),
       "Failed to access mount payload",
     );

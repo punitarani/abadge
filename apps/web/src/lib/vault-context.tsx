@@ -46,6 +46,7 @@ const VaultContext = createContext<VaultContextValue | null>(null);
 
 export function VaultProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
 
   /* Legacy vault state */
   const [rootKey, setRootKey] = useState<Uint8Array | null>(null);
@@ -59,6 +60,14 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
   /* Per-profile key state */
   const [profileKeys, setProfileKeys] = useState<Map<string, Uint8Array>>(new Map());
   const profileTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /*
+   * Mirrors of profileKeys and rootKey for the unmount cleanup closure, which
+   * sees stale state otherwise. The refs are updated atomically inside every
+   * state setter below, so the "ref mirrors state" invariant is enforced by
+   * the code rather than by React's scheduler.
+   */
+  const profileKeysRef = useRef<Map<string, Uint8Array>>(profileKeys);
+  const rootKeyRef = useRef<Uint8Array | null>(rootKey);
 
   /* Profile unlock modal state */
   const [profileUnlockTarget, setProfileUnlockTarget] = useState<{
@@ -71,12 +80,30 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     reject: (err: Error) => void;
   } | null>(null);
 
-  /* Clean up all timers on unmount */
+  /*
+   * Zero all in-memory key material on unmount.
+   *
+   * The explicit lockVault/lockProfile paths zero keys, but React teardown
+   * (HMR/Fast Refresh, dashboard layout unmount on logout, route error
+   * boundaries, page hide) can destroy the provider without invoking those
+   * paths. This is the last-chance scrub. Reads from refs because the
+   * cleanup closure captures stale state.
+   */
   useEffect(() => {
     return () => {
+      const keys = profileKeysRef.current;
+      for (const key of keys.values()) {
+        key.fill(0);
+      }
+      keys.clear();
+      const rk = rootKeyRef.current;
+      if (rk) {
+        zeroKey(rk);
+      }
       for (const timer of profileTimers.current.values()) {
         clearTimeout(timer);
       }
+      profileTimers.current.clear();
     };
   }, []);
 
@@ -92,6 +119,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
         if (key) key.fill(0);
         const next = new Map(prev);
         next.delete(profileId);
+        profileKeysRef.current = next;
         return next;
       });
       profileTimers.current.delete(profileId);
@@ -106,19 +134,38 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
     if (rootKey) {
       zeroKey(rootKey);
     }
+    rootKeyRef.current = null;
     setRootKey(null);
     /* Also zero all profile keys */
     setProfileKeys((prev) => {
       for (const key of prev.values()) {
         key.fill(0);
       }
-      return new Map();
+      const next = new Map<string, Uint8Array>();
+      profileKeysRef.current = next;
+      return next;
     });
     for (const timer of profileTimers.current.values()) {
       clearTimeout(timer);
     }
     profileTimers.current.clear();
   }, [rootKey]);
+
+  /*
+   * Lock on org switch. Profile keys from the previous org are not reachable
+   * through the UI anyway (all item lists are org-scoped), but leaving them
+   * resident in JS memory violates the short-key-residency posture.
+   *
+   * Guarded by previousOrgId !== null to avoid running on initial mount,
+   * where no keys are unlocked yet.
+   */
+  const previousOrgId = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousOrgId.current !== null && previousOrgId.current !== activeOrgId) {
+      lockVault();
+    }
+    previousOrgId.current = activeOrgId;
+  }, [activeOrgId, lockVault]);
 
   const checkVaultExists = useCallback(async (): Promise<boolean> => {
     try {
@@ -166,6 +213,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       setProfileKeys((prev) => {
         const next = new Map(prev);
         next.set(profileId, key);
+        profileKeysRef.current = next;
         return next;
       });
       resetProfileTimer(profileId);
@@ -179,6 +227,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       if (key) key.fill(0);
       const next = new Map(prev);
       next.delete(profileId);
+      profileKeysRef.current = next;
       return next;
     });
     const timer = profileTimers.current.get(profileId);
@@ -243,6 +292,7 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
   /* ---- Modal callbacks ---- */
 
   const handleLegacyUnlockSuccess = useCallback((key: Uint8Array): void => {
+    rootKeyRef.current = key;
     setRootKey(key);
     setLegacyModalOpen(false);
     pendingLegacyUnlock.current?.resolve(key);

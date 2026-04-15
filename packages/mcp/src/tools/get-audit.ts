@@ -1,7 +1,7 @@
-import { AbadgeApiError } from "@abadge/sdk";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
+import { toErrorPayload } from "../errors.js";
 
 export const toolName = "get_audit";
 
@@ -26,7 +26,6 @@ export async function handler(
 
     return JSON.stringify({ entries: response.entries });
   } catch (error) {
-    const message = error instanceof AbadgeApiError ? error.message : "Failed to fetch audit logs";
-    return JSON.stringify({ error: message });
+    return JSON.stringify(toErrorPayload(error, "Failed to fetch audit logs"));
   }
 }

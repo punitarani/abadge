@@ -10,6 +10,13 @@ interface NodeTrpcClientOptions {
   orgId?: string;
 }
 
+/**
+ * Mirrors `NormalizedTrpcError` in `@abadge/trpc/client`. The trpc workspace
+ * package is `private: true` and the SDK is published (`access: "public"`),
+ * so a direct import would force the private package into the public
+ * dependency graph. Keep the two copies field-for-field identical; any change
+ * to hint/meta or new fields must be mirrored in both files.
+ */
 interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;

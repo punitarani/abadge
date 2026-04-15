@@ -8,6 +8,29 @@ import { createUserApiClient } from "../client";
 import { loadConfig, updateConfig } from "../config";
 import { error, errorMessage, json, success, table, warn } from "../output";
 
+/**
+ * Maps an agent kind to the local config slot that should persist its
+ * credentials. Remote agents don't run on the user's machine and must not
+ * overwrite any local slot — return `null` so the register handler skips
+ * persistence entirely.
+ */
+export function configSlotForKind(kind: AgentKind): "cli" | "mcp" | null {
+  switch (kind) {
+    case "local_cli":
+      return "cli";
+    case "local_mcp":
+      return "mcp";
+    case "remote":
+      return null;
+    default: {
+      // Compile-time exhaustiveness check — a new AGENT_KINDS variant will
+      // fail to typecheck here until this switch is updated.
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
 async function registerKeypairAgent(
   client: AbadgeUserClient,
   opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
@@ -41,19 +64,26 @@ async function registerKeypairAgent(
   const keyPath = join(agentsDir, `${result.agent.id}.ed25519.jwk`);
   writeFileSync(keyPath, JSON.stringify(privateKeyJwk), { mode: 0o600 });
 
-  const configSlot = opts.kind === "local_mcp" ? "mcp" : "cli";
-  updateConfig({
-    localAgents: {
-      ...loadConfig()?.localAgents,
-      [configSlot]: { agentId: result.agent.id, privateKeyPath: keyPath },
-    },
-  });
+  const configSlot = configSlotForKind(opts.kind);
+  if (configSlot) {
+    updateConfig({
+      localAgents: {
+        ...loadConfig()?.localAgents,
+        [configSlot]: { agentId: result.agent.id, privateKeyPath: keyPath },
+      },
+    });
+  }
 
   if (opts.json) {
     json({ agent: result.agent, privateKeyPath: keyPath });
   } else {
     success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
     success(`Private key saved to ${keyPath}`);
+    if (!configSlot) {
+      warn(
+        "Remote agent registered. Configure the remote service with the credentials shown above; no local config was written.",
+      );
+    }
   }
 }
 

@@ -49,6 +49,7 @@ Validation errors include an additional `issues` array:
 | `AGENT_SESSION_NOT_FOUND` | 401 | `abs_...` session token not found or already expired |
 | `AGENT_CHALLENGE_NOT_FOUND` | 401 | Challenge ID not found or already used |
 | `AGENT_CHALLENGE_EXPIRED` | 401 | Challenge has passed its 60-second TTL |
+| `SESSION_REFRESH_FAILED` | 401 | SDK-only: `AbadgeAgentClient` background session refresh exhausted all bounded-backoff retries; call `disconnect()` + `connect()` again or instantiate a fresh client |
 | `FORBIDDEN` | 403 | Authenticated but not authorized for this operation |
 | `PERMISSION_DENIED` | 403 | No matching permission for (agent, item, capability) |
 | `PERMISSION_EXPIRED` | 403 | Permission exists but has passed its `expiresAt` |

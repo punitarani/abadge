@@ -110,8 +110,20 @@ Output:
 
 Security:
 - Secret value is replaced with `[REDACTED]` throughout stdout and stderr before returning
-- Combined output is capped at 4 KB (stdout gets priority; stderr gets remaining budget)
+- Each stream is bounded to 8 KB (`MAX_OUTPUT_BYTES * 2`) pre-redaction to prevent OOM from a misbehaving subprocess; the combined post-redaction output is then capped at 4 KB (stdout gets priority; stderr gets remaining budget)
+- `truncated: true` is set when the pre-redaction cap dropped chunks or the post-redaction truncation cut output
 - No file paths or secret content are returned to the model
+
+#### Redaction limitations
+
+Output redaction uses exact substring replacement — it scans stdout/stderr for the secret's literal bytes and replaces each occurrence with `[REDACTED]`. It does NOT catch transformed forms:
+
+- **Base64 encoding** — a subprocess that emits `base64(secret)` leaks the secret
+- **URL-encoded / percent-encoded** — same
+- **JSON-escaped** (e.g., `\u0041`) — same
+- **Split across chunks** — if the subprocess emits the secret with a separator spliced in the middle (newline, null byte, ANSI escape) redaction may miss that occurrence. The 8 KB pre-redaction buffer mitigates chunk-boundary splits for short secrets but does not eliminate them.
+
+If a tool must emit data derived from the secret, the subprocess is responsible for scrubbing it. Redaction is defense-in-depth, not a guarantee.
 
 ### `mount_secret`
 
@@ -156,6 +168,16 @@ Input: none (optional filters may be supported).
 
 Output: JSON array of audit entries.
 
+## Error responses
+
+Tool errors are returned as JSON text content with the shape:
+
+```json
+{ "error": "Human-readable message", "code": "<domain code>", "hint": "<remediation>", "meta": { ... } }
+```
+
+`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer errors from the control plane). Non-`AbadgeApiError` failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only. LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
+
 ## Security model
 
 The MCP server treats the model as untrusted:
@@ -163,8 +185,8 @@ The MCP server treats the model as untrusted:
 | Guarantee | How it is enforced |
 |---|---|
 | Secrets never in model context | `list_items` returns metadata only; `run_with_secret` returns only redacted output; `mount_secret` returns only an opaque `mountId` |
-| Output redaction | `run_with_secret` scans stdout/stderr and replaces every occurrence of the secret with `[REDACTED]` |
-| Output size cap | Combined stdout+stderr capped at 4 KB |
+| Output redaction | `run_with_secret` scans stdout/stderr and replaces every occurrence of the secret with `[REDACTED]` (exact substring match only; see "Redaction limitations" above) |
+| Output size cap | Each stream bounded to 8 KB pre-redaction (prevents OOM from subprocess flooding); combined stdout+stderr capped at 4 KB post-redaction |
 | Opaque mount IDs | File paths are never returned; mount IDs are random hex tokens |
 | Restricted file permissions | Mounted files use mode 0600 inside a 0700 temp directory |
 | Auto-cleanup | Mounted files are deleted after 5 minutes; orphaned directories are swept on startup |

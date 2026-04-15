@@ -1,5 +1,6 @@
 "use client";
 
+import type { Profile } from "@abadge/core";
 import {
   DEFAULT_KDF_PARAMS,
   deriveKEK,
@@ -9,6 +10,7 @@ import {
   wrapRootKey,
   zeroKey,
 } from "@abadge/crypto";
+import { normalizeTrpcError } from "@abadge/trpc/client";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -19,10 +21,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrength } from "@/components/ui/password-strength";
 import { ProgressSteps } from "@/components/ui/progress-steps";
+import { authClient } from "@/lib/auth-client";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
+import { decideOnboardingState, isProfileBootstrapped, type TriageOrg } from "./onboarding-triage";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
+
+/** Subset of the `organizations.list` response shape used by the resume-triage effect. */
+interface OrgSummary {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+}
 
 function dicebearUrl(seed: string): string {
   return `https://api.dicebear.com/9.x/shapes/svg?seed=${encodeURIComponent(seed)}`;
@@ -208,13 +220,23 @@ async function submitStep2({
   }
   setLoading(true);
   try {
-    const profileResult = await browserTrpcClient.profiles.create.mutate({
-      orgId,
-      name: profileName.trim(),
-      storageMode,
-    });
-    if (storageMode === "zero_knowledge") {
-      await bootstrapZkProfile(profileResult.profile.id, vaultPassword);
+    const profileId = await resolveOrCreateProfile(orgId, profileName.trim(), storageMode);
+    // If bootstrap fails after the profile row is created, delete the orphan so
+    // the user can retry onboarding with the same profile name. Rollback errors
+    // are swallowed (logged only) — the original bootstrap error still surfaces
+    // to the UI.
+    // TODO(B4.1): test rollback path once @testing-library/react is wired into apps/web.
+    try {
+      if (storageMode === "zero_knowledge") {
+        await bootstrapZkProfile(profileId, vaultPassword);
+      }
+    } catch (bootstrapErr) {
+      await browserTrpcClient.profiles.delete
+        .mutate({ profileId })
+        .catch((rollbackErr: unknown) => {
+          console.warn("[onboarding] Failed to rollback unbootstrapped profile:", rollbackErr);
+        });
+      throw bootstrapErr;
     }
     toast.success("Profile created successfully");
     onSuccess();
@@ -225,12 +247,51 @@ async function submitStep2({
   }
 }
 
-export default function OnboardingPage(): React.ReactElement {
+/**
+ * Create a profile, or — on tab-close resume — adopt the orphan profile that
+ * was created but never bootstrapped. Without this, a user who abandoned the
+ * tab hits PROFILE_ALREADY_EXISTS on retry. If the conflict is against a
+ * profile that IS already bootstrapped, we rethrow so the user picks a new
+ * name rather than clobbering real data.
+ */
+async function resolveOrCreateProfile(
+  orgId: string,
+  name: string,
+  storageMode: "zero_knowledge" | "server_managed",
+): Promise<string> {
+  try {
+    const result = await browserTrpcClient.profiles.create.mutate({ orgId, name, storageMode });
+    return result.profile.id;
+  } catch (err) {
+    const normalized = normalizeTrpcError(err);
+    if (normalized.code !== "PROFILE_ALREADY_EXISTS") {
+      throw err;
+    }
+    const { profiles } = await browserTrpcClient.profiles.list.query({ orgId });
+    const existing = profiles.find((p: Profile) => p.name === name);
+    if (!existing || isProfileBootstrapped(existing)) {
+      throw err;
+    }
+    return existing.id;
+  }
+}
+
+export default function OnboardingPage(): React.ReactElement | null {
   const router = useRouter();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  // Stable primitive: Better Auth's useSession() can return a fresh object
+  // reference per render. Depending on session.user.id keeps effects from
+  // re-firing (and redoing organizations.list + per-org profiles.list) on
+  // unrelated renders.
+  const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
 
   // Step management
   const [currentStep, setCurrentStep] = useState(0);
+
+  // Tracks the resume-triage mount effect so we don't flash step 1 while we
+  // decide whether the user should resume step 2 or redirect to overview.
+  const [isCheckingOrgs, setIsCheckingOrgs] = useState(true);
 
   // Step 1 state
   const [orgName, setOrgName] = useState("");
@@ -291,8 +352,112 @@ export default function OnboardingPage(): React.ReactElement {
       confirmPassword,
       setLoading,
       setError,
-      onSuccess: () => router.push("/overview"),
+      onSuccess: () => {
+        // Belt-and-suspenders: clear vault password state on success.
+        // Paired with the unmount cleanup below (B17) and the autoComplete
+        // attributes on the inputs. We deliberately do NOT clear on error —
+        // the user may want to retry without retyping.
+        setVaultPassword("");
+        setConfirmPassword("");
+        router.push("/overview");
+      },
     });
+  }
+
+  // Auth guard — unauthenticated visitors shouldn't see the create-org form.
+  // Redirect happens in an effect to avoid side-effects during render.
+  useEffect(() => {
+    if (!sessionPending && !userId) {
+      router.replace("/login?redirect=/onboarding");
+    }
+  }, [sessionPending, userId, router]);
+
+  // B17: tear-down clearing of vault password state on unmount. Complements
+  // B5's success-path clear. Defense-in-depth only — React state "clearing"
+  // drops the reference but the old string may linger until GC. True zeroing
+  // would require Uint8Array-backed inputs (out of scope for MVP).
+  useEffect(() => {
+    return () => {
+      setVaultPassword("");
+      setConfirmPassword("");
+    };
+  }, []);
+
+  // Resume-triage: if the user abandoned onboarding (tab close after org
+  // create but before profile bootstrap), skip straight to step 2 for that
+  // org. If they are fully onboarded, redirect to /overview. If they have no
+  // orgs, fall through to step 1.
+  useEffect(() => {
+    if (sessionPending || !userId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const listResult = await browserTrpcClient.organizations.list.query();
+        if (cancelled) return;
+
+        const summaries = listResult.organizations ?? [];
+        if (summaries.length === 0) {
+          setIsCheckingOrgs(false);
+          return;
+        }
+
+        // Per-org profile fetch — 2-query chain. Acceptable for typical <=5 orgs.
+        const orgsWithProfiles: TriageOrg[] = await Promise.all(
+          summaries.map(async (o: OrgSummary) => {
+            const profResult = await browserTrpcClient.profiles.list.query({ orgId: o.id });
+            return {
+              id: o.id,
+              name: o.name,
+              slug: o.slug,
+              profiles: profResult.profiles.map((p: Profile) => ({
+                id: p.id,
+                storageMode: p.storageMode,
+                wrappedRootKey: p.wrappedRootKey,
+              })),
+            };
+          }),
+        );
+        if (cancelled) return;
+
+        const decision = decideOnboardingState(orgsWithProfiles);
+        if (decision.step === "redirect") {
+          router.replace("/overview");
+          return;
+        }
+        if (decision.step === "step2") {
+          const logo = summaries.find((s: OrgSummary) => s.id === decision.orgId)?.logo ?? null;
+          setActiveOrg({
+            id: decision.orgId,
+            slug: decision.orgSlug,
+            name: decision.orgName,
+            logo,
+          });
+          setOrgId(decision.orgId);
+          setOrgName(decision.orgName);
+          setOrgSlug(decision.orgSlug);
+          setCurrentStep(1);
+        }
+        setIsCheckingOrgs(false);
+      } catch (err) {
+        // If the resume probe fails (network, auth race, etc.), fall through
+        // to step 1. Users can still create a new org; we just won't auto-resume.
+        console.warn("[onboarding] Failed to detect existing org state:", err);
+        if (!cancelled) setIsCheckingOrgs(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionPending, userId, router, setActiveOrg]);
+
+  if (sessionPending || !session?.user || isCheckingOrgs) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-sm text-muted-foreground">Loading...</div>
+      </div>
+    );
   }
 
   return (
@@ -512,6 +677,12 @@ export default function OnboardingPage(): React.ReactElement {
                           <Input
                             id="vault-password"
                             type="password"
+                            // B17: non-login-looking name + new-password hint keep the browser's
+                            // credential manager from offering to save a password the server
+                            // never sees. `autoComplete="off"` is ignored by most modern browsers
+                            // on password fields; `new-password` is the standards-blessed hint.
+                            name="abadge-vault-password"
+                            autoComplete="new-password"
                             value={vaultPassword}
                             onChange={(e) => setVaultPassword(e.target.value)}
                             placeholder="Min 12 characters"
@@ -528,6 +699,9 @@ export default function OnboardingPage(): React.ReactElement {
                           <Input
                             id="vault-confirm-password"
                             type="password"
+                            // B17: see companion comment on the vault-password input above.
+                            name="abadge-vault-password-confirm"
+                            autoComplete="new-password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                             placeholder="Repeat password"
