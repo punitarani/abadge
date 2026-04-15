@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { generateEd25519KeyPair, signEd25519 } from "@abadge/crypto/shared";
 import type { Database } from "@abadge/db";
 import { eq } from "@abadge/db";
-import { agentEnrollmentTokens, agents, principals } from "@abadge/db/schema";
+import { agentEnrollmentTokens, agents } from "@abadge/db/schema";
 import type { AppBindings } from "../../context";
 import { createTrpcCallerFactory } from "../../init";
 import { appRouter } from "../../router";
@@ -35,22 +35,13 @@ function createPublicCaller(db: Database, auth: TestAuth) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Insert an unenrolled public_key_session agent into both tables (no publicKey). */
+/** Insert an unenrolled public_key_session agent (no publicKey). */
 async function insertUnenrolledAgent(
   db: Database,
   opts: { userId: string; orgId: string; name?: string },
 ): Promise<string> {
   const agentId = crypto.randomUUID();
   const name = opts.name ?? "lifecycle-bot";
-
-  await db.insert(principals).values({
-    id: agentId,
-    userId: opts.userId,
-    kind: "remote",
-    locality: "remote",
-    authMethod: "public_key_session",
-    name,
-  });
 
   await db.insert(agents).values({
     id: agentId,

@@ -1,4 +1,4 @@
-import { AGENT_KINDS, AGENT_LOCALITIES, PRINCIPAL_AUTH_METHODS } from "@abadge/core";
+import { AGENT_AUTH_METHODS, AGENT_KINDS, AGENT_LOCALITIES } from "@abadge/core";
 import { boolean, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { organization } from "./organization";
@@ -17,7 +17,7 @@ export const agents = pgTable(
     description: text("description"),
     kind: text("kind", { enum: AGENT_KINDS }).notNull(),
     locality: text("locality", { enum: AGENT_LOCALITIES }).notNull(),
-    authMethod: text("auth_method", { enum: PRINCIPAL_AUTH_METHODS }).notNull(),
+    authMethod: text("auth_method", { enum: AGENT_AUTH_METHODS }).notNull(),
     secretHash: text("secret_hash"),
     secretPrefix: text("secret_prefix"),
     publicKey: text("public_key"),

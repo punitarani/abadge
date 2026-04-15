@@ -1,4 +1,4 @@
-import type { AgentKind, Capability, PrincipalAuthMethod } from "@abadge/core";
+import type { AgentAuthMethod, AgentKind, Capability } from "@abadge/core";
 import { AGENT_SESSION_PREFIX, API_KEY_PREFIX } from "@abadge/core";
 import { serverEncrypt } from "@abadge/crypto/server";
 import {
@@ -244,14 +244,14 @@ export async function seedAgent(
     orgId: string;
     name?: string;
     kind?: AgentKind;
-    authMethod?: PrincipalAuthMethod;
+    authMethod?: AgentAuthMethod;
   },
 ): Promise<SeedAgentResult> {
   const agentId = uuid();
   const name = opts.name ?? `agent-${uuid()}`;
   const kind: AgentKind = opts.kind ?? "local_cli";
   const locality = localityFromKind(kind);
-  const authMethod: PrincipalAuthMethod = opts.authMethod ?? "legacy_api_key";
+  const authMethod: AgentAuthMethod = opts.authMethod ?? "legacy_api_key";
 
   let secretHash: string | null = null;
   let secretPrefix: string | null = null;

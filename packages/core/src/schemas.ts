@@ -1,11 +1,11 @@
 import { Schema } from "effect";
 import {
+  AGENT_AUTH_METHODS,
   AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
-  PRINCIPAL_AUTH_METHODS,
   STORAGE_MODES,
 } from "./constants";
 
@@ -18,7 +18,7 @@ const NullableIsoDateString = Schema.NullOr(IsoDateString);
 export const StorageModeSchema = Schema.Literal(...STORAGE_MODES);
 export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
 export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
-export const PrincipalAuthMethodSchema = Schema.Literal(...PRINCIPAL_AUTH_METHODS);
+export const AgentAuthMethodSchema = Schema.Literal(...AGENT_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
@@ -107,7 +107,7 @@ export const UpdateItemSchema = Schema.Union(
 const CreateAgentSchemaBase = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
-  authMethod: Schema.optional(PrincipalAuthMethodSchema),
+  authMethod: Schema.optional(AgentAuthMethodSchema),
   publicKey: Schema.optional(NonEmptyString),
   issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
@@ -260,7 +260,7 @@ export const AgentSchema = Schema.Struct({
   createdBy: NonEmptyString,
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
-  authMethod: PrincipalAuthMethodSchema,
+  authMethod: AgentAuthMethodSchema,
   name: NonEmptyString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   publicKeyConfigured: Schema.Boolean,

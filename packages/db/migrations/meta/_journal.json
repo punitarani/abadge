@@ -57,6 +57,13 @@
       "when": 1776150247814,
       "tag": "0007_items_org_required",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776236647814,
+      "tag": "0008_drop_legacy_tables",
+      "breakpoints": true
     }
   ]
 }

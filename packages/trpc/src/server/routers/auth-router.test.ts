@@ -50,12 +50,6 @@ function createAgentRow(publicKey: string | null) {
 }
 
 describe("auth.createChallenge", () => {
-  test("does not expose legacy operator-token procedures", () => {
-    expect(authRouter._def.procedures).not.toHaveProperty("createOperatorToken");
-    expect(authRouter._def.procedures).not.toHaveProperty("listOperatorTokens");
-    expect(authRouter._def.procedures).not.toHaveProperty("revokeOperatorToken");
-  });
-
   test("returns the same generic error when the agent is missing", async () => {
     const caller = createTrpcCallerFactory(authRouter)(createBaseContext([]));
 

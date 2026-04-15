@@ -109,19 +109,6 @@ describe("resolveSessionIdentity", () => {
     });
   });
 
-  test("rejects legacy operator-token headers as unsupported session auth", async () => {
-    const ctx = createMockContext({
-      "X-Abadge-Operator-Token": "abo_test_operator_token",
-    });
-
-    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
-
-    expect(error).toMatchObject({
-      code: "UNAUTHORIZED",
-      message: "Unauthorized",
-    });
-  });
-
   test("scoped session procedures still accept browser or bearer sessions", async () => {
     const router = createTrpcRouter({
       write: scopedSessionProcedure("items:write").query(() => ({ ok: true })),

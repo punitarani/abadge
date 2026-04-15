@@ -1,6 +1,6 @@
 "use client";
 
-import { AGENT_KINDS, type AgentKind, type PrincipalAuthMethod } from "@abadge/core";
+import { AGENT_KINDS, type AgentAuthMethod, type AgentKind } from "@abadge/core";
 import { useTRPC } from "@abadge/trpc/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
@@ -23,7 +23,7 @@ const KIND_CONFIG: Record<AgentKind, { label: string; description: string }> = {
 };
 
 const AUTH_CONFIG: Record<
-  PrincipalAuthMethod,
+  AgentAuthMethod,
   { label: string; description: string; recommended?: boolean }
 > = {
   public_key_session: {
@@ -57,7 +57,7 @@ export function CreateAgentPanel({ open, onClose }: CreateAgentPanelProps): Reac
   const [name, setName] = useState("");
   const [kind, setKind] = useState<AgentKind>("local_cli");
   const [description, setDescription] = useState("");
-  const [authMethod, setAuthMethod] = useState<PrincipalAuthMethod>("public_key_session");
+  const [authMethod, setAuthMethod] = useState<AgentAuthMethod>("public_key_session");
   const [issueBootstrap, setIssueBootstrap] = useState(true);
   const [loading, setLoading] = useState(false);
   const [registration, setRegistration] = useState<AgentRegistrationState | null>(null);

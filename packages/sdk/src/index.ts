@@ -13,6 +13,7 @@ export { AbadgeApiError } from "./errors";
 export { SecretValue } from "./secret-value";
 export type {
   Agent,
+  AgentAuthMethod,
   AgentBootstrapTokenResult,
   AgentChallengeResult,
   AgentEnrollmentResult,
@@ -57,7 +58,6 @@ export type {
   PermissionFilters,
   PermissionListResult,
   PermissionResult,
-  PrincipalAuthMethod,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,

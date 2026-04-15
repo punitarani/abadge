@@ -91,7 +91,7 @@ Owns:
 
 * shared domain types (ItemPayload, Agent, Permission, AuditEntry, Vault, etc.)
 * Effect Schema schemas (CreateItemSchema, CreateAgentSchema, CreatePermissionSchema, CiphertextAccessSchema, RevealAccessSchema, MountAccessSchema, AuditQuerySchema, VaultBootstrapSchema, etc.)
-* constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, PRINCIPAL_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, STANDARD_FIELDS_BY_KIND, CAPABILITY_MATRIX, token prefixes and TTLs)
+* constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, AGENT_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, STANDARD_FIELDS_BY_KIND, CAPABILITY_MATRIX, token prefixes and TTLs)
 * error shapes (BadRequestError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError, ConflictError, RateLimitError, FieldNotFoundError, MultiFieldItemError) — all carry `{ code, message, hint, meta }`
 * field delivery helpers: `resolveFieldValue`, `expandFieldSelection`, `listStringFields` in `secret-delivery.ts`
 
