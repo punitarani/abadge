@@ -156,6 +156,17 @@ function RegisterPageContent() {
           <Button type="submit" className="w-full" disabled={loading || socialLoading !== null}>
             {loading ? "Creating account..." : "Create account"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            By creating an account, you agree to the{" "}
+            <Link href="/terms" className="underline hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
 
         <SocialAuthButtons

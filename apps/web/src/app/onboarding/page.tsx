@@ -677,25 +677,14 @@ export default function OnboardingPage(): React.ReactElement | null {
               )}
             </div>
 
-            {/* Footer links */}
+            {/* Footer links — TOS moved to /register. This page is post-signup. */}
             {currentStep === 0 && (
-              <div className="space-y-3 text-center">
+              <div className="text-center">
                 <p className="text-sm text-muted-foreground">
                   Already have an account?{" "}
                   <Link href="/login" className="font-medium text-foreground hover:underline">
                     Sign in
                   </Link>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  By continuing, you agree to the{" "}
-                  <Link href="/terms" className="underline hover:text-foreground">
-                    Terms of Service
-                  </Link>{" "}
-                  and{" "}
-                  <Link href="/privacy" className="underline hover:text-foreground">
-                    Privacy Policy
-                  </Link>
-                  .
                 </p>
               </div>
             )}
