@@ -10,5 +10,3 @@ export * from "./items";
 export * from "./organization";
 export * from "./permissions";
 export * from "./profiles";
-// Legacy vault table retained while the web app migrates to profiles-based flows.
-export * from "./vaults";

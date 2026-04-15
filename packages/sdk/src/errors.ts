@@ -12,10 +12,10 @@ import { normalizeTrpcError } from "./trpc";
  * @example
  * ```typescript
  * try {
- *   await client.getVault();
+ *   await client.getProfile(profileId);
  * } catch (err) {
- *   if (err instanceof AbadgeApiError && err.code === "VAULT_NOT_FOUND") {
- *     // handle missing vault
+ *   if (err instanceof AbadgeApiError && err.code === "PROFILE_NOT_FOUND") {
+ *     // handle missing profile
  *   }
  * }
  * ```
