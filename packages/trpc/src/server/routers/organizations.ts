@@ -18,16 +18,18 @@ import {
   user,
 } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { logSessionAudit, logUserAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
 import {
   isUniqueViolation,
   runSessionEffect,
+  runUserEffect,
   SessionRequestContextTag,
   strictSchema,
   tryAsync,
+  UserRequestContextTag,
 } from "../effect";
-import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
+import { createTrpcRouter, requireOrgRole, sessionProcedure, userProcedure } from "../init";
 
 const OrgIdSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -199,7 +201,7 @@ function toSlug(name: string): string {
 
 const checkSlug = (slug: string) =>
   Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
+    const ctx = yield* UserRequestContextTag;
 
     const [existing] = yield* tryAsync(() =>
       ctx.db
@@ -224,7 +226,7 @@ function serializeOrg(row: typeof organization.$inferSelect) {
 
 const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =>
   Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
+    const ctx = yield* UserRequestContextTag;
     const userId = ctx.identity.userId;
     const orgId = crypto.randomUUID();
     const profileId = crypto.randomUUID();
@@ -294,7 +296,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       ),
     );
 
-    yield* logSessionAudit({
+    yield* logUserAudit({
       organizationId: orgId,
       userId,
       eventType: "org.create",
@@ -303,7 +305,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       meta: { slug },
     });
 
-    yield* logSessionAudit({
+    yield* logUserAudit({
       organizationId: orgId,
       userId,
       eventType: "profile.create",
@@ -331,7 +333,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
 const LIST_ORGS_LIMIT = 100;
 
 const listOrgs = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
+  const ctx = yield* UserRequestContextTag;
   const userId = ctx.identity.userId;
 
   const rows = yield* tryAsync(() =>
@@ -886,19 +888,19 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
   });
 
 export const organizationsRouter = createTrpcRouter({
-  create: sessionProcedure
+  create: userProcedure
     .input(strictSchema(CreateOrganizationSchema))
     .output(strictSchema(CreateOrgResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, createOrg(input))),
+    .mutation(({ ctx, input }) => runUserEffect(ctx, createOrg(input))),
 
-  checkSlug: sessionProcedure
+  checkSlug: userProcedure
     .input(strictSchema(CheckSlugSchema))
     .output(strictSchema(CheckSlugResultSchema))
-    .query(({ ctx, input }) => runSessionEffect(ctx, checkSlug(input.slug))),
+    .query(({ ctx, input }) => runUserEffect(ctx, checkSlug(input.slug))),
 
-  list: sessionProcedure
+  list: userProcedure
     .output(strictSchema(OrgListResultSchema))
-    .query(({ ctx }) => runSessionEffect(ctx, listOrgs)),
+    .query(({ ctx }) => runUserEffect(ctx, listOrgs)),
 
   get: sessionProcedure
     .input(strictSchema(OrgIdSchema))
