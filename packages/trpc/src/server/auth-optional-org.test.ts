@@ -153,4 +153,58 @@ describe("resolveSessionIdentityOptionalOrg", () => {
       message: "Unauthorized",
     });
   });
+
+  test("X-Abadge-Org-Id present and valid → returns header value", async () => {
+    const ctx = createOptionalOrgContext(
+      { headerMemberships: [{ organizationId: "org_requested" }] },
+      { "X-Abadge-Org-Id": "org_requested" },
+    );
+    ctx.auth = {
+      api: {
+        getSession: async () => ({
+          session: { userId: "user_header" },
+          user: { id: "user_header" },
+        }),
+      },
+      $context: Promise.resolve({
+        internalAdapter: { findSession: async () => null },
+      }),
+    } as BaseRequestContext["auth"];
+
+    const identity = await Effect.runPromise(resolveSessionIdentityOptionalOrg(ctx));
+
+    expect(identity).toEqual({
+      kind: "session",
+      userId: "user_header",
+      organizationId: "org_requested",
+      authMethod: "browser_session",
+    });
+  });
+
+  test("X-Abadge-Org-Id present but user is not a member → throws ORG_MEMBERSHIP_REQUIRED", async () => {
+    const ctx = createOptionalOrgContext(
+      { headerMemberships: [] },
+      { "X-Abadge-Org-Id": "org_not_mine" },
+    );
+    ctx.auth = {
+      api: {
+        getSession: async () => ({
+          session: { userId: "user_foreign" },
+          user: { id: "user_foreign" },
+        }),
+      },
+      $context: Promise.resolve({
+        internalAdapter: { findSession: async () => null },
+      }),
+    } as BaseRequestContext["auth"];
+
+    const error = await Effect.runPromise(
+      Effect.flip(resolveSessionIdentityOptionalOrg(ctx)),
+    );
+
+    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(error).toMatchObject({
+      code: "ORG_MEMBERSHIP_REQUIRED",
+    });
+  });
 });
