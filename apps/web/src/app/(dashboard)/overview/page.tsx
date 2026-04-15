@@ -26,6 +26,7 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
+import { countDefaultProfiles } from "./count-default-profiles";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -45,18 +46,6 @@ function resultBadgeVariant(result: string): BadgeVariant {
 }
 
 const AUDIT_COLUMN_COUNT = 6;
-
-/**
- * The "default" profile is the one created during onboarding and named
- * "internal" (see onboarding/page.tsx). Returning the count of
- * server_managed profiles here — which the previous implementation did —
- * was wrong: the internal profile is zero_knowledge, not server_managed,
- * so the subtitle always read "0 default (internal)" for a freshly
- * onboarded user.
- */
-export function countDefaultProfiles(profiles: ReadonlyArray<{ name: string }>): number {
-  return profiles.filter((p) => p.name === "internal").length;
-}
 
 function SummaryCards({
   isLoading,
