@@ -1,7 +1,9 @@
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
-import { loadConfig, requireActiveOrgId, updateConfig } from "../config";
+import { loadConfig, requireActiveOrgId, requireConfig, updateConfig } from "../config";
+import { daemonChangePassword, daemonLock, daemonStatus, daemonUnlock } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
+import { prompt } from "../prompt";
 
 export function createProfileCommand(): Command {
   const cmd = new Command("profile").description("Manage credential profiles");
@@ -86,5 +88,85 @@ export function createProfileCommand(): Command {
       }
     });
 
+  cmd.command("unlock").description("Unlock the active profile").action(profileUnlock);
+  cmd.command("lock").description("Lock the profile").action(profileLock);
+  cmd.command("status").description("Show profile status").action(profileStatus);
+  cmd
+    .command("change-password")
+    .description("Change active profile's master password")
+    .action(profileChangePassword);
+
   return cmd;
+}
+
+function requireActiveProfile(): string {
+  const config = requireConfig();
+  if (!config.activeProfileId) {
+    error("No active profile — run `abadge profile use <id|name>` first.");
+    process.exit(1);
+  }
+  return config.activeProfileId;
+}
+
+async function profileUnlock(): Promise<void> {
+  const profileId = requireActiveProfile();
+  const password = await prompt("Master password: ", true);
+  if (!password) {
+    error("Password is required.");
+    process.exit(1);
+  }
+
+  try {
+    const res = await daemonUnlock(profileId, password);
+    success(`Profile unlocked (key version ${res.keyVersion}).`);
+  } catch (err) {
+    error(errorMessage(err, "Failed to unlock profile."));
+    process.exit(1);
+  }
+}
+
+async function profileLock(): Promise<void> {
+  try {
+    await daemonLock();
+    success("Profile locked.");
+  } catch (err) {
+    error(errorMessage(err, "Failed to lock profile."));
+    process.exit(1);
+  }
+}
+
+async function profileStatus(): Promise<void> {
+  try {
+    const status = await daemonStatus();
+    console.log(`Profile: ${status.locked ? "locked" : "unlocked"}`);
+    console.log(`Key version: ${status.keyVersion}`);
+  } catch (err) {
+    error(errorMessage(err, "Failed to get profile status."));
+    process.exit(1);
+  }
+}
+
+async function profileChangePassword(): Promise<void> {
+  const profileId = requireActiveProfile();
+  const oldPassword = await prompt("Current master password: ", true);
+  const newPassword = await prompt("New master password: ", true);
+  const confirm = await prompt("Confirm new master password: ", true);
+
+  if (!oldPassword || !newPassword) {
+    error("Both old and new passwords are required.");
+    process.exit(1);
+  }
+
+  if (newPassword !== confirm) {
+    error("New passwords do not match.");
+    process.exit(1);
+  }
+
+  try {
+    await daemonChangePassword(profileId, oldPassword, newPassword);
+    success("Master password changed.");
+  } catch (err) {
+    error(errorMessage(err, "Failed to change password."));
+    process.exit(1);
+  }
 }
