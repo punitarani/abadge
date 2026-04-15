@@ -25,28 +25,30 @@ export interface AuditEntryInput {
   ipAddress?: string;
 }
 
+function buildAuditRow(entry: AuditEntryInput) {
+  return {
+    organizationId: entry.organizationId,
+    userId: entry.userId,
+    agentId: entry.agentId ?? null,
+    itemId: entry.itemId ?? null,
+    profileId: entry.profileId ?? null,
+    surface: entry.surface ?? "api",
+    eventType: entry.eventType,
+    result: entry.result,
+    deliveryMode: entry.deliveryMode ?? null,
+    field: entry.field ?? null,
+    purpose: entry.purpose ?? null,
+    meta: entry.meta ?? {},
+    ipAddress: entry.ipAddress ?? null,
+  };
+}
+
 export const logSessionAudit = (
   entry: AuditEntryInput,
 ): Effect.Effect<void, Error, SessionRequestContextTag> =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    yield* tryAsync(() =>
-      ctx.db.insert(auditLogs).values({
-        organizationId: entry.organizationId,
-        userId: entry.userId,
-        agentId: entry.agentId ?? null,
-        itemId: entry.itemId ?? null,
-        profileId: entry.profileId ?? null,
-        surface: entry.surface ?? "api",
-        eventType: entry.eventType,
-        result: entry.result,
-        deliveryMode: entry.deliveryMode ?? null,
-        field: entry.field ?? null,
-        purpose: entry.purpose ?? null,
-        meta: entry.meta ?? {},
-        ipAddress: entry.ipAddress ?? null,
-      }),
-    );
+    yield* tryAsync(() => ctx.db.insert(auditLogs).values(buildAuditRow(entry)));
   });
 
 export const logUserAudit = (
@@ -54,23 +56,7 @@ export const logUserAudit = (
 ): Effect.Effect<void, Error, UserRequestContextTag> =>
   Effect.gen(function* () {
     const ctx = yield* UserRequestContextTag;
-    yield* tryAsync(() =>
-      ctx.db.insert(auditLogs).values({
-        organizationId: entry.organizationId,
-        userId: entry.userId,
-        agentId: entry.agentId ?? null,
-        itemId: entry.itemId ?? null,
-        profileId: entry.profileId ?? null,
-        surface: entry.surface ?? "api",
-        eventType: entry.eventType,
-        result: entry.result,
-        deliveryMode: entry.deliveryMode ?? null,
-        field: entry.field ?? null,
-        purpose: entry.purpose ?? null,
-        meta: entry.meta ?? {},
-        ipAddress: entry.ipAddress ?? null,
-      }),
-    );
+    yield* tryAsync(() => ctx.db.insert(auditLogs).values(buildAuditRow(entry)));
   });
 
 export const logAgentAudit = (
@@ -78,23 +64,7 @@ export const logAgentAudit = (
 ): Effect.Effect<void, Error, AgentRequestContextTag> =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    yield* tryAsync(() =>
-      ctx.db.insert(auditLogs).values({
-        organizationId: entry.organizationId,
-        userId: entry.userId,
-        agentId: entry.agentId ?? null,
-        itemId: entry.itemId ?? null,
-        profileId: entry.profileId ?? null,
-        surface: entry.surface ?? "api",
-        eventType: entry.eventType,
-        result: entry.result,
-        deliveryMode: entry.deliveryMode ?? null,
-        field: entry.field ?? null,
-        purpose: entry.purpose ?? null,
-        meta: entry.meta ?? {},
-        ipAddress: entry.ipAddress ?? null,
-      }),
-    );
+    yield* tryAsync(() => ctx.db.insert(auditLogs).values(buildAuditRow(entry)));
   });
 
 export const logBaseAudit = (
@@ -102,21 +72,5 @@ export const logBaseAudit = (
 ): Effect.Effect<void, Error, BaseRequestContextTag> =>
   Effect.gen(function* () {
     const ctx = yield* BaseRequestContextTag;
-    yield* tryAsync(() =>
-      ctx.db.insert(auditLogs).values({
-        organizationId: entry.organizationId,
-        userId: entry.userId,
-        agentId: entry.agentId ?? null,
-        itemId: entry.itemId ?? null,
-        profileId: entry.profileId ?? null,
-        surface: entry.surface ?? "api",
-        eventType: entry.eventType,
-        result: entry.result,
-        deliveryMode: entry.deliveryMode ?? null,
-        field: entry.field ?? null,
-        purpose: entry.purpose ?? null,
-        meta: entry.meta ?? {},
-        ipAddress: entry.ipAddress ?? null,
-      }),
-    );
+    yield* tryAsync(() => ctx.db.insert(auditLogs).values(buildAuditRow(entry)));
   });
