@@ -10,7 +10,7 @@ const meta: Meta = {
   },
   args: {
     title: "Create item",
-    description: "Add a secret to your vault.",
+    description: "Add a secret to your profile.",
   },
 };
 
@@ -38,7 +38,7 @@ function OverlayStoryFrame({ forceMobile = false }: { forceMobile?: boolean }): 
         onOpenChange={setOpen}
         forceMobile={forceMobile}
         title="Create item"
-        description="Add a secret to your vault."
+        description="Add a secret to your profile."
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm">

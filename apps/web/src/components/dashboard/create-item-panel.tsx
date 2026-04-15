@@ -574,7 +574,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
         }
       }}
       title="Create item"
-      description="Add a secret to your vault."
+      description="Add a secret to your profile."
       footer={footer}
     >
       {content}

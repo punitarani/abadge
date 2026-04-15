@@ -128,7 +128,7 @@ export function ProfileUnlockModal({
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="profile-unlock-password">Vault password</Label>
+            <Label htmlFor="profile-unlock-password">Profile password</Label>
             <div className="relative">
               <Input
                 id="profile-unlock-password"
