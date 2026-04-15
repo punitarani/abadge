@@ -32,7 +32,7 @@ describe("cascade behavior", () => {
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
-    // Seed agent via helper (inserts into both principals and agents tables)
+    // Seed agent via helper (inserts into the agents table)
     const agent = await seedAgent(db, {
       userId: owner.userId,
       orgId: org.orgId,
@@ -256,7 +256,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
     const _agentA = await seedAgent(db, { userId: removed.userId, orgId: org.orgId });
     const _agentB = await seedAgent(db, { userId: removed.userId, orgId: org.orgId });
 
-    // A separate agent owned by the owner — used as the target of the removed member's grants.
+    // A separate agent owned by the owner — used as the target of the removed member's permissions.
     const targetAgent = await seedAgent(db, { userId: owner.userId, orgId: org.orgId });
     const item1 = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
     const item2 = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });

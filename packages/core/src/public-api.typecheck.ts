@@ -20,5 +20,9 @@ type _LegacyOperatorTokenScope = import("./index").OperatorTokenScope;
 type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInput;
 // @ts-expect-error legacy item display surface removed
 type _LegacyItemDisplayEntry = import("./index").ItemDisplayEntry;
+// @ts-expect-error PrincipalAuthMethod renamed to AgentAuthMethod
+type _LegacyPrincipalAuthMethod = import("./index").PrincipalAuthMethod;
+// @ts-expect-error PRINCIPAL_AUTH_METHODS renamed to AGENT_AUTH_METHODS
+type _LegacyPrincipalAuthMethods = typeof import("./index").PRINCIPAL_AUTH_METHODS;
 
 export const corePublicApiTypecheck = true;
