@@ -16,14 +16,21 @@ import { createVaultCommand } from "./commands/vault";
 
 const program = new Command()
   .name("abadge")
-  .description("Zero-knowledge credential vault CLI")
+  .description("Credential control plane for AI agents")
   .version(packageJson.version, "-v, --version")
   .option("--token-stdin", "Read a bearer session token from stdin for this command");
 
 program.addCommand(createLoginCommand());
 program.addCommand(createLogoutCommand());
 program.addCommand(createDaemonCommand());
-program.addCommand(createVaultCommand());
+// vault is a deprecated alias for 'profile'. _hidden removes it from
+// `abadge --help` while keeping the subcommands functional for backwards
+// compat. commander 13 does not expose a public hideHelp() method at runtime
+// (only in typings); _hidden is the internal instance property that the Help
+// formatter checks. Remove when the vault alias is dropped.
+const vaultCmd = createVaultCommand();
+(vaultCmd as unknown as { _hidden: boolean })._hidden = true;
+program.addCommand(vaultCmd);
 program.addCommand(createItemCommand());
 program.addCommand(createAgentCommand());
 program.addCommand(createPermissionCommand());
