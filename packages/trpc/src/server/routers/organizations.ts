@@ -273,10 +273,15 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
           createdAt: now,
         });
 
+        // Named "internal" so the web onboarding Step 2 (which passes
+        // name: "internal" to resolveOrCreateProfile) can adopt this row
+        // instead of creating a second profile. Before this name alignment,
+        // every fresh signup ended up with two profiles: the "default" seed
+        // here and the "internal" one from Step 2.
         await tx.insert(profiles).values({
           id: profileId,
           organizationId: orgId,
-          name: "default",
+          name: "internal",
           storageMode: "zero_knowledge",
           createdAt: now,
           updatedAt: now,
