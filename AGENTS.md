@@ -55,7 +55,7 @@ Owns:
 
 * Hono app with REST v1 routes and tRPC catch-all (`/trpc/*`)
 * Better Auth catch-all route (`/api/auth/*`)
-* tRPC routers: auth, organizations, profiles, vault (legacy), items, agents, permissions, access, audit
+* tRPC routers: auth, organizations, profiles, items, agents, permissions, access, audit
 * rate limiting middleware (auth: 60/min, tRPC/v1: 100/min)
 * CORS via Better Auth trusted origins
 * health check endpoint
@@ -89,7 +89,7 @@ Does not own:
 
 Owns:
 
-* shared domain types (ItemPayload, Agent, Permission, AuditEntry, Vault, etc.)
+* shared domain types (ItemPayload, Agent, Permission, AuditEntry, Profile, etc.)
 * Effect Schema schemas (CreateItemSchema, CreateAgentSchema, CreatePermissionSchema, CiphertextAccessSchema, RevealAccessSchema, MountAccessSchema, AuditQuerySchema, VaultBootstrapSchema, etc.)
 * constants (ITEM_KINDS, STORAGE_MODES, AGENT_KINDS, AGENT_LOCALITIES, AGENT_AUTH_METHODS, CAPABILITIES, AUDIT_EVENT_TYPES, AUDIT_RESULTS, STANDARD_FIELDS_BY_KIND, CAPABILITY_MATRIX, token prefixes and TTLs)
 * error shapes (BadRequestError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError, ConflictError, RateLimitError, FieldNotFoundError, MultiFieldItemError) — all carry `{ code, message, hint, meta }`
@@ -111,7 +111,7 @@ Owns:
 
 Owns:
 
-* tRPC router: auth, organizations, profiles, vault (legacy), items, agents, permissions, access, audit
+* tRPC router: auth, organizations, profiles, items, agents, permissions, access, audit
 * middleware: session procedure (user auth), agent procedure (agent auth), `requireOrgRole()` RBAC middleware
 * Effect integration for resolving session/agent identity
 * server-side encryption/decryption dispatch (ZK passthrough vs server-managed AES-GCM)
@@ -129,7 +129,7 @@ Does not own:
 
 Owns:
 
-* schema (vaults, profiles, items, agents, permissions, audit\_logs, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
+* schema (profiles, items, agents, permissions, audit\_logs, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
 * indexes (profiles: unique orgId+name; items: orgId, profileId; permissions: unique agentId+itemId+capability; audit\_logs: userId, agentId, itemId, occurredAt; agentSessions: tokenHash, agentId, userId, expiresAt)
 * database client factory
 * migrations config
@@ -209,7 +209,7 @@ Owns:
 * `AbadgeUserClient`: org management (`createOrganization`, `listOrganizations`, etc.), profile management (`createProfile`, `listProfiles`, etc.)
 * tRPC client wrapper for Node.js
 * typed error class (`AbadgeApiError` with `statusCode`, `code`, `hint`, `meta`, `issues`)
-* public API surface covering organizations, profiles, vault (legacy), items, agents, permissions, access, audit
+* public API surface covering organizations, profiles, items, agents, permissions, access, audit
 
 Does not own:
 
@@ -246,7 +246,6 @@ Does not own:
 * `agentEnrollmentTokens` — one-time bootstrap tokens for public-key agents. Hashed token, expiresAt (10 min), usedAt.
 * `agentSessionChallenges` — short-lived signed challenge material for session exchange. Hashed challenge, expiresAt (60s), usedAt.
 * `agentSessions` — short-lived access tokens (prefix `abs_`). Hashed token, expiresAt (15 min default), revokedAt, lastUsedAt.
-* `vaults` — legacy per-user vault records retained for web app compatibility; superseded by `profiles`.
 * `member`, `invitation` — org membership (Better Auth).
 * `user`, `session`, `account`, `verification`, `deviceCode` — auth tables (Better Auth).
 

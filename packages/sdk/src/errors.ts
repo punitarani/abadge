@@ -28,7 +28,7 @@ export class AbadgeApiError extends Error {
    * Machine-readable error code.
    *
    * Known codes are members of the `ErrorCode` union exported from `@abadge/core`
-   * (e.g. `"VAULT_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
+   * (e.g. `"PROFILE_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
    * Unknown server codes or tRPC transport codes fall back to plain strings,
    * so the type is `ErrorCode | string` to stay backward-compatible.
    */

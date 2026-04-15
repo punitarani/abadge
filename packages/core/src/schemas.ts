@@ -190,18 +190,6 @@ export const AuditQuerySchema = Schema.Struct({
   ),
 });
 
-export const VaultSchema = Schema.Struct({
-  id: NonEmptyString,
-  userId: NonEmptyString,
-  wrappedRootKey: NonEmptyString,
-  kdfSalt: NonEmptyString,
-  kdfParams: KdfParamsSchema,
-  recoveryWrappedRootKey: Schema.NullOr(Schema.String),
-  keyVersion: Schema.Int.pipe(Schema.positive()),
-  createdAt: IsoDateString,
-  updatedAt: IsoDateString,
-});
-
 export const ProfileSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
@@ -410,10 +398,6 @@ export const KeyVersionResultSchema = Schema.Struct({
 export const ItemVersionResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   contentVersion: Schema.Int.pipe(Schema.positive()),
-});
-
-export const VaultResultSchema = Schema.Struct({
-  vault: VaultSchema,
 });
 
 export const ProfileResultSchema = Schema.Struct({

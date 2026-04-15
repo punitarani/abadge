@@ -52,8 +52,6 @@ import type {
   SuccessResultSchema,
   UpdateItemSchema,
   VaultBootstrapSchema,
-  VaultResultSchema,
-  VaultSchema,
 } from "./schemas";
 
 type TypeOf<S extends Schema.Schema.Any> = Schema.Schema.Type<S>;
@@ -101,7 +99,6 @@ export type CiphertextAccessInput = TypeOf<typeof CiphertextAccessSchema>;
 export type RevealAccessInput = TypeOf<typeof RevealAccessSchema>;
 export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
 
-export type VaultResult = TypeOf<typeof VaultResultSchema>;
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
 export type AgentResult = TypeOf<typeof AgentResultSchema>;
@@ -119,5 +116,3 @@ export type ItemVersionResult = TypeOf<typeof ItemVersionResultSchema>;
 export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSchema>;
 export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
 export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
-
-export type Vault = TypeOf<typeof VaultSchema>;

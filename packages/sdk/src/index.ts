@@ -66,7 +66,5 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
-  Vault,
   VaultBootstrapInput,
-  VaultResult,
 } from "./types";
