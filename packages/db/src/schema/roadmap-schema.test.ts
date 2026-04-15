@@ -32,7 +32,7 @@ describe("roadmap schema foundations", () => {
     expect(Object.keys(columns)).toContain("kind");
     expect(Object.keys(columns)).toContain("tags");
     expect(Object.keys(columns)).toContain("userId");
-    expect(Object.keys(columns)).toContain("vaultId");
+    expect(Object.keys(columns)).not.toContain("vaultId");
     expect(columns.label.notNull).toBe(true);
   });
 

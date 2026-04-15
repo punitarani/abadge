@@ -43,9 +43,7 @@ export function OneTimeSecretDisplay({
     return () => clearInterval(interval);
   }, [expiresAt]);
 
-  // TODO(B4.1): add unit test that mocks navigator.clipboard.writeText to
-  // reject and asserts the error state + toast. Requires the web test harness
-  // from task B4.1 (jsdom + @testing-library/react).
+  // Covered by one-time-secret-display.test.tsx (B12 rejection path).
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(value);

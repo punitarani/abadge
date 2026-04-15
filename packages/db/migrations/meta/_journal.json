@@ -64,6 +64,20 @@
       "when": 1776236647814,
       "tag": "0008_drop_legacy_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776227339777,
+      "tag": "0009_invitation_schema_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776313739777,
+      "tag": "0010_drop_vaults",
+      "breakpoints": true
     }
   ]
 }

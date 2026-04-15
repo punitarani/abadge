@@ -9,6 +9,7 @@ const zeroKnowledgeItem: ItemDetail = {
   storageMode: "zero_knowledge",
   cryptoVersion: 1,
   contentVersion: 1,
+  profileId: "11111111-1111-1111-1111-111111111111",
   createdAt: "2026-04-04T15:23:00.000Z",
   updatedAt: "2026-04-05T09:42:00.000Z",
   encryptedItemKey: "encrypted-item-key",
@@ -21,6 +22,7 @@ const serverManagedItem: ItemDetail = {
   storageMode: "server_managed",
   cryptoVersion: 1,
   contentVersion: 1,
+  profileId: null,
   createdAt: "2026-04-03T11:15:00.000Z",
   updatedAt: "2026-04-03T11:15:00.000Z",
 };

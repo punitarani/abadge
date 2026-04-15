@@ -12,10 +12,10 @@ import { normalizeTrpcError } from "./trpc";
  * @example
  * ```typescript
  * try {
- *   await client.getVault();
+ *   await client.getProfile(profileId);
  * } catch (err) {
- *   if (err instanceof AbadgeApiError && err.code === "VAULT_NOT_FOUND") {
- *     // handle missing vault
+ *   if (err instanceof AbadgeApiError && err.code === "PROFILE_NOT_FOUND") {
+ *     // handle missing profile
  *   }
  * }
  * ```
@@ -28,7 +28,7 @@ export class AbadgeApiError extends Error {
    * Machine-readable error code.
    *
    * Known codes are members of the `ErrorCode` union exported from `@abadge/core`
-   * (e.g. `"VAULT_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
+   * (e.g. `"PROFILE_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
    * Unknown server codes or tRPC transport codes fall back to plain strings,
    * so the type is `ErrorCode | string` to stay backward-compatible.
    */

@@ -1,8 +1,25 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "@abadge/db";
-import { member, organization, profiles } from "@abadge/db/schema";
+import {
+  agentSessions,
+  agents,
+  auditLogs,
+  member,
+  organization,
+  permissions,
+  profiles,
+} from "@abadge/db/schema";
 import { _resetGetInviteInfoRateLimit } from "../../routers/organizations";
-import { seedMember, seedOrg, seedUser } from "../helpers/seed";
+import {
+  seedAgent,
+  seedAgentSession,
+  seedMember,
+  seedOrg,
+  seedPermission,
+  seedProfile,
+  seedServerItem,
+  seedUser,
+} from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -189,6 +206,71 @@ describe("organizations.list ordering + pagination", () => {
 });
 
 /**
+ * `organizations.list` carries a `hasBootstrappedProfile` boolean per org so
+ * the dashboard's onboarding-resume flow can decide whether to redirect to
+ * /overview or back to step 2 without paying an N+1 profiles.list per org.
+ *
+ * Definition (mirrors `isProfileBootstrapped` in apps/web/src/app/onboarding):
+ *   - server_managed profile: always counted as bootstrapped
+ *   - zero_knowledge profile: bootstrapped iff wrappedRootKey IS NOT NULL
+ *
+ * `organizations.create` auto-creates a default zero_knowledge profile with
+ * wrappedRootKey == null, so a freshly-created org is unbootstrapped until
+ * `profiles.bootstrap` runs.
+ */
+describe("organizations.list hasBootstrappedProfile flag", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("flag reflects per-org bootstrap state across all profile shapes", async () => {
+    const user = await seedUser(auth);
+
+    // org A: only the auto-created zk-no-root profile -> unbootstrapped
+    const orgA = await seedOrg(auth, user.userId, {
+      slug: `unboot-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    await seedProfile(db, orgA.orgId, { name: "default", storageMode: "zero_knowledge" });
+
+    // org B: server_managed profile -> bootstrapped (no key needed)
+    const orgB = await seedOrg(auth, user.userId, {
+      slug: `srv-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    await seedProfile(db, orgB.orgId, { name: "default", storageMode: "server_managed" });
+
+    // org C: zk profile WITH wrappedRootKey -> bootstrapped
+    const orgC = await seedOrg(auth, user.userId, {
+      slug: `boot-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    const { profileId: profileC } = await seedProfile(db, orgC.orgId, {
+      name: "default",
+      storageMode: "zero_knowledge",
+    });
+    await db
+      .update(profiles)
+      .set({ wrappedRootKey: "fake-wrapped-key", kdfSalt: "fake-salt" })
+      .where(eq(profiles.id, profileC));
+
+    const caller = createOperatorCaller(db, auth, user.headers, orgA.orgId);
+    const result = (await caller.organizations.list()) as {
+      organizations: Array<{ id: string; hasBootstrappedProfile: boolean }>;
+    };
+
+    const byId = new Map(result.organizations.map((o) => [o.id, o]));
+    expect(byId.get(orgA.orgId)?.hasBootstrappedProfile).toBe(false);
+    expect(byId.get(orgB.orgId)?.hasBootstrappedProfile).toBe(true);
+    expect(byId.get(orgC.orgId)?.hasBootstrappedProfile).toBe(true);
+  });
+});
+
+/**
  * `organizations.members.list` used to return every member's email to every
  * caller — a plain `member` could enumerate the org's entire contact list.
  * The fix gates `email` on the caller's role: owners and admins see emails,
@@ -347,5 +429,115 @@ describe("organizations.members.getInviteInfo rate limit", () => {
       const err = error as { cause?: { code?: string } };
       expect(err.cause?.code).not.toBe("RATE_LIMITED");
     }
+  });
+});
+
+/**
+ * `organizations.members.remove` runs three coupled writes — delete the member
+ * row, write the `org.member_remove` audit, run the cascade (revoke agents,
+ * invalidate sessions, delete granted permissions) — atomically inside a single
+ * `ctx.db.transaction(...)`. Phase D's A3.1 fix flipped the cascade signature
+ * to require a `Transaction` so the caller owns the boundary; this exercises
+ * the integration end-to-end through the tRPC surface.
+ */
+describe("organizations.members.remove atomic cascade", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("removes member, writes primary audit, AND cascades agents/sessions/permissions atomically", async () => {
+    const owner = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, owner.userId);
+    const removed = await seedUser(auth);
+    await seedMember(auth, orgId, removed.userId, "admin");
+    // seedMember does not return the membership id — look it up.
+    const [removedMembership] = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.organizationId, orgId), eq(member.userId, removed.userId)));
+    if (!removedMembership) throw new Error("seedMember did not insert a row");
+
+    // The removed user CREATED an agent and was granted a live session for it.
+    const memberAgent = await seedAgent(db, { userId: removed.userId, orgId });
+    const memberSession = await seedAgentSession(db, {
+      agentId: memberAgent.agentId,
+      userId: removed.userId,
+    });
+
+    // The removed user GRANTED a permission to a third-party agent (the owner's).
+    const ownerAgent = await seedAgent(db, { userId: owner.userId, orgId });
+    const item = await seedServerItem(db, { userId: owner.userId, orgId });
+    const removedGrant = await seedPermission(db, {
+      orgId,
+      agentId: ownerAgent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: removed.userId,
+    });
+
+    const ownerCaller = createOperatorCaller(db, auth, owner.headers, orgId);
+    const result = await ownerCaller.organizations.members.remove({
+      orgId,
+      memberId: removedMembership.id,
+    });
+    expect(result.ok).toBe(true);
+
+    // (1) Primary delete: the member row is gone.
+    const remainingMembers = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(eq(member.id, removedMembership.id));
+    expect(remainingMembers).toHaveLength(0);
+
+    // (2) Primary audit: org.member_remove landed.
+    const primaryAudit = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(eq(auditLogs.organizationId, orgId), eq(auditLogs.eventType, "org.member_remove")),
+      );
+    expect(primaryAudit).toHaveLength(1);
+    expect(primaryAudit[0]?.userId).toBe(owner.userId);
+    expect((primaryAudit[0]?.meta as { removedUserId?: string })?.removedUserId).toBe(
+      removed.userId,
+    );
+
+    // (3a) Cascade: removed member's agent was revoked.
+    const [revokedAgent] = await db
+      .select({ enabled: agents.enabled, revokedAt: agents.revokedAt })
+      .from(agents)
+      .where(eq(agents.id, memberAgent.agentId));
+    expect(revokedAgent?.enabled).toBe(false);
+    expect(revokedAgent?.revokedAt).not.toBeNull();
+
+    // (3b) Cascade: the agent's live session was invalidated.
+    const [revokedSession] = await db
+      .select({ revokedAt: agentSessions.revokedAt })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, memberSession.sessionId));
+    expect(revokedSession?.revokedAt).not.toBeNull();
+
+    // (3c) Cascade: the permission they GRANTED is gone.
+    const remainingGrants = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(eq(permissions.id, removedGrant.permissionId));
+    expect(remainingGrants).toHaveLength(0);
+
+    // (3d) Cascade audits: agent.revoke_cascade + permission.revoke_cascade.
+    const cascadeAudits = await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.organizationId, orgId), eq(auditLogs.result, "cascade")));
+    const cascadeEventTypes = cascadeAudits.map((row) => row.eventType).sort();
+    expect(cascadeEventTypes).toContain("agent.revoke_cascade");
+    expect(cascadeEventTypes).toContain("permission.revoke_cascade");
   });
 });

@@ -16,9 +16,16 @@ export interface ImportOptions {
 }
 
 export interface ImportSummary {
+  /** Net-new items written to the API. */
   created: number;
+  /** Existing items overwritten via `--overwrite`. */
   updated: number;
+  /** Existing items left alone because `--overwrite` was not set. */
   skipped: number;
+  /** Existing zero_knowledge items refused (cannot be rewrapped from this path). */
+  refused: number;
+  /** API errors during create/update. CLI exits non-zero when this is > 0. */
+  failed: number;
 }
 
 type ImportClient = Pick<AbadgeUserClient, "listItems" | "createItem" | "updateItem">;
@@ -42,7 +49,7 @@ function validateKind(kind: string): kind is ItemKind {
   return ITEM_KINDS.includes(kind as ItemKind);
 }
 
-type ImportOutcome = "created" | "updated" | "skipped";
+type ImportOutcome = "created" | "updated" | "skipped" | "refused" | "failed";
 
 async function importEntry(
   client: ImportClient,
@@ -66,7 +73,7 @@ async function importEntry(
       error(
         `Cannot overwrite '${entry.key}': existing item uses ${existing.storageMode} storage. Delete it first or use 'abadge item update'.`,
       );
-      return "skipped";
+      return "refused";
     }
     if (opts.dryRun) {
       console.log(`  [dry-run] Would overwrite item '${entry.key}'`);
@@ -82,7 +89,7 @@ async function importEntry(
       return "updated";
     } catch (err) {
       error(`Failed to update '${entry.key}': ${errorMessage(err, "unknown error")}`);
-      return "skipped";
+      return "failed";
     }
   }
 
@@ -96,7 +103,7 @@ async function importEntry(
     return "created";
   } catch (err) {
     error(`Failed to import '${entry.key}': ${errorMessage(err, "unknown error")}`);
-    return "skipped";
+    return "failed";
   }
 }
 
@@ -109,7 +116,13 @@ export async function importEntries(
   const existing = (await client.listItems()).items;
   const existingByLabel = new Map(existing.map((i) => [i.label, i]));
 
-  const summary: ImportSummary = { created: 0, updated: 0, skipped: 0 };
+  const summary: ImportSummary = {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    refused: 0,
+    failed: 0,
+  };
   for (const entry of entries) {
     const outcome = await importEntry(client, entry, kind, opts, existingByLabel.get(entry.key));
     summary[outcome]++;
@@ -149,15 +162,29 @@ async function runImport(
   }
 
   const client = await createUserApiClient();
-  const { created, updated, skipped } = await importEntries(client, entries, kind, {
+  const summary = await importEntries(client, entries, kind, {
     dryRun: opts.dryRun,
     overwrite: opts.overwrite,
   });
 
   const suffix = opts.dryRun ? " (dry-run)" : "";
-  console.log(
-    `\nImport complete${suffix}: ${created} created, ${updated} updated, ${skipped} skipped.`,
-  );
+  // Always show the three "happy" buckets so a clean run is unambiguous; only
+  // mention `refused` and `failed` when nonzero so success output stays terse.
+  const parts = [
+    `${summary.created} created`,
+    `${summary.updated} updated`,
+    `${summary.skipped} skipped`,
+  ];
+  if (summary.refused > 0) parts.push(`${summary.refused} refused`);
+  if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+  console.log(`\nImport complete${suffix}: ${parts.join(", ")}.`);
+
+  // Non-zero exit on real failures so CI pipelines surface the problem. Refused
+  // and skipped are intentional outcomes (user policy / missing --overwrite),
+  // not errors — they do not flip the exit code.
+  if (summary.failed > 0) {
+    process.exit(1);
+  }
 }
 
 export function createImportCommand(): Command {

@@ -62,3 +62,36 @@ export function decideOnboardingState(orgs: TriageOrg[]): OnboardingDecision {
 
   return { step: "redirect" };
 }
+
+/**
+ * The shape `organizations.list` returns: enough to triage onboarding
+ * without a follow-up profiles.list per org. The boolean is computed
+ * server-side; see `listOrgs` in packages/trpc/src/server/routers/organizations.ts.
+ */
+export interface ListedOrg {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  hasBootstrappedProfile: boolean;
+}
+
+/**
+ * Same triage as `decideOnboardingState`, but consumes the listOrgs response
+ * shape directly (one round trip) rather than the per-org-profiles array.
+ */
+export function decideOnboardingStateFromList(orgs: ListedOrg[]): OnboardingDecision {
+  if (orgs.length === 0) return { step: "step1" };
+
+  const incomplete = orgs.find((o) => !o.hasBootstrappedProfile);
+  if (incomplete) {
+    return {
+      step: "step2",
+      orgId: incomplete.id,
+      orgSlug: incomplete.slug,
+      orgName: incomplete.name,
+    };
+  }
+
+  return { step: "redirect" };
+}

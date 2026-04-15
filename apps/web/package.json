@@ -9,6 +9,7 @@
     "build:workers": "opennextjs-cloudflare build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "bun test src/",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "deploy": "bun run build:workers && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
@@ -42,17 +43,19 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@happy-dom/global-registrator": "^15",
+    "@opennextjs/cloudflare": "latest",
     "@storybook/addon-a11y": "^10.3.4",
     "@storybook/addon-docs": "^10.3.4",
     "@storybook/nextjs-vite": "^10.3.4",
-    "@opennextjs/cloudflare": "latest",
     "@tanstack/react-query-devtools": "^5.66.0",
-    "wrangler": "latest",
-    "@cloudflare/workers-types": "latest",
+    "@testing-library/react": "^16",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "storybook": "^10.3.4",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "wrangler": "latest"
   }
 }

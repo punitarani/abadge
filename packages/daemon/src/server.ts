@@ -224,14 +224,18 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
 
     "vault.unlock": async (params) => {
       const password = params.masterPassword as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!password) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "masterPassword is required" };
+      }
+      if (!profileId) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "profileId is required" };
       }
       if (!vault.locked) {
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
@@ -261,15 +265,19 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "vault.changePassword": async (params) => {
       const oldPassword = params.oldPassword as string | undefined;
       const newPassword = params.newPassword as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!oldPassword || !newPassword) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
           message: "oldPassword and newPassword are required",
         };
       }
+      if (!profileId) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "profileId is required" };
+      }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -285,7 +293,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
-      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, result);
+      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, profileId, result);
       return { ok: true };
     },
 

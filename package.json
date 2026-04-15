@@ -37,12 +37,10 @@
   "overrides": {
     "drizzle-orm": "0.45.2",
     "better-auth": "1.5.6",
-    "@better-auth/core": "1.5.6",
-    "@better-auth/api-key": "1.5.6"
+    "@better-auth/core": "1.5.6"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
-    "@better-auth/api-key": "1.5.6",
     "@better-auth/cli": "1.4.22",
     "@better-auth/core": "1.5.6",
     "@biomejs/biome": "latest",

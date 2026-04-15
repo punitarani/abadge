@@ -1,6 +1,6 @@
 "use client";
 
-import type { ItemKind } from "@abadge/core";
+import type { ItemKind, Profile } from "@abadge/core";
 import { ITEM_KINDS } from "@abadge/core";
 import { Warning } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { encryptItemForVault } from "@/lib/crypto-client";
+import { encryptItemForProfile } from "@/lib/crypto-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
@@ -474,16 +474,39 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
           };
 
       if (storageMode === "zero_knowledge") {
-        let key: Uint8Array;
+        if (!activeOrgId) {
+          toast.error("Select an organization before creating items.");
+          return;
+        }
 
+        // The server inserts ZK items into the org's first ZK profile
+        // (items router). Resolve the same profile here so the client
+        // encrypts with that profile's root key.
+        let zkProfileId: string;
         try {
-          key = await requestUnlock();
+          const result = await browserTrpcClient.profiles.list.query({ orgId: activeOrgId });
+          const zkProfile = result.profiles.find(
+            (p: Profile) => p.storageMode === "zero_knowledge",
+          );
+          if (!zkProfile) {
+            toast.error("No zero-knowledge profile in this organization. Create one first.");
+            return;
+          }
+          zkProfileId = zkProfile.id;
+        } catch (lookupError) {
+          toast.error(getClientErrorMessage(lookupError, "Failed to load profiles"));
+          return;
+        }
+
+        let key: Uint8Array;
+        try {
+          key = await requestUnlock(zkProfileId);
         } catch {
           toast.error("Master password required.");
           return;
         }
 
-        const encrypted = encryptItemForVault(payload, key);
+        const encrypted = encryptItemForProfile(payload, key);
         body = {
           storageMode: "zero_knowledge",
           label: name,

@@ -47,9 +47,7 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
-  Vault,
   VaultBootstrapInput,
-  VaultResult,
 } from "@abadge/core";
 
 export type BootstrapVaultInput = import("@abadge/core").VaultBootstrapInput;

@@ -29,7 +29,6 @@ import type {
   SetupRecoveryInput,
   SuccessResult,
   UpdateItemInput,
-  VaultResult,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -146,13 +145,6 @@ interface SdkTrpcClient {
     enroll: TrpcMutation<{ bootstrapToken: string; publicKey: string }, AgentEnrollmentResult>;
     issueBootstrapToken: TrpcMutation<{ agentId: string }, AgentBootstrapTokenResult>;
   };
-  vault: {
-    bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
-    get: TrpcQueryWithoutInput<VaultResult>;
-    changePassword: TrpcMutation<ChangePasswordInput, SuccessResult>;
-    rotateKey: TrpcMutation<RotateKeyInput, { ok: boolean; keyVersion: number }>;
-    setupRecovery: TrpcMutation<SetupRecoveryInput, SuccessResult>;
-  };
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
     list: TrpcQueryWithoutInput<ItemListResult>;
@@ -243,7 +235,15 @@ interface SdkTrpcClient {
       }
     >;
     list: TrpcQueryWithoutInput<{
-      organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+      organizations: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        role: string;
+        hasBootstrappedProfile: boolean;
+      }>;
     }>;
     get: TrpcQuery<{ orgId: string }, unknown>;
     update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
@@ -372,60 +372,6 @@ export class AbadgeUserClient {
     const token = "sessionToken" in config ? config.sessionToken : config.token;
     const orgId = "orgId" in config ? config.orgId : undefined;
     this.client = buildTrpcClient(config.apiUrl, token, orgId);
-  }
-
-  // -- Vault ----------------------------------------------------------------
-
-  /**
-   * Initialize the user's vault. Called once after account creation.
-   *
-   * @param data - Wrapped root key, KDF salt, and Argon2id parameters
-   * @returns The new vault's ID
-   * @throws {AbadgeApiError} VAULT_ALREADY_EXISTS
-   */
-  async bootstrapVault(data: BootstrapVaultInput): Promise<{ id: string }> {
-    return call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
-  }
-
-  /**
-   * Retrieve vault metadata (wrapped root key, KDF params, key version).
-   *
-   * @returns The vault object
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async getVault(): Promise<VaultResult> {
-    return call(() => this.client.vault.get.query(), "Failed to fetch vault");
-  }
-
-  /**
-   * Re-wrap the root key with a new password. The server never sees the unwrapped key.
-   *
-   * @param data - New wrapped root key, KDF salt, and Argon2id parameters
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async changePassword(data: ChangePasswordInput): Promise<SuccessResult> {
-    return call(() => this.client.vault.changePassword.mutate(data), "Failed to change password");
-  }
-
-  /**
-   * Rotate the vault root key. All zero-knowledge items must be re-keyed atomically.
-   *
-   * @param data - New wrapped root key and a list of rewrapped items ({ itemId, encryptedItemKey, keyNonce })
-   * @returns The new key version number
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async rotateKey(data: RotateKeyInput): Promise<{ ok: boolean; keyVersion: number }> {
-    return call(() => this.client.vault.rotateKey.mutate(data), "Failed to rotate key");
-  }
-
-  /**
-   * Set or update the recovery key for the vault.
-   *
-   * @param data - Root key wrapped by the recovery key
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async setupRecovery(data: SetupRecoveryInput): Promise<SuccessResult> {
-    return call(() => this.client.vault.setupRecovery.mutate(data), "Failed to set up recovery");
   }
 
   // -- Items ----------------------------------------------------------------
@@ -640,7 +586,15 @@ export class AbadgeUserClient {
    * List organizations the current user belongs to.
    */
   async listOrganizations(): Promise<{
-    organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+    organizations: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      logo: string | null;
+      createdAt: string;
+      role: string;
+      hasBootstrappedProfile: boolean;
+    }>;
   }> {
     return call(() => this.client.organizations.list.query(), "Failed to list organizations");
   }

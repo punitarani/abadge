@@ -7,8 +7,16 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, asc, eq, isNull } from "@abadge/db";
-import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
+import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
+import {
+  auditLogs,
+  invitation,
+  items,
+  member,
+  organization,
+  profiles,
+  user,
+} from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
@@ -86,6 +94,11 @@ const OrgListItemSchema = Schema.Struct({
   logo: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
   role: Schema.String,
+  // True iff at least one profile in this org is bootstrapped (server_managed
+  // is always bootstrapped; zero_knowledge requires wrappedRootKey to be set).
+  // Used by onboarding to detect orgs the user abandoned mid-flow without
+  // requiring an N+1 profiles.list call per org.
+  hasBootstrappedProfile: Schema.Boolean,
 });
 
 const CreateOrgResultSchema = Schema.Struct({
@@ -338,6 +351,27 @@ const listOrgs = Effect.gen(function* () {
       .limit(LIST_ORGS_LIMIT),
   );
 
+  // Second query: fetch organizationId for any profile that is "bootstrapped"
+  // (server_managed OR zk-with-wrappedRootKey). One round trip per page replaces
+  // the dashboard's previous N+1 profiles.list-per-org pattern. Empty-orgs case
+  // skips the query entirely.
+  const orgIds = rows.map((r) => r.id);
+  const bootstrappedOrgIds = new Set<string>();
+  if (orgIds.length > 0) {
+    const profileRows = yield* tryAsync(() =>
+      ctx.db
+        .selectDistinct({ organizationId: profiles.organizationId })
+        .from(profiles)
+        .where(
+          and(
+            inArray(profiles.organizationId, orgIds),
+            or(eq(profiles.storageMode, "server_managed"), isNotNull(profiles.wrappedRootKey)),
+          ),
+        ),
+    );
+    for (const p of profileRows) bootstrappedOrgIds.add(p.organizationId);
+  }
+
   return {
     organizations: rows.map((r) => ({
       id: r.id,
@@ -346,6 +380,7 @@ const listOrgs = Effect.gen(function* () {
       logo: r.logo ?? null,
       createdAt: r.createdAt.toISOString(),
       role: r.role,
+      hasBootstrappedProfile: bootstrappedOrgIds.has(r.id),
     })),
   };
 });
@@ -778,19 +813,34 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
       );
     }
 
-    yield* tryAsync(() => ctx.db.delete(member).where(eq(member.id, memberId)));
-
-    yield* logSessionAudit({
-      organizationId: orgId,
-      userId: ctx.identity.userId,
-      eventType: "org.member_remove",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: { removedUserId: target.userId, memberId },
-    });
-
+    // Atomic: delete the member row, write the org.member_remove audit
+    // entry, and run the cascade that revokes their agents, sessions, and
+    // granted permissions — all inside one transaction. Prior shape ran
+    // these as three sequential tryAsync steps without a shared tx, so a
+    // mid-flight failure (DB blip, cascade throw) could leave the member
+    // gone but their credentials still live. `onMemberRemoved` internally
+    // opens a transaction on the db-or-tx it is handed; Postgres treats
+    // that inner call as a savepoint on this outer tx.
+    //
+    // The audit insert is written inline rather than through
+    // logSessionAudit so it shares the same tx; logSessionAudit closes
+    // over ctx.db and would commit outside the transaction boundary.
     yield* tryAsync(() =>
-      onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId, ctx.ipAddress),
+      ctx.db.transaction(async (tx) => {
+        await tx.delete(member).where(eq(member.id, memberId));
+
+        await tx.insert(auditLogs).values({
+          organizationId: orgId,
+          userId: ctx.identity.userId,
+          surface: "api",
+          eventType: "org.member_remove",
+          result: "allowed",
+          ipAddress: ctx.ipAddress ?? null,
+          meta: { removedUserId: target.userId, memberId },
+        });
+
+        await onMemberRemoved(tx, orgId, target.userId, ctx.identity.userId, ctx.ipAddress);
+      }),
     );
 
     return { ok: true };

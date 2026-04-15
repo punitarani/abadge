@@ -1,16 +1,7 @@
-import type {
-  Agent,
-  AuditEntry,
-  ItemDetail,
-  ItemSummary,
-  Permission,
-  Profile,
-  Vault,
-} from "@abadge/core";
+import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Profile } from "@abadge/core";
 import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
-import type { agents, auditLogs, items, permissions, profiles, vaults } from "@abadge/db/schema";
+import type { agents, auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 
-type VaultRow = typeof vaults.$inferSelect;
 type ProfileRow = typeof profiles.$inferSelect;
 type ItemRow = typeof items.$inferSelect;
 type AgentRow = typeof agents.$inferSelect;
@@ -110,20 +101,6 @@ export function serializeProfile(row: ProfileRow): Profile {
   };
 }
 
-export function serializeVault(row: VaultRow): Vault {
-  return {
-    id: row.id,
-    userId: row.userId,
-    wrappedRootKey: row.wrappedRootKey,
-    kdfSalt: row.kdfSalt,
-    kdfParams: row.kdfParams as Vault["kdfParams"],
-    recoveryWrappedRootKey: row.recoveryWrappedRootKey,
-    keyVersion: row.keyVersion,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
 export function serializeItemSummary(
   row: Pick<
     ItemRow,
@@ -148,6 +125,7 @@ export function serializeItemDetail(row: ItemRow): ItemDetail {
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,
+    profileId: row.profileId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

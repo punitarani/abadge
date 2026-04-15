@@ -1,20 +1,34 @@
 import { Command } from "commander";
+import { requireConfig } from "../config";
 import { daemonChangePassword, daemonLock, daemonStatus, daemonUnlock } from "../daemon";
 import { error, errorMessage, success } from "../output";
 import { prompt } from "../prompt";
 
 export function createVaultCommand(): Command {
-  const cmd = new Command("vault").description("Manage vault encryption");
+  const cmd = new Command("vault").description("Manage profile encryption");
 
-  cmd.command("unlock").description("Unlock the vault").action(vaultUnlock);
-  cmd.command("lock").description("Lock the vault").action(vaultLockCmd);
+  cmd.command("unlock").description("Unlock the active profile").action(vaultUnlock);
+  cmd.command("lock").description("Lock the vault (all unlocked profiles)").action(vaultLockCmd);
   cmd.command("status").description("Show vault status").action(vaultStatusCmd);
-  cmd.command("change-password").description("Change master password").action(vaultChangePassword);
+  cmd
+    .command("change-password")
+    .description("Change active profile's master password")
+    .action(vaultChangePassword);
 
   return cmd;
 }
 
+function requireActiveProfile(): string {
+  const config = requireConfig();
+  if (!config.activeProfileId) {
+    error("No active profile — run `abadge profile use <id|name>` first.");
+    process.exit(1);
+  }
+  return config.activeProfileId;
+}
+
 async function vaultUnlock(): Promise<void> {
+  const profileId = requireActiveProfile();
   const password = await prompt("Master password: ", true);
   if (!password) {
     error("Password is required.");
@@ -22,10 +36,10 @@ async function vaultUnlock(): Promise<void> {
   }
 
   try {
-    const res = await daemonUnlock(password);
-    success(`Vault unlocked (key version ${res.keyVersion}).`);
+    const res = await daemonUnlock(profileId, password);
+    success(`Profile unlocked (key version ${res.keyVersion}).`);
   } catch (err) {
-    error(errorMessage(err, "Failed to unlock vault."));
+    error(errorMessage(err, "Failed to unlock profile."));
     process.exit(1);
   }
 }
@@ -52,6 +66,7 @@ async function vaultStatusCmd(): Promise<void> {
 }
 
 async function vaultChangePassword(): Promise<void> {
+  const profileId = requireActiveProfile();
   const oldPassword = await prompt("Current master password: ", true);
   const newPassword = await prompt("New master password: ", true);
   const confirm = await prompt("Confirm new master password: ", true);
@@ -67,7 +82,7 @@ async function vaultChangePassword(): Promise<void> {
   }
 
   try {
-    await daemonChangePassword(oldPassword, newPassword);
+    await daemonChangePassword(profileId, oldPassword, newPassword);
     success("Master password changed.");
   } catch (err) {
     error(errorMessage(err, "Failed to change password."));

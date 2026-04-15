@@ -41,7 +41,7 @@ describe("importEntries", () => {
       overwrite: false,
     });
 
-    expect(summary).toEqual({ created: 1, updated: 0, skipped: 0 });
+    expect(summary).toEqual({ created: 1, updated: 0, skipped: 0, refused: 0, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(1);
     expect(client.updateItem).toHaveBeenCalledTimes(0);
   });
@@ -55,7 +55,7 @@ describe("importEntries", () => {
       { overwrite: false },
     );
 
-    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1 });
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1, refused: 0, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(0);
     expect(client.updateItem).toHaveBeenCalledTimes(0);
   });
@@ -71,7 +71,7 @@ describe("importEntries", () => {
       { overwrite: true },
     );
 
-    expect(summary).toEqual({ created: 0, updated: 1, skipped: 0 });
+    expect(summary).toEqual({ created: 0, updated: 1, skipped: 0, refused: 0, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(0);
     expect(client.updateItem).toHaveBeenCalledTimes(1);
 
@@ -89,7 +89,7 @@ describe("importEntries", () => {
     });
   });
 
-  test("refuses to overwrite zero_knowledge items even with --overwrite", async () => {
+  test("refuses to overwrite zero_knowledge items (counted in refused, not skipped)", async () => {
     const client = makeClient([
       itemSummary({ id: "item_zk", label: "ZK_SECRET", storageMode: "zero_knowledge" }),
     ]);
@@ -100,7 +100,7 @@ describe("importEntries", () => {
       { overwrite: true },
     );
 
-    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1 });
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 1, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(0);
     expect(client.updateItem).toHaveBeenCalledTimes(0);
   });
@@ -117,7 +117,7 @@ describe("importEntries", () => {
       { overwrite: true, dryRun: true },
     );
 
-    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0 });
+    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0, refused: 0, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(0);
     expect(client.updateItem).toHaveBeenCalledTimes(0);
   });
@@ -134,8 +134,37 @@ describe("importEntries", () => {
       { overwrite: true },
     );
 
-    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0 });
+    expect(summary).toEqual({ created: 1, updated: 1, skipped: 0, refused: 0, failed: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(1);
+    expect(client.updateItem).toHaveBeenCalledTimes(1);
+  });
+
+  test("API errors during create are counted in failed (drives non-zero exit)", async () => {
+    const client = makeClient([]);
+    // Override createItem to fail; the runImport caller exits non-zero based on
+    // summary.failed > 0, so the contract being tested here is that the bucket
+    // is populated correctly.
+    client.createItem = mock(async (_data: CreateItemInput) => {
+      throw new Error("network blew up");
+    });
+    const summary = await importEntries(client, [{ key: "WILL_FAIL", value: "v" }], "opaque", {
+      overwrite: false,
+    });
+
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 0, failed: 1 });
+    expect(client.createItem).toHaveBeenCalledTimes(1);
+  });
+
+  test("API errors during update are counted in failed", async () => {
+    const client = makeClient([itemSummary({ id: "item_1", label: "DB_URL", contentVersion: 1 })]);
+    client.updateItem = mock(async (_id: string, _data: UpdateItemInput) => {
+      throw new Error("conflict");
+    });
+    const summary = await importEntries(client, [{ key: "DB_URL", value: "v" }], "opaque", {
+      overwrite: true,
+    });
+
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 0, failed: 1 });
     expect(client.updateItem).toHaveBeenCalledTimes(1);
   });
 });

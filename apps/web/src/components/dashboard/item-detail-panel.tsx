@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { decryptItemFromVault } from "@/lib/crypto-client";
+import { decryptItemFromProfile } from "@/lib/crypto-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
@@ -112,21 +112,29 @@ export function ItemDetailPanel({
   const item = itemQuery.data?.item ?? null;
 
   async function revealZeroKnowledge(): Promise<string | null> {
-    if (!item?.encryptedItemKey || !item.ciphertext) {
+    if (!item || item.storageMode !== "zero_knowledge") {
+      toast.error("Missing encrypted data.");
+      return null;
+    }
+    if (!item.profileId) {
+      toast.error("Item is not associated with a profile.");
+      return null;
+    }
+    if (!item.encryptedItemKey || !item.ciphertext) {
       toast.error("Missing encrypted data.");
       return null;
     }
 
     let key: Uint8Array;
     try {
-      key = await requestUnlock();
+      key = await requestUnlock(item.profileId);
     } catch {
       toast.error("Master password required.");
       return null;
     }
 
     try {
-      const plaintext = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, key);
+      const plaintext = decryptItemFromProfile(item.encryptedItemKey, item.ciphertext, key);
       return JSON.stringify(plaintext, null, 2);
     } catch {
       toast.error("Failed to decrypt item.");
