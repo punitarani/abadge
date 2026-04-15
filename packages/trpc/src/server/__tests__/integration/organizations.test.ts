@@ -68,7 +68,7 @@ describe("organizations.create atomicity + slug translation", () => {
       .limit(1);
     expect(profile).toBeDefined();
     expect(profile?.organizationId).toBe(result.organization.id);
-    expect(profile?.name).toBe("default");
+    expect(profile?.name).toBe("internal");
 
     // Caller is registered as owner of the new org.
     const [ownerMember] = await db
@@ -117,7 +117,7 @@ describe("organizations.create atomicity + slug translation", () => {
       .from(profiles)
       .where(eq(profiles.organizationId, orgRows[0]?.id ?? ""));
     expect(profileRows.length).toBe(1);
-    expect(profileRows[0]?.name).toBe("default");
+    expect(profileRows[0]?.name).toBe("internal");
   });
 
   test("pre-check slug collision returns SLUG_TAKEN (non-racing path)", async () => {
