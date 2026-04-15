@@ -380,6 +380,8 @@ The daemon chooses the file path; the CLI prints it for use in subsequent comman
 
 Imports secrets from an `.env` file, creating one server-managed item per variable. Pass `--overwrite` to update existing items (matched by label). Without it, existing labels are skipped with a warning. `--overwrite` refuses to touch zero-knowledge items — delete and re-import, or use `abadge item update`.
 
+The summary line reports five buckets: `created`, `updated`, `skipped` (existed without `--overwrite`), `refused` (zero-knowledge item under `--overwrite`), `failed` (API error during write). The CLI exits non-zero when `failed > 0`; `skipped` and `refused` are intentional outcomes and do not flip the exit code.
+
 ```bash
 abadge import .env
 abadge import secrets.env --kind api_key --overwrite
