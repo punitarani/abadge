@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,6 @@ import { authClient } from "@/lib/auth-client";
 import { bootstrapZkProfile, resolveOrCreateProfile } from "@/lib/profile-bootstrap";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
-import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];

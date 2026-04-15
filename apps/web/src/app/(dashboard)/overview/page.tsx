@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, AuditEntry, Permission, Profile } from "@abadge/core";
+import type { Agent, AuditEntry, Permission } from "@abadge/core";
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import Link from "next/link";

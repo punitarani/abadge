@@ -92,15 +92,17 @@ export function ProfileUnlockModal({
             <LockSimple className="h-5 w-5 text-muted-foreground" />
             <DialogTitle>Unlock {profileName}</DialogTitle>
           </div>
-          <DialogDescription>Enter your profile password to decrypt this profile.</DialogDescription>
+          <DialogDescription>
+            Enter your profile password to decrypt this profile.
+          </DialogDescription>
         </DialogHeader>
 
         {/* Security callout */}
         <div className="flex items-start gap-2.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 dark:border-emerald-800 dark:bg-emerald-950/30">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <p className="text-xs text-emerald-800 dark:text-emerald-300">
-            Your profile password never leaves this device. It derives a local key used to decrypt the
-            profile root key — no password is transmitted to abadge servers.
+            Your profile password never leaves this device. It derives a local key used to decrypt
+            the profile root key — no password is transmitted to abadge servers.
           </p>
         </div>
 

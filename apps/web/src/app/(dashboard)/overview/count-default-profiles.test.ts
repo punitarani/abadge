@@ -4,11 +4,7 @@ import { countDefaultProfiles } from "./page";
 describe("countDefaultProfiles", () => {
   test("counts profiles whose name === 'internal'", () => {
     expect(
-      countDefaultProfiles([
-        { name: "internal" },
-        { name: "customer-a" },
-        { name: "customer-b" },
-      ]),
+      countDefaultProfiles([{ name: "internal" }, { name: "customer-a" }, { name: "customer-b" }]),
     ).toBe(1);
   });
 

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useRef } from "react";
+import type React from "react";
+import { useRef } from "react";
 
 export type StorageMode = "zero_knowledge" | "server_managed";
 
@@ -20,7 +21,8 @@ const OPTIONS = [
   {
     value: "server_managed" as const,
     label: "Server-managed",
-    description: "Items are encrypted server-side with AES-256-GCM. Simpler setup, no client-side crypto.",
+    description:
+      "Items are encrypted server-side with AES-256-GCM. Simpler setup, no client-side crypto.",
   },
 ];
 
@@ -33,10 +35,7 @@ export function StorageModePicker({
 }: StorageModePickerProps): React.ReactElement {
   const itemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
-  function handleKeyDown(
-    currentIndex: number,
-    e: React.KeyboardEvent<HTMLDivElement>,
-  ): void {
+  function handleKeyDown(currentIndex: number, e: React.KeyboardEvent<HTMLDivElement>): void {
     if (disabled) return;
 
     let nextIndex: number | null = null;
@@ -61,18 +60,20 @@ export function StorageModePicker({
         nextIndex = OPTIONS.length - 1;
         break;
       case " ":
-      case "Enter":
+      case "Enter": {
         e.preventDefault();
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        onChange(OPTIONS[currentIndex]!.value);
+        const current = OPTIONS[currentIndex];
+        if (current) onChange(current.value);
         return;
+      }
       default:
         return;
     }
 
     if (nextIndex !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      onChange(OPTIONS[nextIndex]!.value);
+      const next = OPTIONS[nextIndex];
+      if (!next) return;
+      onChange(next.value);
       itemRefs.current[nextIndex]?.focus();
     }
   }
@@ -87,6 +88,7 @@ export function StorageModePicker({
           {OPTIONS.map((option, index) => {
             const isSelected = value === option.value;
             return (
+              // biome-ignore lint/a11y/useSemanticElements: custom-styled radio card; native <input type="radio"> would break the visual pattern. ARIA 1.2 radio semantics are satisfied via role + aria-checked + roving tabIndex and tested in storage-mode-picker.test.tsx.
               <div
                 key={option.value}
                 ref={(el) => {
