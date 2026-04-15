@@ -53,3 +53,4 @@ drizzle/
 .notionfs
 .playwright-mcp/
 .claude/worktrees/
+.worktrees/
