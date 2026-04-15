@@ -138,7 +138,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
     const agentA = await seedAgent(db, { userId: removed.userId, orgId: org.orgId });
     const agentB = await seedAgent(db, { userId: removed.userId, orgId: org.orgId });
 
-    await onMemberRemoved(db, org.orgId, removed.userId, owner.userId);
+    await db.transaction((tx) => onMemberRemoved(tx, org.orgId, removed.userId, owner.userId));
 
     const rows = await db
       .select({ id: agents.id, enabled: agents.enabled, revokedAt: agents.revokedAt })
@@ -179,7 +179,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
       revokedAt: preRevokedAt,
     });
 
-    await onMemberRemoved(db, org.orgId, removed.userId, owner.userId);
+    await db.transaction((tx) => onMemberRemoved(tx, org.orgId, removed.userId, owner.userId));
 
     const [row1] = await db
       .select({ revokedAt: agentSessions.revokedAt })
@@ -233,7 +233,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
       grantedBy: owner.userId,
     });
 
-    await onMemberRemoved(db, org.orgId, removed.userId, owner.userId);
+    await db.transaction((tx) => onMemberRemoved(tx, org.orgId, removed.userId, owner.userId));
 
     const remaining = await db
       .select({ id: permissions.id })
@@ -285,7 +285,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
     });
 
     const ip = "203.0.113.42";
-    await onMemberRemoved(db, org.orgId, removed.userId, owner.userId, ip);
+    await db.transaction((tx) => onMemberRemoved(tx, org.orgId, removed.userId, owner.userId, ip));
 
     const agentCascades = await db
       .select()
@@ -326,7 +326,7 @@ describe("onMemberRemoved cascade (real revocation)", () => {
     const removed = await seedUser(auth);
     await seedMember(auth, org.orgId, removed.userId, "member");
 
-    await onMemberRemoved(db, org.orgId, removed.userId, owner.userId);
+    await db.transaction((tx) => onMemberRemoved(tx, org.orgId, removed.userId, owner.userId));
 
     const cascades = await db
       .select()
@@ -372,7 +372,7 @@ describe("onAgentRevoked cascade (transactional)", () => {
     });
 
     const ip = "203.0.113.7";
-    await onAgentRevoked(db, agent.agentId, org.orgId, owner.userId, ip);
+    await db.transaction((tx) => onAgentRevoked(tx, agent.agentId, org.orgId, owner.userId, ip));
 
     const [row1] = await db
       .select({ revokedAt: agentSessions.revokedAt })
@@ -428,7 +428,7 @@ describe("onAgentRevoked cascade (transactional)", () => {
       revokedAt: new Date(Date.now() - 60_000),
     });
 
-    await onAgentRevoked(db, agent.agentId, org.orgId, owner.userId);
+    await db.transaction((tx) => onAgentRevoked(tx, agent.agentId, org.orgId, owner.userId));
 
     const cascades = await db
       .select()
@@ -500,7 +500,7 @@ describe("onItemDeleted cascade (transactional)", () => {
     });
 
     const ip = "203.0.113.9";
-    await onItemDeleted(db, target.itemId, org.orgId, owner.userId, ip);
+    await db.transaction((tx) => onItemDeleted(tx, target.itemId, org.orgId, owner.userId, ip));
 
     const remainingForTarget = await db
       .select({ id: permissions.id })

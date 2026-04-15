@@ -8,7 +8,15 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
-import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
+import {
+  auditLogs,
+  invitation,
+  items,
+  member,
+  organization,
+  profiles,
+  user,
+} from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onMemberRemoved } from "../cascades";
@@ -805,19 +813,34 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
       );
     }
 
-    yield* tryAsync(() => ctx.db.delete(member).where(eq(member.id, memberId)));
-
-    yield* logSessionAudit({
-      organizationId: orgId,
-      userId: ctx.identity.userId,
-      eventType: "org.member_remove",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: { removedUserId: target.userId, memberId },
-    });
-
+    // Atomic: delete the member row, write the org.member_remove audit
+    // entry, and run the cascade that revokes their agents, sessions, and
+    // granted permissions — all inside one transaction. Prior shape ran
+    // these as three sequential tryAsync steps without a shared tx, so a
+    // mid-flight failure (DB blip, cascade throw) could leave the member
+    // gone but their credentials still live. `onMemberRemoved` internally
+    // opens a transaction on the db-or-tx it is handed; Postgres treats
+    // that inner call as a savepoint on this outer tx.
+    //
+    // The audit insert is written inline rather than through
+    // logSessionAudit so it shares the same tx; logSessionAudit closes
+    // over ctx.db and would commit outside the transaction boundary.
     yield* tryAsync(() =>
-      onMemberRemoved(ctx.db, orgId, target.userId, ctx.identity.userId, ctx.ipAddress),
+      ctx.db.transaction(async (tx) => {
+        await tx.delete(member).where(eq(member.id, memberId));
+
+        await tx.insert(auditLogs).values({
+          organizationId: orgId,
+          userId: ctx.identity.userId,
+          surface: "api",
+          eventType: "org.member_remove",
+          result: "allowed",
+          ipAddress: ctx.ipAddress ?? null,
+          meta: { removedUserId: target.userId, memberId },
+        });
+
+        await onMemberRemoved(tx, orgId, target.userId, ctx.identity.userId, ctx.ipAddress);
+      }),
     );
 
     return { ok: true };

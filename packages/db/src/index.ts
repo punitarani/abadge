@@ -18,6 +18,6 @@ export {
   sql,
 } from "drizzle-orm";
 export { migrate } from "drizzle-orm/postgres-js/migrator";
-export { createDb, type Database } from "./client";
+export { createDb, type Database, type Transaction } from "./client";
 export * from "./roadmap-backfill";
 export * from "./schema";

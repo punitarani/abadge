@@ -15,7 +15,7 @@ import {
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
-import { agentEnrollmentTokens, agents as agentRecords } from "@abadge/db/schema";
+import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onAgentRevoked } from "../cascades";
@@ -287,33 +287,39 @@ const revokeAgent = (agentId: string) =>
       );
     }
 
+    // Atomic: flip the agent record to revoked, write the primary
+    // agent.revoke audit, and run the cascade (session invalidation + one
+    // cascade audit per invalidated session) all inside one transaction.
+    // Previous shape ran these as three sequential tryAsync steps; a
+    // mid-flight failure could leave the agent disabled but still holding
+    // live session tokens.
+    const now = new Date();
     yield* Effect.tryPromise(() =>
-      ctx.db
-        .update(agentRecords)
-        .set({
-          revokedAt: new Date(),
-          enabled: false,
-        })
-        .where(eq(agentRecords.id, agentId)),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx
+          .update(agentRecords)
+          .set({ revokedAt: now, enabled: false })
+          .where(eq(agentRecords.id, agentId));
 
-    yield* logSessionAudit({
-      organizationId: ctx.identity.organizationId,
-      userId: ctx.identity.userId,
-      agentId,
-      eventType: "agent.revoke",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-    });
+        await tx.insert(auditLogs).values({
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          surface: "api",
+          eventType: "agent.revoke",
+          result: "allowed",
+          ipAddress: ctx.ipAddress ?? null,
+          meta: {},
+        });
 
-    yield* Effect.tryPromise(() =>
-      onAgentRevoked(
-        ctx.db,
-        agentId,
-        ctx.identity.organizationId,
-        ctx.identity.userId,
-        ctx.ipAddress,
-      ),
+        await onAgentRevoked(
+          tx,
+          agentId,
+          ctx.identity.organizationId,
+          ctx.identity.userId,
+          ctx.ipAddress,
+        );
+      }),
     );
 
     return { ok: true };

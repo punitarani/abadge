@@ -15,7 +15,7 @@ import {
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
 import { and, desc, eq, isNull } from "@abadge/db";
-import { items, permissions, profiles } from "@abadge/db/schema";
+import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
@@ -325,27 +325,35 @@ const deleteItem = (itemId: string) =>
     const ctx = yield* SessionRequestContextTag;
     yield* loadOwnedItem(itemId);
 
+    // Atomic: soft-delete the item, write the primary item.delete audit,
+    // and run the cascade (delete permissions + one cascade audit row)
+    // inside a single transaction. Prior shape ran these as three
+    // sequential tryAsync steps; a mid-flight failure could leave the
+    // item deleted but its permissions still active.
+    const now = new Date();
     yield* Effect.tryPromise(() =>
-      ctx.db.update(items).set({ deletedAt: new Date() }).where(eq(items.id, itemId)),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
 
-    yield* logSessionAudit({
-      organizationId: ctx.identity.organizationId,
-      userId: ctx.identity.userId,
-      itemId,
-      eventType: "item.delete",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-    });
+        await tx.insert(auditLogs).values({
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          surface: "api",
+          eventType: "item.delete",
+          result: "allowed",
+          ipAddress: ctx.ipAddress ?? null,
+          meta: {},
+        });
 
-    yield* Effect.tryPromise(() =>
-      onItemDeleted(
-        ctx.db,
-        itemId,
-        ctx.identity.organizationId,
-        ctx.identity.userId,
-        ctx.ipAddress,
-      ),
+        await onItemDeleted(
+          tx,
+          itemId,
+          ctx.identity.organizationId,
+          ctx.identity.userId,
+          ctx.ipAddress,
+        );
+      }),
     );
 
     return { ok: true };
