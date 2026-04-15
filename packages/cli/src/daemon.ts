@@ -23,9 +23,10 @@ async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): P
 }
 
 export async function daemonUnlock(
+  profileId: string,
   masterPassword: string,
 ): Promise<{ ok: boolean; keyVersion: number }> {
-  return withDaemonClient((client) => client.unlock(masterPassword));
+  return withDaemonClient((client) => client.unlock(profileId, masterPassword));
 }
 
 export async function daemonLock(): Promise<{ ok: boolean }> {
@@ -55,10 +56,11 @@ export async function daemonAuthHeaders(): Promise<DaemonAuthHeaders> {
 }
 
 export async function daemonChangePassword(
+  profileId: string,
   oldPassword: string,
   newPassword: string,
 ): Promise<{ ok: boolean }> {
-  return withDaemonClient((client) => client.changePassword(oldPassword, newPassword));
+  return withDaemonClient((client) => client.changePassword(profileId, oldPassword, newPassword));
 }
 
 export async function daemonEncrypt(payload: unknown): Promise<EncryptResult> {

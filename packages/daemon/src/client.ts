@@ -88,9 +88,12 @@ export class DaemonClient {
     return (await this.send("auth.getHeaders")) as DaemonAuthHeaders;
   }
 
-  /** Unlock the vault with a master password. */
-  async unlock(masterPassword: string): Promise<{ ok: boolean; keyVersion: number }> {
-    return (await this.send("vault.unlock", { masterPassword })) as {
+  /** Unlock a profile's vault with its master password. */
+  async unlock(
+    profileId: string,
+    masterPassword: string,
+  ): Promise<{ ok: boolean; keyVersion: number }> {
+    return (await this.send("vault.unlock", { profileId, masterPassword })) as {
       ok: boolean;
       keyVersion: number;
     };
@@ -106,9 +109,17 @@ export class DaemonClient {
     return (await this.send("vault.status")) as VaultStatus;
   }
 
-  /** Change the master password. */
-  async changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean }> {
-    return (await this.send("vault.changePassword", { oldPassword, newPassword })) as {
+  /** Change a profile's master password. */
+  async changePassword(
+    profileId: string,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean }> {
+    return (await this.send("vault.changePassword", {
+      profileId,
+      oldPassword,
+      newPassword,
+    })) as {
       ok: boolean;
     };
   }
