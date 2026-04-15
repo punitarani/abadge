@@ -1,10 +1,8 @@
 ---
-"@abadge/sdk": patch
-"@abadge/core": patch
 "@abadge/cli": patch
 ---
 
-PR #89 review — P0 security and data-integrity fixes (Phase A).
+PR #89 review — P0 security and data-integrity fixes (Phase A). Only `@abadge/cli` is release-managed per `scripts/releases/registry.ts`; the server/tRPC/SDK/core changes below are internal but noted here for release-notes coherence.
 
 **Security / authorization:**
 - `items.listForAgent` now returns only items the calling agent has at least one permission on (was: every item in the agent's org, enabling metadata enumeration). See `@abadge/sdk` `AbadgeAgentClient.listItems` scoping.
