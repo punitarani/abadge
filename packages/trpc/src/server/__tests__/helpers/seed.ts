@@ -102,6 +102,25 @@ export async function seedOrg(
 }
 
 // ---------------------------------------------------------------------------
+// seedMember
+// ---------------------------------------------------------------------------
+
+/**
+ * Adds an already-seeded user to an organization with the given role.
+ * Defaults to "member" (non-owner). Use `seedOrg` instead when you want to
+ * create the org + attach the owner in one step.
+ */
+export async function seedMember(
+  auth: TestAuth,
+  orgId: string,
+  userId: string,
+  role: "owner" | "admin" | "member" = "member",
+): Promise<void> {
+  const helpers = await getTestHelpers(auth);
+  await helpers.addMember({ userId, organizationId: orgId, role });
+}
+
+// ---------------------------------------------------------------------------
 // seedProfile
 // ---------------------------------------------------------------------------
 
@@ -284,6 +303,7 @@ export async function seedAgentSession(
     agentId: string;
     userId: string;
     expiresInMs?: number;
+    revokedAt?: Date;
   },
 ): Promise<SeedAgentSessionResult> {
   const sessionId = uuid();
@@ -299,6 +319,7 @@ export async function seedAgentSession(
     userId: opts.userId,
     tokenHash,
     expiresAt,
+    revokedAt: opts.revokedAt ?? null,
   });
 
   return { sessionId, rawToken };

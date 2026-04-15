@@ -1,6 +1,6 @@
-import { AGENT_SESSION_PREFIX, UnauthorizedError } from "@abadge/core";
+import { AGENT_SESSION_PREFIX, BadRequestError, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull, or } from "@abadge/db";
+import { and, asc, eq, isNull, or } from "@abadge/db";
 import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
@@ -31,22 +31,9 @@ interface AuthContextWithSessionLookup {
   };
 }
 
-interface VerifyApiKeyResult {
-  valid: boolean;
-  key?: {
-    id?: string;
-    referenceId?: string;
-  };
-}
-
 type ActiveAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
   "id" | "organizationId" | "createdBy" | "locality" | "authMethod" | "secretHash"
->;
-
-type MigratedAgent = Pick<
-  typeof agentRecords.$inferSelect,
-  "id" | "organizationId" | "createdBy" | "locality" | "enabled" | "revokedAt"
 >;
 
 type ActiveAgentSession = Pick<
@@ -181,60 +168,6 @@ const verifyLocalAgentIdentity = (
     return null;
   });
 
-const verifyLegacyAgentIdentity = (
-  ctx: BaseRequestContext,
-  token: string,
-): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
-  Effect.gen(function* () {
-    const result = (yield* tryAsync(() =>
-      ctx.auth.api.verifyApiKey({
-        body: { key: token },
-      }),
-    )) as VerifyApiKeyResult;
-
-    if (!result.valid || !result.key) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const legacyAgentId = result.key.id;
-    const legacyUserId = result.key.referenceId;
-    if (!legacyAgentId || !legacyUserId) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const [migratedAgent] = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: agentRecords.id,
-          organizationId: agentRecords.organizationId,
-          createdBy: agentRecords.createdBy,
-          locality: agentRecords.locality,
-          enabled: agentRecords.enabled,
-          revokedAt: agentRecords.revokedAt,
-        })
-        .from(agentRecords)
-        .where(eq(agentRecords.id, legacyAgentId))
-        .limit(1),
-    )) as Array<MigratedAgent>;
-
-    if (migratedAgent && (!migratedAgent.enabled || migratedAgent.revokedAt)) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    if (migratedAgent) {
-      touchAgent(ctx, legacyAgentId);
-      return toAgentIdentity(migratedAgent);
-    }
-
-    return {
-      kind: "agent",
-      agentId: legacyAgentId,
-      agentUserId: legacyUserId,
-      agentOrganizationId: "",
-      agentLocality: "remote",
-    };
-  });
-
 const verifyAgentSessionIdentity = (
   ctx: BaseRequestContext,
   token: string,
@@ -338,7 +271,23 @@ const verifyAgentSessionIdentity = (
     return toAgentIdentity(agent);
   });
 
-async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
+/**
+ * Resolve the effective organization ID for a user-authenticated request.
+ *
+ * Behavior:
+ *   - If `X-Abadge-Org-Id` is set: verify the user is a member of that org.
+ *   - If absent and the user has 0 memberships: reject with `NO_ORG_MEMBERSHIP`.
+ *   - If absent and the user has exactly 1 membership: return it. The query is
+ *     ordered by `member.createdAt ASC` so the fallback is deterministic.
+ *   - If absent and the user has 2+ memberships: reject with `ORG_HEADER_REQUIRED`
+ *     and list available org IDs in `meta` so the caller can retry with a header.
+ *
+ * Exported for direct unit testing; callers inside this module should prefer
+ * `resolveSessionIdentity` / `resolveBearerSessionIdentity`.
+ *
+ * @internal
+ */
+export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
   const orgIdHeader = ctx.req.headers.get("X-Abadge-Org-Id");
 
   if (orgIdHeader) {
@@ -350,29 +299,41 @@ async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promis
 
     if (!membership) {
       throw new UnauthorizedError({
-        code: "MEMBER_INSUFFICIENT_ROLE",
-        message: "You are not a member of this organization",
-        hint: "Check the X-Abadge-Org-Id header value.",
+        code: "ORG_MEMBERSHIP_REQUIRED",
+        message: "Not a member of the requested organization",
+        hint: "Switch to an organization you belong to.",
       });
     }
     return orgIdHeader;
   }
 
-  const [firstMembership] = await ctx.db
+  // Order by createdAt so the single-membership fallback is deterministic. The
+  // 2+ memberships case is rejected below, so ordering only affects callers
+  // who happen to have exactly one row (and is belt-and-suspenders for races).
+  const memberships = await ctx.db
     .select({ organizationId: member.organizationId })
     .from(member)
     .where(eq(member.userId, userId))
-    .limit(1);
+    .orderBy(asc(member.createdAt));
 
-  if (!firstMembership) {
+  if (memberships.length === 0) {
     throw new UnauthorizedError({
-      code: "UNAUTHORIZED",
-      message: "You do not belong to any organization",
-      hint: "Complete onboarding to create or join an organization.",
+      code: "NO_ORG_MEMBERSHIP",
+      message: "User has no organization membership",
+      hint: "Complete onboarding to create your first organization.",
     });
   }
-
-  return firstMembership.organizationId;
+  if (memberships.length > 1) {
+    throw new BadRequestError({
+      code: "ORG_HEADER_REQUIRED",
+      message: "X-Abadge-Org-Id header required for multi-org users",
+      hint: "Set X-Abadge-Org-Id to the organization context for this request.",
+      meta: { availableOrgIds: memberships.map((m) => m.organizationId) },
+    });
+  }
+  // memberships.length === 1 here (0 and >1 branches returned above).
+  const [only] = memberships as [(typeof memberships)[number]];
+  return only.organizationId;
 }
 
 export const resolveSessionIdentity = (
@@ -448,5 +409,5 @@ export const resolveAgentIdentity = (
       return agentIdentity;
     }
 
-    return yield* verifyLegacyAgentIdentity(ctx, token);
+    return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

@@ -1,9 +1,11 @@
 import {
+  BadRequestError,
   ConflictError,
   type KdfParams,
   NotFoundError,
   ProfileListResultSchema,
   ProfileResultSchema,
+  RekeyedItemSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, isNull } from "@abadge/db";
@@ -73,7 +75,7 @@ const ProfileRotateKeySchema = Schema.Struct({
   profileId: NonEmptyString,
   wrappedRootKey: NonEmptyString,
   recoveryWrappedRootKey: Schema.optional(Schema.String),
-  rekeyedItems: Schema.Record({ key: Schema.String, value: NonEmptyString }),
+  rekeyedItems: Schema.Array(RekeyedItemSchema),
 });
 
 /** Loads a profile and verifies the caller is a member of its org. Throws if not found or not a member. */
@@ -345,8 +347,34 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
 
     const nextKeyVersion = profile.keyVersion + 1;
 
+    // Coverage check + updates run in a single tx so a concurrent items.create
+    // between SELECT and UPDATE cannot bypass rewrapping (TOCTOU).
+    // Throwing the domain error inside the tx triggers rollback; tryAsync's
+    // catch preserves the Error instance, and toTrpcError maps it by isDomainError.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const zkItemsInProfile = await tx
+          .select({ id: items.id })
+          .from(items)
+          .where(
+            and(
+              eq(items.profileId, profileId),
+              eq(items.storageMode, "zero_knowledge"),
+              isNull(items.deletedAt),
+            ),
+          );
+
+        const providedIds = new Set(rekeyedItems.map((r) => r.itemId));
+        const missing = zkItemsInProfile.filter((row) => !providedIds.has(row.id));
+        if (missing.length > 0) {
+          throw new BadRequestError({
+            code: "ROTATE_KEY_INCOMPLETE",
+            message: `Rotate payload missing ${missing.length} ZK item(s) in this profile`,
+            hint: "Client must rewrap every ZK item in the profile before rotating.",
+            meta: { missingItemIds: missing.map((row) => row.id) },
+          });
+        }
+
         await tx
           .update(profiles)
           .set({
@@ -357,11 +385,19 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
           })
           .where(eq(profiles.id, profileId));
 
-        for (const [itemId, newEncryptedItemKey] of Object.entries(rekeyedItems)) {
+        // Persist BOTH encryptedItemKey AND keyNonce — the nonce is paired with the wrapped DEK.
+        // Extra ids not in the profile are filtered by the WHERE clause (no-op) rather than rejected,
+        // so concurrent deletes don't race the rotate.
+        for (const r of rekeyedItems) {
           await tx
             .update(items)
-            .set({ encryptedItemKey: newEncryptedItemKey, updatedAt: new Date() })
-            .where(and(eq(items.id, itemId), eq(items.profileId, profileId)));
+            .set({
+              encryptedItemKey: r.encryptedItemKey,
+              keyNonce: r.keyNonce,
+              cryptoVersion: nextKeyVersion,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(items.id, r.itemId), eq(items.profileId, profileId)));
         }
       }),
     );
@@ -372,7 +408,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
       eventType: "profile.rotate",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { profileId, itemCount: Object.keys(rekeyedItems).length },
+      meta: { profileId, itemCount: rekeyedItems.length },
     });
 
     return { ok: true, keyVersion: nextKeyVersion };

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { AGENT_KINDS } from "@abadge/core";
 import { getTableColumns, getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { agents, auditLogs, items, permissions, profiles } from "./index";
 
 describe("roadmap schema foundations", () => {
@@ -33,6 +34,23 @@ describe("roadmap schema foundations", () => {
     expect(Object.keys(columns)).toContain("userId");
     expect(Object.keys(columns)).toContain("vaultId");
     expect(columns.label.notNull).toBe(true);
+  });
+
+  test("items.organization_id is NOT NULL with ON DELETE cascade", () => {
+    const columns = getTableColumns(items);
+
+    // Items must belong to an organization — cross-org isolation depends on this.
+    expect(columns.organizationId.notNull).toBe(true);
+
+    // FK must cascade: if the org is deleted, its items go with it.
+    // ON DELETE SET NULL would orphan items to a NULL-org state that bypasses
+    // every `WHERE items.organization_id = ?` filter.
+    const { foreignKeys } = getTableConfig(items);
+    const orgFk = foreignKeys.find((fk) =>
+      fk.reference().columns.some((col) => col.name === "organization_id"),
+    );
+    expect(orgFk).toBeDefined();
+    expect(orgFk?.onDelete).toBe("cascade");
   });
 
   test("agents table is org-scoped and uses the simplified roadmap kinds", () => {

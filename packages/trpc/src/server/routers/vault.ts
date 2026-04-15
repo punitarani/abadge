@@ -1,3 +1,12 @@
+/**
+ * Legacy per-user vault router. Superseded by the org-scoped `profiles` router.
+ *
+ * Retained for web-app compatibility. Full removal is tracked under Phase C of
+ * the v0 refactor. Full ZK-item coverage checks (equivalent to
+ * `ROTATE_KEY_INCOMPLETE` in profiles.rotateKey) are intentionally NOT added
+ * here -- "coverage" is a profile-centric invariant that does not map cleanly
+ * onto this user-scoped model. This file tightens org-isolation only.
+ */
 import {
   type ChangePasswordInput,
   ChangePasswordSchema,
@@ -187,14 +196,25 @@ const rotateKey = (input: RotateKeyInput) =>
           })
           .where(eq(vaults.userId, userId));
 
-        for (const [itemId, newEncryptedItemKey] of Object.entries(input.rekeyedItems)) {
+        // Legacy vault.rotateKey: org-scope the update so a user authenticated in
+        // one org cannot clobber items owned by the same user in another org.
+        // Full coverage checks and removal of vault.* are tracked under Phase C.
+        for (const r of input.rekeyedItems) {
           await tx
             .update(items)
             .set({
-              encryptedItemKey: newEncryptedItemKey,
+              encryptedItemKey: r.encryptedItemKey,
+              keyNonce: r.keyNonce,
+              cryptoVersion: nextKeyVersion,
               updatedAt: new Date(),
             })
-            .where(and(eq(items.id, itemId), eq(items.userId, userId)));
+            .where(
+              and(
+                eq(items.id, r.itemId),
+                eq(items.userId, userId),
+                eq(items.organizationId, ctx.identity.organizationId),
+              ),
+            );
         }
       }),
     );
@@ -205,7 +225,7 @@ const rotateKey = (input: RotateKeyInput) =>
       eventType: "profile.rotate",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { itemCount: Object.keys(input.rekeyedItems).length },
+      meta: { itemCount: input.rekeyedItems.length },
     });
 
     return { ok: true, keyVersion: nextKeyVersion };

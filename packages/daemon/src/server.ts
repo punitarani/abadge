@@ -33,6 +33,62 @@ import { VaultState } from "./vault-state";
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
 
+/** Shell-safe env var name: POSIX identifier. */
+const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+
+/**
+ * Env vars that can alter loader/interpreter behavior of the child process.
+ * Injecting these from caller-controlled data would let a malicious or
+ * compromised agent hijack subprocess execution (local privilege escalation
+ * from agent-level compromise to arbitrary code in the spawned process).
+ */
+const RESERVED_ENV_KEYS = new Set([
+  "PATH",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FORCE_FLAT_NAMESPACE",
+  "NODE_OPTIONS",
+  "BUN_INSTALL",
+  "BUN_CONFIG_REGISTRY",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "HOME",
+  "USER",
+  "SHELL",
+  // Node.js bare-import resolution path (analog of PYTHONPATH).
+  "NODE_PATH",
+  // TLS trust / proxy hijack: redirect or MITM outbound TLS from the child.
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  // Shell loader hijack: alter startup or word-splitting of a spawned shell.
+  "BASH_ENV",
+  "ENV",
+  "IFS",
+]);
+
+function validateEnvKey(key: string): void {
+  if (!ENV_KEY_PATTERN.test(key)) {
+    throw {
+      code: RPC_ERRORS.INVALID_PARAMS,
+      message: `Invalid env key: ${JSON.stringify(key)}. Must match [A-Z_][A-Z0-9_]*.`,
+    };
+  }
+  if (RESERVED_ENV_KEYS.has(key)) {
+    throw {
+      code: RPC_ERRORS.INVALID_PARAMS,
+      message: `Refusing to inject reserved env var: ${key}`,
+    };
+  }
+}
+
 export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
   return {
     socketPath: partial.socketPath ?? defaultSocketPath(),
@@ -286,6 +342,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
           message: "secretValue, envVar, and command are required",
         };
       }
+      validateEnvKey(envVar);
 
       const proc = Bun.spawn([command, ...args], {
         // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
@@ -327,6 +384,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       const payloadFields = (payload as any)?.fields ?? {};
       const extraEnv: Record<string, string> = {};
       for (const fieldName of fields) {
+        validateEnvKey(fieldName);
         const value = payloadFields[fieldName];
         if (typeof value === "string") {
           extraEnv[fieldName] = value;

@@ -1,9 +1,16 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "@abadge/db";
 import { items } from "@abadge/db/schema";
-import { seedOrg, seedUser } from "../helpers/seed";
+import {
+  seedAgent,
+  seedAgentSession,
+  seedOrg,
+  seedPermission,
+  seedServerItem,
+  seedUser,
+} from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { createOperatorCaller } from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 describe("items CRUD", () => {
@@ -186,5 +193,132 @@ describe("items CRUD", () => {
     const result = await caller.items.list();
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.id).toBe(item1.id);
+  });
+});
+
+describe("items.listForAgent permission scoping", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("returns zero items when the agent has no permissions granted", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+
+    await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "item-a",
+    });
+    await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "item-b",
+    });
+
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    const result = await agentCaller.items.listForAgent();
+    expect(result.items).toHaveLength(0);
+  });
+
+  test("returns only items the agent has any permission on", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+
+    const allowedItem = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "allowed",
+    });
+    const forbiddenItem = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "forbidden",
+    });
+
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: allowedItem.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    const result = await agentCaller.items.listForAgent();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe(allowedItem.itemId);
+    // Sanity: the forbidden item is not in the list
+    expect(result.items.find((i: { id: string }) => i.id === forbiddenItem.itemId)).toBeUndefined();
+  });
+
+  test("returns distinct items even when the agent has multiple capabilities on one item", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+
+    const item = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "multi-cap",
+    });
+
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "mount_env",
+      grantedBy: owner.userId,
+    });
+
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    const result = await agentCaller.items.listForAgent();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe(item.itemId);
   });
 });

@@ -1,6 +1,5 @@
 import type { Database } from "@abadge/db";
 import { auditLogs } from "@abadge/db";
-import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
@@ -88,7 +87,6 @@ export function createAuth(db: Database, env: AuthEnv): any {
       }),
       openAPI(),
       bearer(),
-      apiKey(),
       deviceAuthorization({
         verificationUri: `${env.ABADGE_APP_URL.replace(/\/$/, "")}/device`,
         validateClient: async (clientId) => clientId === DEVICE_AUTH_CLIENT_ID,

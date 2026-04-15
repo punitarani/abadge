@@ -13,8 +13,9 @@ export function createMountCommand(): Command {
     .option("--field <name>", "Named field to deliver from the item payload")
     .option("--path <path>", "Target mount path")
     .action(async (opts: { item: string; field?: string; path?: string }) => {
+      let client: Awaited<ReturnType<typeof createAgentApiClient>> | undefined;
       try {
-        const client = await createAgentApiClient();
+        client = await createAgentApiClient();
         const secretValue = await resolveSecretValue(client, opts.item, "file", opts.field);
 
         const targetPath = opts.path ?? join(tmpdir(), `abadge-${crypto.randomUUID()}`);
@@ -24,7 +25,9 @@ export function createMountCommand(): Command {
         success(`Mounted at: ${targetPath}`);
       } catch (err) {
         error(errorMessage(err, "Failed to mount item."));
+        client?.disconnect();
         process.exit(1);
       }
+      client?.disconnect();
     });
 }

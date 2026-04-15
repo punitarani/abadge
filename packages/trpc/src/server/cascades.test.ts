@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { onAgentRevoked, onItemDeleted, onMemberRemoved } from "./cascades";
+import { onAgentRevoked, onItemDeleted } from "./cascades";
 
 type MockCall = { op: string; args?: unknown[] };
 
@@ -155,30 +155,5 @@ describe("onItemDeleted", () => {
   });
 });
 
-describe("onMemberRemoved", () => {
-  test("writes a cascade audit entry for the removed member", async () => {
-    const { db, calls } = makeMockDb();
-    await onMemberRemoved(db, "org-1", "removed-user", "actor-user");
-
-    const valueOps = calls.filter((c) => c.op === "values");
-    expect(valueOps.length).toBe(1);
-
-    const payload = (valueOps[0]?.args?.[0] ?? {}) as Record<string, unknown>;
-    expect(payload.result).toBe("cascade");
-    expect((payload.meta as Record<string, unknown>)?.removedUserId).toBe("removed-user");
-
-    // ipAddress defaults to null when not provided
-    expect(payload.ipAddress).toBeNull();
-  });
-
-  test("threads ipAddress into the cascade audit entry", async () => {
-    const { db, calls } = makeMockDb();
-    await onMemberRemoved(db, "org-1", "removed-user", "actor-user", "203.0.113.1");
-
-    const valueOps = calls.filter((c) => c.op === "values");
-    expect(valueOps.length).toBe(1);
-
-    const payload = (valueOps[0]?.args?.[0] ?? {}) as Record<string, unknown>;
-    expect(payload.ipAddress).toBe("203.0.113.1");
-  });
-});
+// onMemberRemoved exercises real transactions and multiple-table queries,
+// so it is covered by the integration suite in __tests__/integration/cascades.test.ts.

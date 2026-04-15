@@ -1,5 +1,4 @@
 import type { Database } from "@abadge/db";
-import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization, testUtils } from "better-auth/plugins";
@@ -61,7 +60,6 @@ export function createTestAuth(db: Database): any {
         creatorRole: "owner",
       }),
       bearer(),
-      apiKey(),
       testUtils(),
     ],
   });

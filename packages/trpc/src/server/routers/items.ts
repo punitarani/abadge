@@ -15,7 +15,7 @@ import {
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
 import { and, desc, eq, isNull } from "@abadge/db";
-import { items, profiles } from "@abadge/db/schema";
+import { items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
@@ -160,7 +160,7 @@ const listItemsForAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
   const result = yield* Effect.tryPromise(() =>
     ctx.db
-      .select({
+      .selectDistinct({
         id: items.id,
         label: items.label,
         storageMode: items.storageMode,
@@ -170,8 +170,13 @@ const listItemsForAgent = Effect.gen(function* () {
         updatedAt: items.updatedAt,
       })
       .from(items)
+      .innerJoin(permissions, eq(permissions.itemId, items.id))
       .where(
-        and(eq(items.organizationId, ctx.identity.agentOrganizationId), isNull(items.deletedAt)),
+        and(
+          eq(items.organizationId, ctx.identity.agentOrganizationId),
+          eq(permissions.agentId, ctx.identity.agentId),
+          isNull(items.deletedAt),
+        ),
       )
       .orderBy(desc(items.createdAt)),
   );

@@ -388,7 +388,7 @@ export class AbadgeUserClient {
   /**
    * Rotate the vault root key. All zero-knowledge items must be re-keyed atomically.
    *
-   * @param data - New wrapped root key and a map of itemId to re-encrypted item keys
+   * @param data - New wrapped root key and a list of rewrapped items ({ itemId, encryptedItemKey, keyNonce })
    * @returns The new key version number
    * @throws {AbadgeApiError} VAULT_NOT_FOUND
    */
