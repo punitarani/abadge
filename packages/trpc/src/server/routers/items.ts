@@ -4,9 +4,6 @@ import {
   type CreateItemInput,
   CreateItemSchema,
   IdResultSchema,
-  ItemDisplayListResultSchema,
-  type ItemDisplayQuery,
-  ItemDisplayQuerySchema,
   ItemListResultSchema,
   ItemResultSchema,
   ItemVersionResultSchema,
@@ -17,12 +14,20 @@ import {
   UpdateItemSchema,
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
-import { and, desc, eq, inArray, isNull } from "@abadge/db";
-import { items, vaults } from "@abadge/db/schema";
+import { and, desc, eq, isNull } from "@abadge/db";
+import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure, sessionProcedure } from "../init";
+import { onItemDeleted } from "../cascades";
+import {
+  AgentRequestContextTag,
+  runAgentEffect,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+} from "../effect";
+import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
+import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
@@ -34,7 +39,11 @@ const loadOwnedItem = (itemId: string) =>
         .select()
         .from(items)
         .where(
-          and(eq(items.id, itemId), eq(items.userId, ctx.identity.userId), isNull(items.deletedAt)),
+          and(
+            eq(items.id, itemId),
+            eq(items.organizationId, ctx.identity.organizationId),
+            isNull(items.deletedAt),
+          ),
         )
         .limit(1),
     );
@@ -44,6 +53,7 @@ const loadOwnedItem = (itemId: string) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and make sure the item still exists for this account.",
         }),
       );
     }
@@ -58,15 +68,25 @@ const createItem = (input: CreateItemInput) =>
     const id = crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
-      const [vault] = yield* Effect.tryPromise(() =>
-        ctx.db.select({ id: vaults.id }).from(vaults).where(eq(vaults.userId, userId)).limit(1),
+      const [profile] = yield* Effect.tryPromise(() =>
+        ctx.db
+          .select({ id: profiles.id })
+          .from(profiles)
+          .where(
+            and(
+              eq(profiles.organizationId, ctx.identity.organizationId),
+              eq(profiles.storageMode, "zero_knowledge"),
+            ),
+          )
+          .limit(1),
       );
 
-      if (!vault) {
+      if (!profile) {
         return yield* Effect.fail(
           new NotFoundError({
-            code: "VAULT_NOT_FOUND",
-            message: "Vault not bootstrapped",
+            code: "NOT_FOUND",
+            message: "No zero-knowledge profile found",
+            hint: "Create a ZK profile first or use server-managed storage mode.",
           }),
         );
       }
@@ -75,7 +95,9 @@ const createItem = (input: CreateItemInput) =>
         ctx.db.insert(items).values({
           id,
           userId,
-          vaultId: vault.id,
+          organizationId: ctx.identity.organizationId,
+          profileId: profile.id,
+          label: resolveStoredLabel(id, input.label),
           storageMode: "zero_knowledge",
           encryptedItemKey: input.encryptedItemKey,
           ciphertext: input.ciphertext,
@@ -91,6 +113,8 @@ const createItem = (input: CreateItemInput) =>
         ctx.db.insert(items).values({
           id,
           userId,
+          organizationId: ctx.identity.organizationId,
+          label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
           serverCiphertext: encrypted.ciphertext,
           serverIv: encrypted.iv,
@@ -100,6 +124,7 @@ const createItem = (input: CreateItemInput) =>
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId,
       itemId: id,
       eventType: "item.create",
@@ -116,6 +141,7 @@ const listItems = Effect.gen(function* () {
     ctx.db
       .select({
         id: items.id,
+        label: items.label,
         storageMode: items.storageMode,
         cryptoVersion: items.cryptoVersion,
         contentVersion: items.contentVersion,
@@ -123,97 +149,40 @@ const listItems = Effect.gen(function* () {
         updatedAt: items.updatedAt,
       })
       .from(items)
-      .where(and(eq(items.userId, ctx.identity.userId), isNull(items.deletedAt)))
+      .where(and(eq(items.organizationId, ctx.identity.organizationId), isNull(items.deletedAt)))
       .orderBy(desc(items.createdAt)),
   );
 
   return { items: result.map(serializeItemSummary) };
 });
 
-type DisplayRow = {
-  id: string;
-  storageMode: string;
-  encryptedItemKey: string | null;
-  ciphertext: string | null;
-  serverCiphertext: string | null;
-  serverIv: string | null;
-  serverKeyVersion: number | null;
-};
-
-async function resolveOneItemDisplay(
-  item: DisplayRow,
-  encryptionKey: string,
-): Promise<
-  | { itemId: string; storageMode: "server_managed"; label: string }
-  | { itemId: string; storageMode: "zero_knowledge"; encryptedItemKey: string; ciphertext: string }
-  | { itemId: string; error: "decrypt_failed" }
-> {
-  try {
-    if (item.storageMode === "server_managed") {
-      if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
-        return { itemId: item.id, error: "decrypt_failed" };
-      }
-      const decrypted = await serverDecrypt(
-        { ciphertext: item.serverCiphertext, iv: item.serverIv, keyVersion: item.serverKeyVersion },
-        encryptionKey,
-      );
-      return {
-        itemId: item.id,
-        storageMode: "server_managed",
-        label: decodeServerManagedPayload(item.id, decrypted).label,
-      };
-    }
-
-    if (!item.encryptedItemKey || !item.ciphertext) {
-      return { itemId: item.id, error: "decrypt_failed" };
-    }
-    return {
-      itemId: item.id,
-      storageMode: "zero_knowledge",
-      encryptedItemKey: item.encryptedItemKey,
-      ciphertext: item.ciphertext,
-    };
-  } catch {
-    return { itemId: item.id, error: "decrypt_failed" };
-  }
-}
-
-export const resolveItemDisplay = (input: ItemDisplayQuery) =>
-  Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
-    const itemIds = [...new Set(input.itemIds)];
-
-    if (itemIds.length === 0) {
-      return { items: [] };
-    }
-
-    const result = yield* Effect.tryPromise(() =>
-      ctx.db
-        .select({
-          id: items.id,
-          storageMode: items.storageMode,
-          encryptedItemKey: items.encryptedItemKey,
-          ciphertext: items.ciphertext,
-          serverCiphertext: items.serverCiphertext,
-          serverIv: items.serverIv,
-          serverKeyVersion: items.serverKeyVersion,
-        })
-        .from(items)
-        .where(
-          and(
-            eq(items.userId, ctx.identity.userId),
-            isNull(items.deletedAt),
-            inArray(items.id, itemIds),
-          ),
+const listItemsForAgent = Effect.gen(function* () {
+  const ctx = yield* AgentRequestContextTag;
+  const result = yield* Effect.tryPromise(() =>
+    ctx.db
+      .selectDistinct({
+        id: items.id,
+        label: items.label,
+        storageMode: items.storageMode,
+        cryptoVersion: items.cryptoVersion,
+        contentVersion: items.contentVersion,
+        createdAt: items.createdAt,
+        updatedAt: items.updatedAt,
+      })
+      .from(items)
+      .innerJoin(permissions, eq(permissions.itemId, items.id))
+      .where(
+        and(
+          eq(items.organizationId, ctx.identity.agentOrganizationId),
+          eq(permissions.agentId, ctx.identity.agentId),
+          isNull(items.deletedAt),
         ),
-    );
+      )
+      .orderBy(desc(items.createdAt)),
+  );
 
-    const displayItems = yield* Effect.tryPromise(() =>
-      Promise.all(result.map((item) => resolveOneItemDisplay(item, ctx.env.ENCRYPTION_KEY))),
-    );
-
-    return { items: displayItems };
-  });
+  return { items: result.map(serializeItemSummary) };
+});
 
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -221,6 +190,7 @@ const getItem = (itemId: string) =>
     const item = yield* loadOwnedItem(itemId);
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.read",
@@ -236,48 +206,64 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     const ctx = yield* SessionRequestContextTag;
     const item = yield* loadOwnedItem(itemId);
 
-    if (item.contentVersion !== input.contentVersion) {
-      return yield* Effect.fail(
-        new ConflictError({
-          code: "STALE_VERSION",
-          message: "Stale version — reload and retry",
-        }),
-      );
-    }
-
     if (input.storageMode === "zero_knowledge") {
-      yield* Effect.tryPromise(() =>
+      const updated = yield* Effect.tryPromise(() =>
         ctx.db
           .update(items)
           .set({
+            label: resolveStoredLabel(itemId, input.label),
             encryptedItemKey: input.encryptedItemKey,
             ciphertext: input.ciphertext,
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(eq(items.id, itemId)),
+          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
+          .returning({ id: items.id }),
       );
+
+      if (updated.length === 0) {
+        return yield* Effect.fail(
+          new ConflictError({
+            code: "STALE_VERSION",
+            message: "Stale version — reload and retry",
+            hint: "Refresh the item details and retry the update with the latest contentVersion.",
+          }),
+        );
+      }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
       const encrypted = yield* Effect.tryPromise(() =>
         serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
       );
 
-      yield* Effect.tryPromise(() =>
+      const updated = yield* Effect.tryPromise(() =>
         ctx.db
           .update(items)
           .set({
+            label: resolveStoredLabel(itemId, input.payload.label),
             serverCiphertext: encrypted.ciphertext,
             serverIv: encrypted.iv,
             serverKeyVersion: encrypted.keyVersion,
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(eq(items.id, itemId)),
+          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
+          .returning({ id: items.id }),
       );
+
+      if (updated.length === 0) {
+        return yield* Effect.fail(
+          new ConflictError({
+            code: "STALE_VERSION",
+            message: "Stale version — reload and retry",
+            hint: "Refresh the item details and retry the update with the latest contentVersion.",
+          }),
+        );
+      }
     }
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
       eventType: "item.update",
@@ -298,6 +284,7 @@ const ownerReveal = (itemId: string) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only server-managed items can be revealed via the API",
+          hint: "Use local decryption for zero-knowledge items instead of the owner reveal API.",
         }),
       );
     }
@@ -307,6 +294,7 @@ const ownerReveal = (itemId: string) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Item has no server-encrypted data",
+          hint: "Check the item storage mode and stored ciphertext before retrying the reveal.",
         }),
       );
     }
@@ -320,12 +308,13 @@ const ownerReveal = (itemId: string) =>
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       itemId,
-      eventType: "item.read",
+      eventType: "item.export",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { reveal: true },
+      meta: { exportFormat: "json" },
     });
 
     return { payload: decodeServerManagedPayload(item.id, decrypted) };
@@ -336,17 +325,36 @@ const deleteItem = (itemId: string) =>
     const ctx = yield* SessionRequestContextTag;
     yield* loadOwnedItem(itemId);
 
+    // Atomic: soft-delete the item, write the primary item.delete audit,
+    // and run the cascade (delete permissions + one cascade audit row)
+    // inside a single transaction. Prior shape ran these as three
+    // sequential tryAsync steps; a mid-flight failure could leave the
+    // item deleted but its permissions still active.
+    const now = new Date();
     yield* Effect.tryPromise(() =>
-      ctx.db.update(items).set({ deletedAt: new Date() }).where(eq(items.id, itemId)),
-    );
+      ctx.db.transaction(async (tx) => {
+        await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
 
-    yield* logSessionAudit({
-      userId: ctx.identity.userId,
-      itemId,
-      eventType: "item.delete",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-    });
+        await tx.insert(auditLogs).values({
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          surface: "api",
+          eventType: "item.delete",
+          result: "allowed",
+          ipAddress: ctx.ipAddress ?? null,
+          meta: {},
+        });
+
+        await onItemDeleted(
+          tx,
+          itemId,
+          ctx.identity.organizationId,
+          ctx.identity.userId,
+          ctx.ipAddress,
+        );
+      }),
+    );
 
     return { ok: true };
   });
@@ -368,10 +376,9 @@ export const itemsRouter = createTrpcRouter({
   list: scopedSessionProcedure("items:read")
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
-  resolveDisplay: scopedSessionProcedure("items:read")
-    .input(strictSchema(ItemDisplayQuerySchema))
-    .output(strictSchema(ItemDisplayListResultSchema))
-    .query(({ ctx, input }) => runSessionEffect(ctx, resolveItemDisplay(input))),
+  listForAgent: agentProcedure
+    .output(strictSchema(ItemListResultSchema))
+    .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),
   get: scopedSessionProcedure("items:read")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))
@@ -380,11 +387,11 @@ export const itemsRouter = createTrpcRouter({
     .input(strictSchema(UpdateItemInputEnvelopeSchema))
     .output(strictSchema(ItemVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateItem(input.itemId, input.data))),
-  ownerReveal: sessionProcedure
+  ownerReveal: scopedSessionProcedure("items:write")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(RevealAccessResponseSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
-  delete: sessionProcedure
+  delete: scopedSessionProcedure("items:write")
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteItem(input.itemId))),

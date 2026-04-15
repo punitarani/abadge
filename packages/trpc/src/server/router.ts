@@ -4,12 +4,14 @@ import { agentsRouter } from "./routers/agents";
 import { auditRouter } from "./routers/audit";
 import { authRouter } from "./routers/auth";
 import { itemsRouter } from "./routers/items";
+import { organizationsRouter } from "./routers/organizations";
 import { permissionsRouter } from "./routers/permissions";
-import { vaultRouter } from "./routers/vault";
+import { profilesRouter } from "./routers/profiles";
 
 export const appRouter = createTrpcRouter({
   auth: authRouter,
-  vault: vaultRouter,
+  profiles: profilesRouter,
+  organizations: organizationsRouter,
   items: itemsRouter,
   agents: agentsRouter,
   permissions: permissionsRouter,

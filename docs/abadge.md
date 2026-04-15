@@ -40,7 +40,6 @@ Every agent must be explicitly granted access to each credential it needs. Permi
 | `reveal_plaintext` | Decrypt and return the secret value (server-managed items) |
 | `mount_env` | Inject the secret as an environment variable into a subprocess |
 | `mount_file` | Write the secret to a temporary file with 0600 permissions |
-| `use_without_reveal` | Acknowledge the secret exists without exposing it |
 
 Permissions can have expiration dates. Remote agents are restricted to `reveal_plaintext` on server-managed items only.
 

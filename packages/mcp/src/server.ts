@@ -1,12 +1,37 @@
+import { readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { loadConfig, type McpConfig } from "./config.js";
+import { toErrorPayload } from "./errors.js";
 import * as getAudit from "./tools/get-audit.js";
 import * as listItems from "./tools/list-items.js";
 import * as mountSecret from "./tools/mount-secret.js";
 import * as releaseMount from "./tools/release-mount.js";
 import * as runWithSecret from "./tools/run-with-secret.js";
+
+function cleanupOrphanedMounts(): void {
+  const tmp = tmpdir();
+  try {
+    const entries = readdirSync(tmp);
+    for (const entry of entries) {
+      if (!entry.startsWith("abadge-")) continue;
+      const fullPath = join(tmp, entry);
+      try {
+        const stat = statSync(fullPath);
+        if (Date.now() - stat.mtimeMs > 10 * 60 * 1000) {
+          rmSync(fullPath, { recursive: true, force: true });
+        }
+      } catch {
+        /* already gone */
+      }
+    }
+  } catch {
+    /* tmpdir not accessible */
+  }
+}
 
 function hasErrorField(text: string): boolean {
   try {
@@ -32,9 +57,8 @@ function safeCall(
       ...(hasErrorField(text) ? { isError: true } : {}),
     }))
     .catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : "Unknown error";
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+        content: [{ type: "text" as const, text: JSON.stringify(toErrorPayload(err)) }],
         isError: true,
       };
     });
@@ -57,6 +81,8 @@ function registerTools(server: McpServer, config: McpConfig): void {
 }
 
 export async function startServer(): Promise<void> {
+  cleanupOrphanedMounts();
+
   let config: McpConfig;
   try {
     config = loadConfig();

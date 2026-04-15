@@ -1,7 +1,8 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
-import { ApiClient } from "../client";
-import { requirePrincipalConfig } from "../config";
-import { daemonExecMount } from "../daemon";
+import { createAgentApiClient } from "../client";
 import { error, errorMessage, success } from "../output";
 import { resolveSecretValue } from "../secret";
 
@@ -9,16 +10,24 @@ export function createMountCommand(): Command {
   return new Command("mount")
     .description("Mount secret as temp file")
     .requiredOption("--item <id>", "Item ID")
+    .option("--field <name>", "Named field to deliver from the item payload")
     .option("--path <path>", "Target mount path")
-    .action(async (opts: { item: string; path?: string }) => {
+    .action(async (opts: { item: string; field?: string; path?: string }) => {
+      let client: Awaited<ReturnType<typeof createAgentApiClient>> | undefined;
       try {
-        const client = new ApiClient(requirePrincipalConfig());
-        const secretValue = await resolveSecretValue(client, opts.item, "file");
-        const res = await daemonExecMount(secretValue, opts.path);
-        success(`Mounted at: ${res.path}`);
+        client = await createAgentApiClient();
+        const secretValue = await resolveSecretValue(client, opts.item, "file", opts.field);
+
+        const targetPath = opts.path ?? join(tmpdir(), `abadge-${crypto.randomUUID()}`);
+        mkdirSync(dirname(targetPath), { recursive: true });
+        writeFileSync(targetPath, secretValue, { mode: 0o600 });
+
+        success(`Mounted at: ${targetPath}`);
       } catch (err) {
         error(errorMessage(err, "Failed to mount item."));
+        client?.disconnect();
         process.exit(1);
       }
+      client?.disconnect();
     });
 }

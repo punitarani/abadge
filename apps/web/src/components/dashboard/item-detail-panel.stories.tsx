@@ -5,9 +5,11 @@ import { ItemDetailPanelView } from "./item-detail-panel";
 
 const zeroKnowledgeItem: ItemDetail = {
   id: "fa3c8cf8-d5ae-4b1f-8dc8-1d58d902ee11",
+  label: "Production API Key",
   storageMode: "zero_knowledge",
   cryptoVersion: 1,
   contentVersion: 1,
+  profileId: "11111111-1111-1111-1111-111111111111",
   createdAt: "2026-04-04T15:23:00.000Z",
   updatedAt: "2026-04-05T09:42:00.000Z",
   encryptedItemKey: "encrypted-item-key",
@@ -16,9 +18,11 @@ const zeroKnowledgeItem: ItemDetail = {
 
 const serverManagedItem: ItemDetail = {
   id: "c07e1999-a7eb-4f26-af0f-b13f49a32ec8",
+  label: "Database Password",
   storageMode: "server_managed",
   cryptoVersion: 1,
   contentVersion: 1,
+  profileId: null,
   createdAt: "2026-04-03T11:15:00.000Z",
   updatedAt: "2026-04-03T11:15:00.000Z",
 };

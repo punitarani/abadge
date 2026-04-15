@@ -46,9 +46,11 @@ drizzle/
 .remember
 
 # tools
+.mcp.json
 .playwright-cli
 
 # notionfs
 .notionfs
 .playwright-mcp/
 .claude/worktrees/
+.worktrees/

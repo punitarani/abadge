@@ -1,4 +1,3 @@
-import { tokenToHeaders } from "@abadge/core";
 import type { QueryClientConfig } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import type { TRPCClientErrorLike } from "@trpc/client";
@@ -7,24 +6,40 @@ import type { AppRouter } from "./server/router";
 
 export interface BrowserTrpcClientOptions {
   baseUrl: string;
+  /** Optional callback to resolve the active organization ID for X-Abadge-Org-Id header. */
+  getOrgId?: () => string | undefined;
 }
 
 export interface NodeTrpcClientOptions {
   baseUrl: string;
   token?: string;
   headers?: unknown;
+  /** Organization ID sent as X-Abadge-Org-Id header for org-scoped requests. */
+  orgId?: string;
 }
 
+/**
+ * Mirrored by `NormalizedTrpcError` in `packages/sdk/src/trpc.ts`. This
+ * workspace package is `private: true`; the SDK is published, so it cannot
+ * depend on this file directly. Any change to fields (hint, meta, new fields)
+ * must be mirrored there.
+ */
 export interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;
   trpcCode?: string;
-  appCode?: string;
+  code?: string;
+  hint?: string;
+  meta?: Readonly<Record<string, unknown>>;
   issues?: unknown;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
+}
+
+function tokenToHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
 }
 
 function toHeaderRecord(headers?: unknown): Record<string, string> {
@@ -75,6 +90,10 @@ export function createBrowserTrpcClient(options: BrowserTrpcClientOptions) {
     links: [
       httpBatchLink({
         url,
+        headers() {
+          const orgId = options.getOrgId?.();
+          return orgId ? { "X-Abadge-Org-Id": orgId } : {};
+        },
         fetch: ((input: unknown, init?: unknown) =>
           fetch(input as never, {
             ...(init as RequestInit | undefined),
@@ -96,6 +115,7 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
           return {
             ...toHeaderRecord(options.headers),
             ...(options.token ? tokenToHeaders(options.token) : {}),
+            ...(options.orgId ? { "X-Abadge-Org-Id": options.orgId } : {}),
           };
         },
       }),
@@ -129,7 +149,12 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
     message: trpcError.message || "Request failed",
     httpStatus: typeof data?.httpStatus === "number" ? data.httpStatus : undefined,
     trpcCode: typeof data?.code === "string" ? data.code : undefined,
-    appCode: typeof data?.appCode === "string" ? data.appCode : undefined,
+    code: typeof data?.code === "string" ? data.code : undefined,
+    hint: typeof data?.hint === "string" ? data.hint : undefined,
+    meta:
+      data?.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+        ? (data.meta as Record<string, unknown>)
+        : undefined,
     issues: data?.issues,
   };
 }

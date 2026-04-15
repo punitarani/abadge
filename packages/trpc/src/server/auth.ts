@@ -1,12 +1,7 @@
-import { AGENT_SESSION_PREFIX, OPERATOR_TOKEN_PREFIX, UnauthorizedError } from "@abadge/core";
+import { AGENT_SESSION_PREFIX, BadRequestError, UnauthorizedError } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull, or } from "@abadge/db";
-import {
-  principals as agentRecords,
-  agentSessions,
-  auditLog,
-  operatorTokens,
-} from "@abadge/db/schema";
+import { and, asc, eq, isNull, or } from "@abadge/db";
+import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
@@ -21,16 +16,7 @@ function getCandidatePrefixes(token: string): string[] {
   ];
 }
 
-interface AuthSessionResult {
-  session?: {
-    userId?: string | null;
-  } | null;
-  user?: {
-    id?: string | null;
-  } | null;
-}
-
-interface AuthSessionLookupResult {
+export interface AuthSessionResult {
   session?: {
     userId?: string | null;
   } | null;
@@ -41,26 +27,13 @@ interface AuthSessionLookupResult {
 
 interface AuthContextWithSessionLookup {
   internalAdapter: {
-    findSession: (token: string) => Promise<AuthSessionLookupResult | null>;
-  };
-}
-
-interface VerifyApiKeyResult {
-  valid: boolean;
-  key?: {
-    id?: string;
-    referenceId?: string;
+    findSession: (token: string) => Promise<AuthSessionResult | null>;
   };
 }
 
 type ActiveAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "authMethod" | "secretHash"
->;
-
-type MigratedAgent = Pick<
-  typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "enabled" | "revokedAt"
+  "id" | "organizationId" | "createdBy" | "locality" | "authMethod" | "secretHash"
 >;
 
 type ActiveAgentSession = Pick<
@@ -70,18 +43,14 @@ type ActiveAgentSession = Pick<
 
 type AgentSessionAgentCandidate = Pick<
   typeof agentRecords.$inferSelect,
-  "id" | "userId" | "locality" | "enabled" | "revokedAt"
->;
-
-type ActiveOperatorToken = Pick<
-  typeof operatorTokens.$inferSelect,
-  "id" | "userId" | "scopes" | "expiresAt"
+  "id" | "organizationId" | "createdBy" | "locality" | "enabled" | "revokedAt"
 >;
 
 function unauthorized(message: string): UnauthorizedError {
   return new UnauthorizedError({
     code: "UNAUTHORIZED",
     message,
+    hint: "Authenticate with a valid session token, agent API key, or short-lived agent session token.",
   });
 }
 
@@ -99,16 +68,18 @@ function touchAgent(ctx: BaseRequestContext, agentId: string): void {
     .update(agentRecords)
     .set({ lastUsedAt: new Date() })
     .where(eq(agentRecords.id, agentId))
-    .execute();
+    .execute()
+    .catch(() => {});
 }
 
 function toAgentIdentity(
-  agent: Pick<typeof agentRecords.$inferSelect, "id" | "userId" | "locality">,
+  agent: Pick<typeof agentRecords.$inferSelect, "id" | "organizationId" | "createdBy" | "locality">,
 ): AgentIdentity {
   return {
     kind: "agent",
     agentId: agent.id,
-    agentUserId: agent.userId,
+    agentUserId: agent.createdBy,
+    agentOrganizationId: agent.organizationId,
     agentLocality: agent.locality,
   };
 }
@@ -118,15 +89,8 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
     .update(agentSessions)
     .set({ lastUsedAt: new Date() })
     .where(eq(agentSessions.id, sessionId))
-    .execute();
-}
-
-function touchOperatorToken(ctx: BaseRequestContext, tokenId: string): void {
-  void ctx.db
-    .update(operatorTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(operatorTokens.id, tokenId))
-    .execute();
+    .execute()
+    .catch(() => {});
 }
 
 function auditAgentSessionReject(
@@ -134,16 +98,18 @@ function auditAgentSessionReject(
   input: {
     userId: string;
     agentId: string;
+    organizationId: string;
     result: "denied" | "expired" | "revoked";
     reason: string;
   },
 ): Effect.Effect<void, Error> {
   return tryAsync(() =>
     ctx.db
-      .insert(auditLog)
+      .insert(auditLogs)
       .values({
+        organizationId: input.organizationId,
         userId: input.userId,
-        principalId: input.agentId,
+        agentId: input.agentId,
         eventType: "agent.session_reject",
         result: input.result,
         meta: { reason: input.reason },
@@ -163,7 +129,8 @@ const verifyLocalAgentIdentity = (
       ctx.db
         .select({
           id: agentRecords.id,
-          userId: agentRecords.userId,
+          organizationId: agentRecords.organizationId,
+          createdBy: agentRecords.createdBy,
           locality: agentRecords.locality,
           authMethod: agentRecords.authMethod,
           secretHash: agentRecords.secretHash,
@@ -201,58 +168,6 @@ const verifyLocalAgentIdentity = (
     return null;
   });
 
-const verifyLegacyAgentIdentity = (
-  ctx: BaseRequestContext,
-  token: string,
-): Effect.Effect<AgentIdentity, Error | UnauthorizedError> =>
-  Effect.gen(function* () {
-    const result = (yield* tryAsync(() =>
-      ctx.auth.api.verifyApiKey({
-        body: { key: token },
-      }),
-    )) as VerifyApiKeyResult;
-
-    if (!result.valid || !result.key) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const legacyAgentId = result.key.id;
-    const legacyUserId = result.key.referenceId;
-    if (!legacyAgentId || !legacyUserId) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    const [migratedAgent] = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: agentRecords.id,
-          userId: agentRecords.userId,
-          locality: agentRecords.locality,
-          enabled: agentRecords.enabled,
-          revokedAt: agentRecords.revokedAt,
-        })
-        .from(agentRecords)
-        .where(eq(agentRecords.id, legacyAgentId))
-        .limit(1),
-    )) as Array<MigratedAgent>;
-
-    if (migratedAgent && (!migratedAgent.enabled || migratedAgent.revokedAt)) {
-      return yield* Effect.fail(unauthorized("Invalid API key"));
-    }
-
-    if (migratedAgent) {
-      touchAgent(ctx, legacyAgentId);
-      return toAgentIdentity(migratedAgent);
-    }
-
-    return {
-      kind: "agent",
-      agentId: legacyAgentId,
-      agentUserId: legacyUserId,
-      agentLocality: "remote",
-    };
-  });
-
 const verifyAgentSessionIdentity = (
   ctx: BaseRequestContext,
   token: string,
@@ -281,9 +196,17 @@ const verifyAgentSessionIdentity = (
     }
 
     if (sessionRecord.expiresAt <= new Date()) {
+      const [expiredAgent] = (yield* tryAsync(() =>
+        ctx.db
+          .select({ organizationId: agentRecords.organizationId })
+          .from(agentRecords)
+          .where(eq(agentRecords.id, sessionRecord.agentId))
+          .limit(1),
+      )) as Array<{ organizationId: string }>;
       yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
+        organizationId: expiredAgent?.organizationId ?? "",
         result: "expired",
         reason: "session_expired",
       });
@@ -294,7 +217,8 @@ const verifyAgentSessionIdentity = (
       ctx.db
         .select({
           id: agentRecords.id,
-          userId: agentRecords.userId,
+          organizationId: agentRecords.organizationId,
+          createdBy: agentRecords.createdBy,
           locality: agentRecords.locality,
           enabled: agentRecords.enabled,
           revokedAt: agentRecords.revokedAt,
@@ -303,7 +227,7 @@ const verifyAgentSessionIdentity = (
         .where(
           and(
             eq(agentRecords.id, sessionRecord.agentId),
-            eq(agentRecords.userId, sessionRecord.userId),
+            eq(agentRecords.createdBy, sessionRecord.userId),
           ),
         )
         .limit(1),
@@ -313,6 +237,7 @@ const verifyAgentSessionIdentity = (
       yield* auditAgentSessionReject(ctx, {
         userId: sessionRecord.userId,
         agentId: sessionRecord.agentId,
+        organizationId: "",
         result: "denied",
         reason: "session_agent_not_found",
       });
@@ -321,8 +246,9 @@ const verifyAgentSessionIdentity = (
 
     if (!agent.enabled) {
       yield* auditAgentSessionReject(ctx, {
-        userId: agent.userId,
+        userId: agent.createdBy,
         agentId: agent.id,
+        organizationId: agent.organizationId,
         result: "denied",
         reason: "session_agent_disabled",
       });
@@ -331,8 +257,9 @@ const verifyAgentSessionIdentity = (
 
     if (agent.revokedAt) {
       yield* auditAgentSessionReject(ctx, {
-        userId: agent.userId,
+        userId: agent.createdBy,
         agentId: agent.id,
+        organizationId: agent.organizationId,
         result: "revoked",
         reason: "session_agent_revoked",
       });
@@ -344,15 +271,75 @@ const verifyAgentSessionIdentity = (
     return toAgentIdentity(agent);
   });
 
+/**
+ * Resolve the effective organization ID for a user-authenticated request.
+ *
+ * Behavior:
+ *   - If `X-Abadge-Org-Id` is set: verify the user is a member of that org.
+ *   - If absent and the user has 0 memberships: reject with `NO_ORG_MEMBERSHIP`.
+ *   - If absent and the user has exactly 1 membership: return it. The query is
+ *     ordered by `member.createdAt ASC` so the fallback is deterministic.
+ *   - If absent and the user has 2+ memberships: reject with `ORG_HEADER_REQUIRED`
+ *     and list available org IDs in `meta` so the caller can retry with a header.
+ *
+ * Exported for direct unit testing; callers inside this module should prefer
+ * `resolveSessionIdentity` / `resolveBearerSessionIdentity`.
+ *
+ * @internal
+ */
+export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string): Promise<string> {
+  const orgIdHeader = ctx.req.headers.get("X-Abadge-Org-Id");
+
+  if (orgIdHeader) {
+    const [membership] = await ctx.db
+      .select({ organizationId: member.organizationId })
+      .from(member)
+      .where(and(eq(member.userId, userId), eq(member.organizationId, orgIdHeader)))
+      .limit(1);
+
+    if (!membership) {
+      throw new UnauthorizedError({
+        code: "ORG_MEMBERSHIP_REQUIRED",
+        message: "Not a member of the requested organization",
+        hint: "Switch to an organization you belong to.",
+      });
+    }
+    return orgIdHeader;
+  }
+
+  // Order by createdAt so the single-membership fallback is deterministic. The
+  // 2+ memberships case is rejected below, so ordering only affects callers
+  // who happen to have exactly one row (and is belt-and-suspenders for races).
+  const memberships = await ctx.db
+    .select({ organizationId: member.organizationId })
+    .from(member)
+    .where(eq(member.userId, userId))
+    .orderBy(asc(member.createdAt));
+
+  if (memberships.length === 0) {
+    throw new UnauthorizedError({
+      code: "NO_ORG_MEMBERSHIP",
+      message: "User has no organization membership",
+      hint: "Complete onboarding to create your first organization.",
+    });
+  }
+  if (memberships.length > 1) {
+    throw new BadRequestError({
+      code: "ORG_HEADER_REQUIRED",
+      message: "X-Abadge-Org-Id header required for multi-org users",
+      hint: "Set X-Abadge-Org-Id to the organization context for this request.",
+      meta: { availableOrgIds: memberships.map((m) => m.organizationId) },
+    });
+  }
+  // memberships.length === 1 here (0 and >1 branches returned above).
+  const [only] = memberships as [(typeof memberships)[number]];
+  return only.organizationId;
+}
+
 export const resolveSessionIdentity = (
   ctx: BaseRequestContext,
 ): Effect.Effect<SessionIdentity, Error | UnauthorizedError> =>
   Effect.gen(function* () {
-    const operatorTokenIdentity = yield* resolveOperatorTokenIdentity(ctx);
-    if (operatorTokenIdentity) {
-      return operatorTokenIdentity;
-    }
-
     const session = (yield* tryAsync(() =>
       ctx.auth.api.getSession({
         headers: ctx.req.headers,
@@ -361,9 +348,11 @@ export const resolveSessionIdentity = (
 
     const sessionUserId = session?.user?.id ?? session?.session?.userId;
     if (sessionUserId) {
+      const organizationId = yield* tryAsync(() => resolveUserOrgId(ctx, sessionUserId));
       return {
         kind: "session" as const,
         userId: sessionUserId,
+        organizationId,
         authMethod: "browser_session",
       };
     }
@@ -374,51 +363,6 @@ export const resolveSessionIdentity = (
     }
 
     return yield* Effect.fail(unauthorized("Unauthorized"));
-  });
-
-const resolveOperatorTokenIdentity = (
-  ctx: BaseRequestContext,
-): Effect.Effect<SessionIdentity | null, Error | UnauthorizedError> =>
-  Effect.gen(function* () {
-    const token = ctx.req.headers.get("X-Abadge-Operator-Token");
-    if (!token) {
-      return null;
-    }
-
-    if (!token.startsWith(OPERATOR_TOKEN_PREFIX)) {
-      return yield* Effect.fail(unauthorized("Invalid operator token"));
-    }
-
-    const tokenHash = yield* tryAsync(() => hashApiKey(token));
-    const [record] = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: operatorTokens.id,
-          userId: operatorTokens.userId,
-          scopes: operatorTokens.scopes,
-          expiresAt: operatorTokens.expiresAt,
-        })
-        .from(operatorTokens)
-        .where(and(eq(operatorTokens.tokenHash, tokenHash), isNull(operatorTokens.revokedAt)))
-        .limit(1),
-    )) as Array<ActiveOperatorToken>;
-
-    if (!record) {
-      return yield* Effect.fail(unauthorized("Invalid operator token"));
-    }
-
-    if (record.expiresAt <= new Date()) {
-      return yield* Effect.fail(unauthorized("Expired operator token"));
-    }
-
-    touchOperatorToken(ctx, record.id);
-    return {
-      kind: "session" as const,
-      userId: record.userId,
-      authMethod: "operator_token",
-      operatorTokenId: record.id,
-      scopes: record.scopes,
-    };
   });
 
 const resolveBearerSessionIdentity = (
@@ -434,13 +378,15 @@ const resolveBearerSessionIdentity = (
     const authContext = (yield* tryAsync(() => ctx.auth.$context)) as AuthContextWithSessionLookup;
     const sessionLookup = (yield* tryAsync(() =>
       authContext.internalAdapter.findSession(token),
-    )) as AuthSessionLookupResult | null;
+    )) as AuthSessionResult | null;
 
     const sessionUserId = sessionLookup?.user?.id ?? sessionLookup?.session?.userId;
     if (sessionUserId) {
+      const organizationId = yield* tryAsync(() => resolveUserOrgId(ctx, sessionUserId));
       return {
         kind: "session" as const,
         userId: sessionUserId,
+        organizationId,
         authMethod: "bearer_session",
       };
     }
@@ -463,5 +409,5 @@ export const resolveAgentIdentity = (
       return agentIdentity;
     }
 
-    return yield* verifyLegacyAgentIdentity(ctx, token);
+    return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

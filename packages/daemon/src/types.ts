@@ -1,4 +1,3 @@
-import type { Vault } from "@abadge/core";
 import type { KDFParams } from "@abadge/crypto";
 
 /** Daemon configuration. */
@@ -13,7 +12,7 @@ export interface DaemonConfig {
   apiUrl: string;
 }
 
-export type DaemonAuthType = "better_auth_session" | "operator_token";
+export type DaemonAuthType = "better_auth_session";
 
 export interface DaemonAuthState {
   type: DaemonAuthType;
@@ -33,8 +32,18 @@ export interface DaemonAuthHeaders {
   expiresAt: string;
 }
 
-/** Vault metadata fetched from the API. */
-export interface VaultMeta extends Pick<Vault, "id" | "wrappedRootKey" | "kdfSalt" | "keyVersion"> {
+/**
+ * Profile metadata fetched from the API for daemon-side ZK operations.
+ *
+ * Sourced from `profiles.get` (Phase D — superseded the legacy per-user
+ * vault). The daemon retains the historical `VaultMeta` type name to
+ * avoid churn in callers; `id` is the profile id.
+ */
+export interface VaultMeta {
+  id: string;
+  wrappedRootKey: string;
+  kdfSalt: string;
+  keyVersion: number;
   kdfParams: KDFParams;
 }
 

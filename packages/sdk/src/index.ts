@@ -1,13 +1,19 @@
+export { resolveFieldValue } from "@abadge/core";
 export type {
+  AbadgeAgentApiKeyConfig,
   AbadgeAgentClientConfig,
+  AbadgeAgentKeypairConfig,
   AbadgeClientConfig,
   AbadgeUserClientConfig,
+  Ed25519PrivateKeyJwk,
   ErrorCode,
 } from "./client";
-export { AbadgeAgentClient, AbadgeClient, AbadgeUserClient } from "./client";
+export { AbadgeAgentClient, AbadgeUserClient } from "./client";
 export { AbadgeApiError } from "./errors";
+export { SecretValue } from "./secret-value";
 export type {
   Agent,
+  AgentAuthMethod,
   AgentBootstrapTokenResult,
   AgentChallengeResult,
   AgentEnrollmentResult,
@@ -52,7 +58,6 @@ export type {
   PermissionFilters,
   PermissionListResult,
   PermissionResult,
-  PrincipalAuthMethod,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,
@@ -61,7 +66,5 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
-  Vault,
   VaultBootstrapInput,
-  VaultResult,
 } from "./types";

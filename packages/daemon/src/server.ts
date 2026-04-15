@@ -1,6 +1,15 @@
-import { chmodSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expandFieldSelection, resolveFieldValue } from "@abadge/core";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { defaultPidPath, defaultSocketPath } from "./paths";
@@ -24,6 +33,62 @@ import { VaultState } from "./vault-state";
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
 
+/** Shell-safe env var name: POSIX identifier. */
+const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+
+/**
+ * Env vars that can alter loader/interpreter behavior of the child process.
+ * Injecting these from caller-controlled data would let a malicious or
+ * compromised agent hijack subprocess execution (local privilege escalation
+ * from agent-level compromise to arbitrary code in the spawned process).
+ */
+const RESERVED_ENV_KEYS = new Set([
+  "PATH",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FORCE_FLAT_NAMESPACE",
+  "NODE_OPTIONS",
+  "BUN_INSTALL",
+  "BUN_CONFIG_REGISTRY",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "HOME",
+  "USER",
+  "SHELL",
+  // Node.js bare-import resolution path (analog of PYTHONPATH).
+  "NODE_PATH",
+  // TLS trust / proxy hijack: redirect or MITM outbound TLS from the child.
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  // Shell loader hijack: alter startup or word-splitting of a spawned shell.
+  "BASH_ENV",
+  "ENV",
+  "IFS",
+]);
+
+function validateEnvKey(key: string): void {
+  if (!ENV_KEY_PATTERN.test(key)) {
+    throw {
+      code: RPC_ERRORS.INVALID_PARAMS,
+      message: `Invalid env key: ${JSON.stringify(key)}. Must match [A-Z_][A-Z0-9_]*.`,
+    };
+  }
+  if (RESERVED_ENV_KEYS.has(key)) {
+    throw {
+      code: RPC_ERRORS.INVALID_PARAMS,
+      message: `Refusing to inject reserved env var: ${key}`,
+    };
+  }
+}
+
 export function resolveConfig(partial: Partial<DaemonConfig>): DaemonConfig {
   return {
     socketPath: partial.socketPath ?? defaultSocketPath(),
@@ -46,7 +111,7 @@ function rpcOk(id: number | string, result: unknown): JsonRpcResponse {
 type RpcHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
 function normalizeAuthType(type: unknown): DaemonAuthType | null {
-  return type === "better_auth_session" || type === "operator_token" ? type : null;
+  return type === "better_auth_session" ? type : null;
 }
 
 function isAuthExpired(auth: DaemonAuthState): boolean {
@@ -73,10 +138,7 @@ function buildAuthHeaders(auth: DaemonAuthState | null): DaemonAuthHeaders {
   return {
     type: auth.type,
     expiresAt: auth.expiresAt,
-    headers:
-      auth.type === "operator_token"
-        ? { "X-Abadge-Operator-Token": auth.token }
-        : { Authorization: `Bearer ${auth.token}` },
+    headers: { Authorization: `Bearer ${auth.token}` },
   };
 }
 
@@ -93,10 +155,40 @@ function resolveAuthExpiry(expiresAt: unknown): string {
   return new Date(Math.min(requested, capped)).toISOString();
 }
 
+/**
+ * Clean up orphaned abadge-* temp directories left behind by crashed sessions.
+ * Any entry older than 10 minutes is removed.
+ */
+async function cleanupOrphanedMounts(): Promise<void> {
+  const tmp = tmpdir();
+  try {
+    const entries = readdirSync(tmp);
+    for (const entry of entries) {
+      if (!entry.startsWith("abadge-")) continue;
+      const fullPath = join(tmp, entry);
+      try {
+        const stat = statSync(fullPath);
+        const ageMs = Date.now() - stat.mtimeMs;
+        if (ageMs > 10 * 60 * 1000) {
+          rmSync(fullPath, { recursive: true, force: true });
+        }
+      } catch {
+        // file already gone
+      }
+    }
+  } catch {
+    // tmpdir not accessible
+  }
+}
+
 function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
   let auth: DaemonAuthState | null = null;
 
   return {
+    // The daemon does NOT auto-refresh sessions. The CLI is responsible for
+    // refreshing the session token and calling auth.setSession with the new
+    // token before the stored one expires. The daemon only tracks whether the
+    // stored session is expired and surfaces AUTH_REQUIRED errors accordingly.
     "auth.setSession": async (params): Promise<DaemonAuthStatus> => {
       const token = params.token as string | undefined;
       const type = normalizeAuthType(params.type);
@@ -132,22 +224,30 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
 
     "vault.unlock": async (params) => {
       const password = params.masterPassword as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!password) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "masterPassword is required" };
+      }
+      if (!profileId) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "profileId is required" };
       }
       if (!vault.locked) {
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
 
       try {
         vault.unlock(password, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("tag") || msg.includes("decrypt") || msg.includes("auth")) {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong master password" };
+        }
+        throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Unlock failed: ${msg}` };
       }
 
       return { ok: true, keyVersion: vault.keyVersion };
@@ -165,15 +265,19 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "vault.changePassword": async (params) => {
       const oldPassword = params.oldPassword as string | undefined;
       const newPassword = params.newPassword as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!oldPassword || !newPassword) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
           message: "oldPassword and newPassword are required",
         };
       }
+      if (!profileId) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "profileId is required" };
+      }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers);
+      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -181,11 +285,15 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       let result: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown };
       try {
         result = vault.changePassword(oldPassword, newPassword, meta);
-      } catch {
-        throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("tag") || msg.includes("decrypt") || msg.includes("auth")) {
+          throw { code: RPC_ERRORS.WRONG_PASSWORD, message: "Wrong old password" };
+        }
+        throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
-      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, result);
+      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, profileId, result);
       return { ok: true };
     },
 
@@ -201,6 +309,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "item.decrypt": async (params) => {
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
+      const field = params.field as string | undefined;
       if (!encryptedItemKey || !ciphertext) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
@@ -209,6 +318,11 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
       requireUnlocked(vault);
       const payload = vault.decrypt(encryptedItemKey, ciphertext);
+      if (field !== undefined) {
+        // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+        const resolved = resolveFieldValue(payload as any, field);
+        return { payload: resolved };
+      }
       return { payload };
     },
 
@@ -236,10 +350,58 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
           message: "secretValue, envVar, and command are required",
         };
       }
+      validateEnvKey(envVar);
 
       const proc = Bun.spawn([command, ...args], {
         // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
         env: { ...process.env, [envVar]: secretValue },
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "inherit",
+      });
+      const exitCode = await proc.exited;
+      return { exitCode, signal: proc.signalCode ?? undefined };
+    },
+
+    "exec.expandEnv": async (params): Promise<EnvExecResult> => {
+      const encryptedItemKey = params.encryptedItemKey as string | undefined;
+      const ciphertext = params.ciphertext as string | undefined;
+      const serverPayload = params.serverPayload;
+      const command = params.command as string | undefined;
+      const args = (params.args as string[]) ?? [];
+      if (!command) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "command is required" };
+      }
+
+      let payload: unknown;
+      if (encryptedItemKey && ciphertext) {
+        requireUnlocked(vault);
+        payload = vault.decrypt(encryptedItemKey, ciphertext);
+      } else if (serverPayload !== undefined) {
+        payload = serverPayload;
+      } else {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "Either encryptedItemKey+ciphertext or serverPayload is required",
+        };
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+      const fields = expandFieldSelection(payload as any);
+      // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
+      const payloadFields = (payload as any)?.fields ?? {};
+      const extraEnv: Record<string, string> = {};
+      for (const fieldName of fields) {
+        validateEnvKey(fieldName);
+        const value = payloadFields[fieldName];
+        if (typeof value === "string") {
+          extraEnv[fieldName] = value;
+        }
+      }
+
+      const proc = Bun.spawn([command, ...args], {
+        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
+        env: { ...process.env, ...extraEnv },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -349,6 +511,9 @@ export function startServer(config: DaemonConfig): DaemonServer {
     console.log("[vaultd] Auto-locked after inactivity");
   });
 
+  // Clean up temp files left behind by previous crashed sessions
+  void cleanupOrphanedMounts();
+
   mkdirSync(dirname(config.socketPath), { recursive: true });
 
   // Clean up stale socket file
@@ -392,11 +557,12 @@ export function startServer(config: DaemonConfig): DaemonServer {
     },
   });
 
-  // Set socket file permissions to owner-only
+  // Set socket file permissions to owner-only — abort if this fails
   try {
     chmodSync(config.socketPath, 0o600);
-  } catch {
-    console.warn("[vaultd] Could not set socket permissions to 0600");
+  } catch (err) {
+    server.stop(true);
+    throw new Error(`[vaultd] FATAL: Could not set socket permissions to 0600: ${err}`);
   }
 
   return {

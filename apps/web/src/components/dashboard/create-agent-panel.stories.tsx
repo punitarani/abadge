@@ -1,27 +1,18 @@
-import type { AgentKind } from "@abadge/core";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { type AgentRegistrationState, CreateAgentPanelView } from "./create-agent-panel";
-
-function ensureClipboard(): void {
-  if (typeof navigator === "undefined") {
-    return;
-  }
-
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: async () => undefined,
-    },
-  });
-}
+import { CreateAgentPanel } from "./create-agent-panel";
 
 const meta: Meta = {
   title: "Dashboard/CreateAgentPanel",
   decorators: [
     (Story) => {
-      ensureClipboard();
+      if (typeof navigator !== "undefined") {
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: async () => undefined },
+        });
+      }
       return (
         <div className="mx-auto w-full max-w-lg rounded-lg border border-border bg-background p-5">
           <Story />
@@ -38,48 +29,19 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-function AgentFormStory({ loading = false }: { loading?: boolean }): React.ReactElement {
-  const [name, setName] = useState("Claude Code");
-  const [kind, setKind] = useState<AgentKind>("local_cli");
-  const [description, setDescription] = useState("Used for local development workflows.");
+function PanelStory(): React.ReactElement {
+  const [open, setOpen] = useState(true);
 
   return (
-    <div className="flex flex-col gap-4">
-      <CreateAgentPanelView
-        mode="form"
-        formId="storybook-create-agent"
-        name={name}
-        kind={kind}
-        description={description}
-        onNameChange={setName}
-        onKindChange={setKind}
-        onDescriptionChange={setDescription}
-        onSubmit={(event) => event.preventDefault()}
-      />
-      <div className="flex justify-end gap-2 border-t border-border pt-4">
-        <Button variant="outline" size="sm">
-          Cancel
-        </Button>
-        <Button size="sm" disabled={loading}>
-          {loading ? "Registering..." : "Register agent"}
-        </Button>
-      </div>
+    <div>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        Open panel
+      </Button>
+      <CreateAgentPanel open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
 
-const registration: AgentRegistrationState = {
-  apiKey: "abl_test_c6VMJhRk91eTnX2m",
-};
-
 export const Default: Story = {
-  render: () => <AgentFormStory />,
-};
-
-export const Loading: Story = {
-  render: () => <AgentFormStory loading />,
-};
-
-export const Success: Story = {
-  render: () => <CreateAgentPanelView mode="success" registration={registration} />,
+  render: () => <PanelStory />,
 };

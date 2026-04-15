@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
+import { BadRequestError, NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
 import { Effect } from "effect";
 import { getTrpcErrorData, toTrpcError } from "./errors";
 
@@ -10,6 +10,7 @@ describe("toTrpcError", () => {
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Verify the item id and try again.",
         }),
       ),
     ).catch((error) => error);
@@ -19,8 +20,8 @@ describe("toTrpcError", () => {
     expect(error.code).toBe("NOT_FOUND");
     expect(error.message).toBe("Item not found");
     expect(getTrpcErrorData(error)).toEqual({
-      appCode: "ITEM_NOT_FOUND",
-      issues: undefined,
+      code: "ITEM_NOT_FOUND",
+      hint: "Verify the item id and try again.",
     });
   });
 
@@ -30,6 +31,7 @@ describe("toTrpcError", () => {
         new ValidationError({
           code: "VALIDATION_ERROR",
           message: "Invalid input",
+          hint: "Fix the highlighted input fields and try again.",
           issues: [{ path: ["name"], message: "Required" }],
         }),
       ),
@@ -39,7 +41,8 @@ describe("toTrpcError", () => {
 
     expect(error.code).toBe("BAD_REQUEST");
     expect(getTrpcErrorData(error)).toEqual({
-      appCode: "VALIDATION_ERROR",
+      code: "VALIDATION_ERROR",
+      hint: "Fix the highlighted input fields and try again.",
       issues: [{ path: ["name"], message: "Required" }],
     });
   });
@@ -49,10 +52,34 @@ describe("toTrpcError", () => {
       new UnauthorizedError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
+        hint: "Sign in again and retry the request.",
       }),
     );
 
     expect(error.code).toBe("UNAUTHORIZED");
     expect(error.message).toBe("Unauthorized");
+  });
+
+  test("preserves hint and meta for caller-facing transport formatting", () => {
+    const error = toTrpcError(
+      new BadRequestError({
+        code: "INVALID_CAPABILITY_LOCALITY",
+        message: "Remote agents cannot mount env vars",
+        hint: "Use reveal_plaintext or register a local agent.",
+        meta: {
+          capability: "mount_env",
+          locality: "remote",
+        },
+      }),
+    );
+
+    expect(getTrpcErrorData(error)).toEqual({
+      code: "INVALID_CAPABILITY_LOCALITY",
+      hint: "Use reveal_plaintext or register a local agent.",
+      meta: {
+        capability: "mount_env",
+        locality: "remote",
+      },
+    });
   });
 });

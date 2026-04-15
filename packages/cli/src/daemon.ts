@@ -23,9 +23,10 @@ async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): P
 }
 
 export async function daemonUnlock(
+  profileId: string,
   masterPassword: string,
 ): Promise<{ ok: boolean; keyVersion: number }> {
-  return withDaemonClient((client) => client.unlock(masterPassword));
+  return withDaemonClient((client) => client.unlock(profileId, masterPassword));
 }
 
 export async function daemonLock(): Promise<{ ok: boolean }> {
@@ -55,10 +56,11 @@ export async function daemonAuthHeaders(): Promise<DaemonAuthHeaders> {
 }
 
 export async function daemonChangePassword(
+  profileId: string,
   oldPassword: string,
   newPassword: string,
 ): Promise<{ ok: boolean }> {
-  return withDaemonClient((client) => client.changePassword(oldPassword, newPassword));
+  return withDaemonClient((client) => client.changePassword(profileId, oldPassword, newPassword));
 }
 
 export async function daemonEncrypt(payload: unknown): Promise<EncryptResult> {
@@ -79,6 +81,18 @@ export async function daemonExecEnv(
   args: string[],
 ): Promise<EnvExecResult> {
   return withDaemonClient((client) => client.execEnv(secretValue, envVar, command, args));
+}
+
+export async function daemonExpandEnv(
+  encryptedItemKey: string | null,
+  ciphertext: string | null,
+  serverPayload: unknown,
+  command: string,
+  args: string[],
+): Promise<EnvExecResult> {
+  return withDaemonClient((client) =>
+    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args),
+  );
 }
 
 export async function daemonExecMount(

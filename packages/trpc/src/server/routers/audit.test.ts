@@ -24,6 +24,13 @@ describe("audit query compatibility", () => {
     expect(getAuditEventTypeFilters("grant.create")).toEqual(["permission.create", "grant.create"]);
   });
 
+  test("normalizes vault and operator-token events into roadmap event names", () => {
+    expect(normalizeAuditEventType("vault.bootstrap")).toBe("profile.create");
+    expect(normalizeAuditEventType("vault.key_rotate")).toBe("profile.rotate");
+    expect(normalizeAuditEventType("operator_token.create")).toBe("auth.token_issue");
+    expect(normalizeAuditEventType("operator_token.revoke")).toBe("auth.token_revoke");
+  });
+
   test("throws for unexpected audit event types", () => {
     expect(() => normalizeAuditEventType("unexpected.event")).toThrow(
       "Unknown audit event type: unexpected.event",

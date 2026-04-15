@@ -1,5 +1,4 @@
-import type { Agent, ItemDisplayEntry } from "@abadge/core";
-import { decryptItemFromVault } from "./crypto-client";
+import type { Agent, ItemSummary, Profile } from "@abadge/core";
 
 const AUDIT_FALLBACK_ID_LENGTH = 13;
 
@@ -8,32 +7,19 @@ export interface AuditDisplayValue {
   resolved: boolean;
 }
 
+export function buildProfileNameMap(profiles: Profile[]): Map<string, string> {
+  return new Map(profiles.map((p) => [p.id, p.name]));
+}
+
 export function buildAuditAgentNameMap(agents: Agent[]): Map<string, string> {
   return new Map(agents.map((agent) => [agent.id, agent.name]));
 }
 
-export function buildAuditItemLabelMap(
-  items: ItemDisplayEntry[],
-  rootKey: Uint8Array | null,
-): Map<string, string> {
+export function buildAuditItemLabelMap(items: ItemSummary[]): Map<string, string> {
   const labels = new Map<string, string>();
 
   for (const item of items) {
-    if ("error" in item) continue;
-
-    if (item.storageMode === "server_managed") {
-      labels.set(item.itemId, item.label);
-      continue;
-    }
-
-    if (!rootKey) {
-      continue;
-    }
-
-    try {
-      const payload = decryptItemFromVault(item.encryptedItemKey, item.ciphertext, rootKey);
-      labels.set(item.itemId, payload.label);
-    } catch {}
+    labels.set(item.id, item.label);
   }
 
   return labels;

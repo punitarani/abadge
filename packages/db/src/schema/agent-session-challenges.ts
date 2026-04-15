@@ -1,5 +1,5 @@
 import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
-import { principals } from "./principals";
+import { agents } from "./agents";
 
 export const agentSessionChallenges = pgTable(
   "agent_session_challenges",
@@ -7,7 +7,7 @@ export const agentSessionChallenges = pgTable(
     id: text("id").primaryKey(),
     agentId: text("agent_id")
       .notNull()
-      .references(() => principals.id, { onDelete: "cascade" }),
+      .references(() => agents.id, { onDelete: "cascade" }),
     challengeHash: text("challenge_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),

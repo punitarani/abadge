@@ -1,10 +1,4 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import type { EventEmitter } from "node:events";
-import { createWriteStream } from "node:fs";
-import { chmod, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -13,10 +7,11 @@ import { resolveSecret } from "../resolve-secret.js";
 export const toolName = "run_with_secret";
 
 export const toolDescription =
-  "Run a command with a secret injected as an environment variable. Returns only the exit code and a path to the output log. The secret and command output are never returned to the model. The log file is auto-deleted after 5 minutes.";
+  "Run a command with a secret injected as an environment variable. Returns the exit code, captured output lines (truncated to 4KB total, with secret values replaced by [REDACTED]), and a truncation flag. No file paths or secret content are returned to the model.";
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to inject"),
+  field: z.string().optional().describe("Named field to inject from the item payload"),
   command: z.string().describe("Command to run"),
   args: z.array(z.string()).optional().describe("Command arguments"),
   envVarName: z
@@ -26,37 +21,106 @@ export const toolInputSchema = z.object({
   purpose: z.string().optional().describe("Why this credential is needed"),
 });
 
-const RUN_LOG_TTL_MS = 5 * 60 * 1000;
+export const MAX_OUTPUT_BYTES = 4 * 1024;
+// Per-stream pre-redaction cap. Two-KB of headroom above the post-redaction
+// cap lets redactSecret still see the full final window even after replacements
+// shrink the buffer, and prevents a misbehaving subprocess from OOMing the
+// MCP process by flooding stdout/stderr (DoS vector from any agent with the
+// run_with_secret capability).
+export const PRE_REDACT_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
 
-function runCommand(
+function redactSecret(text: string, secret: string): string {
+  if (!secret) return text;
+  return text.split(secret).join("[REDACTED]");
+}
+
+function truncateOutput(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes <= maxBytes) return { text, truncated: false };
+  const buf = Buffer.from(text, "utf8").subarray(0, maxBytes);
+  return { text: buf.toString("utf8"), truncated: true };
+}
+
+/**
+ * Captures a chunk stream into a bounded buffer. Drops further chunks (or
+ * partial chunks) once `capBytes` is reached. Returns the accumulated buffer
+ * and a flag indicating whether any data was dropped.
+ */
+class BoundedCapture {
+  readonly chunks: Uint8Array[] = [];
+  private bytes = 0;
+  truncated = false;
+  constructor(private readonly capBytes: number) {}
+
+  push(chunk: Uint8Array): void {
+    if (this.bytes >= this.capBytes) {
+      this.truncated = true;
+      return;
+    }
+    const room = this.capBytes - this.bytes;
+    if (chunk.byteLength > room) {
+      this.chunks.push(chunk.subarray(0, room));
+      this.bytes = this.capBytes;
+      this.truncated = true;
+      return;
+    }
+    this.chunks.push(chunk);
+    this.bytes += chunk.byteLength;
+  }
+
+  toString(): string {
+    return Buffer.concat(this.chunks).toString("utf8");
+  }
+}
+
+export function runCommand(
   command: string,
   args: string[],
   env: Record<string, string | undefined>,
-  logFile: string,
-): Promise<{ exitCode: number }> {
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}> {
   return new Promise((resolve) => {
-    const logStream = createWriteStream(logFile, { flags: "w", mode: 0o600 });
     const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    // Bun's ChildProcess type omits EventEmitter methods; cast for .on() access
+    const proc = child as unknown as {
+      on(event: string, listener: (...args: unknown[]) => void): void;
+    };
 
-    child.stdout?.pipe(logStream, { end: false });
-    child.stderr?.pipe(logStream, { end: false });
+    const stdoutCapture = new BoundedCapture(PRE_REDACT_CAP_BYTES);
+    const stderrCapture = new BoundedCapture(PRE_REDACT_CAP_BYTES);
+
+    child.stdout?.on("data", (chunk: Uint8Array) => {
+      stdoutCapture.push(chunk);
+    });
+    child.stderr?.on("data", (chunk: Uint8Array) => {
+      stderrCapture.push(chunk);
+    });
 
     let settled = false;
     const finish = (exitCode: number): void => {
       if (settled) return;
       settled = true;
-      logStream.end(() => {
-        resolve({ exitCode });
+      resolve({
+        exitCode,
+        stdout: stdoutCapture.toString(),
+        stderr: stderrCapture.toString(),
+        stdoutTruncated: stdoutCapture.truncated,
+        stderrTruncated: stderrCapture.truncated,
       });
     };
 
-    (child as unknown as EventEmitter).on("error", (err: Error) => {
-      logStream.write(`[spawn error] ${err.message}\n`, () => {
-        finish(1);
-      });
+    proc.on("error", (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      stderrCapture.push(new TextEncoder().encode(`[spawn error] ${msg}\n`));
+      finish(1);
     });
-    (child as unknown as EventEmitter).on("close", (code: number | null) => {
-      finish(code ?? 1);
+    proc.on("close", (code: unknown) => {
+      finish(typeof code === "number" ? code : 1);
     });
   });
 }
@@ -66,20 +130,26 @@ export async function handler(
   config: McpConfig,
 ): Promise<string> {
   const client = await getApiClient(config);
-  const secret = await resolveSecret(client, input.itemId, "env");
+  const secret = await resolveSecret(client, input.itemId, "env", input.field, input.purpose);
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
   const childEnv = { ...globalThis.process?.env, [envVarName]: secret };
 
-  const suffix = randomBytes(8).toString("hex");
-  const logFile = join(tmpdir(), `abadge-run-${suffix}.log`);
+  const { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated } = await runCommand(
+    input.command,
+    input.args ?? [],
+    childEnv,
+  );
 
-  const result = await runCommand(input.command, input.args ?? [], childEnv, logFile);
-  await chmod(logFile, 0o600);
+  // Allocate the 4KB budget: stdout gets first priority, stderr gets the remainder
+  const stdoutFinal = truncateOutput(redactSecret(stdout, secret), MAX_OUTPUT_BYTES);
+  const remainingBytes = MAX_OUTPUT_BYTES - Buffer.byteLength(stdoutFinal.text, "utf8");
+  const stderrFinal = truncateOutput(redactSecret(stderr, secret), Math.max(0, remainingBytes));
 
-  setTimeout(() => {
-    void unlink(logFile).catch(() => {});
-  }, RUN_LOG_TTL_MS);
-
-  return JSON.stringify({ exitCode: result.exitCode, logFile });
+  return JSON.stringify({
+    exitCode,
+    stdoutLines: stdoutFinal.text.split("\n"),
+    stderrLines: stderrFinal.text.split("\n"),
+    truncated: stdoutTruncated || stderrTruncated || stdoutFinal.truncated || stderrFinal.truncated,
+  });
 }

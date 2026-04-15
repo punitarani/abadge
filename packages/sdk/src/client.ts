@@ -2,9 +2,13 @@ import type { ErrorCode } from "@abadge/core";
 import { AbadgeApiError } from "./errors";
 import { createNodeTrpcClient } from "./trpc";
 import type {
+  AgentBootstrapTokenResult,
+  AgentChallengeResult,
+  AgentEnrollmentResult,
   AgentListResult,
   AgentResult,
   AgentRotateResult,
+  AgentSessionResult,
   AgentWithKey,
   AuditFilters,
   AuditListResult,
@@ -13,13 +17,10 @@ import type {
   CiphertextAccessResponse,
   CreateAgentInput,
   CreateItemInput,
-  CreateOperatorTokenInput,
   CreatePermissionInput,
   ItemListResult,
   ItemResult,
   MountAccessResponse,
-  OperatorTokenCreateResult,
-  OperatorTokenListResult,
   PermissionFilters,
   PermissionListResult,
   PermissionResult,
@@ -28,7 +29,6 @@ import type {
   SetupRecoveryInput,
   SuccessResult,
   UpdateItemInput,
-  VaultResult,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -41,15 +41,66 @@ export interface AbadgeUserClientConfig {
   apiUrl: string;
   /** User session token. */
   sessionToken: string;
+  /** Active organization ID. Sent as X-Abadge-Org-Id header for org-scoped requests. */
+  orgId?: string;
 }
 
-/** Configuration for agent SDK clients (API key or session token auth). */
-export interface AbadgeAgentClientConfig {
+/**
+ * Minimal JSON Web Key representation for an Ed25519 private key.
+ * Matches the `JsonWebKey` shape from the Web Crypto API without requiring DOM lib.
+ */
+export interface Ed25519PrivateKeyJwk {
+  kty: string;
+  crv?: string;
+  x?: string;
+  d?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Schedules `callback` to run after `delayMs` milliseconds and returns a timer
+ * handle compatible with `clearTimeout`. Defaults to `setTimeout`; test seams
+ * may supply a synchronous or mock scheduler to exercise retry logic without
+ * real timers.
+ */
+export type AbadgeScheduler = (
+  callback: () => void,
+  delayMs: number,
+) => ReturnType<typeof setTimeout>;
+
+/** Keypair-based session auth for agents (preferred). */
+export interface AbadgeAgentKeypairConfig {
+  /** API endpoint URL (no trailing slash). */
+  apiUrl: string;
+  /** Agent ID registered in Abadge. */
+  agentId: string;
+  /** Ed25519 private key (CryptoKey, JWK object, or JSON-serialized JWK string). */
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk | string;
+  /**
+   * Optional callback fired whenever a background session refresh attempt
+   * fails. Receives the error and the 0-indexed attempt number. After all
+   * attempts are exhausted, the client flips to `sessionExpired` and outgoing
+   * API calls reject fast with `SESSION_REFRESH_FAILED`.
+   */
+  onSessionError?: (error: Error, attempt: number) => void;
+  /**
+   * Test seam: scheduler used for background refresh + retry timers. Defaults
+   * to `setTimeout`. Production callers should not set this.
+   * @internal
+   */
+  schedulerFn?: AbadgeScheduler;
+}
+
+/** Legacy API key auth for agents. */
+export interface AbadgeAgentApiKeyConfig {
   /** API endpoint URL (no trailing slash). */
   apiUrl: string;
   /** Agent API key (prefixed `abl_`, `abg_`) or session token (prefixed `abs_`). */
   apiKey: string;
 }
+
+/** Configuration for agent SDK clients. Supports keypair or API key auth. */
+export type AbadgeAgentClientConfig = AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig;
 
 /**
  * Backward-compatible config that accepts either persona.
@@ -85,16 +136,19 @@ interface TrpcQueryWithoutInput<TOutput> {
 }
 
 interface SdkTrpcClient {
-  vault: {
-    bootstrap: TrpcMutation<BootstrapVaultInput, { id: string }>;
-    get: TrpcQueryWithoutInput<VaultResult>;
-    changePassword: TrpcMutation<ChangePasswordInput, SuccessResult>;
-    rotateKey: TrpcMutation<RotateKeyInput, { ok: boolean; keyVersion: number }>;
-    setupRecovery: TrpcMutation<SetupRecoveryInput, SuccessResult>;
+  auth: {
+    createChallenge: TrpcMutation<{ agentId: string }, AgentChallengeResult>;
+    exchangeSession: TrpcMutation<
+      { agentId: string; challengeId: string; challenge: string; signature: string },
+      AgentSessionResult
+    >;
+    enroll: TrpcMutation<{ bootstrapToken: string; publicKey: string }, AgentEnrollmentResult>;
+    issueBootstrapToken: TrpcMutation<{ agentId: string }, AgentBootstrapTokenResult>;
   };
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
     list: TrpcQueryWithoutInput<ItemListResult>;
+    listForAgent: TrpcQueryWithoutInput<ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
       { itemId: string; data: UpdateItemInput },
@@ -117,16 +171,118 @@ interface SdkTrpcClient {
   };
   access: {
     ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
-    reveal: TrpcMutation<{ itemId: string }, RevealAccessResponse>;
-    mount: TrpcMutation<{ itemId: string; mountType: "env" | "file" }, MountAccessResponse>;
+    reveal: TrpcMutation<{ itemId: string; field?: string }, RevealAccessResponse>;
+    mount: TrpcMutation<
+      { itemId: string; mountType: "env" | "file"; field?: string },
+      MountAccessResponse
+    >;
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
+    listForAgent: TrpcQuery<AuditFilters, AuditListResult>;
   };
-  auth: {
-    createOperatorToken: TrpcMutation<CreateOperatorTokenInput, OperatorTokenCreateResult>;
-    listOperatorTokens: TrpcQueryWithoutInput<OperatorTokenListResult>;
-    revokeOperatorToken: TrpcMutation<{ tokenId: string }, SuccessResult>;
+  profiles: {
+    create: TrpcMutation<
+      { orgId: string; name: string; description?: string; storageMode?: string },
+      {
+        profile: {
+          id: string;
+          name: string;
+          organizationId: string;
+          storageMode: string;
+          keyVersion: number;
+          createdAt: string;
+          updatedAt: string;
+        };
+      }
+    >;
+    list: TrpcQuery<
+      { orgId: string },
+      {
+        profiles: Array<{
+          id: string;
+          name: string;
+          storageMode: string;
+          organizationId: string;
+          keyVersion: number;
+          createdAt: string;
+          updatedAt: string;
+        }>;
+      }
+    >;
+    get: TrpcQuery<{ profileId: string }, unknown>;
+    bootstrap: TrpcMutation<{ profileId: string } & BootstrapVaultInput, { id: string }>;
+    changePassword: TrpcMutation<{ profileId: string } & ChangePasswordInput, SuccessResult>;
+    setupRecovery: TrpcMutation<{ profileId: string } & SetupRecoveryInput, SuccessResult>;
+    rotateKey: TrpcMutation<
+      { profileId: string } & RotateKeyInput,
+      { ok: boolean; keyVersion: number }
+    >;
+    delete: TrpcMutation<{ profileId: string }, SuccessResult>;
+  };
+  organizations: {
+    create: TrpcMutation<
+      { name: string; slug?: string },
+      {
+        organization: {
+          id: string;
+          name: string;
+          slug: string;
+          logo: string | null;
+          createdAt: string;
+        };
+        profileId: string;
+      }
+    >;
+    list: TrpcQueryWithoutInput<{
+      organizations: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        role: string;
+        hasBootstrappedProfile: boolean;
+      }>;
+    }>;
+    get: TrpcQuery<{ orgId: string }, unknown>;
+    update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
+    delete: TrpcMutation<{ orgId: string }, SuccessResult>;
+    members: {
+      list: TrpcQuery<
+        { orgId: string },
+        {
+          members: Array<{
+            id: string;
+            userId: string;
+            name: string;
+            email: string;
+            role: string;
+            createdAt: string;
+          }>;
+        }
+      >;
+      invite: TrpcMutation<
+        { orgId: string; role?: string },
+        { ok: boolean; invitationId: string; token: string }
+      >;
+      getInviteInfo: TrpcQuery<
+        { token: string },
+        {
+          organizationName: string;
+          organizationSlug: string;
+          role: string;
+          expiresAt: string;
+        }
+      >;
+      acceptInvite: TrpcMutation<
+        { token: string },
+        { ok: boolean; organizationId: string; organizationName: string; organizationSlug: string }
+      >;
+      revokeInvite: TrpcMutation<{ orgId: string; invitationId: string }, SuccessResult>;
+      remove: TrpcMutation<{ orgId: string; userId: string }, SuccessResult>;
+      updateRole: TrpcMutation<{ orgId: string; userId: string; role: string }, SuccessResult>;
+    };
   };
 }
 
@@ -142,8 +298,47 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
   }
 }
 
-function buildTrpcClient(apiUrl: string, token: string): SdkTrpcClient {
-  return createNodeTrpcClient({ baseUrl: apiUrl, token }) as unknown as SdkTrpcClient;
+function buildTrpcClient(apiUrl: string, token: string, orgId?: string): SdkTrpcClient {
+  return createNodeTrpcClient({ baseUrl: apiUrl, token, orgId }) as unknown as SdkTrpcClient;
+}
+
+/** Build a tRPC client without auth (for keypair-based pre-auth challenge requests). */
+function buildUnauthTrpcClient(apiUrl: string): SdkTrpcClient {
+  return createNodeTrpcClient({ baseUrl: apiUrl }) as unknown as SdkTrpcClient;
+}
+
+function toBase64url(bytes: ArrayBuffer): string {
+  return Buffer.from(bytes)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+function parseJwkString(raw: string): Ed25519PrivateKeyJwk {
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("privateKey string must be a JSON object (Ed25519 JWK)");
+  }
+  return parsed as Ed25519PrivateKeyJwk;
+}
+
+async function resolvePrivateKey(
+  privateKey: CryptoKey | Ed25519PrivateKeyJwk | string,
+): Promise<CryptoKey> {
+  if (privateKey instanceof CryptoKey) {
+    return privateKey;
+  }
+  if (typeof privateKey === "string") {
+    return crypto.subtle.importKey(
+      "jwk",
+      parseJwkString(privateKey) as never,
+      { name: "Ed25519" },
+      false,
+      ["sign"],
+    );
+  }
+  return crypto.subtle.importKey("jwk", privateKey as never, { name: "Ed25519" }, false, ["sign"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,61 +370,8 @@ export class AbadgeUserClient {
 
   constructor(config: AbadgeUserClientConfig | AbadgeClientConfig) {
     const token = "sessionToken" in config ? config.sessionToken : config.token;
-    this.client = buildTrpcClient(config.apiUrl, token);
-  }
-
-  // -- Vault ----------------------------------------------------------------
-
-  /**
-   * Initialize the user's vault. Called once after account creation.
-   *
-   * @param data - Wrapped root key, KDF salt, and Argon2id parameters
-   * @returns The new vault's ID
-   * @throws {AbadgeApiError} VAULT_ALREADY_EXISTS
-   */
-  async bootstrapVault(data: BootstrapVaultInput): Promise<{ id: string }> {
-    return call(() => this.client.vault.bootstrap.mutate(data), "Failed to bootstrap vault");
-  }
-
-  /**
-   * Retrieve vault metadata (wrapped root key, KDF params, key version).
-   *
-   * @returns The vault object
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async getVault(): Promise<VaultResult> {
-    return call(() => this.client.vault.get.query(), "Failed to fetch vault");
-  }
-
-  /**
-   * Re-wrap the root key with a new password. The server never sees the unwrapped key.
-   *
-   * @param data - New wrapped root key, KDF salt, and Argon2id parameters
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async changePassword(data: ChangePasswordInput): Promise<SuccessResult> {
-    return call(() => this.client.vault.changePassword.mutate(data), "Failed to change password");
-  }
-
-  /**
-   * Rotate the vault root key. All zero-knowledge items must be re-keyed atomically.
-   *
-   * @param data - New wrapped root key and a map of itemId to re-encrypted item keys
-   * @returns The new key version number
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async rotateKey(data: RotateKeyInput): Promise<{ ok: boolean; keyVersion: number }> {
-    return call(() => this.client.vault.rotateKey.mutate(data), "Failed to rotate key");
-  }
-
-  /**
-   * Set or update the recovery key for the vault.
-   *
-   * @param data - Root key wrapped by the recovery key
-   * @throws {AbadgeApiError} VAULT_NOT_FOUND
-   */
-  async setupRecovery(data: SetupRecoveryInput): Promise<SuccessResult> {
-    return call(() => this.client.vault.setupRecovery.mutate(data), "Failed to set up recovery");
+    const orgId = "orgId" in config ? config.orgId : undefined;
+    this.client = buildTrpcClient(config.apiUrl, token, orgId);
   }
 
   // -- Items ----------------------------------------------------------------
@@ -358,6 +500,21 @@ export class AbadgeUserClient {
     return call(() => this.client.agents.revoke.mutate({ agentId: id }), "Failed to revoke agent");
   }
 
+  /**
+   * Issue a one-time bootstrap token for a public-key agent that has not yet enrolled.
+   * The token is shown exactly once and expires after 10 minutes.
+   *
+   * @param agentId - Agent ID
+   * @returns The bootstrap token (prefix `abe_`) and expiration
+   * @throws {AbadgeApiError} AGENT_NOT_FOUND, AGENT_ALREADY_ENROLLED
+   */
+  async issueBootstrapToken(agentId: string): Promise<AgentBootstrapTokenResult> {
+    return call(
+      () => this.client.auth.issueBootstrapToken.mutate({ agentId }),
+      "Failed to issue bootstrap token",
+    );
+  }
+
   // -- Permissions ----------------------------------------------------------
 
   /**
@@ -405,20 +562,311 @@ export class AbadgeUserClient {
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
   }
+
+  // -- Organizations --------------------------------------------------------
+
+  /**
+   * Create a new organization.
+   *
+   * @param data - Organization name and optional slug
+   * @returns The created organization
+   */
+  async createOrganization(data: {
+    name: string;
+    slug?: string;
+  }): Promise<{ id: string; name: string; slug: string }> {
+    const result = await call(
+      () => this.client.organizations.create.mutate(data),
+      "Failed to create organization",
+    );
+    return result.organization;
+  }
+
+  /**
+   * List organizations the current user belongs to.
+   */
+  async listOrganizations(): Promise<{
+    organizations: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      logo: string | null;
+      createdAt: string;
+      role: string;
+      hasBootstrappedProfile: boolean;
+    }>;
+  }> {
+    return call(() => this.client.organizations.list.query(), "Failed to list organizations");
+  }
+
+  /**
+   * Get a specific organization by ID.
+   *
+   * @param orgId - Organization ID
+   */
+  async getOrganization(orgId: string): Promise<unknown> {
+    return call(
+      () => this.client.organizations.get.query({ orgId }),
+      "Failed to fetch organization",
+    );
+  }
+
+  /**
+   * Update organization metadata.
+   *
+   * @param orgId - Organization ID
+   * @param data - Fields to update
+   */
+  async updateOrganization(orgId: string, data: { name?: string }): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.update.mutate({ orgId, ...data }),
+      "Failed to update organization",
+    );
+  }
+
+  /**
+   * Delete an organization and all its resources.
+   *
+   * @param orgId - Organization ID
+   */
+  async deleteOrganization(orgId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.delete.mutate({ orgId }),
+      "Failed to delete organization",
+    );
+  }
+
+  /**
+   * List members of an organization.
+   *
+   * @param orgId - Organization ID
+   */
+  async listMembers(orgId: string): Promise<{
+    members: Array<{
+      id: string;
+      userId: string;
+      name: string;
+      // null for callers whose role is below admin — the server withholds
+      // teammates' email addresses to prevent org-internal PII enumeration.
+      email: string | null;
+      role: string;
+      createdAt: string;
+    }>;
+  }> {
+    return call(
+      () => this.client.organizations.members.list.query({ orgId }),
+      "Failed to list members",
+    );
+  }
+
+  /**
+   * Create a link-based invite for an organization.
+   *
+   * @param orgId - Organization ID
+   * @param data - Role for the invited member
+   */
+  async inviteMember(
+    orgId: string,
+    data: { role?: string },
+  ): Promise<{ ok: boolean; invitationId: string; token: string }> {
+    return call(
+      () => this.client.organizations.members.invite.mutate({ orgId, ...data }),
+      "Failed to create invite",
+    );
+  }
+
+  async getInviteInfo(token: string): Promise<{
+    organizationName: string;
+    organizationSlug: string;
+    role: string;
+    expiresAt: string;
+  }> {
+    return call(
+      () => this.client.organizations.members.getInviteInfo.query({ token }),
+      "Failed to get invite info",
+    );
+  }
+
+  async acceptInvite(token: string): Promise<{
+    ok: boolean;
+    organizationId: string;
+    organizationName: string;
+    organizationSlug: string;
+  }> {
+    return call(
+      () => this.client.organizations.members.acceptInvite.mutate({ token }),
+      "Failed to accept invite",
+    );
+  }
+
+  async revokeInvite(orgId: string, invitationId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.revokeInvite.mutate({ orgId, invitationId }),
+      "Failed to revoke invite",
+    );
+  }
+
+  /**
+   * Remove a member from an organization.
+   *
+   * @param orgId - Organization ID
+   * @param userId - User ID to remove
+   */
+  async removeMember(orgId: string, userId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.remove.mutate({ orgId, userId }),
+      "Failed to remove member",
+    );
+  }
+
+  /**
+   * Update a member's role in an organization.
+   *
+   * @param orgId - Organization ID
+   * @param userId - User ID
+   * @param role - New role
+   */
+  async updateMemberRole(orgId: string, userId: string, role: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.organizations.members.updateRole.mutate({ orgId, userId, role }),
+      "Failed to update member role",
+    );
+  }
+
+  // -- Profiles -------------------------------------------------------------
+
+  /**
+   * Create a new profile in an organization.
+   *
+   * @param data - Profile data including orgId, name, and optional fields
+   * @returns The new profile's ID
+   */
+  async createProfile(data: {
+    orgId: string;
+    name: string;
+    description?: string;
+    storageMode?: string;
+  }): Promise<{ id: string; name: string; storageMode: string }> {
+    const result = await call(
+      () => this.client.profiles.create.mutate(data),
+      "Failed to create profile",
+    );
+    return result.profile;
+  }
+
+  /**
+   * List profiles in an organization.
+   *
+   * @param orgId - Organization ID
+   */
+  async listProfiles(orgId: string): Promise<{
+    profiles: Array<{
+      id: string;
+      name: string;
+      storageMode: string;
+      organizationId: string;
+      keyVersion: number;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  }> {
+    return call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles");
+  }
+
+  /**
+   * Get a specific profile.
+   *
+   * @param profileId - Profile ID
+   */
+  async getProfile(profileId: string): Promise<unknown> {
+    return call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile");
+  }
+
+  /**
+   * Bootstrap a profile vault.
+   *
+   * @param profileId - Profile ID
+   * @param data - Vault bootstrap data
+   */
+  async bootstrapProfile(profileId: string, data: BootstrapVaultInput): Promise<{ id: string }> {
+    return call(
+      () => this.client.profiles.bootstrap.mutate({ profileId, ...data }),
+      "Failed to bootstrap profile",
+    );
+  }
+
+  /**
+   * Change the password for a profile.
+   *
+   * @param profileId - Profile ID
+   * @param data - New password data
+   */
+  async changeProfilePassword(
+    profileId: string,
+    data: ChangePasswordInput,
+  ): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.changePassword.mutate({ profileId, ...data }),
+      "Failed to change profile password",
+    );
+  }
+
+  /**
+   * Set up recovery for a profile.
+   *
+   * @param profileId - Profile ID
+   * @param data - Recovery setup data
+   */
+  async setupProfileRecovery(profileId: string, data: SetupRecoveryInput): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.setupRecovery.mutate({ profileId, ...data }),
+      "Failed to set up profile recovery",
+    );
+  }
+
+  /**
+   * Rotate a profile's encryption key.
+   *
+   * @param profileId - Profile ID
+   * @param data - Key rotation data
+   */
+  async rotateProfileKey(
+    profileId: string,
+    data: RotateKeyInput,
+  ): Promise<{ ok: boolean; keyVersion: number }> {
+    return call(
+      () => this.client.profiles.rotateKey.mutate({ profileId, ...data }),
+      "Failed to rotate profile key",
+    );
+  }
+
+  /**
+   * Delete a profile.
+   *
+   * @param profileId - Profile ID
+   */
+  async deleteProfile(profileId: string): Promise<SuccessResult> {
+    return call(
+      () => this.client.profiles.delete.mutate({ profileId }),
+      "Failed to delete profile",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
-// AbadgeAgentClient — agent API key / session token operations
+// AbadgeAgentClient — agent API key / session token / keypair operations
 // ---------------------------------------------------------------------------
 
 /**
- * SDK client for agent-facing operations authenticated with an API key or
- * session token (prefixed `abl_`, `abg_`, or `abs_`).
+ * SDK client for agent-facing operations. Supports two auth modes:
+ * - **Keypair auth** (preferred): Ed25519 session exchange with automatic refresh.
+ *   Call {@link connect} before using access methods.
+ * - **API key auth**: Static API key (`abl_`, `abg_`, or `abs_` prefix).
  *
- * Provides secret access methods and self-identification. All methods throw
- * {@link AbadgeApiError} on failure with a typed {@link ErrorCode} code.
+ * All methods throw {@link AbadgeApiError} on failure with a typed
+ * {@link ErrorCode} code.
  *
- * @example
+ * @example API key auth
  * ```typescript
  * import { AbadgeAgentClient } from "@abadge/sdk";
  *
@@ -429,14 +877,237 @@ export class AbadgeUserClient {
  *
  * const secret = await agent.accessReveal("item_id");
  * ```
+ *
+ * @example Keypair auth
+ * ```typescript
+ * const agent = new AbadgeAgentClient({
+ *   apiUrl: "https://api.abadge.dev",
+ *   agentId: "agent_id",
+ *   privateKey: ed25519PrivateKey,
+ * });
+ * await agent.connect();
+ * const secret = await agent.accessReveal("item_id");
+ * ```
  */
+/**
+ * Bounded exponential backoff schedule for background session refresh retries.
+ * 5 attempts total: 30s → 60s → 120s → 240s → 300s. After the final failure,
+ * the client flips to `sessionExpired` and outgoing calls reject fast.
+ * @internal
+ */
+export const REFRESH_RETRY_SCHEDULE_MS: readonly number[] = [
+  30_000, 60_000, 120_000, 240_000, 300_000,
+] as const;
+
 export class AbadgeAgentClient {
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly config: AbadgeAgentClientConfig | AbadgeClientConfig;
+  private sessionExpired = false;
+  private lastExpiresAtMs = 0;
+
   /** @internal */
-  protected readonly client: SdkTrpcClient;
+  protected client: SdkTrpcClient;
 
   constructor(config: AbadgeAgentClientConfig | AbadgeClientConfig) {
-    const token = "apiKey" in config ? config.apiKey : config.token;
-    this.client = buildTrpcClient(config.apiUrl, token);
+    this.config = config;
+    if ("apiKey" in config) {
+      this.client = buildTrpcClient(config.apiUrl, config.apiKey);
+    } else if ("token" in config) {
+      this.client = buildTrpcClient(config.apiUrl, config.token);
+    } else {
+      // Keypair config — build an unauth client; connect() will set the token
+      this.client = buildUnauthTrpcClient(config.apiUrl);
+      // Fail fast: validate string keys at construction time rather than at connect()
+      if (typeof config.privateKey === "string") {
+        parseJwkString(config.privateKey);
+      }
+    }
+  }
+
+  /**
+   * For keypair-auth agents: performs Ed25519 session exchange and starts the
+   * background T-2 minute refresh loop. Must be called before using access methods.
+   * For API-key agents: no-op (session is implicit).
+   *
+   * Timer lifecycle: the refresh timer is `.unref()`'d so it does NOT keep the
+   * Node/Bun event loop alive on its own. Long-lived consumers (MCP stdio,
+   * HTTP servers, daemon sockets) stay alive via their own handles and the
+   * refresh still fires. Short-lived consumers (CLI commands) exit cleanly
+   * once their work finishes — without `.unref()` they would hang ~13 min
+   * until the refresh fires. `disconnect()` remains the deterministic cleanup
+   * path for tests and any caller that wants to force teardown.
+   *
+   * Retry behaviour: a background refresh failure triggers bounded exponential
+   * backoff (see {@link REFRESH_RETRY_SCHEDULE_MS}). After all attempts fail
+   * the client flips to `sessionExpired=true` and outgoing API calls reject
+   * fast with `SESSION_REFRESH_FAILED` instead of flooding the server with
+   * 401s. Calling `connect()` again resets the state and re-runs the exchange.
+   */
+  async connect(): Promise<void> {
+    // Reset sessionExpired on every successful entry so disconnect()+connect()
+    // recovery works cleanly. If the exchange below throws, this flag stays
+    // false: the caller sees the error synchronously and decides what to do.
+    this.sessionExpired = false;
+    await this.exchangeSessionOnce();
+    this.scheduleRefreshFromExpiry();
+  }
+
+  /**
+   * Performs the two-step Ed25519 session exchange and updates the internal
+   * tRPC client with the fresh session token. Does NOT schedule the next
+   * refresh — that is the caller's responsibility. Throws on failure so both
+   * the initial `connect()` caller and the background refresh can react.
+   */
+  private async exchangeSessionOnce(): Promise<void> {
+    if (!("agentId" in this.config)) {
+      return;
+    }
+
+    const { agentId, privateKey, apiUrl } = this.config;
+
+    const unauthClient = buildUnauthTrpcClient(apiUrl);
+    let challengeResult: AgentChallengeResult;
+    try {
+      challengeResult = await unauthClient.auth.createChallenge.mutate({ agentId });
+    } catch (error) {
+      throw AbadgeApiError.fromUnknown(error, "Failed to create agent challenge");
+    }
+
+    const { challengeId, challenge } = challengeResult;
+    const key = await resolvePrivateKey(privateKey);
+    const encoder = new TextEncoder();
+    const signatureBytes = await crypto.subtle.sign("Ed25519", key, encoder.encode(challenge));
+    const signature = toBase64url(signatureBytes);
+
+    let sessionResult: AgentSessionResult;
+    try {
+      sessionResult = await unauthClient.auth.exchangeSession.mutate({
+        agentId,
+        challengeId,
+        challenge,
+        signature,
+      });
+    } catch (error) {
+      throw AbadgeApiError.fromUnknown(error, "Failed to exchange agent session");
+    }
+
+    const { token: sessionToken, expiresAt } = sessionResult.session;
+    this.client = buildTrpcClient(apiUrl, sessionToken);
+    this.lastExpiresAtMs = new Date(expiresAt).getTime();
+  }
+
+  /** Schedule the next T-2min refresh based on the most recent session expiry. */
+  private scheduleRefreshFromExpiry(): void {
+    if (!("agentId" in this.config)) {
+      return;
+    }
+    const refreshDelay = Math.max(0, this.lastExpiresAtMs - Date.now() - 2 * 60 * 1000);
+    this.armTimer(refreshDelay, () => {
+      void this.refreshOnce(0);
+    });
+  }
+
+  /**
+   * Run a single refresh attempt. On success, schedule the next T-2min
+   * refresh (attempt counter implicitly resets: subsequent failures start
+   * over at 0). On failure, invoke `onSessionError`, log, and either
+   * schedule the next retry from {@link REFRESH_RETRY_SCHEDULE_MS} or
+   * flip to `sessionExpired` once all retries are exhausted.
+   *
+   * `attempt` is the 0-indexed failure counter: attempt 0 is the initial
+   * T-2min refresh; attempts 1..N consume REFRESH_RETRY_SCHEDULE_MS[0..N-1].
+   * Exhaustion fires after `REFRESH_RETRY_SCHEDULE_MS.length` retries have
+   * all failed.
+   */
+  private async refreshOnce(attempt: number): Promise<void> {
+    try {
+      await this.exchangeSessionOnce();
+      this.scheduleRefreshFromExpiry();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      if ("agentId" in this.config) {
+        this.config.onSessionError?.(error, attempt);
+      }
+      console.error(
+        `[AbadgeAgentClient] Session refresh attempt ${attempt + 1} failed: ${error.message}`,
+      );
+
+      const retryIndex = attempt; // next retry delay to consume
+      if (retryIndex >= REFRESH_RETRY_SCHEDULE_MS.length) {
+        this.sessionExpired = true;
+        console.error(
+          `[AbadgeAgentClient] Session refresh exhausted after ${attempt + 1} attempts (initial + ${REFRESH_RETRY_SCHEDULE_MS.length} retries); client is now in sessionExpired state. Outgoing calls will reject with SESSION_REFRESH_FAILED.`,
+        );
+        return;
+      }
+
+      const delayMs = REFRESH_RETRY_SCHEDULE_MS[retryIndex] ?? 30_000;
+      this.armTimer(delayMs, () => {
+        void this.refreshOnce(attempt + 1);
+      });
+    }
+  }
+
+  /**
+   * Replace the current refresh timer using the configured scheduler (default
+   * `setTimeout`) and `.unref()` it if supported. Centralising timer creation
+   * preserves the B1 event-loop-does-not-hang invariant for every refresh/retry.
+   */
+  private armTimer(delayMs: number, callback: () => void): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
+    const schedule: AbadgeScheduler =
+      "agentId" in this.config && this.config.schedulerFn ? this.config.schedulerFn : setTimeout;
+    this.refreshTimer = schedule(callback, delayMs);
+    this.refreshTimer?.unref?.();
+  }
+
+  /**
+   * Stops the background refresh loop. Safe to call multiple times.
+   */
+  disconnect(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+  }
+
+  /**
+   * Agent-scoped wrapper around the shared `call` helper that fast-rejects
+   * when background session refresh has been exhausted. Keeps the sessionExpired
+   * check in one place rather than leaking into every access method body.
+   */
+  private authedCall<T>(operation: () => Promise<T>, fallback: string): Promise<T> {
+    if (this.sessionExpired) {
+      return Promise.reject(
+        new AbadgeApiError(
+          401,
+          "SESSION_REFRESH_FAILED",
+          "Agent session refresh exhausted; reconnect required",
+          "Call disconnect() + connect() again, or instantiate a fresh AbadgeAgentClient.",
+        ),
+      );
+    }
+    return call(operation, fallback);
+  }
+
+  // -- Enrollment -----------------------------------------------------------
+
+  /**
+   * Enroll a public-key agent using a one-time bootstrap token.
+   * The agent's Ed25519 public key is registered with the server.
+   *
+   * @param bootstrapToken - One-time bootstrap token (prefix `abe_`)
+   * @param publicKey - Base64url-encoded Ed25519 public key
+   * @returns Enrollment confirmation with agent ID and enrolled timestamp
+   * @throws {AbadgeApiError} BOOTSTRAP_TOKEN_INVALID, BOOTSTRAP_TOKEN_EXPIRED
+   */
+  async enroll(bootstrapToken: string, publicKey: string): Promise<AgentEnrollmentResult> {
+    return this.authedCall(
+      () => this.client.auth.enroll.mutate({ bootstrapToken, publicKey }),
+      "Failed to enroll agent",
+    );
   }
 
   // -- Self -----------------------------------------------------------------
@@ -448,7 +1119,49 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} UNAUTHORIZED
    */
   async getCurrentAgent(): Promise<AgentResult> {
-    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
+    return this.authedCall(() => this.client.agents.self.query(), "Failed to fetch agent");
+  }
+
+  // -- Items (read-only) ----------------------------------------------------
+
+  /**
+   * List all items visible to this agent (metadata only, no encrypted data).
+   *
+   * @returns Array of item summaries
+   */
+  async listItems(): Promise<ItemListResult> {
+    return this.authedCall(() => this.client.items.listForAgent.query(), "Failed to list items");
+  }
+
+  /**
+   * Retrieve a single item's metadata and encrypted content.
+   * Only works when the agent session also carries user-level privileges.
+   * If called with an agent-only API key, throws {@link AbadgeApiError} with
+   * code `UNAUTHORIZED` — the caller should fall back to the `access*` methods.
+   *
+   * @param id - Item ID
+   * @throws {AbadgeApiError} ITEM_NOT_FOUND, UNAUTHORIZED
+   */
+  async getItem(id: string): Promise<ItemResult> {
+    return this.authedCall(
+      () => this.client.items.get.query({ itemId: id }),
+      "Failed to fetch item",
+    );
+  }
+
+  // -- Audit ----------------------------------------------------------------
+
+  /**
+   * Query the audit log with optional filters and cursor-based pagination.
+   *
+   * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
+   * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
+   */
+  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
+    return this.authedCall(
+      () => this.client.audit.listForAgent.query(filters),
+      "Failed to fetch audit log",
+    );
   }
 
   // -- Access ---------------------------------------------------------------
@@ -464,7 +1177,7 @@ export class AbadgeAgentClient {
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return call(
+    return this.authedCall(
       () => this.client.access.ciphertext.mutate({ itemId }),
       "Failed to access ciphertext",
     );
@@ -478,11 +1191,15 @@ export class AbadgeAgentClient {
    * returns plaintext. Every access attempt is recorded in the audit log.
    *
    * @param itemId - Item ID
+   * @param field - Optional specific field name to return (for multi-field items)
    * @returns The decrypted item payload
    * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
-  async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
+  async accessReveal(itemId: string, field?: string): Promise<RevealAccessResponse> {
+    return this.authedCall(
+      () => this.client.access.reveal.mutate({ itemId, ...(field ? { field } : {}) }),
+      "Failed to reveal item",
+    );
   }
 
   /**
@@ -495,98 +1212,18 @@ export class AbadgeAgentClient {
    *
    * @param itemId - Item ID
    * @param mountType - Injection method: "env" for environment variable, "file" for temp file
+   * @param field - Optional specific field name to return (for multi-field items)
    * @returns Item data discriminated by storageMode
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
    */
-  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
-    return call(
-      () => this.client.access.mount.mutate({ itemId, mountType }),
+  async accessMount(
+    itemId: string,
+    mountType: "env" | "file",
+    field?: string,
+  ): Promise<MountAccessResponse> {
+    return this.authedCall(
+      () => this.client.access.mount.mutate({ itemId, mountType, ...(field ? { field } : {}) }),
       "Failed to access mount payload",
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// AbadgeClient — backward-compatible alias
-// ---------------------------------------------------------------------------
-
-/**
- * Backward-compatible SDK client that combines user and agent operations.
- *
- * @deprecated Use {@link AbadgeUserClient} for user operations or
- * {@link AbadgeAgentClient} for agent operations. This class remains for
- * backward compatibility and will be removed in a future major version.
- *
- * @example
- * ```typescript
- * import { AbadgeClient } from "@abadge/sdk";
- *
- * const client = new AbadgeClient({
- *   apiUrl: "https://api.abadge.dev",
- *   token: "session_token_or_api_key",
- * });
- * ```
- */
-export class AbadgeClient extends AbadgeUserClient {
-  /**
-   * Retrieve the currently authenticated agent's own record.
-   * Only works when the client was constructed with an agent API key.
-   *
-   * @returns The agent record
-   * @throws {AbadgeApiError} UNAUTHORIZED
-   */
-  async getCurrentAgent(): Promise<AgentResult> {
-    return call(() => this.client.agents.self.query(), "Failed to fetch agent");
-  }
-
-  /**
-   * Read the encrypted blob of a zero-knowledge item for local decryption.
-   * @see {@link AbadgeAgentClient.accessCiphertext}
-   */
-  async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return call(
-      () => this.client.access.ciphertext.mutate({ itemId }),
-      "Failed to access ciphertext",
-    );
-  }
-
-  /**
-   * Decrypt and return the plaintext of a server-managed item.
-   * @see {@link AbadgeAgentClient.accessReveal}
-   */
-  async accessReveal(itemId: string): Promise<RevealAccessResponse> {
-    return call(() => this.client.access.reveal.mutate({ itemId }), "Failed to reveal item");
-  }
-
-  /**
-   * Request item data for local injection (env variable or temp file).
-   * @see {@link AbadgeAgentClient.accessMount}
-   */
-  async accessMount(itemId: string, mountType: "env" | "file"): Promise<MountAccessResponse> {
-    return call(
-      () => this.client.access.mount.mutate({ itemId, mountType }),
-      "Failed to access mount payload",
-    );
-  }
-
-  async createOperatorToken(data: CreateOperatorTokenInput): Promise<OperatorTokenCreateResult> {
-    return call(
-      () => this.client.auth.createOperatorToken.mutate(data),
-      "Failed to create operator token",
-    );
-  }
-
-  async listOperatorTokens(): Promise<OperatorTokenListResult> {
-    return call(
-      () => this.client.auth.listOperatorTokens.query(),
-      "Failed to list operator tokens",
-    );
-  }
-
-  async revokeOperatorToken(tokenId: string): Promise<SuccessResult> {
-    return call(
-      () => this.client.auth.revokeOperatorToken.mutate({ tokenId }),
-      "Failed to revoke operator token",
     );
   }
 }

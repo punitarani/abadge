@@ -22,16 +22,12 @@ import type {
   CreateAgentChallengeSchema,
   CreateAgentSchema,
   CreateItemSchema,
-  CreateOperatorTokenSchema,
   CreatePermissionSchema,
   DaemonOperatorSessionSchema,
   EnrollAgentSchema,
   ExchangeAgentSessionSchema,
   IssueAgentBootstrapTokenSchema,
   ItemDetailSchema,
-  ItemDisplayEntrySchema,
-  ItemDisplayListResultSchema,
-  ItemDisplayQuerySchema,
   ItemListResultSchema,
   ItemPayloadSchema,
   ItemResultSchema,
@@ -41,23 +37,21 @@ import type {
   KeyVersionResultSchema,
   MountAccessResponseSchema,
   MountAccessSchema,
-  OperatorTokenCreateResultSchema,
-  OperatorTokenListResultSchema,
-  OperatorTokenSchema,
   PermissionListResultSchema,
   PermissionResultSchema,
   PermissionSchema,
+  ProfileListResultSchema,
+  ProfileResultSchema,
+  ProfileSchema,
   RecoverySetupSchema,
+  RekeyedItemSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
   RevokeAgentSessionSchema,
-  RevokeOperatorTokenSchema,
   RotateKeySchema,
   SuccessResultSchema,
   UpdateItemSchema,
   VaultBootstrapSchema,
-  VaultResultSchema,
-  VaultSchema,
 } from "./schemas";
 
 type TypeOf<S extends Schema.Schema.Any> = Schema.Schema.Type<S>;
@@ -68,14 +62,14 @@ export type VaultBootstrapInput = TypeOf<typeof VaultBootstrapSchema>;
 export type ChangePasswordInput = TypeOf<typeof ChangePasswordSchema>;
 export type RecoverySetupInput = TypeOf<typeof RecoverySetupSchema>;
 export type RotateKeyInput = TypeOf<typeof RotateKeySchema>;
+export type RekeyedItem = TypeOf<typeof RekeyedItemSchema>;
+export type Profile = TypeOf<typeof ProfileSchema>;
 
 export type ItemPayload = TypeOf<typeof ItemPayloadSchema>;
 export type CreateItemInput = TypeOf<typeof CreateItemSchema>;
 export type UpdateItemInput = TypeOf<typeof UpdateItemSchema>;
 export type ItemSummary = TypeOf<typeof ItemSummarySchema>;
 export type ItemDetail = TypeOf<typeof ItemDetailSchema>;
-export type ItemDisplayQuery = TypeOf<typeof ItemDisplayQuerySchema>;
-export type ItemDisplayEntry = TypeOf<typeof ItemDisplayEntrySchema>;
 
 export type CreateAgentInput = TypeOf<typeof CreateAgentSchema>;
 export type Agent = TypeOf<typeof AgentSchema>;
@@ -92,11 +86,6 @@ export type ExchangeAgentSessionInput = TypeOf<typeof ExchangeAgentSessionSchema
 export type AgentSession = TypeOf<typeof AgentSessionSchema>;
 export type AgentSessionResult = TypeOf<typeof AgentSessionResultSchema>;
 export type RevokeAgentSessionInput = TypeOf<typeof RevokeAgentSessionSchema>;
-export type CreateOperatorTokenInput = TypeOf<typeof CreateOperatorTokenSchema>;
-export type RevokeOperatorTokenInput = TypeOf<typeof RevokeOperatorTokenSchema>;
-export type OperatorToken = TypeOf<typeof OperatorTokenSchema>;
-export type OperatorTokenCreateResult = TypeOf<typeof OperatorTokenCreateResultSchema>;
-export type OperatorTokenListResult = TypeOf<typeof OperatorTokenListResultSchema>;
 export type CliLocalAgentReference = TypeOf<typeof CliLocalAgentReferenceSchema>;
 export type CliProfileConfig = TypeOf<typeof CliProfileConfigSchema>;
 export type DaemonOperatorSession = TypeOf<typeof DaemonOperatorSessionSchema>;
@@ -110,15 +99,15 @@ export type CiphertextAccessInput = TypeOf<typeof CiphertextAccessSchema>;
 export type RevealAccessInput = TypeOf<typeof RevealAccessSchema>;
 export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
 
-export type VaultResult = TypeOf<typeof VaultResultSchema>;
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
-export type ItemDisplayListResult = TypeOf<typeof ItemDisplayListResultSchema>;
 export type AgentResult = TypeOf<typeof AgentResultSchema>;
 export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
 export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
 export type PermissionListResult = TypeOf<typeof PermissionListResultSchema>;
 export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
+export type ProfileResult = TypeOf<typeof ProfileResultSchema>;
+export type ProfileListResult = TypeOf<typeof ProfileListResultSchema>;
 
 export type SuccessResult = TypeOf<typeof SuccessResultSchema>;
 export type KeyVersionResult = TypeOf<typeof KeyVersionResultSchema>;
@@ -127,5 +116,3 @@ export type ItemVersionResult = TypeOf<typeof ItemVersionResultSchema>;
 export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSchema>;
 export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
 export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
-
-export type Vault = TypeOf<typeof VaultSchema>;

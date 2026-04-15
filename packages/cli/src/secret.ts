@@ -1,65 +1,43 @@
-import { AbadgeApiError } from "@abadge/sdk";
-import type { ApiClient } from "./client";
+import { payloadToSecret } from "@abadge/core";
+import type { AbadgeAgentClient } from "@abadge/sdk";
 import { daemonDecrypt } from "./daemon";
-
-function payloadToSecret(payload: unknown): string {
-  if (typeof payload === "string") {
-    return payload;
-  }
-
-  if (payload && typeof payload === "object") {
-    const record = payload as Record<string, unknown>;
-    const fields = record.fields;
-    if (
-      fields &&
-      typeof fields === "object" &&
-      typeof (fields as Record<string, unknown>).value === "string"
-    ) {
-      return (fields as Record<string, unknown>).value as string;
-    }
-  }
-
-  return JSON.stringify(payload);
-}
 
 async function decryptMountedPayload(
   encryptedItemKey: string,
   ciphertext: string,
+  field?: string,
 ): Promise<string> {
-  const result = await daemonDecrypt(encryptedItemKey, ciphertext);
-  return payloadToSecret(result.payload);
+  try {
+    const result = await daemonDecrypt(encryptedItemKey, ciphertext);
+    return payloadToSecret(result.payload, field);
+  } catch {
+    throw new Error(
+      "Zero-knowledge items require the local daemon for decryption.\n" +
+        "hint: Start it with: abadge daemon start && abadge profile unlock\n" +
+        "hint: Or use a server-managed profile for remote agent access.",
+    );
+  }
 }
 
 async function resolveMountedSecret(
-  client: ApiClient,
+  client: AbadgeAgentClient,
   itemId: string,
   mountType: "env" | "file",
+  field?: string,
 ): Promise<string> {
-  const mounted = await client.accessMount(itemId, mountType);
+  const mounted = await client.accessMount(itemId, mountType, field);
   if (mounted.storageMode === "zero_knowledge") {
-    return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext);
+    return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext, field);
   }
 
-  return payloadToSecret(mounted.payload);
+  return payloadToSecret(mounted.payload, field);
 }
 
 export async function resolveSecretValue(
-  client: ApiClient,
+  client: AbadgeAgentClient,
   itemId: string,
   mountType: "env" | "file",
+  field?: string,
 ): Promise<string> {
-  try {
-    const item = (await client.getItem(itemId)).item;
-    if (item.storageMode === "zero_knowledge") {
-      return decryptMountedPayload(item.encryptedItemKey, item.ciphertext);
-    }
-
-    return resolveMountedSecret(client, itemId, mountType);
-  } catch (error) {
-    if (!(error instanceof AbadgeApiError) || error.code !== "UNAUTHORIZED") {
-      throw error;
-    }
-
-    return resolveMountedSecret(client, itemId, mountType);
-  }
+  return resolveMountedSecret(client, itemId, mountType, field);
 }

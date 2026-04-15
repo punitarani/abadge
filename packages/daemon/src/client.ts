@@ -68,29 +68,32 @@ export class DaemonClient {
     });
   }
 
-  /** Store a short-lived operator auth token in daemon memory. */
+  /** Store a short-lived bearer session token in daemon memory. */
   async setAuthSession(session: DaemonAuthState): Promise<DaemonAuthStatus> {
     return (await this.send("auth.setSession", { ...session })) as DaemonAuthStatus;
   }
 
-  /** Clear daemon-held operator auth. */
+  /** Clear daemon-held session auth. */
   async clearAuthSession(): Promise<DaemonAuthStatus> {
     return (await this.send("auth.clearSession")) as DaemonAuthStatus;
   }
 
-  /** Get daemon-held operator auth status. */
+  /** Get daemon-held session auth status. */
   async authStatus(): Promise<DaemonAuthStatus> {
     return (await this.send("auth.status")) as DaemonAuthStatus;
   }
 
-  /** Return request headers for the daemon-held operator auth token. */
+  /** Return request headers for the daemon-held session token. */
   async authHeaders(): Promise<DaemonAuthHeaders> {
     return (await this.send("auth.getHeaders")) as DaemonAuthHeaders;
   }
 
-  /** Unlock the vault with a master password. */
-  async unlock(masterPassword: string): Promise<{ ok: boolean; keyVersion: number }> {
-    return (await this.send("vault.unlock", { masterPassword })) as {
+  /** Unlock a profile's vault with its master password. */
+  async unlock(
+    profileId: string,
+    masterPassword: string,
+  ): Promise<{ ok: boolean; keyVersion: number }> {
+    return (await this.send("vault.unlock", { profileId, masterPassword })) as {
       ok: boolean;
       keyVersion: number;
     };
@@ -106,9 +109,17 @@ export class DaemonClient {
     return (await this.send("vault.status")) as VaultStatus;
   }
 
-  /** Change the master password. */
-  async changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean }> {
-    return (await this.send("vault.changePassword", { oldPassword, newPassword })) as {
+  /** Change a profile's master password. */
+  async changePassword(
+    profileId: string,
+    oldPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean }> {
+    return (await this.send("vault.changePassword", {
+      profileId,
+      oldPassword,
+      newPassword,
+    })) as {
       ok: boolean;
     };
   }
@@ -159,4 +170,37 @@ export class DaemonClient {
   async execCleanup(path: string): Promise<{ ok: boolean }> {
     return (await this.send("exec.cleanup", { path })) as { ok: boolean };
   }
+
+  /**
+   * Spawn a subprocess with all item fields injected as environment variables.
+   * Decrypts the item if encryptedItemKey+ciphertext are provided, or uses
+   * serverPayload directly if the caller already has the decrypted payload.
+   */
+  async expandEnv(
+    encryptedItemKey: string | null,
+    ciphertext: string | null,
+    serverPayload: unknown,
+    command: string,
+    args?: string[],
+  ): Promise<EnvExecResult> {
+    return (await this.send("exec.expandEnv", {
+      encryptedItemKey: encryptedItemKey ?? undefined,
+      ciphertext: ciphertext ?? undefined,
+      serverPayload,
+      command,
+      args,
+    })) as EnvExecResult;
+  }
+}
+
+/** Convenience wrapper: create a default-socket client and call exec.expandEnv. */
+export async function daemonExpandEnv(
+  encryptedItemKey: string | null,
+  ciphertext: string | null,
+  serverPayload: unknown,
+  command: string,
+  args: string[],
+): Promise<{ exitCode: number }> {
+  const client = new DaemonClient();
+  return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args);
 }

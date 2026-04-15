@@ -1,7 +1,7 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
 import type { CreateItemInput } from "@abadge/sdk";
 import { Command } from "commander";
-import { createSessionApiClient } from "../client";
+import { createUserApiClient } from "../client";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
@@ -33,6 +33,13 @@ function buildPayload(label: string, value: string, kind: ItemKind): ItemPayload
 }
 
 async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItemValues> {
+  if (opts.value && process.stdin.isTTY) {
+    error(
+      "The --value flag is not accepted on a TTY to prevent shell history leaks. Pipe the value instead: echo 'mysecret' | abadge item create --label 'name'",
+    );
+    process.exit(1);
+  }
+
   const label = opts.label ?? opts.name ?? (await prompt("Label: "));
   const value = opts.value ?? (await prompt("Value (secret): ", true));
 
@@ -47,7 +54,7 @@ async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItem
     process.exit(1);
   }
 
-  const storageMode = opts.storageMode ?? "zero_knowledge";
+  const storageMode = opts.storageMode ?? "server_managed";
   if (storageMode !== "zero_knowledge" && storageMode !== "server_managed") {
     error("Storage mode must be one of: zero_knowledge, server_managed");
     process.exit(1);
@@ -68,6 +75,7 @@ async function buildCreateItemInput(values: CreateItemValues): Promise<CreateIte
   const encrypted = await daemonEncrypt(payload);
   return {
     storageMode: "zero_knowledge",
+    label: values.label,
     encryptedItemKey: encrypted.encryptedItemKey,
     ciphertext: encrypted.ciphertext,
   };
@@ -87,7 +95,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: CreateItemOptions) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const values = await readCreateItemValues(opts);
         const result = await client.createItem(await buildCreateItemInput(values));
         if (opts.json) {
@@ -108,7 +116,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const items = (await client.listItems()).items;
 
         if (opts.json) {
@@ -119,9 +127,8 @@ export function createItemCommand(): Command {
         table(
           items.map((item) => ({
             ID: item.id,
+            Label: item.label,
             Storage: item.storageMode,
-            Crypto: String(item.cryptoVersion),
-            Version: String(item.contentVersion),
             Created: item.createdAt,
           })),
         );
@@ -139,11 +146,24 @@ export function createItemCommand(): Command {
     .option("--reveal", "Decrypt zero-knowledge item locally")
     .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const item = (await client.getItem(id)).item;
 
         if (!opts.reveal || item.storageMode !== "zero_knowledge") {
-          json(item);
+          if (opts.json) {
+            json(item);
+          } else {
+            table([
+              {
+                ID: item.id,
+                Label: item.label,
+                Storage: item.storageMode,
+                Version: String(item.contentVersion),
+                Created: item.createdAt,
+                Updated: item.updatedAt,
+              },
+            ]);
+          }
           return;
         }
 
@@ -165,7 +185,7 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: { json?: boolean }) => {
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         const currentItem = (await client.getItem(id)).item;
         const label = await prompt("Label: ");
         const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
@@ -188,6 +208,7 @@ export function createItemCommand(): Command {
           const encrypted = await daemonEncrypt(payload);
           result = await client.updateItem(id, {
             storageMode: "zero_knowledge",
+            label,
             encryptedItemKey: encrypted.encryptedItemKey,
             ciphertext: encrypted.ciphertext,
             contentVersion: currentItem.contentVersion,
@@ -227,7 +248,7 @@ export function createItemCommand(): Command {
       }
 
       try {
-        const client = await createSessionApiClient();
+        const client = await createUserApiClient();
         await client.deleteItem(id);
         success(`Item ${id} deleted.`);
       } catch (err) {

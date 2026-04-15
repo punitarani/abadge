@@ -1,5 +1,10 @@
 import { Context, Effect, Schema } from "effect";
-import type { AgentRequestContext, BaseRequestContext, SessionRequestContext } from "./context";
+import type {
+  AgentRequestContext,
+  BaseRequestContext,
+  OptionalOrgSessionRequestContext,
+  SessionRequestContext,
+} from "./context";
 import { toTrpcError } from "./errors";
 
 export const strictSchema = <S extends Schema.Schema.AnyNoContext>(schema: S) =>
@@ -13,6 +18,11 @@ export class SessionRequestContextTag extends Context.Tag("@abadge/trpc/SessionR
 export class AgentRequestContextTag extends Context.Tag("@abadge/trpc/AgentRequestContext")<
   AgentRequestContextTag,
   AgentRequestContext
+>() {}
+
+export class UserRequestContextTag extends Context.Tag("@abadge/trpc/UserRequestContext")<
+  UserRequestContextTag,
+  OptionalOrgSessionRequestContext
 >() {}
 
 export class BaseRequestContextTag extends Context.Tag("@abadge/trpc/BaseRequestContext")<
@@ -39,6 +49,13 @@ function withAgentContext<A, E>(
   effect: Effect.Effect<A, E, AgentRequestContextTag>,
 ): Effect.Effect<A, E, never> {
   return Effect.provideService(effect, AgentRequestContextTag, ctx);
+}
+
+function withUserContext<A, E>(
+  ctx: OptionalOrgSessionRequestContext,
+  effect: Effect.Effect<A, E, UserRequestContextTag>,
+): Effect.Effect<A, E, never> {
+  return Effect.provideService(effect, UserRequestContextTag, ctx);
 }
 
 export async function runBaseEffect<A, E>(
@@ -74,9 +91,29 @@ export async function runAgentEffect<A, E>(
   }
 }
 
+export async function runUserEffect<A, E>(
+  ctx: OptionalOrgSessionRequestContext,
+  effect: Effect.Effect<A, E, UserRequestContextTag>,
+): Promise<A> {
+  try {
+    return await Effect.runPromise(withUserContext(ctx, effect));
+  } catch (error) {
+    throw toTrpcError(error);
+  }
+}
+
 export function tryAsync<A>(operation: () => Promise<A>): Effect.Effect<A, Error> {
   return Effect.tryPromise({
     try: operation,
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   });
+}
+
+/** Detect Postgres unique-constraint violations (SQLSTATE 23505).
+ *  Drizzle v0.45+ wraps the original driver error in `.cause`,
+ *  so we check both the error itself and its cause. */
+export function isUniqueViolation(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const code = (e as { code?: unknown }).code ?? (e as { cause?: { code?: unknown } }).cause?.code;
+  return code === "23505";
 }

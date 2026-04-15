@@ -1,43 +1,50 @@
 # Domain Model Specification
 
 > Canonical reference for all shared types, entities, capabilities, and invariants.
-> Every surface (API, CLI, MCP, SDK) projects this model — none may contradict it.
+> Every surface (API, CLI, MCP, SDK) projects this model -- none may contradict it.
 
 ## Entities
 
-### Vault
+### Profile
 
-One per user. Holds the wrapped root key for zero-knowledge encryption.
+Named credential namespace within an org. Each profile has its own encryption root.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string (UUID) | Unique identifier |
-| userId | string | Owner (FK → user) |
-| wrappedRootKey | string | Root key wrapped by password-derived KEK |
-| kdfSalt | string | Salt for Argon2id derivation |
-| kdfParams | KdfParams | Argon2id tuning parameters |
+| organizationId | string | Owning org (FK → organization) |
+| name | string | Human-readable name (unique per org) |
+| description | string \| null | Optional description |
+| storageMode | StorageMode | `zero_knowledge` or `server_managed` |
+| wrappedRootKey | string \| null | Root key wrapped by password-derived KEK |
+| kdfSalt | string \| null | Salt for Argon2id derivation |
+| kdfParams | KdfParams \| null | Argon2id tuning parameters |
 | recoveryWrappedRootKey | string \| null | Root key wrapped by recovery key |
-| keyVersion | integer (≥1) | Incremented on each key rotation |
+| keyVersion | integer (>=1) | Incremented on each key rotation |
 | createdAt | ISO 8601 | Creation timestamp |
 | updatedAt | ISO 8601 | Last modification timestamp |
 
 **Invariants:**
-- Exactly one vault per user (unique index on userId).
-- The server never possesses the unwrapped root key.
+- Unique constraint on `(organizationId, name)`.
+- The server never possesses the unwrapped root key for ZK profiles.
 - `keyVersion` is monotonically increasing and never resets.
+- A profile cannot be deleted if it has non-deleted items.
 
 ### Item
 
-A secret stored in the vault. Supports two storage modes with fundamentally different trust properties.
+A stored credential within a profile. Supports two storage modes with fundamentally different trust properties.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string (UUID) | Unique identifier |
-| userId | string | Owner (FK → user) |
-| vaultId | string \| null | Associated vault (FK → vault) |
+| organizationId | string | Owning org (FK → organization) |
+| profileId | string | Parent profile (FK → profile) |
+| label | string | Human-readable name (cleartext, required) |
+| kind | ItemKind | Secret type classification |
+| tags | string[] | Categorization tags |
 | storageMode | StorageMode | `zero_knowledge` or `server_managed` |
-| cryptoVersion | integer (≥1) | Envelope format version |
-| contentVersion | integer (≥1) | Optimistic concurrency token |
+| cryptoVersion | integer (>=1) | Envelope format version |
+| contentVersion | integer (>=1) | Optimistic concurrency token |
 | createdAt | ISO 8601 | Creation timestamp |
 | updatedAt | ISO 8601 | Last modification timestamp |
 | deletedAt | ISO 8601 \| null | Soft-delete timestamp |
@@ -47,7 +54,9 @@ A secret stored in the vault. Supports two storage modes with fundamentally diff
 | Field | Type | Description |
 |-------|------|-------------|
 | encryptedItemKey | string | Per-item DEK wrapped by root key |
+| keyNonce | string | Nonce for key wrapping |
 | ciphertext | string | XChaCha20-Poly1305 encrypted payload |
+| contentNonce | string | Nonce for content encryption |
 
 **Server-managed fields** (null when `zero_knowledge`):
 
@@ -77,20 +86,23 @@ The structured plaintext content of an item. This is what gets encrypted.
 | notes | string | no | Free-form notes |
 | fields | Record\<string, unknown\> | yes | The actual secret data (key-value pairs) |
 
-**Design decision:** `fields` is an untyped record because secret shapes vary wildly across kinds (login has username+password, certificate has PEM data, API key has a single token, etc.). Validation of field structure is left to clients, not the server — the server treats `fields` as opaque JSON.
-
 ### Agent
 
-An identity that can request access to items. Agents are either local (same machine as the user) or remote (external service, CI, cloud function).
+An automated caller scoped to an org. Agents are either local (same machine as the user) or remote (external service, CI, cloud function).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string (UUID) | Unique identifier |
-| userId | string | Owner who registered this agent |
+| organizationId | string | Owning org (FK → organization) |
+| createdBy | string | User who registered this agent |
 | kind | AgentKind | Classification (determines locality) |
 | locality | AgentLocality | Derived: `local` or `remote` |
 | name | string (1-255) | Human-readable label |
-| keyPrefix | string \| null | First characters of hashed API key |
+| description | string \| null | Optional description |
+| authMethod | AuthMethod | `public_key_session` (default) or `legacy_api_key` |
+| publicKey | string \| null | Ed25519 public key (session auth) |
+| secretHash | string \| null | SHA-256 hash of API key (legacy auth) |
+| secretPrefix | string \| null | First characters of API key for lookup |
 | enabled | boolean | Whether the agent can authenticate |
 | revokedAt | ISO 8601 \| null | When revoked (null = active) |
 | lastUsedAt | ISO 8601 \| null | Last successful authentication |
@@ -98,6 +110,7 @@ An identity that can request access to items. Agents are either local (same mach
 | createdAt | ISO 8601 | Registration timestamp |
 
 **Invariants:**
+- Default `authMethod` is `public_key_session`. Legacy API keys are opt-in.
 - API keys are SHA-256 hashed before storage. The plaintext key is shown exactly once at creation time and is never retrievable.
 - `locality` is derived from `kind` and cannot be set directly.
 - A revoked agent (`revokedAt != null`) cannot authenticate.
@@ -110,18 +123,17 @@ A specific grant of one capability from one agent to one item.
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string (UUID) | Unique identifier |
+| organizationId | string | Owning org (FK → organization) |
 | agentId | string | The agent receiving access (FK → agent) |
 | itemId | string | The item being accessed (FK → item) |
 | capability | Capability | What the agent can do |
 | expiresAt | ISO 8601 \| null | Optional expiration (null = permanent) |
-| createdBy | string | User who granted this permission |
+| grantedBy | string | User who granted this permission |
 | createdAt | ISO 8601 | Grant timestamp |
 
 **Invariants:**
-- Unique constraint on (agentId, itemId, capability) — no duplicate grants.
+- Unique constraint on `(agentId, itemId, capability)` -- no duplicate permissions.
 - Expired permissions are checked at access time and result in `PERMISSION_EXPIRED`.
-- Remote agents may only hold `reveal_plaintext` on `server_managed` items.
-- Local agents may hold any capability on any storage mode.
 - No wildcard permissions exist.
 
 ### AuditEntry
@@ -131,18 +143,23 @@ An immutable record of every access attempt and management operation.
 | Field | Type | Description |
 |-------|------|-------------|
 | id | bigint | Auto-incrementing identifier |
-| userId | string | User context |
+| organizationId | string | Org context |
+| userId | string \| null | User context |
 | agentId | string \| null | Agent involved (null for user-initiated) |
 | itemId | string \| null | Item involved (null for non-item events) |
+| profileId | string \| null | Profile involved |
+| surface | string \| null | `cli`, `mcp`, `api`, `sdk` |
 | eventType | AuditEventType | What happened |
 | result | AuditResult | Outcome |
 | deliveryMode | string \| null | How the secret was delivered |
+| field | string \| null | Specific field accessed |
+| purpose | string \| null | Caller-declared purpose |
 | meta | Record\<string, unknown\> | Event-specific metadata |
 | ipAddress | string \| null | Client IP |
 | occurredAt | ISO 8601 | When it happened |
 
 **Invariants:**
-- Append-only. No updates or deletes — ever.
+- Append-only. No updates or deletes -- ever.
 - No foreign key constraints (audit survives entity deletion).
 - Both allowed and denied attempts are logged.
 
@@ -154,10 +171,8 @@ An immutable record of every access attempt and management operation.
 
 | Value | Description |
 |-------|-------------|
-| `zero_knowledge` | Client-side encryption. Server stores opaque ciphertext. **Default for CLI.** |
+| `zero_knowledge` | Client-side encryption. Server stores opaque ciphertext. |
 | `server_managed` | Server-side AES-256-GCM encryption. Server can decrypt on authorized request. |
-
-**Design decision:** `zero_knowledge` is the recommended default. It provides the strongest security guarantee — even a full server breach cannot expose plaintext. `server_managed` exists for use cases where remote agents need access or where the user does not want to manage a local daemon.
 
 ### ItemKind
 
@@ -171,78 +186,100 @@ An immutable record of every access attempt and management operation.
 | `ssh_key` | SSH private/public key pair |
 | `opaque` | Unstructured binary or text secret |
 
+### Standard Fields by Kind
+
+| Kind | Standard fields |
+|---|---|
+| `login` | `username`, `email`, `password`, `url`, `totp_secret` |
+| `api_key` | `value` (default), `key_id`, `key_secret` |
+| `token` | `value` |
+| `certificate` | `cert`, `key`, `chain`, `passphrase` |
+| `ssh_key` | `private_key`, `public_key`, `passphrase` |
+| `json` | user-defined |
+| `opaque` | `value` |
+
+This table is defined in `packages/core/src/constants.ts` as `STANDARD_FIELDS_BY_KIND`.
+
 ### AgentKind
 
 | Value | Locality | Description |
 |-------|----------|-------------|
-| `device` | `local` | A physical device (laptop, server) |
 | `local_cli` | `local` | The abadge CLI tool |
 | `local_mcp` | `local` | An MCP server running locally |
-| `remote_agent` | `remote` | An external service, CI runner, or cloud function |
-
-**Locality derivation rule:** `device`, `local_cli`, `local_mcp` → `local`. `remote_agent` → `remote`. This is enforced at creation time and cannot be overridden.
+| `remote` | `remote` | An external service, CI runner, or cloud function |
 
 ### Capability
 
-| Value | Scope | Description |
-|-------|-------|-------------|
-| `read_ciphertext` | ZK items, local agents only | Read the encrypted blob for local decryption |
-| `reveal_plaintext` | Server-managed items | Decrypt and return plaintext via API |
-| `mount_env` | Both modes, local agents only | Inject secret into subprocess environment variable |
-| `mount_file` | Both modes, local agents only | Write secret to temporary file (0600 permissions) |
-| `use_without_reveal` | Both modes | Use the secret without ever seeing it (future: OAuth proxy, form fill) |
+| Value | Description |
+|-------|-------------|
+| `read_ciphertext` | Read the encrypted blob for local decryption (ZK items, local agents only) |
+| `reveal_plaintext` | Decrypt and return plaintext via API (server-managed items only) |
+| `mount_env` | Inject secret into subprocess environment variable (local agents only) |
+| `mount_file` | Write secret to temporary file with 0600 permissions (local agents only) |
 
 ### Capability Access Matrix
 
 This is the core authorization table. It defines what is possible given an agent's locality and an item's storage mode.
 
 | Capability | Local + ZK | Local + Server | Remote + ZK | Remote + Server |
-|------------|-----------|---------------|------------|----------------|
-| `read_ciphertext` | **Allowed** | Denied | **Denied** | Denied |
-| `reveal_plaintext` | Denied | **Allowed** | **Denied** | **Allowed** |
-| `mount_env` | **Allowed** | **Allowed** | **Denied** | Denied |
-| `mount_file` | **Allowed** | **Allowed** | **Denied** | Denied |
-| `use_without_reveal` | **Allowed** | **Allowed** | **Denied** | **Allowed** |
+|---|---|---|---|---|
+| `read_ciphertext` | **Allowed** | **Denied** | **Denied** | **Denied** |
+| `reveal_plaintext` | **Denied** | **Allowed** | **Denied** | **Allowed** |
+| `mount_env` | **Allowed** | **Allowed** | **Denied** | **Denied** |
+| `mount_file` | **Allowed** | **Allowed** | **Denied** | **Denied** |
 
 **Key rules:**
 1. Remote agents can never access ZK items (they cannot decrypt).
-2. Remote agents can only use `reveal_plaintext` or `use_without_reveal` on server-managed items.
+2. Remote agents can only use `reveal_plaintext` on server-managed items.
 3. `read_ciphertext` only makes sense for ZK items (returns encrypted blob for local decryption).
 4. `reveal_plaintext` only makes sense for server-managed items (server must decrypt).
 5. `mount_env` and `mount_file` require a local runtime to inject/write the secret.
 
 ### AuditEventType
 
-**Vault lifecycle:**
+**Profile lifecycle:**
+
 | Value | Triggered by |
 |-------|-------------|
-| `vault.bootstrap` | Vault creation |
-| `vault.unlock` | Daemon unlock |
-| `vault.password_change` | Password change |
-| `vault.key_rotate` | Root key rotation |
+| `profile.create` | Profile creation |
+| `profile.rotate` | Password change or root-key rotation |
+| `profile.delete` | Direct profile deletion |
+| `profile.delete_cascade` | Profile deletion as a downstream cascade |
 
 **Item lifecycle:**
+
 | Value | Triggered by |
 |-------|-------------|
 | `item.create` | Item creation |
-| `item.read` | Item retrieval (by owner) |
+| `item.export` | Owner export / reveal of item material |
 | `item.update` | Item update |
 | `item.delete` | Item soft-delete |
+| `item.delete_cascade` | Item deletion as a downstream cascade |
 
 **Agent lifecycle:**
+
 | Value | Triggered by |
 |-------|-------------|
 | `agent.create` | Agent registration |
-| `agent.rotate` | API key rotation |
+| `agent.bootstrap_issue` | Bootstrap token issued |
+| `agent.enroll` | Agent enrollment (public key set) |
+| `agent.rotate` | API key or key rotation |
 | `agent.revoke` | Agent revocation |
+| `agent.revoke_cascade` | Agent revocation as a downstream cascade |
+| `agent.session_issue` | Session token issued |
+| `agent.session_reject` | Session exchange rejected |
+| `agent.session_revoke` | Session revoked |
 
 **Permission lifecycle:**
+
 | Value | Triggered by |
 |-------|-------------|
 | `permission.create` | Permission grant |
 | `permission.revoke` | Permission revocation |
+| `permission.revoke_cascade` | Permission revocation as a downstream cascade |
 
 **Access events** (agent-initiated):
+
 | Value | Triggered by |
 |-------|-------------|
 | `access.ciphertext` | Agent reads encrypted blob |
@@ -258,6 +295,7 @@ This is the core authorization table. It defines what is possible given an agent
 | `denied` | Access denied (no permission or wrong capability) |
 | `expired` | Permission existed but has expired |
 | `revoked` | Agent or permission was revoked |
+| `cascade` | Downstream effect of another operation |
 
 ### API Key Prefixes
 
@@ -265,40 +303,125 @@ This is the core authorization table. It defines what is possible given an agent
 |--------|---------|
 | `abl_` | Local agent API key |
 | `abg_` | Remote agent API key |
+| `abs_` | Agent session token |
+| `abe_` | Agent enrollment bootstrap token |
+| `abc_` | Agent session challenge |
+
+---
+
+## Organization RBAC
+
+Three roles enforced in API middleware on every mutating call.
+
+| Action | Owner | Admin | Member |
+|---|---|---|---|
+| Manage org settings, plan, delete org | Yes | No | No |
+| Invite / remove members, change roles | Yes | Yes | No |
+| Create / delete profiles | Yes | Yes | No |
+| Unlock / bootstrap / change password on profiles | Yes | Yes | Yes (if they have the profile password) |
+| Create / update / soft-delete items | Yes | Yes | Yes (in profiles they have access to) |
+| Create / revoke agents | Yes | Yes | Yes |
+| Create / revoke permissions | Yes | Yes | Yes (**only on agents they created**) |
+| View audit logs for any user in the org | Yes | Yes | No |
+| View their own audit entries | Yes | Yes | Yes |
+
+**Key rules:**
+- Members can only grant permissions to agents they created. This prevents a member from escalating a shared deployment agent's access.
+- Audit visibility is role-scoped. Owners and admins see the full org log. Members see only entries where they are the actor or where they created the agent that acted.
+
+RBAC is enforced by `requireRole(orgParam, minRole)` middleware. Agent ownership is enforced by `requireAgentOwnership(agentIdParam)` on `permissions.create` when the caller is a member.
+
+---
+
+## Field Delivery Model
+
+Items contain a `fields` object with named key-value pairs. The `field` parameter on access methods selects a specific field for delivery.
+
+**Resolution rules (via `resolveFieldValue`):**
+- If `field` is specified, return that field's value. Error `FIELD_NOT_FOUND` if it does not exist.
+- If `field` is omitted and the item has exactly one field, return that field's value.
+- If `field` is omitted and the item has multiple fields, error `MULTI_FIELD_ITEM` listing available fields.
+- `--expand-env` on the CLI expands all fields into env vars (`FIELDNAME=VALUE`).
+
+**Audit implications:** Every access request records the `field` that was delivered (or `"__default__"` if no field was named, or `"__expand__"` for collection expansion).
+
+---
+
+## Cascading Behavior
+
+Revocation and deletion have explicit, documented effects on dependent state. Every cascade writes an audit entry with `result = "cascade"`.
+
+### Agent revoked
+- All active `agentSessions` are marked `revokedAt = now` immediately
+- Permissions remain in the database (for audit) but are treated as inactive
+- Future access attempts return `AGENT_REVOKED`
+- One audit event per invalidated session
+
+### Agent rotated
+- Old credential material is invalidated atomically
+- Permissions are unaffected (they reference the agent, not the credential)
+- A single audit event records the rotation
+
+### Item soft-deleted
+- `deletedAt` is set; the `label` is preserved for audit readability
+- Active file mounts are released by the daemon on its next housekeeping tick
+- Future access attempts return `ITEM_DELETED`
+- Permissions referencing the deleted item remain and show as "inactive"
+
+### Profile deleted
+- Only allowed if the profile has no non-deleted items (returns `PROFILE_NOT_EMPTY` otherwise)
+- Soft-delete cascades to permissions (marked inactive) but does not touch already-soft-deleted items
+
+### Member removed from org
+- The member loses access to all org resources immediately
+- Agents they created remain in the org and are not auto-revoked
+- Permissions they granted remain valid (the grant outlives the granter)
+- Their audit entries are preserved
 
 ---
 
 ## Error Codes
 
-Every error response includes a machine-readable `code` field. Surfaces may format the error differently (JSON body, CLI stderr, MCP error), but the code is always one of these.
+Every error response includes `{ code, message, hint, meta? }`. The `hint` is always an actionable next step.
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `BAD_REQUEST` | 400 | Malformed request |
-| `VALIDATION_ERROR` | 400 | Schema validation failure (includes `issues` array) |
-| `INVALID_CAPABILITY` | 400 | Capability not allowed for this agent/item combination |
-| `STALE_VERSION` | 400 | `contentVersion` mismatch on item update |
-| `UNAUTHORIZED` | 401 | Missing or invalid authentication |
-| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate |
-| `FORBIDDEN` | 403 | Authenticated but not authorized |
-| `PERMISSION_DENIED` | 403 | No matching permission for this capability |
-| `PERMISSION_EXPIRED` | 403 | Permission exists but has expired |
-| `NOT_FOUND` | 404 | Generic resource not found |
-| `VAULT_NOT_FOUND` | 404 | User has no vault |
-| `ITEM_NOT_FOUND` | 404 | Item does not exist or belongs to another user |
-| `AGENT_NOT_FOUND` | 404 | Agent does not exist or belongs to another user |
-| `PERMISSION_NOT_FOUND` | 404 | Permission does not exist |
-| `CONFLICT` | 409 | Resource already exists |
-| `VAULT_ALREADY_EXISTS` | 409 | User already has a vault |
-| `RATE_LIMITED` | 429 | Too many requests |
+| Code | HTTP Status | Description | Hint (example) |
+|------|-------------|-------------|----------------|
+| `BAD_REQUEST` | 400 | Malformed request | -- |
+| `VALIDATION_ERROR` | 400 | Schema validation failure (includes `issues` array) | -- |
+| `INVALID_CAPABILITY_LOCALITY` | 400 | Capability incompatible with agent locality | `Remote agents cannot use <cap>. Use reveal_plaintext, or register a local agent.` |
+| `INVALID_CAPABILITY_STORAGE` | 400 | Capability incompatible with item storage mode | `read_ciphertext requires a zero-knowledge item. Use reveal_plaintext for server-managed items.` |
+| `STALE_VERSION` | 400 | `contentVersion` mismatch on item update | -- |
+| `UNAUTHORIZED` | 401 | Missing or invalid authentication | -- |
+| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent register --name <name> --kind <kind>` |
+| `SESSION_EXPIRED` | 401 | Human session has expired | `Run: abadge login` |
+| `BOOTSTRAP_TOKEN_EXPIRED` | 401 | Enrollment token has expired | `Run: abadge agent rotate <agent-id> to issue a fresh token` |
+| `FORBIDDEN` | 403 | Authenticated but not authorized | -- |
+| `PERMISSION_DENIED` | 403 | No matching permission for this capability | `Run: abadge permission create --agent <name> --item <label> --capability <cap>` |
+| `PERMISSION_EXPIRED` | 403 | Permission exists but has expired | -- |
+| `MEMBER_INSUFFICIENT_ROLE` | 403 | Role does not permit action | `This action requires the <required> role. Ask an org owner to promote you.` |
+| `MEMBER_AGENT_OWNERSHIP` | 403 | Cannot grant permissions on an agent you don't own | `Members can only grant permissions to agents they created. Ask an admin to run this command.` |
+| `NOT_FOUND` | 404 | Generic resource not found | -- |
+| `ITEM_NOT_FOUND` | 404 | Item does not exist or belongs to another org | -- |
+| `ITEM_DELETED` | 404 | Item was soft-deleted | `The item "<label>" was deleted on <date>. Recreate it or restore from backup.` |
+| `AGENT_NOT_FOUND` | 404 | Agent does not exist or belongs to another org | -- |
+| `PERMISSION_NOT_FOUND` | 404 | Permission does not exist | -- |
+| `FIELD_NOT_FOUND` | 404 | Named field not present in item | `Available fields on "<label>": username, password. Did you mean --field password?` |
+| `MULTI_FIELD_ITEM` | 400 | Item has multiple fields; none selected | `Specify --field <name>. Available: username, password.` |
+| `PROFILE_NOT_EMPTY` | 400 | Profile still has non-deleted items | `Delete all items in the profile first: abadge item list --profile <name>` |
+| `DAEMON_NOT_RUNNING` | 503 | Local daemon is not listening | `Start it with: abadge daemon start` |
+| `PROFILE_LOCKED` | 403 | Profile has no unlocked key in daemon | `Run: abadge profile unlock` |
+| `CONFLICT` | 409 | Resource already exists | -- |
+| `RATE_LIMITED` | 429 | Too many requests | -- |
 
 ### Error Response Shape
 
 ```typescript
 {
-  code: ErrorCode;
-  message: string;
-  issues?: Array<{ path: (string | number)[]; message: string }>; // VALIDATION_ERROR only
+  code: string;         // machine-readable error code
+  message: string;      // one-line human description
+  hint: string;         // actionable next step
+  meta?: Record<string, unknown>;  // structured context
+  issues?: Array<{ path: (string | number)[]; message: string }>;  // VALIDATION_ERROR only
 }
 ```
 
@@ -338,24 +461,18 @@ All list endpoints that may return large result sets use cursor-based pagination
 | `cursor` | string \| undefined | undefined | Opaque cursor from previous response |
 | `limit` | integer (1-100) | 50 | Maximum items per page |
 
-Response includes:
+Response includes `nextCursor: string | null`. Pass as `cursor` for the next page. `null` means no more pages.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `nextCursor` | string \| null | Pass as `cursor` for the next page. `null` = no more pages. |
-
-**Currently paginated:** `audit.list`. Other list endpoints (items, agents, permissions) are unpaginated for v1 — they return all results. Pagination will be added when needed.
+**Currently paginated:** `audit.list`. Other list endpoints are unpaginated for v1.
 
 ---
 
 ## Naming Conventions
 
-| Concept | Code name | API name | CLI name |
-|---------|-----------|----------|----------|
-| Secret | Item | `item` / `items` | `item` |
-| Agent identity | Agent / Principal | `agent` / `agents` | `agent` |
-| Access grant | Permission / Grant | `permission` / `permissions` | `permission` |
-| Secret vault | Vault | `vault` | `vault` |
-| Access log | Audit | `audit` | `audit` |
-
-**Design decision:** The codebase uses "principal" and "grant" internally (DB table names), but all external interfaces use "agent" and "permission" for clarity. The specs and all user-facing surfaces use the external names exclusively.
+| Concept | DB table | API/SDK name | CLI name |
+|---------|----------|--------------|----------|
+| Credential namespace | `profiles` | `profile` / `profiles` | `profile` |
+| Secret | `items` | `item` / `items` | `item` |
+| Agent identity | `agents` | `agent` / `agents` | `agent` |
+| Access grant | `permissions` | `permission` / `permissions` | `permission` |
+| Access log | `auditLogs` | `audit` | `audit` |

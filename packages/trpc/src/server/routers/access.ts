@@ -1,6 +1,7 @@
 import type {
   Capability,
   CiphertextAccessInput,
+  ItemPayload,
   MountAccessInput,
   RevealAccessInput,
 } from "@abadge/core";
@@ -8,21 +9,40 @@ import {
   BadRequestError,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
+  FieldNotFoundError,
   ForbiddenError,
+  IntegrityError,
   MountAccessResponseSchema,
   MountAccessSchema,
+  MultiFieldItemError,
   NotFoundError,
   RevealAccessResponseSchema,
   RevealAccessSchema,
+  resolveFieldValue,
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
 import { and, eq, isNull } from "@abadge/db";
-import { items, grants as permissionRecords } from "@abadge/db/schema";
-import { Effect } from "effect";
+import { items, permissions as permissionRecords } from "@abadge/db/schema";
+import { Cause, Effect } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+
+function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
+  if (result === "expired") {
+    return new ForbiddenError({
+      code: "PERMISSION_EXPIRED",
+      message: "Permission has expired",
+      hint: "Renew the permission or request a new grant before retrying.",
+    });
+  }
+  return new ForbiddenError({
+    code: "PERMISSION_DENIED",
+    message: "No valid permission",
+    hint: defaultHint,
+  });
+}
 
 const failMissingServerManagedData = (
   itemId: string,
@@ -32,6 +52,7 @@ const failMissingServerManagedData = (
     const ctx = yield* AgentRequestContextTag;
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId,
@@ -41,7 +62,14 @@ const failMissingServerManagedData = (
       meta: { reason: "item has no server-encrypted data" },
     });
 
-    return yield* Effect.fail(new Error("Item has no server-encrypted data"));
+    return yield* Effect.fail(
+      new IntegrityError({
+        code: "INTEGRITY_ERROR",
+        message: "Server-managed item has no encrypted payload",
+        hint: "This item may need to be re-created; contact support if this persists.",
+        meta: { itemId },
+      }),
+    );
   });
 
 const decryptServerManagedItem = (
@@ -80,7 +108,7 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
         .from(permissionRecords)
         .where(
           and(
-            eq(permissionRecords.principalId, agentId),
+            eq(permissionRecords.agentId, agentId),
             eq(permissionRecords.itemId, itemId),
             eq(permissionRecords.capability, capability),
           ),
@@ -89,14 +117,14 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
     );
 
     if (!permission) {
-      return false;
+      return "denied" as const;
     }
 
     if (permission.expiresAt && permission.expiresAt < new Date()) {
-      return false;
+      return "expired" as const;
     }
 
-    return true;
+    return "allowed" as const;
   });
 
 const loadAccessibleItem = (itemId: string) =>
@@ -109,7 +137,7 @@ const loadAccessibleItem = (itemId: string) =>
         .where(
           and(
             eq(items.id, itemId),
-            eq(items.userId, ctx.identity.agentUserId),
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
             isNull(items.deletedAt),
           ),
         )
@@ -121,6 +149,7 @@ const loadAccessibleItem = (itemId: string) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and confirm the agent belongs to the same organization.",
         }),
       );
     }
@@ -134,6 +163,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
 
     if (ctx.identity.agentLocality !== "local") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -147,6 +177,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Remote agents cannot access ciphertext",
+          hint: "Use reveal_plaintext on a server-managed item or register a local agent.",
         }),
       );
     }
@@ -154,6 +185,7 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     const item = yield* loadAccessibleItem(input.itemId);
     if (item.storageMode !== "zero_knowledge") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -166,34 +198,37 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Item is not zero-knowledge",
+          hint: "Use reveal_plaintext for server-managed items instead of ciphertext access.",
         }),
       );
     }
 
-    const hasPermission = yield* checkPermission(
+    const permResult = yield* checkPermission(
       ctx.identity.agentId,
       input.itemId,
       "read_ciphertext",
     );
-    if (!hasPermission) {
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.ciphertext",
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant read_ciphertext on this item to the agent before retrying.",
+        ),
       );
     }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
@@ -209,6 +244,61 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
     };
   });
 
+/**
+ * Run `resolveFieldValue` and, on field-resolution failure, emit a denied audit
+ * row for the given access event type. Audit-write failures are swallowed so
+ * they cannot mask the original domain error reaching the client.
+ */
+const resolveFieldOrDenyAudit = (
+  payload: ItemPayload,
+  field: string,
+  audit: {
+    itemId: string;
+    eventType: "access.reveal" | "access.mount_env" | "access.mount_file";
+    deliveryMode: "reveal" | "mount_env" | "mount_file";
+    purpose?: string;
+  },
+): Effect.Effect<
+  string,
+  FieldNotFoundError | MultiFieldItemError | Cause.UnknownException,
+  AgentRequestContextTag
+> =>
+  Effect.try({
+    try: () => resolveFieldValue(payload, field),
+    catch: (err) => {
+      if (err instanceof FieldNotFoundError || err instanceof MultiFieldItemError) {
+        return err;
+      }
+      return new Cause.UnknownException(err, "field resolution failed");
+    },
+  }).pipe(
+    Effect.tapError((err) =>
+      Effect.gen(function* () {
+        if (!(err instanceof FieldNotFoundError) && !(err instanceof MultiFieldItemError)) {
+          return;
+        }
+        const ctx = yield* AgentRequestContextTag;
+        // Audit-write failures MUST NOT mask the primary domain error.
+        yield* logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: audit.itemId,
+          eventType: audit.eventType,
+          result: "denied",
+          deliveryMode: audit.deliveryMode,
+          field,
+          purpose: audit.purpose,
+          ipAddress: ctx.ipAddress,
+          meta: {
+            reason: err._tag,
+            availableFields: err.meta?.availableFields ?? [],
+          },
+        }).pipe(Effect.catchAll(() => Effect.void));
+      }),
+    ),
+  );
+
 const accessReveal = (input: RevealAccessInput) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
@@ -216,6 +306,7 @@ const accessReveal = (input: RevealAccessInput) =>
 
     if (item.storageMode !== "server_managed") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -228,48 +319,65 @@ const accessReveal = (input: RevealAccessInput) =>
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Cannot reveal zero-knowledge items via API",
+          hint: "Use read_ciphertext for zero-knowledge items or choose a server-managed item.",
         }),
       );
     }
 
-    const hasPermission = yield* checkPermission(
+    const permResult = yield* checkPermission(
       ctx.identity.agentId,
       input.itemId,
       "reveal_plaintext",
     );
-    if (!hasPermission) {
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType: "access.reveal",
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant reveal_plaintext on this item to the agent before retrying.",
+        ),
       );
     }
 
     const decrypted = yield* decryptServerManagedItem(item, "access.reveal");
+    const payload = decodeServerManagedPayload(item.id, decrypted);
+
+    // Resolve field if specified (validates field exists, propagates domain error if not)
+    let deliveredPayload = payload;
+    if (input.field) {
+      const field = input.field;
+      const fieldValue = yield* resolveFieldOrDenyAudit(payload, field, {
+        itemId: input.itemId,
+        eventType: "access.reveal",
+        deliveryMode: "reveal",
+        purpose: input.purpose,
+      });
+      deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
+    }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType: "access.reveal",
       result: "allowed",
       deliveryMode: "reveal",
+      field: input.field ?? "__default__",
+      purpose: input.purpose,
       ipAddress: ctx.ipAddress,
     });
 
-    return {
-      payload: decodeServerManagedPayload(item.id, decrypted),
-    };
+    return { payload: deliveredPayload };
   });
 
 const accessMount = (input: MountAccessInput) =>
@@ -279,6 +387,7 @@ const accessMount = (input: MountAccessInput) =>
 
     if (ctx.identity.agentLocality !== "local") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
@@ -291,39 +400,44 @@ const accessMount = (input: MountAccessInput) =>
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Remote agents cannot mount",
+          hint: "Use reveal_plaintext remotely or run the agent locally to mount secrets.",
         }),
       );
     }
 
     const item = yield* loadAccessibleItem(input.itemId);
     const capability: Capability = input.mountType === "env" ? "mount_env" : "mount_file";
-    const hasPermission = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
-    if (!hasPermission) {
+    const permResult = yield* checkPermission(ctx.identity.agentId, input.itemId, capability);
+    if (permResult !== "allowed") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
-        result: "denied",
+        result: permResult,
         ipAddress: ctx.ipAddress,
       });
 
       return yield* Effect.fail(
-        new ForbiddenError({
-          code: "PERMISSION_DENIED",
-          message: "No valid permission",
-        }),
+        permissionDeniedError(
+          permResult,
+          "Grant the matching mount capability on this item to the agent before retrying.",
+        ),
       );
     }
 
     if (item.storageMode === "zero_knowledge") {
       yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
         itemId: input.itemId,
         eventType,
         result: "allowed",
         deliveryMode: `mount_${input.mountType}`,
+        field: input.field ?? "__default__",
+        purpose: input.purpose,
         ipAddress: ctx.ipAddress,
       });
 
@@ -336,20 +450,37 @@ const accessMount = (input: MountAccessInput) =>
     }
 
     const decrypted = yield* decryptServerManagedItem(item, eventType);
+    const payload = decodeServerManagedPayload(item.id, decrypted);
+
+    // Resolve field if specified (validates field exists, propagates domain error if not)
+    let deliveredPayload = payload;
+    if (input.field) {
+      const field = input.field;
+      const fieldValue = yield* resolveFieldOrDenyAudit(payload, field, {
+        itemId: input.itemId,
+        eventType,
+        deliveryMode: `mount_${input.mountType}`,
+        purpose: input.purpose,
+      });
+      deliveredPayload = { ...payload, fields: { [field]: fieldValue } };
+    }
 
     yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       agentId: ctx.identity.agentId,
       itemId: input.itemId,
       eventType,
       result: "allowed",
       deliveryMode: `mount_${input.mountType}`,
+      field: input.field ?? "__default__",
+      purpose: input.purpose,
       ipAddress: ctx.ipAddress,
     });
 
     return {
       storageMode: "server_managed" as const,
-      payload: decodeServerManagedPayload(item.id, decrypted),
+      payload: deliveredPayload,
     };
   });
 

@@ -1,4 +1,3 @@
-import { tokenToHeaders } from "@abadge/core";
 import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AnyTRPCRouter } from "@trpc/server";
@@ -7,18 +6,33 @@ interface NodeTrpcClientOptions {
   baseUrl: string;
   token?: string;
   headers?: unknown;
+  /** Organization ID sent as X-Abadge-Org-Id header for org-scoped requests. */
+  orgId?: string;
 }
 
+/**
+ * Mirrors `NormalizedTrpcError` in `@abadge/trpc/client`. The trpc workspace
+ * package is `private: true` and the SDK is published (`access: "public"`),
+ * so a direct import would force the private package into the public
+ * dependency graph. Keep the two copies field-for-field identical; any change
+ * to hint/meta or new fields must be mirrored in both files.
+ */
 interface NormalizedTrpcError {
   message: string;
   httpStatus?: number;
   trpcCode?: string;
-  appCode?: string;
+  code?: string;
+  hint?: string;
+  meta?: Readonly<Record<string, unknown>>;
   issues?: unknown;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
+}
+
+function tokenToHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
 }
 
 function toHeaderRecord(headers?: unknown): Record<string, string> {
@@ -77,6 +91,7 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
           return {
             ...toHeaderRecord(options.headers),
             ...(options.token ? tokenToHeaders(options.token) : {}),
+            ...(options.orgId ? { "X-Abadge-Org-Id": options.orgId } : {}),
           };
         },
       }),
@@ -95,7 +110,12 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
     message: trpcError.message || "Request failed",
     httpStatus: typeof data?.httpStatus === "number" ? data.httpStatus : undefined,
     trpcCode: typeof data?.code === "string" ? data.code : undefined,
-    appCode: typeof data?.appCode === "string" ? data.appCode : undefined,
+    code: typeof data?.code === "string" ? data.code : undefined,
+    hint: typeof data?.hint === "string" ? data.hint : undefined,
+    meta:
+      data?.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+        ? (data.meta as Record<string, unknown>)
+        : undefined,
     issues: data?.issues,
   };
 }

@@ -1,12 +1,11 @@
 import { Schema } from "effect";
 import {
+  AGENT_AUTH_METHODS,
   AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
-  OPERATOR_TOKEN_SCOPES,
-  PRINCIPAL_AUTH_METHODS,
   STORAGE_MODES,
 } from "./constants";
 
@@ -19,11 +18,10 @@ const NullableIsoDateString = Schema.NullOr(IsoDateString);
 export const StorageModeSchema = Schema.Literal(...STORAGE_MODES);
 export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
 export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
-export const PrincipalAuthMethodSchema = Schema.Literal(...PRINCIPAL_AUTH_METHODS);
+export const AgentAuthMethodSchema = Schema.Literal(...AGENT_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
-export const OperatorTokenScopeSchema = Schema.Literal(...OPERATOR_TOKEN_SCOPES);
 
 export const KdfParamsSchema = Schema.Struct({
   algorithm: Schema.Literal("argon2id"),
@@ -34,10 +32,10 @@ export const KdfParamsSchema = Schema.Struct({
 });
 
 export const ItemPayloadSchema = Schema.Struct({
-  v: Schema.Int,
-  label: NonEmptyString,
-  kind: ItemKindSchema,
-  tags: Schema.Array(Schema.String),
+  v: Schema.optional(Schema.Int),
+  label: Schema.optional(NonEmptyString),
+  kind: Schema.optional(ItemKindSchema),
+  tags: Schema.optional(Schema.Array(Schema.String)),
   notes: Schema.optional(Schema.String),
   fields: JsonRecord,
 });
@@ -58,14 +56,21 @@ export const RecoverySetupSchema = Schema.Struct({
   recoveryWrappedRootKey: NonEmptyString,
 });
 
+export const RekeyedItemSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  encryptedItemKey: NonEmptyString,
+  keyNonce: NonEmptyString,
+});
+
 export const RotateKeySchema = Schema.Struct({
   wrappedRootKey: NonEmptyString,
   recoveryWrappedRootKey: Schema.optional(Schema.String),
-  rekeyedItems: Schema.Record({ key: Schema.String, value: NonEmptyString }),
+  rekeyedItems: Schema.Array(RekeyedItemSchema),
 });
 
 export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
+  label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
 });
@@ -82,6 +87,7 @@ export const CreateItemSchema = Schema.Union(
 
 export const ZeroKnowledgeUpdateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
+  label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   contentVersion: Schema.Int.pipe(Schema.positive()),
@@ -101,7 +107,7 @@ export const UpdateItemSchema = Schema.Union(
 const CreateAgentSchemaBase = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
-  authMethod: Schema.optional(PrincipalAuthMethodSchema),
+  authMethod: Schema.optional(AgentAuthMethodSchema),
   publicKey: Schema.optional(NonEmptyString),
   issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
@@ -145,18 +151,6 @@ export const RevokeAgentSessionSchema = Schema.Struct({
   token: NonEmptyString,
 });
 
-export const CreateOperatorTokenSchema = Schema.Struct({
-  name: BoundedNameString,
-  scopes: Schema.Array(OperatorTokenScopeSchema).pipe(
-    Schema.filter((scopes) => scopes.length > 0 || "At least one scope is required."),
-  ),
-  expiresAt: Schema.optional(IsoDateString),
-});
-
-export const RevokeOperatorTokenSchema = Schema.Struct({
-  tokenId: NonEmptyString,
-});
-
 export const CreatePermissionSchema = Schema.Struct({
   agentId: NonEmptyString,
   itemId: NonEmptyString,
@@ -170,14 +164,22 @@ export const CiphertextAccessSchema = Schema.Struct({
 
 export const RevealAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(Schema.String),
 });
 
 export const MountAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
   mountType: Schema.Literal("env", "file"),
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(Schema.String),
 });
 
 export const AuditQuerySchema = Schema.Struct({
+  orgId: Schema.optional(Schema.String),
+  profileId: Schema.optional(Schema.String),
+  surface: Schema.optional(Schema.String),
+  field: Schema.optional(Schema.String),
   eventType: Schema.optional(AuditEventTypeSchema),
   result: Schema.optional(AuditResultSchema),
   agentId: Schema.optional(Schema.String),
@@ -188,12 +190,15 @@ export const AuditQuerySchema = Schema.Struct({
   ),
 });
 
-export const VaultSchema = Schema.Struct({
+export const ProfileSchema = Schema.Struct({
   id: NonEmptyString,
-  userId: NonEmptyString,
-  wrappedRootKey: NonEmptyString,
-  kdfSalt: NonEmptyString,
-  kdfParams: KdfParamsSchema,
+  organizationId: NonEmptyString,
+  name: NonEmptyString,
+  description: Schema.NullOr(Schema.String),
+  storageMode: StorageModeSchema,
+  wrappedRootKey: Schema.NullOr(Schema.String),
+  kdfSalt: Schema.NullOr(Schema.String),
+  kdfParams: Schema.NullOr(KdfParamsSchema),
   recoveryWrappedRootKey: Schema.NullOr(Schema.String),
   keyVersion: Schema.Int.pipe(Schema.positive()),
   createdAt: IsoDateString,
@@ -202,6 +207,7 @@ export const VaultSchema = Schema.Struct({
 
 export const ItemSummarySchema = Schema.Struct({
   id: NonEmptyString,
+  label: NonEmptyString,
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
@@ -209,41 +215,13 @@ export const ItemSummarySchema = Schema.Struct({
   updatedAt: IsoDateString,
 });
 
-export const ItemDisplayQuerySchema = Schema.Struct({
-  itemIds: Schema.Array(NonEmptyString).pipe(
-    Schema.filter((itemIds) => itemIds.length <= 100 || "itemIds must contain at most 100 IDs"),
-  ),
-});
-
-export const ZeroKnowledgeItemDisplaySchema = Schema.Struct({
-  itemId: NonEmptyString,
-  storageMode: Schema.Literal("zero_knowledge"),
-  encryptedItemKey: NonEmptyString,
-  ciphertext: NonEmptyString,
-});
-
-export const ServerManagedItemDisplaySchema = Schema.Struct({
-  itemId: NonEmptyString,
-  storageMode: Schema.Literal("server_managed"),
-  label: NonEmptyString,
-});
-
-export const ItemDisplayErrorSchema = Schema.Struct({
-  itemId: NonEmptyString,
-  error: Schema.Literal("decrypt_failed"),
-});
-
-export const ItemDisplayEntrySchema = Schema.Union(
-  ZeroKnowledgeItemDisplaySchema,
-  ServerManagedItemDisplaySchema,
-  ItemDisplayErrorSchema,
-);
-
 const ItemDetailBaseFields = {
   id: NonEmptyString,
+  label: NonEmptyString,
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
+  profileId: Schema.NullOr(Schema.String),
   createdAt: IsoDateString,
   updatedAt: IsoDateString,
 } as const;
@@ -267,11 +245,13 @@ export const ItemDetailSchema = Schema.Union(
 
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
-  userId: NonEmptyString,
+  organizationId: NonEmptyString,
+  createdBy: NonEmptyString,
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
-  authMethod: PrincipalAuthMethodSchema,
+  authMethod: AgentAuthMethodSchema,
   name: NonEmptyString,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
   publicKeyConfigured: Schema.Boolean,
   keyPrefix: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
@@ -323,27 +303,6 @@ export const AgentSessionResultSchema = Schema.Struct({
   session: AgentSessionSchema,
 });
 
-export const OperatorTokenSchema = Schema.Struct({
-  id: NonEmptyString,
-  userId: NonEmptyString,
-  name: NonEmptyString,
-  tokenPrefix: NonEmptyString,
-  scopes: Schema.Array(OperatorTokenScopeSchema),
-  expiresAt: IsoDateString,
-  lastUsedAt: Schema.NullOr(IsoDateString),
-  revokedAt: Schema.NullOr(IsoDateString),
-  createdAt: IsoDateString,
-});
-
-export const OperatorTokenCreateResultSchema = Schema.Struct({
-  token: NonEmptyString,
-  operatorToken: OperatorTokenSchema,
-});
-
-export const OperatorTokenListResultSchema = Schema.Struct({
-  operatorTokens: Schema.Array(OperatorTokenSchema),
-});
-
 export const CliLocalAgentReferenceSchema = Schema.Struct({
   agentId: NonEmptyString,
   privateKeyPath: NonEmptyString,
@@ -369,22 +328,28 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
 
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
+  organizationId: NonEmptyString,
   agentId: NonEmptyString,
   itemId: NonEmptyString,
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  createdBy: NonEmptyString,
+  grantedBy: NonEmptyString,
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
+  organizationId: NonEmptyString,
   userId: NonEmptyString,
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
+  profileId: Schema.NullOr(Schema.String),
+  surface: Schema.NullOr(Schema.String),
   eventType: AuditEventTypeSchema,
   result: AuditResultSchema,
   deliveryMode: Schema.NullOr(Schema.String),
+  field: Schema.NullOr(Schema.String),
+  purpose: Schema.NullOr(Schema.String),
   meta: JsonRecord,
   ipAddress: Schema.NullOr(Schema.String),
   occurredAt: IsoDateString,
@@ -435,8 +400,12 @@ export const ItemVersionResultSchema = Schema.Struct({
   contentVersion: Schema.Int.pipe(Schema.positive()),
 });
 
-export const VaultResultSchema = Schema.Struct({
-  vault: VaultSchema,
+export const ProfileResultSchema = Schema.Struct({
+  profile: ProfileSchema,
+});
+
+export const ProfileListResultSchema = Schema.Struct({
+  profiles: Schema.Array(ProfileSchema),
 });
 
 export const ItemResultSchema = Schema.Struct({
@@ -445,10 +414,6 @@ export const ItemResultSchema = Schema.Struct({
 
 export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
-});
-
-export const ItemDisplayListResultSchema = Schema.Struct({
-  items: Schema.Array(ItemDisplayEntrySchema),
 });
 
 export const AgentResultSchema = Schema.Struct({

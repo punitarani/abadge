@@ -1,9 +1,7 @@
 import { createAuth } from "@abadge/auth";
-import type { OperatorTokenScope } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { createDb } from "@abadge/db";
 import { validateWorkerEnv, type WorkerEnv } from "@abadge/env/worker";
-
 export interface HyperdriveBindingLike {
   connectionString: string;
 }
@@ -26,15 +24,26 @@ export interface BaseRequestContext {
 export interface SessionIdentity {
   kind: "session";
   userId: string;
-  authMethod: "browser_session" | "bearer_session" | "operator_token";
-  operatorTokenId?: string;
-  scopes?: OperatorTokenScope[];
+  organizationId: string;
+  authMethod: "browser_session" | "bearer_session";
+}
+
+export interface OptionalOrgSessionIdentity {
+  kind: "session";
+  userId: string;
+  organizationId: string | null;
+  authMethod: "browser_session" | "bearer_session";
+}
+
+export interface OptionalOrgSessionRequestContext extends BaseRequestContext {
+  identity: OptionalOrgSessionIdentity;
 }
 
 export interface AgentIdentity {
   kind: "agent";
   agentId: string;
   agentUserId: string;
+  agentOrganizationId: string;
   agentLocality: "local" | "remote";
 }
 

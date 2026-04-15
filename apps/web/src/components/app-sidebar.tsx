@@ -1,10 +1,19 @@
 "use client";
 
-import { Bot, KeyRound, LifeBuoy, ScrollText, Send, Settings, ShieldCheck } from "lucide-react";
-import Image from "next/image";
+import {
+  Bot,
+  Columns3,
+  KeyRound,
+  LayoutDashboard,
+  LifeBuoy,
+  ScrollText,
+  Send,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NavSecondary } from "@/components/nav-secondary";
+import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
@@ -17,90 +26,127 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
 } from "@/components/ui/sidebar";
 
-const navSections = [
+const navGroups = [
   {
-    label: "Vault",
-    items: [{ href: "/items", label: "Items", icon: KeyRound }],
+    label: "Secrets",
+    items: [
+      { path: "profiles", label: "Profiles", icon: Columns3 },
+      { path: "items", label: "Items", icon: KeyRound },
+    ],
   },
   {
     label: "Access",
     items: [
-      { href: "/agents", label: "Agents", icon: Bot },
-      { href: "/permissions", label: "Permissions", icon: ShieldCheck },
+      { path: "agents", label: "Agents", icon: Bot },
+      { path: "permissions", label: "Permissions", icon: ShieldCheck },
     ],
   },
   {
-    label: "Observability",
-    items: [{ href: "/audit", label: "Audit log", icon: ScrollText }],
-  },
-  {
-    label: "Account",
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
+    label: "Monitor",
+    items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
   },
 ];
 
-const secondaryItems = [
-  {
-    title: "Support",
-    url: "mailto:support@abadge.io",
-    icon: LifeBuoy,
-  },
-  {
-    title: "Feedback",
-    url: "https://abadge.userjot.com/",
-    icon: Send,
-  },
+const secondaryNavItems = [
+  { path: "support", label: "Support", icon: LifeBuoy },
+  { path: "feedback", label: "Feedback", icon: Send },
 ];
+
+const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }];
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="none" className="h-svh!" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href="/items">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Image src="/abadge-icon-white.svg" alt="abadge" width={16} height={16} />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">Abadge</span>
-                  <span className="truncate text-xs">Dashboard</span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <OrgSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        {navSections.map((section) => (
-          <SidebarGroup key={section.label}>
-            <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+        {/* Overview — standalone at top */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
+                  <Link href="/overview">
+                    <LayoutDashboard />
+                    <span>Overview</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Grouped nav sections */}
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {section.items.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={pathname.startsWith(item.href)}>
-                      <Link href={item.href}>
+                {group.items.map((item) => {
+                  const href = `/${item.path}`;
+                  const isActive = pathname.startsWith(href);
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton asChild isActive={isActive}>
+                        <Link href={href}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+
+        {/* Secondary nav + Settings — pushed to bottom */}
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {secondaryNavItems.map((item) => {
+                const href = `/${item.path}`;
+                const isActive = pathname.startsWith(href);
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={href}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-        <NavSecondary items={secondaryItems} className="mt-auto" />
+                );
+              })}
+              {bottomNavItems.map((item) => {
+                const href = `/${item.path}`;
+                const isActive = pathname.startsWith(href);
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={href}>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

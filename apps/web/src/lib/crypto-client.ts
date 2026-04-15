@@ -1,5 +1,10 @@
 /**
- * Client-side crypto for ZK vault operations.
+ * Client-side crypto for ZK profile operations.
+ *
+ * Each function targets a specific profile by `profileId`. Profiles replace
+ * the legacy per-user "vault" record; a single user can hold many profiles
+ * across organizations, each with its own root key.
+ *
  * Uses @abadge/crypto (XChaCha20-Poly1305 + Argon2id).
  */
 
@@ -23,7 +28,8 @@ import {
 } from "@abadge/crypto";
 import { browserTrpcClient, getClientErrorMessage } from "./trpc-browser";
 
-export async function bootstrapVault(
+export async function bootstrapProfile(
+  profileId: string,
   masterPassword: string,
 ): Promise<{ rootKey: Uint8Array; recoveryKey: string }> {
   const salt = generateSalt();
@@ -33,13 +39,15 @@ export async function bootstrapVault(
   const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
 
   try {
-    await browserTrpcClient.vault.bootstrap.mutate({
+    await browserTrpcClient.profiles.bootstrap.mutate({
+      profileId,
       wrappedRootKey: wrapped.wrapped,
       kdfSalt: toBase64(salt),
       kdfParams: DEFAULT_KDF_PARAMS,
     });
 
-    await browserTrpcClient.vault.setupRecovery.mutate({
+    await browserTrpcClient.profiles.setupRecovery.mutate({
+      profileId,
       recoveryWrappedRootKey: recoveryWrapped.wrapped,
     });
   } catch (error) {
@@ -52,31 +60,38 @@ export async function bootstrapVault(
   return { rootKey, recoveryKey };
 }
 
-export async function unlockVault(masterPassword: string): Promise<Uint8Array> {
-  let vault: {
-    wrappedRootKey: string;
-    kdfSalt: string;
-    kdfParams: KDFParams;
+export async function unlockProfile(
+  profileId: string,
+  masterPassword: string,
+): Promise<Uint8Array> {
+  let profile: {
+    wrappedRootKey: string | null;
+    kdfSalt: string | null;
+    kdfParams: KDFParams | null;
   };
 
   try {
-    const result = await browserTrpcClient.vault.get.query();
-    vault = result.vault;
+    const result = await browserTrpcClient.profiles.get.query({ profileId });
+    profile = result.profile as typeof profile;
   } catch (error) {
-    const message = getClientErrorMessage(error, "Failed to fetch vault");
-    if (message === "Vault not found") {
-      throw new Error("VAULT_NOT_FOUND");
+    const message = getClientErrorMessage(error, "Failed to fetch profile");
+    if (message === "Profile not found") {
+      throw new Error("PROFILE_NOT_FOUND");
     }
     throw new Error(message);
   }
 
-  const salt = Uint8Array.from(atob(vault.kdfSalt.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+  if (!profile.wrappedRootKey || !profile.kdfSalt || !profile.kdfParams) {
+    throw new Error("PROFILE_NOT_BOOTSTRAPPED");
+  }
+
+  const salt = Uint8Array.from(atob(profile.kdfSalt.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
     c.charCodeAt(0),
   );
-  const kek = deriveKEK(masterPassword, salt, vault.kdfParams);
+  const kek = deriveKEK(masterPassword, salt, profile.kdfParams);
 
   try {
-    const rootKey = unwrapRootKey({ wrapped: vault.wrappedRootKey }, kek);
+    const rootKey = unwrapRootKey({ wrapped: profile.wrappedRootKey }, kek);
     zeroKey(kek);
     return rootKey;
   } catch {
@@ -85,11 +100,12 @@ export async function unlockVault(masterPassword: string): Promise<Uint8Array> {
   }
 }
 
-export async function changePassword(
+export async function changeProfilePassword(
+  profileId: string,
   currentPassword: string,
   newPassword: string,
 ): Promise<{ recoveryKey: string }> {
-  const rootKey = await unlockVault(currentPassword);
+  const rootKey = await unlockProfile(profileId, currentPassword);
 
   const newSalt = generateSalt();
   const newKek = deriveKEK(newPassword, newSalt, DEFAULT_KDF_PARAMS);
@@ -97,7 +113,8 @@ export async function changePassword(
   const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
 
   try {
-    await browserTrpcClient.vault.changePassword.mutate({
+    await browserTrpcClient.profiles.changePassword.mutate({
+      profileId,
       wrappedRootKey: wrapped.wrapped,
       kdfSalt: toBase64(newSalt),
       kdfParams: DEFAULT_KDF_PARAMS,
@@ -109,7 +126,8 @@ export async function changePassword(
   }
 
   try {
-    await browserTrpcClient.vault.setupRecovery.mutate({
+    await browserTrpcClient.profiles.setupRecovery.mutate({
+      profileId,
       recoveryWrappedRootKey: recoveryWrapped.wrapped,
     });
   } catch {
@@ -127,29 +145,28 @@ export async function changePassword(
   return { recoveryKey };
 }
 
-export async function recoverVault(
+export async function recoverProfile(
+  profileId: string,
   recoveryKeyInput: string,
   newPassword: string,
 ): Promise<{ rootKey: Uint8Array; recoveryKey: string }> {
-  let vault: {
-    recoveryWrappedRootKey: string | null;
-  };
+  let profile: { recoveryWrappedRootKey: string | null };
 
   try {
-    const result = await browserTrpcClient.vault.get.query();
-    vault = result.vault;
+    const result = await browserTrpcClient.profiles.get.query({ profileId });
+    profile = result.profile as { recoveryWrappedRootKey: string | null };
   } catch (error) {
-    throw new Error(getClientErrorMessage(error, "Failed to fetch vault"));
+    throw new Error(getClientErrorMessage(error, "Failed to fetch profile"));
   }
 
-  if (!vault.recoveryWrappedRootKey) {
-    throw new Error("No recovery key configured for this vault");
+  if (!profile.recoveryWrappedRootKey) {
+    throw new Error("No recovery key configured for this profile");
   }
 
   let rootKey: Uint8Array;
   try {
     rootKey = recoverRootKey(recoveryKeyInput, {
-      wrapped: vault.recoveryWrappedRootKey,
+      wrapped: profile.recoveryWrappedRootKey,
     });
   } catch {
     throw new Error("Invalid recovery key");
@@ -161,7 +178,8 @@ export async function recoverVault(
   const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
 
   try {
-    await browserTrpcClient.vault.changePassword.mutate({
+    await browserTrpcClient.profiles.changePassword.mutate({
+      profileId,
       wrappedRootKey: wrapped.wrapped,
       kdfSalt: toBase64(newSalt),
       kdfParams: DEFAULT_KDF_PARAMS,
@@ -173,7 +191,8 @@ export async function recoverVault(
   }
 
   try {
-    await browserTrpcClient.vault.setupRecovery.mutate({
+    await browserTrpcClient.profiles.setupRecovery.mutate({
+      profileId,
       recoveryWrappedRootKey: recoveryWrapped.wrapped,
     });
   } catch {
@@ -188,7 +207,7 @@ export async function recoverVault(
   return { rootKey, recoveryKey };
 }
 
-export function encryptItemForVault(
+export function encryptItemForProfile(
   payload: ItemPayload,
   rootKey: Uint8Array,
 ): { encryptedItemKey: string; ciphertext: string } {
@@ -200,7 +219,7 @@ export function encryptItemForVault(
   };
 }
 
-export function decryptItemFromVault(
+export function decryptItemFromProfile(
   encryptedItemKey: string,
   ciphertext: string,
   rootKey: Uint8Array,

@@ -12,10 +12,10 @@ import { normalizeTrpcError } from "./trpc";
  * @example
  * ```typescript
  * try {
- *   await client.getVault();
+ *   await client.getProfile(profileId);
  * } catch (err) {
- *   if (err instanceof AbadgeApiError && err.code === "VAULT_NOT_FOUND") {
- *     // handle missing vault
+ *   if (err instanceof AbadgeApiError && err.code === "PROFILE_NOT_FOUND") {
+ *     // handle missing profile
  *   }
  * }
  * ```
@@ -28,17 +28,31 @@ export class AbadgeApiError extends Error {
    * Machine-readable error code.
    *
    * Known codes are members of the `ErrorCode` union exported from `@abadge/core`
-   * (e.g. `"VAULT_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
+   * (e.g. `"PROFILE_NOT_FOUND"`, `"PERMISSION_DENIED"`, `"UNAUTHORIZED"`).
    * Unknown server codes or tRPC transport codes fall back to plain strings,
    * so the type is `ErrorCode | string` to stay backward-compatible.
    */
   public readonly code: ErrorCode | string;
 
-  constructor(statusCode: number, code: ErrorCode | string, message: string) {
+  /** Operator-facing remediation guidance, if provided by the API. */
+  public readonly hint?: string;
+
+  /** Structured debugging metadata for advanced callers and JSON output. */
+  public readonly meta?: Readonly<Record<string, unknown>>;
+
+  constructor(
+    statusCode: number,
+    code: ErrorCode | string,
+    message: string,
+    hint?: string,
+    meta?: Readonly<Record<string, unknown>>,
+  ) {
     super(message);
     this.name = "AbadgeApiError";
     this.statusCode = statusCode;
     this.code = code;
+    this.hint = hint;
+    this.meta = meta;
   }
 
   /**
@@ -50,14 +64,23 @@ export class AbadgeApiError extends Error {
   static async fromResponse(res: Response, fallback: string): Promise<AbadgeApiError> {
     let code: ErrorCode | string = "UNKNOWN";
     let message = fallback;
+    let hint: string | undefined;
+    let meta: Readonly<Record<string, unknown>> | undefined;
     try {
-      const body = (await res.json()) as { error?: string; code?: string };
+      const body = (await res.json()) as {
+        error?: string;
+        code?: string;
+        hint?: string;
+        meta?: Record<string, unknown>;
+      };
       code = body.code ?? code;
       message = body.error ?? message;
+      hint = body.hint;
+      meta = body.meta;
     } catch {
       // Non-JSON response body
     }
-    return new AbadgeApiError(res.status, code, message);
+    return new AbadgeApiError(res.status, code, message, hint, meta);
   }
 
   /**
@@ -71,8 +94,10 @@ export class AbadgeApiError extends Error {
     const normalized = normalizeTrpcError(error);
     return new AbadgeApiError(
       normalized.httpStatus ?? 500,
-      normalized.appCode ?? normalized.trpcCode ?? "UNKNOWN",
+      normalized.code ?? normalized.trpcCode ?? "UNKNOWN",
       normalized.message || fallback,
+      normalized.hint,
+      normalized.meta,
     );
   }
 }

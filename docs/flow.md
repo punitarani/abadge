@@ -191,7 +191,7 @@ sequenceDiagram
   User->>User: Wrap root key with KEK (XChaCha20-Poly1305)
   User->>API: Bootstrap vault (wrapped root key, salt, KDF params)
   API->>API: Store vault record
-  API->>API: Audit: vault.bootstrap
+  API->>API: Audit: profile.create
   API-->>User: Success
 ```
 
@@ -246,7 +246,7 @@ sequenceDiagram
   API->>DB: Update vault (key_version++)
   API->>DB: Update each item (new encrypted_item_key)
   API->>DB: COMMIT
-  API->>DB: Audit: vault.key_rotate
+  API->>DB: Audit: profile.rotate
   API-->>User: New key version
 ```
 
@@ -334,9 +334,7 @@ flowchart TD
   ItemExists -->|Yes| PermCheck["Check permission\n(agent + item + capability)"]
 
   PermCheck --> HasPerm{"Explicit\npermission?"}
-  HasPerm -->|No| AutoGrant{"Auto-grant\nmatch?"}
-  AutoGrant -->|No| Deny3["DENY\n(403 Forbidden)"]
-  AutoGrant -->|Yes| Expired{"Permission\nexpired?"}
+  HasPerm -->|No| Deny3["DENY\n(403 Forbidden)"]
   HasPerm -->|Yes| Expired{"Permission\nexpired?"}
 
   Expired -->|Yes| Deny4["DENY\n(403 Expired)"]

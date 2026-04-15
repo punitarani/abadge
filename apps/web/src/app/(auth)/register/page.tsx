@@ -1,21 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordStrength } from "@/components/ui/password-strength";
 import type { SocialProvider } from "@/lib/auth-client";
 import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
+import { normalizeRedirectPath } from "@/lib/redirect";
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectPath = normalizeRedirectPath(searchParams.get("redirect"), "/onboarding");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
@@ -30,6 +35,16 @@ export default function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (password.length < 12) {
+      setError("Password must be at least 12 characters");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -41,7 +56,7 @@ export default function RegisterPage() {
       if (signUpError) {
         setError(signUpError.message ?? "Registration failed");
       } else {
-        router.push("/items");
+        router.push(redirectPath);
       }
     } catch {
       setError("An unexpected error occurred");
@@ -58,7 +73,7 @@ export default function RegisterPage() {
       const currentURL = new URL(window.location.href);
       const { error: socialError } = await authClient.signIn.social({
         provider,
-        callbackURL: `${currentURL.origin}/items`,
+        callbackURL: `${currentURL.origin}${redirectPath}`,
         errorCallbackURL: `${currentURL.origin}${currentURL.pathname}`,
       });
 
@@ -76,8 +91,8 @@ export default function RegisterPage() {
     <AuthShell>
       <div className="space-y-6">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
-          <p className="text-sm text-muted-foreground">Start managing your agent credentials.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+          <p className="text-sm text-muted-foreground">Start managing your credentials securely.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -87,11 +102,12 @@ export default function RegisterPage() {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="name">Name</Label>
+            <Label htmlFor="name">Full name</Label>
             <Input
               id="name"
               type="text"
-              placeholder="Your name"
+              autoComplete="name"
+              placeholder="Your full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -102,6 +118,8 @@ export default function RegisterPage() {
             <Input
               id="email"
               type="email"
+              autoComplete="email"
+              spellCheck={false}
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -109,20 +127,46 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Password (min. 12 chars)</Label>
             <Input
               id="password"
               type="password"
-              placeholder="Min 8 characters"
-              minLength={8}
+              autoComplete="new-password"
+              placeholder="Min 12 characters"
+              minLength={12}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <PasswordStrength password={password} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-password">Confirm password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Repeat password"
+              minLength={12}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
               required
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading || socialLoading !== null}>
             {loading ? "Creating account..." : "Create account"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            By creating an account, you agree to the{" "}
+            <Link href="/terms" className="underline hover:text-foreground">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline hover:text-foreground">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
 
         <SocialAuthButtons
@@ -139,5 +183,22 @@ export default function RegisterPage() {
         </p>
       </div>
     </AuthShell>
+  );
+}
+
+export default function RegisterPage(): React.ReactElement {
+  return (
+    <Suspense
+      fallback={
+        <AuthShell>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          </div>
+        </AuthShell>
+      }
+    >
+      <RegisterPageContent />
+    </Suspense>
   );
 }

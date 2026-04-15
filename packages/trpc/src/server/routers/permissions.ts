@@ -1,18 +1,34 @@
 import {
+  type AgentLocality,
   BadRequestError,
+  type Capability,
+  ConflictError,
   type CreatePermissionInput,
   CreatePermissionSchema,
+  getAllowedCapabilities,
   NotFoundError,
   PermissionListResultSchema,
   PermissionResultSchema,
+  type StorageMode,
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, or } from "@abadge/db";
-import { principals as agentRecords, items, grants as permissionRecords } from "@abadge/db/schema";
+import { agents as agentRecords, items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
-import { runSessionEffect, SessionRequestContextTag, strictSchema } from "../effect";
-import { createTrpcRouter, scopedSessionProcedure } from "../init";
+import {
+  isUniqueViolation,
+  runSessionEffect,
+  SessionRequestContextTag,
+  strictSchema,
+  tryAsync,
+} from "../effect";
+import {
+  createTrpcRouter,
+  requireAgentOwnership,
+  requireOrgRole,
+  scopedSessionProcedure,
+} from "../init";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -32,7 +48,10 @@ const createPermission = (input: CreatePermissionInput) =>
         .select()
         .from(agentRecords)
         .where(
-          and(eq(agentRecords.id, input.agentId), eq(agentRecords.userId, ctx.identity.userId)),
+          and(
+            eq(agentRecords.id, input.agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
         )
         .limit(1),
     );
@@ -42,15 +61,31 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
+          hint: "Check the agent ID and make sure it belongs to this organization.",
         }),
       );
     }
+
+    const callerRole = yield* Effect.tryPromise(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* Effect.tryPromise(() =>
+      requireAgentOwnership(
+        ctx.db,
+        input.agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
 
     const [item] = yield* Effect.tryPromise(() =>
       ctx.db
         .select()
         .from(items)
-        .where(and(eq(items.id, input.itemId), eq(items.userId, ctx.identity.userId)))
+        .where(
+          and(eq(items.id, input.itemId), eq(items.organizationId, ctx.identity.organizationId)),
+        )
         .limit(1),
     );
 
@@ -59,24 +94,39 @@ const createPermission = (input: CreatePermissionInput) =>
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
+          hint: "Check the item ID and make sure it belongs to this organization.",
         }),
       );
     }
 
-    if (agent.locality === "remote" && item.storageMode === "zero_knowledge") {
-      return yield* Effect.fail(
-        new BadRequestError({
-          code: "INVALID_CAPABILITY",
-          message: "Remote agents cannot access zero-knowledge items",
-        }),
-      );
-    }
+    const agentLocality = agent.locality as AgentLocality;
+    const itemStorageMode = item.storageMode as StorageMode;
+    const capability = input.capability as Capability;
+    const allowedCaps = getAllowedCapabilities(agentLocality, itemStorageMode);
 
-    if (agent.locality === "remote" && input.capability !== "reveal_plaintext") {
+    if (!allowedCaps.includes(capability)) {
+      // If the capability is not allowed for this locality in ANY storage mode,
+      // the restriction is locality-based; otherwise it is storage-mode-based.
+      const allowedForOtherMode = getAllowedCapabilities(
+        agentLocality,
+        itemStorageMode === "zero_knowledge" ? "server_managed" : "zero_knowledge",
+      );
+
+      if (!allowedForOtherMode.includes(capability)) {
+        return yield* Effect.fail(
+          new BadRequestError({
+            code: "INVALID_CAPABILITY_LOCALITY",
+            message: `${agentLocality} agents cannot use the '${capability}' capability`,
+            hint: "Choose a capability supported by this agent's locality.",
+          }),
+        );
+      }
+
       return yield* Effect.fail(
         new BadRequestError({
-          code: "INVALID_CAPABILITY",
-          message: "Remote agents can only have reveal_plaintext capability",
+          code: "INVALID_CAPABILITY_STORAGE",
+          message: `'${capability}' is not available for ${itemStorageMode} items`,
+          hint: "Choose a capability that matches this item's storage mode.",
         }),
       );
     }
@@ -84,19 +134,33 @@ const createPermission = (input: CreatePermissionInput) =>
     const id = crypto.randomUUID();
     const createdAt = new Date();
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.insert(permissionRecords).values({
         id,
-        principalId: input.agentId,
+        organizationId: ctx.identity.organizationId,
+        agentId: input.agentId,
         itemId: input.itemId,
         capability: input.capability,
         expiresAt,
         grantedBy: ctx.identity.userId,
         createdAt,
       }),
+    ).pipe(
+      Effect.catchIf(
+        (e: unknown) => isUniqueViolation(e),
+        () =>
+          Effect.fail(
+            new ConflictError({
+              code: "PERMISSION_ALREADY_EXISTS",
+              message: "Permission already exists for this agent, item, and capability",
+              hint: "Revoke the existing permission first, or use a different capability.",
+            }),
+          ),
+      ),
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId: input.agentId,
       itemId: input.itemId,
@@ -109,7 +173,8 @@ const createPermission = (input: CreatePermissionInput) =>
     return {
       permission: serializePermission({
         id,
-        principalId: input.agentId,
+        organizationId: ctx.identity.organizationId,
+        agentId: input.agentId,
         itemId: input.itemId,
         capability: input.capability,
         expiresAt,
@@ -126,7 +191,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(eq(agentRecords.userId, ctx.identity.userId)),
+        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
     );
 
     const agentIds = userAgents.map((agent) => agent.id);
@@ -141,7 +206,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         return { permissions: [] };
       }
       result = yield* Effect.tryPromise(() =>
-        ctx.db.select().from(permissionRecords).where(eq(permissionRecords.principalId, agentId)),
+        ctx.db.select().from(permissionRecords).where(eq(permissionRecords.agentId, agentId)),
       );
     } else if (input.itemId) {
       const itemId = input.itemId;
@@ -149,7 +214,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         ctx.db
           .select({ id: items.id })
           .from(items)
-          .where(and(eq(items.id, itemId), eq(items.userId, ctx.identity.userId)))
+          .where(and(eq(items.id, itemId), eq(items.organizationId, ctx.identity.organizationId)))
           .limit(1),
       );
 
@@ -165,7 +230,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         ctx.db
           .select()
           .from(permissionRecords)
-          .where(or(...agentIds.map((id) => eq(permissionRecords.principalId, id)))),
+          .where(or(...agentIds.map((id) => eq(permissionRecords.agentId, id)))),
       );
     }
 
@@ -188,34 +253,55 @@ const revokePermission = (permissionId: string) =>
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
+          hint: "Check the permission ID and make sure it still exists.",
         }),
       );
     }
 
     const [agent] = yield* Effect.tryPromise(() =>
       ctx.db
-        .select({ userId: agentRecords.userId })
+        .select({ id: agentRecords.id })
         .from(agentRecords)
-        .where(eq(agentRecords.id, permission.principalId))
+        .where(
+          and(
+            eq(agentRecords.id, permission.agentId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+          ),
+        )
         .limit(1),
     );
 
-    if (!agent || agent.userId !== ctx.identity.userId) {
+    if (!agent) {
       return yield* Effect.fail(
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
+          hint: "Check the permission ID and make sure it belongs to this organization.",
         }),
       );
     }
+
+    const callerRole = yield* Effect.tryPromise(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* Effect.tryPromise(() =>
+      requireAgentOwnership(
+        ctx.db,
+        permission.agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
 
     yield* Effect.tryPromise(() =>
       ctx.db.delete(permissionRecords).where(eq(permissionRecords.id, permissionId)),
     );
 
     yield* logSessionAudit({
+      organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
-      agentId: permission.principalId,
+      agentId: permission.agentId,
       itemId: permission.itemId,
       eventType: "permission.revoke",
       result: "allowed",

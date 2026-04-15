@@ -17,7 +17,7 @@ Rewrite the credential storage system to be **zero-knowledge first** with an opt
 
 | Mode | Encryption | Who can decrypt | Use case |
 |------|-----------|-----------------|----------|
-| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via libsodium | Only the user (via master password) and their local agents | User secrets, local CLI/MCP usage |
+| `zero_knowledge` (default) | Client-side XChaCha20-Poly1305 via @noble/ciphers | Only the user (via master password) and their local agents | User secrets, local CLI/MCP usage |
 | `server_managed` (opt-in) | Server-side AES-256-GCM envelope encryption | Server, for authorized remote agent access | Remote agent reveal, hosted workflows |
 
 These are **separate items**, not dual-ciphertext on the same item.
@@ -37,8 +37,8 @@ Master Password → Argon2id → KEK → wraps → Root Key → wraps → Item D
 
 Agents are split into two classes:
 
-- **Local** (device, local_cli, local_mcp): Can access ZK items through the local daemon which holds the unlocked root key.
-- **Remote** (remote_agent): Cannot decrypt ZK items. Can only access `server_managed` items via `reveal_plaintext` capability.
+- **Local** (local_cli, local_mcp): Can access ZK items through the local daemon which holds the unlocked root key.
+- **Remote** (remote): Cannot decrypt ZK items. Can only access `server_managed` items via `reveal_plaintext` capability.
 
 ### Local Daemon (vaultd)
 

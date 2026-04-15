@@ -1,8 +1,8 @@
 import type { Database } from "@abadge/db";
-import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
+import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow, safeAuditInsert } from "./audit-hooks";
 
 export interface AuthEnv {
   ABADGE_API_URL: string;
@@ -53,14 +53,49 @@ export function createAuth(db: Database, env: AuthEnv): any {
       github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     },
     trustedOrigins: getTrustedOrigins(env),
+    databaseHooks: {
+      session: {
+        create: {
+          // Web logins also trigger recordLogin (surface: "api") via tRPC.
+          // This hook captures CLI device-code and OAuth logins that bypass tRPC.
+          // Duplicates are distinguishable via the surface field.
+          after: async (session) => {
+            const activeOrgId = session.activeOrganizationId;
+            if (typeof activeOrgId !== "string") return;
+            await safeAuditInsert(db, {
+              organizationId: activeOrgId,
+              userId: session.userId,
+              eventType: "auth.login",
+              result: "allowed",
+              ipAddress: session.ipAddress ?? null,
+              surface: "auth",
+              meta: {},
+            });
+          },
+        },
+      },
+    },
     plugins: [
       organization({
         allowUserToCreateOrganization: true,
         creatorRole: "owner",
+        organizationHooks: {
+          // The tRPC organizations.create handler writes its own audit row with
+          // surface: "api". This hook fires on every org creation through the
+          // Better Auth plugin route /api/auth/organization/create (used by the
+          // CLI device-code flow and any caller that bypasses tRPC). Tagging
+          // with surface: "auth" distinguishes the two rows — mirrors the
+          // session.create hook pattern above.
+          afterCreateOrganization: async ({ organization, user }) => {
+            await safeAuditInsert(db, buildOrgCreateAuditRow({ organization, user }));
+          },
+          afterDeleteOrganization: async ({ organization, user }) => {
+            await safeAuditInsert(db, buildOrgDeleteAuditRow({ organization, user }));
+          },
+        },
       }),
       openAPI(),
       bearer(),
-      apiKey(),
       deviceAuthorization({
         verificationUri: `${env.ABADGE_APP_URL.replace(/\/$/, "")}/device`,
         validateClient: async (clientId) => clientId === DEVICE_AUTH_CLIENT_ID,

@@ -4,9 +4,9 @@
 
 | Purpose | Algorithm | Library | Key Size | Nonce Size |
 |---------|-----------|---------|----------|------------|
-| KDF (master password → KEK) | Argon2id | hash-wasm | 32 bytes output | N/A |
-| Key wrapping (KEK → RK, RK → DEK) | XChaCha20-Poly1305 | libsodium-wrappers | 32 bytes | 24 bytes |
-| Item encryption (DEK → ciphertext) | XChaCha20-Poly1305 | libsodium-wrappers | 32 bytes | 24 bytes |
+| KDF (master password → KEK) | Argon2id | @noble/hashes | 32 bytes output | N/A |
+| Key wrapping (KEK → RK, RK → DEK) | XChaCha20-Poly1305 | @noble/ciphers | 32 bytes | 24 bytes |
+| Item encryption (DEK → ciphertext) | XChaCha20-Poly1305 | @noble/ciphers | 32 bytes | 24 bytes |
 | Server-managed encryption | AES-256-GCM | WebCrypto | 32 bytes | 12 bytes |
 | API key hashing | SHA-256 | WebCrypto | N/A | N/A |
 | ID generation | Random | crypto.getRandomValues | N/A | N/A |
@@ -222,7 +222,7 @@ sequenceDiagram
   API->>DB: Update vault (new wrapped keys, key_version++)
   API->>DB: Update each item (new encrypted_item_key)
   API->>DB: COMMIT
-  API->>DB: Log vault.key_rotate audit event
+  API->>DB: Log profile.rotate audit event
   API-->>User: {ok: true, keyVersion}
 ```
 

@@ -1,7 +1,7 @@
-import { AbadgeApiError } from "@abadge/sdk";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
+import { toErrorPayload } from "../errors.js";
 
 export const toolName = "list_items";
 
@@ -20,7 +20,6 @@ export async function handler(
     const response = await client.listItems();
     return JSON.stringify({ items: response.items });
   } catch (error) {
-    const message = error instanceof AbadgeApiError ? error.message : "Failed to list items";
-    return JSON.stringify({ error: message });
+    return JSON.stringify(toErrorPayload(error, "Failed to list items"));
   }
 }

@@ -1,12 +1,16 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { browserTrpcClient } from "@/lib/trpc-browser";
 import { VaultProvider } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
 // biome-ignore lint/style/noRestrictedGlobals: Next.js replaces NEXT_PUBLIC_ at build time
 const USERJOT_PROJECT_ID = process.env.NEXT_PUBLIC_USERJOT_PROJECT_ID;
@@ -21,29 +25,83 @@ declare global {
   }
 }
 
-function DashboardShell({ children }: { children: React.ReactNode }): React.ReactElement {
-  return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <div className="px-8 py-6">{children}</div>
-      </SidebarInset>
-    </SidebarProvider>
-  );
-}
-
-function AuthenticatedDashboard({ children }: { children: React.ReactNode }): React.ReactElement {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const { activeOrgId, setActiveOrg } = useOrgStore();
+  const [hydrated, setHydrated] = useState(false);
 
+  // Wait for Zustand persist rehydration
   useEffect(() => {
-    if (!isPending && !session) {
-      router.push("/login");
+    if (useOrgStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
     }
-  }, [isPending, session, router]);
+    const unsub = useOrgStore.persist.onFinishHydration(() => {
+      setHydrated(true);
+    });
+    return unsub;
+  }, []);
 
+  const { data: orgsData, isLoading: orgsLoading } = useQuery({
+    queryKey: dashboardQueryKeys.organizations(),
+    queryFn: () => browserTrpcClient.organizations.list.query(),
+    enabled: !!session,
+  });
+
+  const orgs = orgsData?.organizations ?? [];
+
+  // Resolve active org: validate stored org, fall back to first, or redirect to onboarding
   useEffect(() => {
-    if (USERJOT_PROJECT_ID && session?.user) {
+    if (!hydrated || sessionPending || orgsLoading || !orgsData) return;
+
+    if (!session) {
+      router.push("/login");
+      return;
+    }
+
+    if (orgs.length === 0) {
+      router.push("/onboarding");
+      return;
+    }
+
+    const storedOrgValid = activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
+    if (!storedOrgValid) {
+      // Stored org is stale or missing — fall back to first org (orgs.length > 0 checked above)
+      const first = orgs[0];
+      if (first) {
+        setActiveOrg({
+          id: first.id,
+          slug: first.slug,
+          name: first.name,
+          logo: first.logo ?? null,
+        });
+      }
+    }
+  }, [
+    hydrated,
+    sessionPending,
+    session,
+    orgsLoading,
+    orgsData,
+    orgs,
+    activeOrgId,
+    setActiveOrg,
+    router,
+  ]);
+
+  // UserJot analytics identify
+  useEffect(() => {
+    if (
+      USERJOT_PROJECT_ID &&
+      session?.user &&
+      typeof window !== "undefined" &&
+      window.uj?.identify
+    ) {
       window.uj.identify({
         id: session.user.id,
         email: session.user.email,
@@ -52,7 +110,10 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
     }
   }, [session?.user]);
 
-  if (isPending || !session) {
+  // Show loading while auth, orgs, or store hydration are pending
+  const orgReady =
+    hydrated && activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
+  if (sessionPending || !session || orgsLoading || !orgReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading...</div>
@@ -61,8 +122,15 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
   }
 
   return (
-    <VaultProvider>
-      <DashboardShell>{children}</DashboardShell>
+    <>
+      <VaultProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <div className="px-8 py-6">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
+      </VaultProvider>
       {USERJOT_PROJECT_ID && (
         <>
           <Script id="userjot-loader" strategy="afterInteractive">
@@ -73,14 +141,6 @@ function AuthenticatedDashboard({ children }: { children: React.ReactNode }): Re
           </Script>
         </>
       )}
-    </VaultProvider>
+    </>
   );
-}
-
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}): React.ReactElement {
-  return <AuthenticatedDashboard>{children}</AuthenticatedDashboard>;
 }

@@ -29,6 +29,55 @@
       "when": 1775058237909,
       "tag": "0003_zk_vault_transition",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775116800000,
+      "tag": "0004_auth_redesign",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775203200000,
+      "tag": "0005_operator_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775937600000,
+      "tag": "0006_v0_foundation_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776150247814,
+      "tag": "0007_items_org_required",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776236647814,
+      "tag": "0008_drop_legacy_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776227339777,
+      "tag": "0009_invitation_schema_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776313739777,
+      "tag": "0010_drop_vaults",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 The canonical control-plane transport is tRPC over HTTP at `/trpc`.
 
-Better Auth remains mounted at `/api/auth/*`.
+Better Auth is mounted at `/api/auth/*`.
 
 There is no REST layer. All application endpoints are tRPC procedures.
 
@@ -91,38 +91,185 @@ Keypair-backed agents use the auth router lifecycle:
 | `sessionProcedure` | Better Auth session or bearer session token | dashboard, CLI management commands, SDK |
 | `agentProcedure` | agent bearer credential | local runtime agents, MCP, remote agents |
 
+## Error envelope
+
+All domain errors use a consistent JSON envelope:
+
+```json
+{
+  "code": "ITEM_NOT_FOUND",
+  "message": "Item not found.",
+  "hint": "Verify the item ID and that it belongs to your organization.",
+  "meta": {}
+}
+```
+
+Validation errors include an additional `issues` array:
+
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Missing required field.",
+  "hint": "Check the invalid input fields and try again.",
+  "issues": [
+    { "path": ["itemId"], "message": "Required" }
+  ]
+}
+```
+
+See [`docs/ERRORS.md`](./ERRORS.md) for all error codes.
+
 ## Session procedures
 
-### `vault.bootstrap`
+### `organizations.create`
 
 Auth: `sessionProcedure`
 
-Creates the user's vault. Returns `{ id }`. Fails with `VAULT_ALREADY_EXISTS` (409) if the vault
-already exists.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | yes | Organization display name |
+| `slug` | string | no | URL-safe identifier (auto-generated if omitted) |
 
-### `vault.get`
+Returns `{ id, name, slug }`.
 
-Auth: `sessionProcedure`
-
-Returns vault metadata including `wrappedRootKey`, `kdfSalt`, `kdfParams`, `keyVersion`.
-
-### `vault.changePassword`
+### `organizations.list`
 
 Auth: `sessionProcedure`
 
-Accepts new `wrappedRootKey`, `kdfSalt`, `kdfParams`. Returns `{ ok: true }`.
+Returns `{ organizations }` — each entry includes `id`, `name`, `slug`, `logo` (`string | null`), `createdAt`, `role`, and `hasBootstrappedProfile` (`boolean`). The flag is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`; the dashboard's onboarding-resume flow uses it to skip a per-org `profiles.list` round trip.
 
-### `vault.setupRecovery`
-
-Auth: `sessionProcedure`
-
-Accepts `recoveryWrappedRootKey`. Returns `{ ok: true }`.
-
-### `vault.rotateKey`
+### `organizations.get`
 
 Auth: `sessionProcedure`
 
-Accepts `wrappedRootKey` and `rekeyedItems` map. Returns `{ ok: true, keyVersion }`.
+Input: `{ orgId }`. Returns the organization record.
+
+### `organizations.update`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId, name? }`. Returns `{ ok: true }`.
+
+### `organizations.delete`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId }`. Deletes the organization and cascades to agents and permissions. Returns `{ ok: true }`.
+
+### `organizations.members.list`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId }`. Returns `{ members }` with `{ id, userId, name, email, role, createdAt }` per member. `email` is `string | null`: populated only when the caller is `owner` or `admin`; `null` for callers with `member` role (applies uniformly, including to the caller's own row — users should read their own email from their profile/session).
+
+### `organizations.members.invite`
+
+Auth: `sessionProcedure` (admin+)
+
+Input: `{ orgId, role? }`. Generates a one-time invite link token. Returns `{ ok, invitationId, token }`.
+
+The `token` (prefixed `abi_`) is shown once. Only its SHA-256 hash is stored. The frontend constructs the invite URL: `{APP_URL}/invite/accept?token={token}`.
+
+Invitations expire after 7 days.
+
+### `organizations.members.getInviteInfo`
+
+Auth: `sessionProcedure`
+
+Input: `{ token }`. Returns `{ organizationName, organizationSlug, role, expiresAt }`.
+
+Requires authentication to prevent info disclosure of org names to unauthenticated users. Rate-limited to 10 lookups/minute per (user, IP) to discourage brute-force enumeration of invite tokens; excess returns `RATE_LIMITED` / 429. Returned metadata is intentionally narrow — the internal `invitationId` and `inviterUserId` are not exposed because a successful guess would otherwise leak them.
+
+### `organizations.members.acceptInvite`
+
+Auth: `sessionProcedure`
+
+Input: `{ token }`. Adds the authenticated user as a member with the invite's role. Returns `{ ok, organizationId, organizationName, organizationSlug }`.
+
+Atomic: uses `WHERE usedAt IS NULL` to prevent double-accept race conditions. Returns org data so the frontend can switch context.
+
+### `organizations.members.revokeInvite`
+
+Auth: `sessionProcedure` (admin+)
+
+Input: `{ orgId, invitationId }`. Deletes an unused invitation. Returns `{ ok: true }`.
+
+### `organizations.members.remove`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId, userId }`. Returns `{ ok: true }`. Cascades agent revocation for agents owned by the removed member.
+
+### `organizations.members.updateRole`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId, userId, role }`. Returns `{ ok: true }`.
+
+### `profiles.create`
+
+Auth: `sessionProcedure`
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `orgId` | string | yes | Owning organization |
+| `name` | string | yes | Profile display name |
+| `description` | string | no | Optional description |
+| `storageMode` | enum | no | `zero_knowledge` or `server_managed` (default: `server_managed`) |
+
+Returns `{ id }`.
+
+### `profiles.list`
+
+Auth: `sessionProcedure`
+
+Input: `{ orgId }`. Returns profiles for the organization.
+
+### `profiles.get`
+
+Auth: `sessionProcedure`
+
+Input: `{ profileId }`. Returns profile metadata.
+
+### `profiles.bootstrap`
+
+Auth: `sessionProcedure`
+
+Initializes the encryption state for a zero-knowledge profile.
+
+Input: `{ profileId, wrappedRootKey, kdfSalt, kdfParams }`. Returns `{ id }`.
+
+### `profiles.changePassword`
+
+Auth: `sessionProcedure`
+
+Input: `{ profileId, wrappedRootKey, kdfSalt, kdfParams }`. Returns `{ ok: true }`.
+
+### `profiles.setupRecovery`
+
+Auth: `sessionProcedure`
+
+Input: `{ profileId, recoveryWrappedRootKey }`. Returns `{ ok: true }`.
+
+### `profiles.rotateKey`
+
+Auth: `sessionProcedure`
+
+Input: `{ profileId, wrappedRootKey, rekeyedItems }`. Returns `{ ok: true, keyVersion }`.
+
+### `profiles.delete`
+
+Auth: `sessionProcedure`
+
+Input: `{ profileId }`. Fails with `PROFILE_NOT_EMPTY` if the profile contains items. Returns `{ ok: true }`.
+
+### `vault.*`
+
+Auth: `sessionProcedure`
+
+Legacy per-user vault procedures retained for web app compatibility. These will be removed in a future release. Prefer `profiles.*` for new integrations.
+
+Procedures: `vault.bootstrap`, `vault.get`, `vault.changePassword`, `vault.setupRecovery`, `vault.rotateKey`.
 
 ### `items.create`
 
@@ -131,6 +278,8 @@ Auth: `sessionProcedure`
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `storageMode` | enum | yes | `zero_knowledge` or `server_managed` |
+| `label` | string | yes | Display name |
+| `kind` | enum | no | Item kind (e.g. `opaque`, `api_key`, `login`) |
 | `payload` | object | conditional | Required for `server_managed` items |
 | `encryptedItemKey` | string | conditional | Required for `zero_knowledge` items |
 | `ciphertext` | string | conditional | Required for `zero_knowledge` items |
@@ -141,7 +290,7 @@ Returns `{ id }`.
 
 Auth: `sessionProcedure`
 
-Returns `{ items }` with metadata only (no secret data).
+Returns `{ items }` with metadata only (no secret data). Each item summary includes `id`, `label`, `kind`, `storageMode`, `createdAt`.
 
 ### `items.get`
 
@@ -156,49 +305,23 @@ Auth: `sessionProcedure`
 Input: `{ itemId, data }` where `data` contains updated fields and `contentVersion` for optimistic
 concurrency. Returns `{ ok: true, contentVersion }`.
 
+### `items.ownerReveal`
+
+Auth: `sessionProcedure`
+
+Input: `{ itemId }`. Decrypts and returns a server-managed item owned by the current user. Returns `{ payload }`. Fails on zero-knowledge items.
+
 ### `items.delete`
 
 Auth: `sessionProcedure`
 
 Input: `{ itemId }`. Soft-deletes the item. Returns `{ ok: true }`.
 
-### `items.resolveDisplay`
+### `items.listForAgent`
 
-Auth: `sessionProcedure`
+Auth: `agentProcedure` (bearer agent session or legacy API key).
 
-Resolves live dashboard display values for a bounded set of items without changing the
-zero-knowledge trust model.
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemIds` | `string[]` | yes | Up to 100 item IDs to resolve |
-
-Response:
-
-```ts
-{
-  items: Array<
-    | {
-        itemId: string;
-        storageMode: "server_managed";
-        label: string;
-      }
-    | {
-        itemId: string;
-        storageMode: "zero_knowledge";
-        encryptedItemKey: string;
-        ciphertext: string;
-      }
-  >;
-}
-```
-
-Notes:
-
-* soft-deleted or cross-user items are omitted
-* server-managed items return the current plaintext label after auth
-* zero-knowledge items never return plaintext labels; browser clients may derive the current label locally if the vault is already unlocked
-* labels are current display values, not historical snapshots captured at audit-event time
+Returns `{ items }` with metadata only (no secret data). Scoped to items the calling agent has at least one `permissions` row on — agents without any grant receive an empty list. Metadata-only endpoint; no per-call audit row (access-path procedures `access.ciphertext` / `access.reveal` / `access.mount` remain the audited boundary).
 
 ### `agents.create`
 
@@ -206,11 +329,11 @@ Auth: `sessionProcedure`
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `kind` | enum | yes | `device`, `local_cli`, `local_mcp`, `remote_agent` |
+| `kind` | enum | yes | `local_cli`, `local_mcp`, `remote` |
 | `name` | string | yes | Display name |
-| `authMethod` | enum | no | `public_key_session` or `legacy_api_key` (default: `legacy_api_key`) |
-| `publicKey` | string | no | JWK-serialized public key for direct enrollment |
-| `issueBootstrapToken` | boolean | no | Whether to issue a one-time bootstrap token |
+| `authMethod` | enum | no | `public_key_session` (default) or `legacy_api_key` |
+| `publicKey` | string | no | JWK-serialized Ed25519 public key for direct enrollment |
+| `issueBootstrapToken` | boolean | no | Issue a one-time bootstrap token instead of direct enrollment |
 | `metadata` | object | no | Free-form metadata |
 
 Response:
@@ -226,7 +349,7 @@ Response:
 
 Behavior:
 
-* `authMethod` defaults to `legacy_api_key`
+* `authMethod` defaults to `public_key_session`
 * `legacy_api_key` agents receive a one-time API key
 * `public_key_session` agents must provide either `publicKey` or `issueBootstrapToken: true`
 * missing both `publicKey` and `issueBootstrapToken` fails with `PUBLIC_KEY_REQUIRED`
@@ -244,12 +367,6 @@ Auth: `sessionProcedure`
 
 Input: `{ agentId }`. Returns `{ agent }`.
 
-### `agents.self`
-
-Auth: `agentProcedure`
-
-Returns `{ agent }` for the currently authenticated agent.
-
 ### `agents.rotate`
 
 Auth: `sessionProcedure`
@@ -260,7 +377,7 @@ Input: `{ agentId }`. Rotates a legacy API key only. Returns `{ apiKey, keyPrefi
 
 Auth: `sessionProcedure`
 
-Input: `{ agentId }`. Returns `{ ok: true }`.
+Input: `{ agentId }`. Invalidates all active sessions. Returns `{ ok: true }`.
 
 ### `permissions.create`
 
@@ -270,13 +387,13 @@ Auth: `sessionProcedure`
 |------|------|----------|-------------|
 | `agentId` | string | yes | Agent receiving access |
 | `itemId` | string | yes | Target item |
-| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`, `use_without_reveal` |
+| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` |
 | `expiresAt` | string | no | ISO timestamp for permission expiry |
 
 Creation-time enforcement rejects:
 
-* remote agent + zero-knowledge item (`REMOTE_AGENT_ZK_FORBIDDEN`)
-* remote agent + capability other than `reveal_plaintext`
+* remote agent + zero-knowledge item (`INVALID_CAPABILITY_STORAGE`)
+* remote agent + capability other than `reveal_plaintext` (`INVALID_CAPABILITY_LOCALITY`)
 
 ### `permissions.list`
 
@@ -307,6 +424,12 @@ Returns `{ entries, nextCursor }`.
 
 ## Agent procedures
 
+### `agents.self`
+
+Auth: `agentProcedure`
+
+Returns `{ agent }` for the currently authenticated agent.
+
 ### `access.ciphertext`
 
 Auth: `agentProcedure`
@@ -326,10 +449,14 @@ Auth: `agentProcedure`
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `itemId` | string | yes | Target item |
+| `field` | string | no | Named field to return (for multi-field items) |
 
 Returns `{ payload }`.
 
 Denied if: non-server-managed item, or missing `reveal_plaintext` permission.
+
+For multi-field items where no `field` is specified, returns `MULTI_FIELD_ITEM` with available field
+names in the hint. See [`docs/FIELDS.md`](./FIELDS.md).
 
 ### `access.mount`
 
@@ -339,6 +466,7 @@ Auth: `agentProcedure`
 |------|------|----------|-------------|
 | `itemId` | string | yes | Target item |
 | `mountType` | `"env" \| "file"` | yes | Requested mount style |
+| `field` | string | no | Named field to return (for multi-field items) |
 
 Response:
 
@@ -347,37 +475,16 @@ Response:
 
 Denied if: remote agent, or missing `mount_env`/`mount_file` permission.
 
-## Error codes
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault exists |
-| `AGENT_NOT_FOUND` | 404 | Agent ID does not exist or belongs to another user |
-| `ITEM_NOT_FOUND` | 404 | Item ID does not exist, belongs to another user, or is deleted |
-| `PERMISSION_DENIED` | 403 | No matching grant or locality restriction |
-| `REMOTE_AGENT_ZK_FORBIDDEN` | 403 | Remote agent tried to access a zero-knowledge item |
-| `PUBLIC_KEY_REQUIRED` | 400 | public_key_session agent created without publicKey or issueBootstrapToken |
-| `ENROLLMENT_REQUIRED` | 400 | Agent has no public key enrolled |
-| `integrity_error` | 500 | Server-side data integrity failure |
-
 ## Audit events
 
-Auth and agent lifecycle emit these audit event types:
-
-* `auth.login`
-* `auth.logout`
-* `agent.create`
-* `agent.bootstrap_issue`
-* `agent.enroll`
-* `agent.rotate`
-* `agent.revoke`
-* `agent.session_issue`
-* `agent.session_reject`
-* `agent.session_revoke`
-* `access.ciphertext`
-* `access.reveal`
-* `access.mount_env`
-* `access.mount_file`
+| Category | Event types |
+|---|---|
+| Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
+| Items | `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export` |
+| Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
+| Agents | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
+| Permissions | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
+| Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
 
 ## Rate limiting
 

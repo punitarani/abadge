@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 export interface McpConfig {
   apiUrl: string;
-  authToken: string;
+  agentId: string;
+  /** Path to Ed25519 JWK file. Mutually exclusive with privateKey. */
+  privateKeyPath?: string;
+  /** Inline Ed25519 JWK JSON string. Mutually exclusive with privateKeyPath. */
+  privateKey?: string;
 }
 
 function loadConfigFile(): Partial<McpConfig> {
@@ -14,12 +18,8 @@ function loadConfigFile(): Partial<McpConfig> {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
       apiUrl: typeof parsed.apiUrl === "string" ? parsed.apiUrl : undefined,
-      authToken:
-        typeof parsed.authToken === "string"
-          ? parsed.authToken
-          : typeof parsed.principalSecret === "string"
-            ? parsed.principalSecret
-            : undefined,
+      agentId: typeof parsed.agentId === "string" ? parsed.agentId : undefined,
+      privateKeyPath: typeof parsed.privateKeyPath === "string" ? parsed.privateKeyPath : undefined,
     };
   } catch {
     return {};
@@ -29,15 +29,23 @@ function loadConfigFile(): Partial<McpConfig> {
 export function loadConfig(): McpConfig {
   const file = loadConfigFile();
   const env = globalThis.process?.env ?? {};
+
   const apiUrl = env.ABADGE_API_URL ?? file.apiUrl;
-  const authToken = env.ABADGE_AUTH_TOKEN ?? env.ABADGE_TOKEN ?? file.authToken;
+  const agentId = env.ABADGE_MCP_AGENT_ID ?? env.ABADGE_AGENT_ID ?? file.agentId;
+  const privateKey = env.ABADGE_MCP_PRIVATE_KEY ?? env.ABADGE_PRIVATE_KEY;
+  const privateKeyPath = env.ABADGE_PRIVATE_KEY_PATH ?? file.privateKeyPath;
 
   if (!apiUrl) {
     throw new Error("ABADGE_API_URL is required (env or ~/.abadge/config.json)");
   }
-  if (!authToken) {
-    throw new Error("ABADGE_AUTH_TOKEN is required (env or ~/.abadge/config.json)");
+  if (!agentId) {
+    throw new Error("ABADGE_AGENT_ID is required (env or ~/.abadge/config.json).");
+  }
+  if (!privateKey && !privateKeyPath) {
+    throw new Error(
+      "ABADGE_PRIVATE_KEY or ABADGE_PRIVATE_KEY_PATH is required (env or ~/.abadge/config.json).",
+    );
   }
 
-  return { apiUrl, authToken };
+  return { apiUrl, agentId, privateKeyPath, privateKey };
 }
