@@ -103,17 +103,17 @@ async function bootstrapZkProfile(profileId: string, password: string): Promise<
 function validateStep2Input(
   profileName: string,
   storageMode: string,
-  vaultPassword: string,
+  profilePassword: string,
   confirmPassword: string,
 ): string | null {
   if (!profileName.trim()) {
     return "Profile name is required";
   }
   if (storageMode === "zero_knowledge") {
-    if (vaultPassword.length < 12) {
-      return "Vault password must be at least 12 characters";
+    if (profilePassword.length < 12) {
+      return "Profile password must be at least 12 characters";
     }
-    if (vaultPassword !== confirmPassword) {
+    if (profilePassword !== confirmPassword) {
       return "Passwords do not match";
     }
   }
@@ -182,7 +182,7 @@ interface Step2Params {
   orgId: string;
   profileName: string;
   storageMode: "zero_knowledge" | "server_managed";
-  vaultPassword: string;
+  profilePassword: string;
   confirmPassword: string;
   setLoading: (v: boolean) => void;
   setError: (v: string) => void;
@@ -193,7 +193,7 @@ async function submitStep2({
   orgId,
   profileName,
   storageMode,
-  vaultPassword,
+  profilePassword,
   confirmPassword,
   setLoading,
   setError,
@@ -202,7 +202,7 @@ async function submitStep2({
   const validationError = validateStep2Input(
     profileName,
     storageMode,
-    vaultPassword,
+    profilePassword,
     confirmPassword,
   );
   if (validationError) {
@@ -225,7 +225,7 @@ async function submitStep2({
     // the pure helper resolveOrCreateProfile is covered by resolve-profile.test.ts.
     try {
       if (storageMode === "zero_knowledge") {
-        await bootstrapZkProfile(profileId, vaultPassword);
+        await bootstrapZkProfile(profileId, profilePassword);
       }
     } catch (bootstrapErr) {
       await browserTrpcClient.profiles.delete
@@ -273,7 +273,7 @@ export default function OnboardingPage(): React.ReactElement | null {
   const [storageMode, setStorageMode] = useState<"zero_knowledge" | "server_managed">(
     "zero_knowledge",
   );
-  const [vaultPassword, setVaultPassword] = useState("");
+  const [profilePassword, setProfilePassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   // Shared state
@@ -316,16 +316,16 @@ export default function OnboardingPage(): React.ReactElement | null {
       orgId,
       profileName,
       storageMode,
-      vaultPassword,
+      profilePassword,
       confirmPassword,
       setLoading,
       setError,
       onSuccess: () => {
-        // Belt-and-suspenders: clear vault password state on success.
+        // Belt-and-suspenders: clear profile password state on success.
         // Paired with the unmount cleanup below (B17) and the autoComplete
         // attributes on the inputs. We deliberately do NOT clear on error —
         // the user may want to retry without retyping.
-        setVaultPassword("");
+        setProfilePassword("");
         setConfirmPassword("");
         router.push("/overview");
       },
@@ -340,13 +340,13 @@ export default function OnboardingPage(): React.ReactElement | null {
     }
   }, [sessionPending, userId, router]);
 
-  // B17: tear-down clearing of vault password state on unmount. Complements
+  // B17: tear-down clearing of profile password state on unmount. Complements
   // B5's success-path clear. Defense-in-depth only — React state "clearing"
   // drops the reference but the old string may linger until GC. True zeroing
   // would require Uint8Array-backed inputs (out of scope for MVP).
   useEffect(() => {
     return () => {
-      setVaultPassword("");
+      setProfilePassword("");
       setConfirmPassword("");
     };
   }, []);
@@ -623,36 +623,36 @@ export default function OnboardingPage(): React.ReactElement | null {
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label htmlFor="vault-password">
-                            Vault password <span className="text-red-500">*</span>
+                          <Label htmlFor="profile-password">
+                            Profile password <span className="text-red-500">*</span>
                           </Label>
                           <Input
-                            id="vault-password"
+                            id="profile-password"
                             type="password"
                             // B17: non-login-looking name + new-password hint keep the browser's
                             // credential manager from offering to save a password the server
                             // never sees. `autoComplete="off"` is ignored by most modern browsers
                             // on password fields; `new-password` is the standards-blessed hint.
-                            name="abadge-vault-password"
+                            name="abadge-profile-password"
                             autoComplete="new-password"
-                            value={vaultPassword}
-                            onChange={(e) => setVaultPassword(e.target.value)}
+                            value={profilePassword}
+                            onChange={(e) => setProfilePassword(e.target.value)}
                             placeholder="Min 12 characters"
                             minLength={12}
                             required={storageMode === "zero_knowledge"}
                           />
-                          <PasswordStrength password={vaultPassword} />
+                          <PasswordStrength password={profilePassword} />
                         </div>
 
                         <div className="space-y-1.5">
-                          <Label htmlFor="vault-confirm-password">
+                          <Label htmlFor="profile-confirm-password">
                             Confirm password <span className="text-red-500">*</span>
                           </Label>
                           <Input
-                            id="vault-confirm-password"
+                            id="profile-confirm-password"
                             type="password"
-                            // B17: see companion comment on the vault-password input above.
-                            name="abadge-vault-password-confirm"
+                            // B17: see companion comment on the profile-password input above.
+                            name="abadge-profile-password-confirm"
                             autoComplete="new-password"
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
