@@ -243,7 +243,15 @@ interface SdkTrpcClient {
       }
     >;
     list: TrpcQueryWithoutInput<{
-      organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+      organizations: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        role: string;
+        hasBootstrappedProfile: boolean;
+      }>;
     }>;
     get: TrpcQuery<{ orgId: string }, unknown>;
     update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
@@ -640,7 +648,15 @@ export class AbadgeUserClient {
    * List organizations the current user belongs to.
    */
   async listOrganizations(): Promise<{
-    organizations: Array<{ id: string; name: string; slug: string; role: string }>;
+    organizations: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      logo: string | null;
+      createdAt: string;
+      role: string;
+      hasBootstrappedProfile: boolean;
+    }>;
   }> {
     return call(() => this.client.organizations.list.query(), "Failed to list organizations");
   }

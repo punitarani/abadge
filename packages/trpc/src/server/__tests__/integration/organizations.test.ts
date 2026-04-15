@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "@abadge/db";
 import { member, organization, profiles } from "@abadge/db/schema";
 import { _resetGetInviteInfoRateLimit } from "../../routers/organizations";
-import { seedMember, seedOrg, seedUser } from "../helpers/seed";
+import { seedMember, seedOrg, seedProfile, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -186,6 +186,71 @@ describe("organizations.list ordering + pagination", () => {
   // per user, which is prohibitively expensive for the integration suite. The
   // cap is enforced as a constant passed to `.limit()` in `listOrgs`; the
   // behavior is obvious from the query and covered by inspection.
+});
+
+/**
+ * `organizations.list` carries a `hasBootstrappedProfile` boolean per org so
+ * the dashboard's onboarding-resume flow can decide whether to redirect to
+ * /overview or back to step 2 without paying an N+1 profiles.list per org.
+ *
+ * Definition (mirrors `isProfileBootstrapped` in apps/web/src/app/onboarding):
+ *   - server_managed profile: always counted as bootstrapped
+ *   - zero_knowledge profile: bootstrapped iff wrappedRootKey IS NOT NULL
+ *
+ * `organizations.create` auto-creates a default zero_knowledge profile with
+ * wrappedRootKey == null, so a freshly-created org is unbootstrapped until
+ * `profiles.bootstrap` runs.
+ */
+describe("organizations.list hasBootstrappedProfile flag", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("flag reflects per-org bootstrap state across all profile shapes", async () => {
+    const user = await seedUser(auth);
+
+    // org A: only the auto-created zk-no-root profile -> unbootstrapped
+    const orgA = await seedOrg(auth, user.userId, {
+      slug: `unboot-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    await seedProfile(db, orgA.orgId, { name: "default", storageMode: "zero_knowledge" });
+
+    // org B: server_managed profile -> bootstrapped (no key needed)
+    const orgB = await seedOrg(auth, user.userId, {
+      slug: `srv-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    await seedProfile(db, orgB.orgId, { name: "default", storageMode: "server_managed" });
+
+    // org C: zk profile WITH wrappedRootKey -> bootstrapped
+    const orgC = await seedOrg(auth, user.userId, {
+      slug: `boot-${crypto.randomUUID().slice(0, 6)}`,
+    });
+    const { profileId: profileC } = await seedProfile(db, orgC.orgId, {
+      name: "default",
+      storageMode: "zero_knowledge",
+    });
+    await db
+      .update(profiles)
+      .set({ wrappedRootKey: "fake-wrapped-key", kdfSalt: "fake-salt" })
+      .where(eq(profiles.id, profileC));
+
+    const caller = createOperatorCaller(db, auth, user.headers, orgA.orgId);
+    const result = (await caller.organizations.list()) as {
+      organizations: Array<{ id: string; hasBootstrappedProfile: boolean }>;
+    };
+
+    const byId = new Map(result.organizations.map((o) => [o.id, o]));
+    expect(byId.get(orgA.orgId)?.hasBootstrappedProfile).toBe(false);
+    expect(byId.get(orgB.orgId)?.hasBootstrappedProfile).toBe(true);
+    expect(byId.get(orgC.orgId)?.hasBootstrappedProfile).toBe(true);
+  });
 });
 
 /**

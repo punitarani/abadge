@@ -7,7 +7,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, asc, eq, isNull } from "@abadge/db";
+import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
 import { invitation, items, member, organization, profiles, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -86,6 +86,11 @@ const OrgListItemSchema = Schema.Struct({
   logo: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
   role: Schema.String,
+  // True iff at least one profile in this org is bootstrapped (server_managed
+  // is always bootstrapped; zero_knowledge requires wrappedRootKey to be set).
+  // Used by onboarding to detect orgs the user abandoned mid-flow without
+  // requiring an N+1 profiles.list call per org.
+  hasBootstrappedProfile: Schema.Boolean,
 });
 
 const CreateOrgResultSchema = Schema.Struct({
@@ -338,6 +343,27 @@ const listOrgs = Effect.gen(function* () {
       .limit(LIST_ORGS_LIMIT),
   );
 
+  // Second query: fetch organizationId for any profile that is "bootstrapped"
+  // (server_managed OR zk-with-wrappedRootKey). One round trip per page replaces
+  // the dashboard's previous N+1 profiles.list-per-org pattern. Empty-orgs case
+  // skips the query entirely.
+  const orgIds = rows.map((r) => r.id);
+  const bootstrappedOrgIds = new Set<string>();
+  if (orgIds.length > 0) {
+    const profileRows = yield* tryAsync(() =>
+      ctx.db
+        .selectDistinct({ organizationId: profiles.organizationId })
+        .from(profiles)
+        .where(
+          and(
+            inArray(profiles.organizationId, orgIds),
+            or(eq(profiles.storageMode, "server_managed"), isNotNull(profiles.wrappedRootKey)),
+          ),
+        ),
+    );
+    for (const p of profileRows) bootstrappedOrgIds.add(p.organizationId);
+  }
+
   return {
     organizations: rows.map((r) => ({
       id: r.id,
@@ -346,6 +372,7 @@ const listOrgs = Effect.gen(function* () {
       logo: r.logo ?? null,
       createdAt: r.createdAt.toISOString(),
       role: r.role,
+      hasBootstrappedProfile: bootstrappedOrgIds.has(r.id),
     })),
   };
 });

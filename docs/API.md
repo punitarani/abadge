@@ -136,7 +136,7 @@ Returns `{ id, name, slug }`.
 
 Auth: `sessionProcedure`
 
-Returns `{ organizations }` — each entry includes `id`, `name`, `slug`, `role`.
+Returns `{ organizations }` — each entry includes `id`, `name`, `slug`, `logo` (`string | null`), `createdAt`, `role`, and `hasBootstrappedProfile` (`boolean`). The flag is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`; the dashboard's onboarding-resume flow uses it to skip a per-org `profiles.list` round trip.
 
 ### `organizations.get`
 
