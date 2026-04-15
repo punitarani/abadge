@@ -4,7 +4,7 @@
 --
 -- Atomicity: drizzle-orm/pg-core's dialect.migrate wraps the entire set of
 -- migration statements in a single session.transaction(), so every
--- --> statement-breakpoint below runs inside one outer tx. DO NOT add a
+-- statement boundary below runs inside one outer tx. DO NOT add a
 -- manual BEGIN/COMMIT here -- it would break the outer transaction. All
 -- ADD CONSTRAINT / SET NOT NULL statements below are rewritten to be
 -- idempotent so a partial re-run (e.g., after a driver-level retry) does
