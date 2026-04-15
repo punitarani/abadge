@@ -1,14 +1,5 @@
 "use client";
 
-import {
-  DEFAULT_KDF_PARAMS,
-  deriveKEK,
-  generateRootKey,
-  generateSalt,
-  toBase64,
-  wrapRootKey,
-  zeroKey,
-} from "@abadge/crypto";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,11 +11,11 @@ import { Label } from "@/components/ui/label";
 import { PasswordStrength } from "@/components/ui/password-strength";
 import { ProgressSteps } from "@/components/ui/progress-steps";
 import { authClient } from "@/lib/auth-client";
+import { bootstrapZkProfile, resolveOrCreateProfile } from "@/lib/profile-bootstrap";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
 import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
-import { resolveOrCreateProfile } from "./resolve-profile";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
 
@@ -79,26 +70,6 @@ function toSlugPreview(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-/** Derives a KEK from the password, generates a root key, wraps it, and bootstraps the profile. */
-async function bootstrapZkProfile(profileId: string, password: string): Promise<void> {
-  const salt = generateSalt();
-  const kek = deriveKEK(password, salt, DEFAULT_KDF_PARAMS);
-  const rootKey = generateRootKey();
-  const wrapped = wrapRootKey(rootKey, kek);
-
-  try {
-    await browserTrpcClient.profiles.bootstrap.mutate({
-      profileId,
-      wrappedRootKey: wrapped.wrapped,
-      kdfSalt: toBase64(salt),
-      kdfParams: DEFAULT_KDF_PARAMS,
-    });
-  } finally {
-    zeroKey(kek);
-    zeroKey(rootKey);
-  }
 }
 
 function validateStep2Input(
