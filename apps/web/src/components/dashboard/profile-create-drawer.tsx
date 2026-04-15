@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrength } from "@/components/ui/password-strength";
-import { dashboardQueryKeys } from "@/lib/query-keys";
 import { bootstrapZkProfile, resolveOrCreateProfile } from "@/lib/profile-bootstrap";
+import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 
 type StorageMode = "zero_knowledge" | "server_managed";

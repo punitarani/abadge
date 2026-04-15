@@ -125,9 +125,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
       }),
     } as BaseRequestContext["auth"];
 
-    const error = await Effect.runPromise(
-      Effect.flip(resolveSessionIdentityOptionalOrg(ctx)),
-    );
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
 
     expect(error).toBeInstanceOf(BadRequestError);
     expect(error).toMatchObject({
@@ -143,9 +141,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
     // ctx.auth.api.getSession already returns null by default
     const ctx = createOptionalOrgContext({ fallbackMemberships: [] });
 
-    const error = await Effect.runPromise(
-      Effect.flip(resolveSessionIdentityOptionalOrg(ctx)),
-    );
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
 
     expect(error).toBeInstanceOf(UnauthorizedError);
     expect(error).toMatchObject({
@@ -198,9 +194,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
       }),
     } as BaseRequestContext["auth"];
 
-    const error = await Effect.runPromise(
-      Effect.flip(resolveSessionIdentityOptionalOrg(ctx)),
-    );
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
 
     expect(error).toBeInstanceOf(UnauthorizedError);
     expect(error).toMatchObject({

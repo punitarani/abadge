@@ -5,9 +5,9 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import * as React from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type * as React from "react";
 
 // --- module mocks -----------------------------------------------------------
 
@@ -45,7 +45,7 @@ mock.module("@/lib/trpc-browser", () => ({
       delete: { mutate: mock(async () => ({})) },
     },
   },
-  getClientErrorMessage: mock((err: unknown, fallback: string) => fallback),
+  getClientErrorMessage: mock((_err: unknown, fallback: string) => fallback),
 }));
 
 // Mock sonner toast.

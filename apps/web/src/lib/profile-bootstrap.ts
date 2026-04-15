@@ -40,6 +40,6 @@ export async function bootstrapZkProfile(profileId: string, password: string): P
   }
 }
 
+export type { ProfileResolverClient, ResolveProfileInput } from "@/app/onboarding/resolve-profile";
 // Re-export so callers can import both helpers from one place.
 export { resolveOrCreateProfile } from "@/app/onboarding/resolve-profile";
-export type { ProfileResolverClient, ResolveProfileInput } from "@/app/onboarding/resolve-profile";
