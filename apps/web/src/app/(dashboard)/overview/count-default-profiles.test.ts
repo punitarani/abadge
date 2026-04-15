@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { countDefaultProfiles } from "./page";
+import { countDefaultProfiles } from "./count-default-profiles";
 
 describe("countDefaultProfiles", () => {
   test("counts profiles whose name === 'internal'", () => {
