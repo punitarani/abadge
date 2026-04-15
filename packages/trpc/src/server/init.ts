@@ -5,7 +5,13 @@ import { agents, member } from "@abadge/db/schema";
 import { initTRPC } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
-import type { AgentRequestContext, BaseRequestContext, SessionRequestContext } from "./context";
+import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
+import type {
+  AgentRequestContext,
+  BaseRequestContext,
+  OptionalOrgSessionRequestContext,
+  SessionRequestContext,
+} from "./context";
 import { getTrpcErrorData, toTrpcError } from "./errors";
 
 const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
@@ -70,6 +76,26 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
         ...ctx,
         identity,
       } satisfies SessionRequestContext,
+    });
+  } catch (error) {
+    throw toTrpcError(error);
+  }
+});
+
+/**
+ * Authenticated procedure that does NOT require org membership. Use this for
+ * bootstrap endpoints a user hits before they have an org (organizations.create,
+ * organizations.list, organizations.checkSlug). Everywhere else, use
+ * sessionProcedure.
+ */
+export const userProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  try {
+    const identity = await Effect.runPromise(resolveSessionIdentityOptionalOrg(ctx));
+    return next({
+      ctx: {
+        ...ctx,
+        identity,
+      } satisfies OptionalOrgSessionRequestContext,
     });
   } catch (error) {
     throw toTrpcError(error);

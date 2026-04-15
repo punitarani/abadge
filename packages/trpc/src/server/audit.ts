@@ -6,6 +6,7 @@ import {
   BaseRequestContextTag,
   SessionRequestContextTag,
   tryAsync,
+  UserRequestContextTag,
 } from "./effect";
 
 export interface AuditEntryInput {
@@ -29,6 +30,30 @@ export const logSessionAudit = (
 ): Effect.Effect<void, Error, SessionRequestContextTag> =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    yield* tryAsync(() =>
+      ctx.db.insert(auditLogs).values({
+        organizationId: entry.organizationId,
+        userId: entry.userId,
+        agentId: entry.agentId ?? null,
+        itemId: entry.itemId ?? null,
+        profileId: entry.profileId ?? null,
+        surface: entry.surface ?? "api",
+        eventType: entry.eventType,
+        result: entry.result,
+        deliveryMode: entry.deliveryMode ?? null,
+        field: entry.field ?? null,
+        purpose: entry.purpose ?? null,
+        meta: entry.meta ?? {},
+        ipAddress: entry.ipAddress ?? null,
+      }),
+    );
+  });
+
+export const logUserAudit = (
+  entry: AuditEntryInput,
+): Effect.Effect<void, Error, UserRequestContextTag> =>
+  Effect.gen(function* () {
+    const ctx = yield* UserRequestContextTag;
     yield* tryAsync(() =>
       ctx.db.insert(auditLogs).values({
         organizationId: entry.organizationId,
