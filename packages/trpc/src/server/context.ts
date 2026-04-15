@@ -28,6 +28,17 @@ export interface SessionIdentity {
   authMethod: "browser_session" | "bearer_session";
 }
 
+export interface OptionalOrgSessionIdentity {
+  kind: "session";
+  userId: string;
+  organizationId: string | null;
+  authMethod: "browser_session" | "bearer_session";
+}
+
+export interface OptionalOrgSessionRequestContext extends BaseRequestContext {
+  identity: OptionalOrgSessionIdentity;
+}
+
 export interface AgentIdentity {
   kind: "agent";
   agentId: string;
