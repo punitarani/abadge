@@ -175,16 +175,6 @@ describe("resolveSessionConfig", () => {
       sessionHeaders: { Authorization: "Bearer session-token" },
     });
   });
-
-  test("ignores the legacy operator-token env var in favor of bearer session auth", async () => {
-    process.env.ABADGE_API_URL = "https://api.abadge.io";
-    process.env.ABADGE_OPERATOR_TOKEN = "abo_test_operator_token";
-    process.env.ABADGE_SESSION_TOKEN = "session-token";
-
-    await expect(resolveSessionConfig()).resolves.toMatchObject({
-      sessionHeaders: { Authorization: "Bearer session-token" },
-    });
-  });
 });
 
 describe("createAgentApiClient", () => {

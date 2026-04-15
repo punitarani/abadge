@@ -238,12 +238,6 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
     return connectKeypairClient(apiUrl ?? config.apiUrl, agentConfig.agentId, jwk);
   }
 
-  // 3b. Config file — legacy secret
-  const configSecret = config?.principalSecret ?? config?.authToken;
-  if (configSecret && config) {
-    return new AbadgeAgentClient({ apiUrl: config.apiUrl, apiKey: configSecret });
-  }
-
   // 4. Legacy API key from env
   if (env.ABADGE_AUTH_TOKEN) {
     return new AbadgeAgentClient({ apiUrl: requireApiUrl(apiUrl), apiKey: env.ABADGE_AUTH_TOKEN });

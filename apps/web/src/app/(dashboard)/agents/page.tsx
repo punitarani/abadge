@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, AgentKind, PrincipalAuthMethod } from "@abadge/core";
+import type { Agent, AgentAuthMethod, AgentKind } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -24,7 +24,7 @@ import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
 type KindFilter = "all" | AgentKind;
-type AuthFilter = "all" | PrincipalAuthMethod;
+type AuthFilter = "all" | AgentAuthMethod;
 type StatusFilter = "all" | "active" | "revoked";
 
 const KIND_LABELS: Record<AgentKind, string> = {
@@ -33,7 +33,7 @@ const KIND_LABELS: Record<AgentKind, string> = {
   remote: "Remote",
 };
 
-const AUTH_LABELS: Record<PrincipalAuthMethod, string> = {
+const AUTH_LABELS: Record<AgentAuthMethod, string> = {
   public_key_session: "Keypair",
   legacy_api_key: "Legacy",
 };

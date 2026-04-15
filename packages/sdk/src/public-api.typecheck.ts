@@ -51,6 +51,8 @@ type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInpu
 type _LegacyRevokeOperatorTokenInput = import("./index").RevokeOperatorTokenInput;
 // @ts-expect-error AbadgeClient removed — use AbadgeUserClient or AbadgeAgentClient
 type _LegacyAbadgeClient = import("./index").AbadgeClient;
+// @ts-expect-error PrincipalAuthMethod renamed to AgentAuthMethod
+type _LegacyPrincipalAuthMethod = import("./index").PrincipalAuthMethod;
 
 // -- Client split assertions -----------------------------------------------
 

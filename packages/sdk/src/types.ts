@@ -1,5 +1,6 @@
 export type {
   Agent,
+  AgentAuthMethod,
   AgentBootstrapTokenResult,
   AgentChallengeResult,
   AgentEnrollmentResult,
@@ -39,7 +40,6 @@ export type {
   Permission,
   PermissionListResult,
   PermissionResult,
-  PrincipalAuthMethod,
   RecoverySetupInput as SetupRecoveryInput,
   RevealAccessResponse,
   RevokeAgentSessionInput,

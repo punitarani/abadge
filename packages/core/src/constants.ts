@@ -18,8 +18,8 @@ export type AgentKind = (typeof AGENT_KINDS)[number];
 export const AGENT_LOCALITIES = ["local", "remote"] as const;
 export type AgentLocality = (typeof AGENT_LOCALITIES)[number];
 
-export const PRINCIPAL_AUTH_METHODS = ["public_key_session", "legacy_api_key"] as const;
-export type PrincipalAuthMethod = (typeof PRINCIPAL_AUTH_METHODS)[number];
+export const AGENT_AUTH_METHODS = ["public_key_session", "legacy_api_key"] as const;
+export type AgentAuthMethod = (typeof AGENT_AUTH_METHODS)[number];
 
 export const CAPABILITIES = [
   "read_ciphertext",

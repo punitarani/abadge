@@ -15,50 +15,61 @@ export interface CliConfig {
     cli?: LocalAgentConfig;
     mcp?: LocalAgentConfig;
   };
-  /** @deprecated Legacy local agent config kept for migration. */
-  principalId?: string;
-  /** @deprecated Legacy local agent config kept for migration. */
-  principalSecret?: string;
-  /** @deprecated Legacy local agent config kept for migration. */
-  operatorUserId?: string;
-  /** @deprecated Legacy alias used by older CLI/MCP config readers. */
-  authToken?: string;
 }
 
 const CONFIG_DIR = join(homedir(), ".abadge");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
+const LEGACY_FIELDS = ["principalId", "principalSecret", "operatorUserId", "authToken"] as const;
+
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
 }
 
-function normalizeConfig(config: Partial<CliConfig>): CliConfig | null {
+function normalizeConfig(config: Record<string, unknown>): CliConfig | null {
   const apiUrl = str(config.apiUrl);
   if (!apiUrl) {
     return null;
   }
 
-  const principalSecret = str(config.principalSecret) ?? str(config.authToken);
-
   return {
     apiUrl,
     activeOrgId: str(config.activeOrgId),
     activeProfileId: str(config.activeProfileId),
-    localAgents: config.localAgents,
-    principalId: str(config.principalId),
-    principalSecret,
-    operatorUserId: str(config.operatorUserId),
-    authToken: principalSecret,
+    localAgents: config.localAgents as CliConfig["localAgents"],
   };
 }
 
+function stripLegacyFields(parsed: Record<string, unknown>): boolean {
+  let touched = false;
+  for (const key of LEGACY_FIELDS) {
+    if (key in parsed) {
+      delete parsed[key];
+      touched = true;
+    }
+  }
+  return touched;
+}
+
 export function loadConfig(): CliConfig | null {
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Partial<CliConfig>;
-    return normalizeConfig(parsed);
+    parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
   } catch {
     return null;
   }
+
+  const hadLegacy = stripLegacyFields(parsed);
+  const normalized = normalizeConfig(parsed);
+
+  if (hadLegacy && normalized) {
+    console.warn(
+      "[abadge] Legacy principal*/operator-token keys detected in ~/.abadge/config.json; clearing. Re-run `abadge login` and `abadge agent register --kind local_cli` to re-enroll.",
+    );
+    writeConfig(normalized);
+  }
+
+  return normalized;
 }
 
 function writeConfig(normalized: CliConfig): void {
@@ -71,10 +82,6 @@ function writeConfig(normalized: CliConfig): void {
         activeOrgId: normalized.activeOrgId,
         activeProfileId: normalized.activeProfileId,
         localAgents: normalized.localAgents,
-        principalId: normalized.principalId,
-        principalSecret: normalized.principalSecret,
-        operatorUserId: normalized.operatorUserId,
-        authToken: normalized.principalSecret,
       },
       null,
       2,
@@ -85,7 +92,7 @@ function writeConfig(normalized: CliConfig): void {
 
 /** Save a full config, replacing the existing file entirely. */
 export function saveConfig(config: CliConfig): void {
-  const normalized = normalizeConfig(config);
+  const normalized = normalizeConfig(config as unknown as Record<string, unknown>);
   if (!normalized) {
     throw new Error("apiUrl is required");
   }
@@ -95,7 +102,7 @@ export function saveConfig(config: CliConfig): void {
 /** Merge a partial patch over the existing config and save. */
 export function updateConfig(patch: Partial<CliConfig>): void {
   const existing = loadConfig() ?? {};
-  const merged: Partial<CliConfig> = { ...existing, ...patch };
+  const merged = { ...existing, ...patch } as Record<string, unknown>;
   const normalized = normalizeConfig(merged);
   if (!normalized) {
     throw new Error("apiUrl is required");
