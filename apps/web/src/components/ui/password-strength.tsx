@@ -34,24 +34,21 @@ function getStrength(password: string): {
 
 const SEGMENT_KEYS = ["seg-0", "seg-1", "seg-2", "seg-3"] as const;
 
-export function PasswordStrength({ password }: PasswordStrengthProps): React.ReactElement | null {
+export function PasswordStrength({ password }: PasswordStrengthProps): React.ReactElement {
   const { level, label, color } = getStrength(password);
-
-  if (level === 0) {
-    return null;
-  }
-
   const labelColor =
     level <= 1 ? "text-red-600" : level === 2 ? "text-yellow-600" : "text-green-600";
 
+  // Pre-render an empty bar when the user hasn't typed yet so the form
+  // doesn't shift when the component appears on first keystroke.
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" aria-hidden={level === 0}>
       <div className="flex gap-1">
         {SEGMENT_KEYS.map((key, i) => (
           <div key={key} className={`h-1 flex-1 rounded-full ${i < level ? color : "bg-muted"}`} />
         ))}
       </div>
-      <p className={`text-xs ${labelColor}`}>{label}</p>
+      <p className={`text-xs ${level === 0 ? "invisible" : labelColor}`}>{label || "\u00a0"}</p>
     </div>
   );
 }
