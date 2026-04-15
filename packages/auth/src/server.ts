@@ -1,9 +1,8 @@
 import type { Database } from "@abadge/db";
-import { auditLogs } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
-import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow } from "./audit-hooks";
+import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow, safeAuditInsert } from "./audit-hooks";
 
 export interface AuthEnv {
   ABADGE_API_URL: string;
@@ -63,20 +62,15 @@ export function createAuth(db: Database, env: AuthEnv): any {
           after: async (session) => {
             const activeOrgId = session.activeOrganizationId;
             if (typeof activeOrgId !== "string") return;
-
-            try {
-              await db.insert(auditLogs).values({
-                organizationId: activeOrgId,
-                userId: session.userId,
-                eventType: "auth.login",
-                result: "allowed",
-                ipAddress: session.ipAddress ?? null,
-                surface: "auth",
-                meta: {},
-              });
-            } catch {
-              // Audit writes must not break authentication
-            }
+            await safeAuditInsert(db, {
+              organizationId: activeOrgId,
+              userId: session.userId,
+              eventType: "auth.login",
+              result: "allowed",
+              ipAddress: session.ipAddress ?? null,
+              surface: "auth",
+              meta: {},
+            });
           },
         },
       },
@@ -93,18 +87,10 @@ export function createAuth(db: Database, env: AuthEnv): any {
           // with surface: "auth" distinguishes the two rows — mirrors the
           // session.create hook pattern above.
           afterCreateOrganization: async ({ organization, user }) => {
-            try {
-              await db.insert(auditLogs).values(buildOrgCreateAuditRow({ organization, user }));
-            } catch {
-              // Audit writes must not break organization creation
-            }
+            await safeAuditInsert(db, buildOrgCreateAuditRow({ organization, user }));
           },
           afterDeleteOrganization: async ({ organization, user }) => {
-            try {
-              await db.insert(auditLogs).values(buildOrgDeleteAuditRow({ organization, user }));
-            } catch {
-              // Audit writes must not break organization deletion
-            }
+            await safeAuditInsert(db, buildOrgDeleteAuditRow({ organization, user }));
           },
         },
       }),

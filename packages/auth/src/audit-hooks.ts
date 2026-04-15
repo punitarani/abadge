@@ -1,15 +1,18 @@
+import type { Database } from "@abadge/db";
+import { auditLogs } from "@abadge/db";
+
+type AuditInsertRow = typeof auditLogs.$inferInsert;
+
 /**
- * Minimal shape of the values we write into the audit_logs table.
- * Kept local to avoid a drizzle-orm import in this package.
+ * Swallows any error from an audit log insert so callers are never disrupted.
+ * Audit writes must not break authentication or org lifecycle operations.
  */
-interface AuditRowValues {
-  organizationId: string;
-  userId: string;
-  eventType: string;
-  result: string;
-  ipAddress: null;
-  surface: string;
-  meta: Record<string, unknown>;
+export async function safeAuditInsert(db: Database, values: AuditInsertRow): Promise<void> {
+  try {
+    await db.insert(auditLogs).values(values);
+  } catch {
+    // Audit writes must not break the caller
+  }
 }
 
 /**
@@ -22,7 +25,7 @@ interface AuditRowValues {
 export function buildOrgCreateAuditRow(data: {
   organization: { id: string; slug?: string | null };
   user: { id: string };
-}): AuditRowValues {
+}): AuditInsertRow {
   return {
     organizationId: data.organization.id,
     userId: data.user.id,
@@ -41,7 +44,7 @@ export function buildOrgCreateAuditRow(data: {
 export function buildOrgDeleteAuditRow(data: {
   organization: { id: string; slug?: string | null };
   user: { id: string };
-}): AuditRowValues {
+}): AuditInsertRow {
   return {
     organizationId: data.organization.id,
     userId: data.user.id,
