@@ -22,6 +22,7 @@ import { ProgressSteps } from "@/components/ui/progress-steps";
 import { authClient } from "@/lib/auth-client";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
+import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
 import { resolveOrCreateProfile } from "./resolve-profile";
 
@@ -534,69 +535,7 @@ export default function OnboardingPage(): React.ReactElement | null {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>
-                        Storage mode <span className="text-red-500">*</span>
-                      </Label>
-
-                      <button
-                        type="button"
-                        className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
-                          storageMode === "zero_knowledge"
-                            ? "border-foreground bg-foreground/[0.02]"
-                            : "border-border hover:border-foreground/30"
-                        }`}
-                        onClick={() => setStorageMode("zero_knowledge")}
-                      >
-                        <div
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                            storageMode === "zero_knowledge"
-                              ? "border-foreground"
-                              : "border-muted-foreground/40"
-                          }`}
-                        >
-                          {storageMode === "zero_knowledge" && (
-                            <div className="h-2 w-2 rounded-full bg-foreground" />
-                          )}
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-sm font-medium">Zero-knowledge</span>
-                          <p className="text-xs text-muted-foreground">
-                            Items are encrypted client-side. The server never sees plaintext or your
-                            root key.
-                          </p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
-                          storageMode === "server_managed"
-                            ? "border-foreground bg-foreground/[0.02]"
-                            : "border-border hover:border-foreground/30"
-                        }`}
-                        onClick={() => setStorageMode("server_managed")}
-                      >
-                        <div
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                            storageMode === "server_managed"
-                              ? "border-foreground"
-                              : "border-muted-foreground/40"
-                          }`}
-                        >
-                          {storageMode === "server_managed" && (
-                            <div className="h-2 w-2 rounded-full bg-foreground" />
-                          )}
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-sm font-medium">Server-managed</span>
-                          <p className="text-xs text-muted-foreground">
-                            Items are encrypted server-side with AES-256-GCM. Simpler setup, no
-                            client-side crypto.
-                          </p>
-                        </div>
-                      </button>
-                    </div>
+                    <StorageModePicker value={storageMode} onChange={setStorageMode} />
 
                     {storageMode === "zero_knowledge" && (
                       <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
