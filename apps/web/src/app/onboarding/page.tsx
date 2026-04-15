@@ -220,7 +220,9 @@ async function submitStep2({
     // the user can retry onboarding with the same profile name. Rollback errors
     // are swallowed (logged only) — the original bootstrap error still surfaces
     // to the UI.
-    // TODO(B4.1): test rollback path once @testing-library/react is wired into apps/web.
+    // Test harness is in place (apps/web/bunfig.toml + happy-dom), but a full
+    // rollback test requires mocking the tRPC client against the React tree;
+    // the pure helper resolveOrCreateProfile is covered by resolve-profile.test.ts.
     try {
       if (storageMode === "zero_knowledge") {
         await bootstrapZkProfile(profileId, vaultPassword);
