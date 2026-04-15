@@ -106,6 +106,7 @@ function RegisterPageContent() {
             <Input
               id="name"
               type="text"
+              autoComplete="name"
               placeholder="Your full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -117,6 +118,8 @@ function RegisterPageContent() {
             <Input
               id="email"
               type="email"
+              autoComplete="email"
+              spellCheck={false}
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -128,6 +131,7 @@ function RegisterPageContent() {
             <Input
               id="password"
               type="password"
+              autoComplete="new-password"
               placeholder="Min 12 characters"
               minLength={12}
               value={password}
@@ -141,7 +145,9 @@ function RegisterPageContent() {
             <Input
               id="confirm-password"
               type="password"
+              autoComplete="new-password"
               placeholder="Repeat password"
+              minLength={12}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
