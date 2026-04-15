@@ -16,7 +16,7 @@ function getCandidatePrefixes(token: string): string[] {
   ];
 }
 
-interface AuthSessionResult {
+export interface AuthSessionResult {
   session?: {
     userId?: string | null;
   } | null;
