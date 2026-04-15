@@ -6,7 +6,7 @@
  * This is review finding P0-1: userProcedure tolerates organizationId: null.
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { seedUser } from "../helpers/seed";
+import { seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -61,5 +61,27 @@ describe("onboarding flow: zero-org user can reach bootstrap endpoints", () => {
     expect(result.organization.slug).toBe("bootstrap-org");
     expect(result.organization.name).toBe("Bootstrap Org");
     expect(result.profileId).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // 4. X-Abadge-Org-Id header path: bootstrap endpoints work when the caller
+  //    passes an explicit org header (user with 1 membership, not zero).
+  //    Proves resolveSessionIdentityOptionalOrg handles the header branch
+  //    when reached through the full middleware chain.
+  // -------------------------------------------------------------------------
+  test("organizations.list and checkSlug succeed when X-Abadge-Org-Id header is passed", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId, { name: "Header Org", slug: "header-org" });
+
+    // Pass the org id via the 4th parameter — createOperatorCaller sets the
+    // x-abadge-org-id header internally.
+    const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
+
+    const listResult = await caller.organizations.list();
+    expect(listResult.organizations).toHaveLength(1);
+    expect(listResult.organizations[0].id).toBe(org.orgId);
+
+    const slugResult = await caller.organizations.checkSlug({ slug: "some-other-slug" });
+    expect(slugResult.available).toBe(true);
   });
 });
