@@ -233,6 +233,7 @@ const ItemDetailBaseFields = {
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
+  profileId: Schema.NullOr(Schema.String),
   createdAt: IsoDateString,
   updatedAt: IsoDateString,
 } as const;

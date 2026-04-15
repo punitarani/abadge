@@ -32,7 +32,7 @@ function getInitials(name: string): string {
 
 export function NavUser(): React.ReactElement {
   const { isMobile } = useSidebar();
-  const { lockVault } = useVault();
+  const { lockAll } = useVault();
   const router = useRouter();
   const { data: session } = authClient.useSession();
 
@@ -41,7 +41,7 @@ export function NavUser(): React.ReactElement {
   const userImage = session?.user?.image ?? undefined;
 
   async function handleSignOut(): Promise<void> {
-    lockVault();
+    lockAll();
     await authClient.signOut();
     router.push("/login");
   }
@@ -85,9 +85,9 @@ export function NavUser(): React.ReactElement {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => lockVault()}>
+            <DropdownMenuItem onClick={() => lockAll()}>
               <Lock />
-              Lock vault
+              Lock all profiles
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut />

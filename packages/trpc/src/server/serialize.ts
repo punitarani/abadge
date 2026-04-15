@@ -148,6 +148,7 @@ export function serializeItemDetail(row: ItemRow): ItemDetail {
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,
+    profileId: row.profileId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
