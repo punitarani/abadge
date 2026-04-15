@@ -4,7 +4,9 @@ import type { Profile } from "@abadge/core";
 import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { ProfileCreateDrawer } from "@/components/dashboard/profile-create-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +32,16 @@ const TABLE_COL_COUNT = 5;
 export default function ProfilesListPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const createOpen = searchParams.get("create") === "true";
+
+  function closeDrawer(): void {
+    const params = new URLSearchParams(searchParams);
+    params.delete("create");
+    const qs = params.toString();
+    router.replace(qs ? `/profiles?${qs}` : "/profiles", { scroll: false });
+  }
 
   const [search, setSearch] = useState("");
   const [storageFilter, setStorageFilter] = useState<StorageFilter>("all");
@@ -173,6 +185,16 @@ export default function ProfilesListPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+
+      {activeOrgId && (
+        <ProfileCreateDrawer
+          open={createOpen}
+          onOpenChange={(next) => {
+            if (!next) closeDrawer();
+          }}
+          orgId={activeOrgId}
+        />
+      )}
     </div>
   );
 }
