@@ -544,7 +544,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       <Button type="button" variant="outline" size="sm" onClick={onClose}>
         Cancel
       </Button>
-      <Button form={formId} type="submit" size="sm" disabled={creating}>
+      <Button form={formId} type="submit" disabled={creating}>
         {creating ? buttonTextCreating : buttonText}
       </Button>
     </div>

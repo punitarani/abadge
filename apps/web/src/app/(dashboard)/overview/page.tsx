@@ -46,6 +46,18 @@ function resultBadgeVariant(result: string): BadgeVariant {
 
 const AUDIT_COLUMN_COUNT = 6;
 
+/**
+ * The "default" profile is the one created during onboarding and named
+ * "internal" (see onboarding/page.tsx). Returning the count of
+ * server_managed profiles here — which the previous implementation did —
+ * was wrong: the internal profile is zero_knowledge, not server_managed,
+ * so the subtitle always read "0 default (internal)" for a freshly
+ * onboarded user.
+ */
+export function countDefaultProfiles(profiles: ReadonlyArray<{ name: string }>): number {
+  return profiles.filter((p) => p.name === "internal").length;
+}
+
 function SummaryCards({
   isLoading,
   profileCount,
@@ -278,9 +290,7 @@ export default function OverviewPage(): React.ReactElement {
     return diff > 0 && diff < sevenDaysMs;
   }).length;
 
-  const defaultProfileCount = profiles.filter(
-    (p: Profile) => p.storageMode === "server_managed",
-  ).length;
+  const defaultProfileCount = countDefaultProfiles(profiles);
 
   const agentNames = useMemo(() => buildAuditAgentNameMap(agents), [agents]);
   const itemLabels = useMemo(() => buildAuditItemLabelMap(items), [items]);
