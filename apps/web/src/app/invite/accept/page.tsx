@@ -80,6 +80,8 @@ function AcceptInviteContent(): React.ReactElement {
 
 function InviteDetails({ token }: { token: string }): React.ReactElement {
   const router = useRouter();
+  const { data: session } = authClient.useSession();
+  const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
 
   const infoQuery = useQuery({
@@ -91,13 +93,17 @@ function InviteDetails({ token }: { token: string }): React.ReactElement {
   const acceptMutation = useMutation({
     mutationFn: () => browserTrpcClient.organizations.members.acceptInvite.mutate({ token }),
     onSuccess: (data) => {
-      // Switch to the newly joined org so the dashboard shows it immediately
-      setActiveOrg({
-        id: data.organizationId,
-        slug: data.organizationSlug,
-        name: data.organizationName,
-        logo: null,
-      });
+      // Switch to the newly joined org so the dashboard shows it immediately.
+      // The parent AcceptInviteContent already gates on authed=true, so userId
+      // is non-null here; the fallback is defensive.
+      if (userId) {
+        setActiveOrg(userId, {
+          id: data.organizationId,
+          slug: data.organizationSlug,
+          name: data.organizationName,
+          logo: null,
+        });
+      }
       toast.success("You've joined the organization!");
       router.push("/items");
     },

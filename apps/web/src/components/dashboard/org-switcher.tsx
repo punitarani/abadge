@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
@@ -65,6 +66,8 @@ function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.
 
 export function OrgSwitcher(): React.ReactElement {
   const { activeOrgId, setActiveOrg } = useOrgStore();
+  const { data: session } = authClient.useSession();
+  const userId = session?.user?.id ?? null;
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -76,8 +79,9 @@ export function OrgSwitcher(): React.ReactElement {
   const currentOrg = orgs.find((o) => o.id === activeOrgId);
 
   function handleSelect(org: Org): void {
+    if (!userId) return;
     if (org.id !== activeOrgId) {
-      setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo });
+      setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo });
       // Invalidate all org-scoped queries so they refetch with the new org header
       queryClient.invalidateQueries();
     }

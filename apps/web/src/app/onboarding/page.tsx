@@ -93,10 +93,14 @@ function validateStep2Input(
 }
 
 interface Step1Params {
+  userId: string;
   orgName: string;
   orgSlug: string;
   slugStatus: SlugStatus;
-  setActiveOrg: (org: { id: string; slug: string; name: string; logo: string | null }) => void;
+  setActiveOrg: (
+    userId: string,
+    org: { id: string; slug: string; name: string; logo: string | null },
+  ) => void;
   setOrgId: (id: string) => void;
   setCurrentStep: (step: number) => void;
   setLoading: (v: boolean) => void;
@@ -104,6 +108,7 @@ interface Step1Params {
 }
 
 async function submitStep1({
+  userId,
   orgName,
   orgSlug,
   slugStatus,
@@ -140,7 +145,7 @@ async function submitStep1({
       org.logo = logoUrl;
     }
 
-    setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
+    setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
     setOrgId(org.id);
     setCurrentStep(1);
   } catch (err) {
@@ -225,6 +230,7 @@ export default function OnboardingPage(): React.ReactElement | null {
   // unrelated renders.
   const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
+  const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
 
   // Step management
   const [currentStep, setCurrentStep] = useState(0);
@@ -269,7 +275,16 @@ export default function OnboardingPage(): React.ReactElement | null {
   async function handleStep1Submit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
+    if (!userId) {
+      // Belt-and-suspenders: the auth guard effect below redirects to /login
+      // when userId is null, but guard the store write explicitly so a
+      // rendered-but-unauthenticated state can't persist an org under a null
+      // user id.
+      setError("Not authenticated. Please sign in again.");
+      return;
+    }
     await submitStep1({
+      userId,
       orgName,
       orgSlug,
       slugStatus,
@@ -330,6 +345,16 @@ export default function OnboardingPage(): React.ReactElement | null {
   useEffect(() => {
     if (sessionPending || !userId) return;
 
+    // Session-user-change guard: the onboarding route sits outside the
+    // dashboard layout, so it owns its own scrub. If the persisted org
+    // belongs to a prior user, the browser tRPC client would send a stale
+    // X-Abadge-Org-Id header on organizations.list below — which 401s even
+    // on bootstrap endpoints (resolveOptionalOrgId rejects non-member orgs).
+    const storedUserId = useOrgStore.getState().lastUserId;
+    if (storedUserId && storedUserId !== userId) {
+      clearActiveOrg();
+    }
+
     let cancelled = false;
     (async () => {
       try {
@@ -351,7 +376,7 @@ export default function OnboardingPage(): React.ReactElement | null {
         }
         if (decision.step === "step2") {
           const logo = summaries.find((s) => s.id === decision.orgId)?.logo ?? null;
-          setActiveOrg({
+          setActiveOrg(userId, {
             id: decision.orgId,
             slug: decision.orgSlug,
             name: decision.orgName,
@@ -374,7 +399,7 @@ export default function OnboardingPage(): React.ReactElement | null {
     return () => {
       cancelled = true;
     };
-  }, [sessionPending, userId, router, setActiveOrg]);
+  }, [sessionPending, userId, router, setActiveOrg, clearActiveOrg]);
 
   if (sessionPending || !session?.user || isCheckingOrgs) {
     return (

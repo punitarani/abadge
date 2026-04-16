@@ -32,8 +32,9 @@ export default function DashboardLayout({
 }): React.ReactElement {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
-  const { activeOrgId, setActiveOrg } = useOrgStore();
+  const { activeOrgId, setActiveOrg, clearActiveOrg } = useOrgStore();
   const [hydrated, setHydrated] = useState(false);
+  const userId = session?.user?.id ?? null;
 
   // Wait for Zustand persist rehydration
   useEffect(() => {
@@ -47,6 +48,18 @@ export default function DashboardLayout({
     return unsub;
   }, []);
 
+  // Session-user-change guard: if the persisted org belongs to a different
+  // user (e.g., prior signOut that didn't clear, cross-user browser reuse),
+  // scrub it before any org-scoped tRPC call fires with a stale
+  // X-Abadge-Org-Id header. Runs synchronously once hydrated + session known.
+  useEffect(() => {
+    if (!hydrated || sessionPending || !userId) return;
+    const storedUserId = useOrgStore.getState().lastUserId;
+    if (storedUserId && storedUserId !== userId) {
+      clearActiveOrg();
+    }
+  }, [hydrated, sessionPending, userId, clearActiveOrg]);
+
   const { data: orgsData, isLoading: orgsLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
@@ -59,7 +72,7 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!hydrated || sessionPending || orgsLoading || !orgsData) return;
 
-    if (!session) {
+    if (!session || !userId) {
       router.push("/login");
       return;
     }
@@ -74,7 +87,7 @@ export default function DashboardLayout({
       // Stored org is stale or missing — fall back to first org (orgs.length > 0 checked above)
       const first = orgs[0];
       if (first) {
-        setActiveOrg({
+        setActiveOrg(userId, {
           id: first.id,
           slug: first.slug,
           name: first.name,
@@ -86,6 +99,7 @@ export default function DashboardLayout({
     hydrated,
     sessionPending,
     session,
+    userId,
     orgsLoading,
     orgsData,
     orgs,

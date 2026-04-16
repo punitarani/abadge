@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { useVault } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
 function getInitials(name: string): string {
   return name
@@ -35,6 +36,7 @@ export function NavUser(): React.ReactElement {
   const { lockAll } = useVault();
   const router = useRouter();
   const { data: session } = authClient.useSession();
+  const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
 
   const userName = session?.user?.name ?? "User";
   const userEmail = session?.user?.email ?? "";
@@ -42,6 +44,10 @@ export function NavUser(): React.ReactElement {
 
   async function handleSignOut(): Promise<void> {
     lockAll();
+    // Scrub the persisted org context so the next user on this browser
+    // (or the same user after a re-login) doesn't inherit a stale
+    // X-Abadge-Org-Id header on the first tRPC call.
+    clearActiveOrg();
     await authClient.signOut();
     router.push("/login");
   }

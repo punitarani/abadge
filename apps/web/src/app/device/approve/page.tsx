@@ -3,10 +3,11 @@
 import { Info, Monitor } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { decideOnboardingStateFromList } from "@/app/onboarding/onboarding-triage";
 import { AuthShell } from "@/components";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
-import { useOrgStore } from "@/stores/org-store";
+import { browserTrpcClient } from "@/lib/trpc-browser";
 
 function normalizeUserCode(value: string | null): string {
   return (value ?? "").trim().replace(/-/g, "").toUpperCase();
@@ -63,15 +64,29 @@ function useCountdown(ttlSeconds: number): number {
   return remaining;
 }
 
-function getApprovalRedirect(orgSlug: string | null): string {
-  return orgSlug ? "/overview" : "/onboarding";
+/**
+ * Query the server for the user's orgs and decide where to send them after
+ * approving a device. Using server truth (not the potentially-stale zustand
+ * store) avoids sending brand-new users to /overview when localStorage still
+ * holds a prior user's org slug.
+ */
+async function resolveApprovalRedirect(): Promise<string> {
+  try {
+    const result = await browserTrpcClient.organizations.list.query();
+    const decision = decideOnboardingStateFromList(result.organizations);
+    return decision.step === "redirect" ? "/overview" : "/onboarding";
+  } catch {
+    // If the lookup fails we still need to send the user somewhere. /onboarding
+    // is the safer default: the onboarding page itself re-triages on mount and
+    // will forward an already-complete user to /overview.
+    return "/onboarding";
+  }
 }
 
 function DeviceApprovalPageContent(): React.ReactElement {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, isPending } = authClient.useSession();
-  const activeOrgSlug = useOrgStore((s) => s.activeOrgSlug);
   const userCode = useMemo(
     () => normalizeUserCode(searchParams.get("user_code") ?? searchParams.get("userCode")),
     [searchParams],
@@ -111,7 +126,7 @@ function DeviceApprovalPageContent(): React.ReactElement {
           return;
         }
 
-        const next = decision === "approve" ? getApprovalRedirect(activeOrgSlug) : "/device";
+        const next = decision === "approve" ? await resolveApprovalRedirect() : "/device";
         router.replace(next);
       } catch {
         setError(
@@ -123,7 +138,7 @@ function DeviceApprovalPageContent(): React.ReactElement {
         setSubmitting(null);
       }
     },
-    [router, userCode, activeOrgSlug],
+    [router, userCode],
   );
 
   if (!userCode) {

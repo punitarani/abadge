@@ -32,20 +32,23 @@ import {
   agentSessions,
 } from "@abadge/db/schema";
 import { Effect } from "effect";
-import { logBaseAudit, logSessionAudit } from "../audit";
+import { logBaseAudit, logSessionAudit, logUserAudit } from "../audit";
 import {
   BaseRequestContextTag,
   runBaseEffect,
   runSessionEffect,
+  runUserEffect,
   SessionRequestContextTag,
   strictSchema,
   tryAsync,
+  UserRequestContextTag,
 } from "../effect";
 import {
   createTrpcRouter,
   publicProcedure,
   scopedSessionProcedure,
   sessionProcedure,
+  userProcedure,
 } from "../init";
 import { serializeAgent } from "../serialize";
 
@@ -224,8 +227,18 @@ const loadOwnedAgent = (agentId: string) =>
   });
 
 const recordLogin = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
-  yield* logSessionAudit({
+  const ctx = yield* UserRequestContextTag;
+
+  // A brand-new user hitting the callback flow has no org yet (they bootstrap
+  // one during onboarding). Skip the audit insert in that case: audit rows are
+  // org-scoped, and there's no org to attribute this login to. The normal CLI
+  // flow re-calls recordLogin via the SDK after onboarding, so we don't lose
+  // first-login signal for users who actually complete the flow.
+  if (ctx.identity.organizationId === null) {
+    return { ok: true };
+  }
+
+  yield* logUserAudit({
     organizationId: ctx.identity.organizationId,
     userId: ctx.identity.userId,
     eventType: "auth.login",
@@ -718,9 +731,9 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
   });
 
 export const authRouter = createTrpcRouter({
-  recordLogin: sessionProcedure
+  recordLogin: userProcedure
     .output(strictSchema(SuccessResultSchema))
-    .mutation(({ ctx }) => runSessionEffect(ctx, recordLogin)),
+    .mutation(({ ctx }) => runUserEffect(ctx, recordLogin)),
   logout: sessionProcedure
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx }) => runSessionEffect(ctx, recordLogout)),
