@@ -52,10 +52,16 @@ export default function DashboardLayout({
   // user (e.g., prior signOut that didn't clear, cross-user browser reuse),
   // scrub it before any org-scoped tRPC call fires with a stale
   // X-Abadge-Org-Id header. Runs synchronously once hydrated + session known.
+  //
+  // We treat a null storedUserId as a mismatch so that browsers which
+  // persisted state under the pre-lastUserId store shape also get scrubbed
+  // on first load after this code ships. The org-resolution effect below
+  // re-seeds the store from the server-truth org list, so the cost of a
+  // spurious clear on a genuinely-fresh store is one re-fetch.
   useEffect(() => {
     if (!hydrated || sessionPending || !userId) return;
     const storedUserId = useOrgStore.getState().lastUserId;
-    if (storedUserId && storedUserId !== userId) {
+    if (storedUserId !== userId) {
       clearActiveOrg();
     }
   }, [hydrated, sessionPending, userId, clearActiveOrg]);

@@ -350,8 +350,17 @@ export default function OnboardingPage(): React.ReactElement | null {
     // belongs to a prior user, the browser tRPC client would send a stale
     // X-Abadge-Org-Id header on organizations.list below — which 401s even
     // on bootstrap endpoints (resolveOptionalOrgId rejects non-member orgs).
+    //
+    // We treat a null storedUserId as a mismatch so that browsers which
+    // persisted state under the pre-lastUserId store shape also get scrubbed
+    // on first load after this code ships. This is the most critical path
+    // for the original bug (new user redirected here with stale org from a
+    // prior user on the same browser): if the guard does not fire, the
+    // organizations.list call below still goes out with the stale header and
+    // 401s. A spurious clear on a genuinely-fresh store is harmless — the
+    // list query re-seeds server truth in the same effect.
     const storedUserId = useOrgStore.getState().lastUserId;
-    if (storedUserId && storedUserId !== userId) {
+    if (storedUserId !== userId) {
       clearActiveOrg();
     }
 
