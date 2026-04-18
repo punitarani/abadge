@@ -1,0 +1,96 @@
+---
+title: "API overview"
+description: "tRPC over HTTP plus Better Auth. The canonical control-plane transport for abadge."
+---
+
+The abadge API has two HTTP surfaces:
+
+| Surface | Path | Purpose |
+|---|---|---|
+| Better Auth | `/api/auth/*` | Human authentication and device authorization |
+| tRPC | `/trpc/*` | Canonical typed application API |
+
+There is no separate REST application layer. Every operation — items, agents, permissions, access, audit — is a tRPC procedure. The TypeScript SDK and the CLI both consume the tRPC surface.
+
+## Base URLs
+
+| Environment | Base |
+|---|---|
+| Production | `https://api.abadge.io` |
+| Local development | `http://localhost:8787` |
+
+## Recommended client
+
+Use the shared tRPC client instead of hand-rolling HTTP requests. It handles request shape, batching, and error envelopes for you.
+
+```ts
+import { createNodeTrpcClient } from "@abadge/trpc/client";
+
+const client = createNodeTrpcClient({
+  baseUrl: "http://localhost:8787",
+  token: process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
+});
+```
+
+For higher-level wrappers, use the SDK:
+
+```ts
+import { AbadgeUserClient, AbadgeAgentClient } from "@abadge/sdk";
+```
+
+See the [SDK section](/api/sdk/installation) for details.
+
+## Procedure tiers
+
+Every procedure is registered against one of three tiers:
+
+| Tier | Auth | Used by |
+|---|---|---|
+| `publicProcedure` | none | agent enrollment, agent session exchange |
+| `sessionProcedure` | Better Auth session cookie or bearer token | dashboard, CLI management commands, SDK user client |
+| `agentProcedure` | agent bearer credential (`abs_`, `abl_`, `abg_`) | runtime agents, MCP, remote agents |
+
+## Routers
+
+| Router | Tier mix | Pages |
+|---|---|---|
+| `auth` | public + session | [auth procedures](/api/procedures/auth) |
+| `organizations` | session | [organizations procedures](/api/procedures/organizations) |
+| `profiles` | session | [profiles procedures](/api/procedures/profiles) |
+| `items` | session + agent | [items procedures](/api/procedures/items) |
+| `agents` | session | [agents procedures](/api/procedures/agents) |
+| `permissions` | session | [permissions procedures](/api/procedures/permissions) |
+| `access` | agent | [access procedures](/api/procedures/access) |
+| `audit` | session | [audit procedures](/api/procedures/audit) |
+
+## Calling tRPC over HTTP
+
+tRPC accepts JSON via POST or GET. The minimum dependency-free shape:
+
+```bash
+curl -X POST https://api.abadge.io/trpc/items.list \
+  -H "Authorization: Bearer abs_..." \
+  -H "Content-Type: application/json" \
+  -d '{"json":{}}'
+```
+
+The response wraps results under `result.data.json`. Errors come back in the standard envelope (see [Errors](/api/errors)).
+
+For most projects, prefer the SDK or the tRPC client over raw HTTP — they handle request shape and batching for you.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Authentication" href="/api/authentication">
+    Operator and agent auth, bearer-token resolution order, session lifecycle.
+  </Card>
+  <Card title="Errors" href="/api/errors">
+    The standard error envelope and every error code.
+  </Card>
+  <Card title="Rate limiting" href="/api/rate-limiting">
+    Per-IP limits on auth and tRPC paths.
+  </Card>
+  <Card title="SDK" href="/api/sdk/installation">
+    `@abadge/sdk` reference for `AbadgeUserClient` and `AbadgeAgentClient`.
+  </Card>
+</CardGroup>

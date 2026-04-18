@@ -1,0 +1,62 @@
+---
+title: "get_audit"
+description: "Fetch recent audit entries. Optionally filter by item."
+---
+
+`get_audit` lets the model inspect the audit trail. It calls `audit.list` under the hood and returns the structured entries.
+
+## Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `itemId` | string | no | Filter to one item |
+| `limit` | integer | no | Max entries to return (1–100; server-side default when omitted is ~20) |
+
+## Output
+
+A JSON object with an `entries` array, newest first:
+
+```json
+{
+  "entries": [
+    {
+      "id": "12345",
+      "organizationId": "org_...",
+      "agentId": "agent_...",
+      "itemId": "item_...",
+      "eventType": "access.mount_env",
+      "result": "allowed",
+      "deliveryMode": "env",
+      "field": "token",
+      "purpose": "fetch user profile",
+      "occurredAt": "2026-04-18T01:14:22.000Z",
+      "meta": {}
+    }
+  ]
+}
+```
+
+## What it's good for
+
+- Debugging permission denials ("why did `run_with_secret` fail?")
+- Confirming a recent action landed in the audit log
+- Building a small "recent activity" view inside an agent's reasoning
+
+## What it's not good for
+
+- Long-range analytics — use the dashboard or CLI for that
+- Listing entries the agent isn't allowed to see — `audit.list` enforces org scoping
+- Rich filtering by event type, result, agent, or surface — call the API directly for those filters
+
+## Permission
+
+The MCP agent must belong to the organization whose audit log is being read. There is no separate `view_audit` capability — audit entries are scoped by the agent's organization.
+
+## Audit
+
+`get_audit` does not write its own audit row. It's a read of read.
+
+## Related
+
+- [API: `audit.list`](/api/procedures/audit)
+- [Concepts: audit log](/concepts/audit-log)

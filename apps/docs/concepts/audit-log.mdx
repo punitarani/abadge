@@ -1,0 +1,89 @@
+---
+title: "Audit log"
+description: "Append-only record of every meaningful action. Every access attempt — allowed or denied — is logged."
+---
+
+The audit log is the source of truth for what happened in abadge. It's append-only, has no foreign-key constraints (so entries survive entity deletion), and records every access attempt regardless of outcome.
+
+## Guarantees
+
+| Property | How it's enforced |
+|---|---|
+| Append-only | No update or delete code paths exist for audit rows. |
+| Survives deletion | The table has no foreign keys, so deleting an item or agent does not cascade to audit. |
+| Captures every attempt | Both allowed and denied access attempts emit an audit row. |
+| Structured | The `meta` JSONB column captures additional context per event type. |
+
+## Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | bigserial (PK) | Auto-incrementing ID |
+| `organizationId` | text | Organization context |
+| `userId` | text | User context (nullable) |
+| `agentId` | text | Agent involved (nullable) |
+| `itemId` | text | Item involved (nullable) |
+| `profileId` | text | Profile involved (nullable) |
+| `surface` | text | `cli`, `mcp`, `api`, `sdk` (nullable) |
+| `eventType` | text | Event category (see below) |
+| `result` | text | `allowed`, `denied`, `expired`, `revoked`, `cascade` |
+| `deliveryMode` | text | How the secret was delivered (nullable) |
+| `field` | text | Specific field accessed (nullable) |
+| `purpose` | text | Caller-declared purpose (nullable) |
+| `meta` | jsonb | Structured metadata |
+| `ipAddress` | text | Client IP (nullable) |
+| `occurredAt` | timestamptz | Event timestamp |
+
+## Event categories
+
+| Category | Events |
+|---|---|
+| Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
+| Item | `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export` |
+| Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
+| Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
+| Permission | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
+| Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
+
+## Results
+
+| Result | Meaning |
+|---|---|
+| `allowed` | The operation succeeded. |
+| `denied` | An explicit policy check rejected the operation. |
+| `expired` | A permission existed but had passed its `expiresAt`. |
+| `revoked` | An agent or token was revoked at the time of the request. |
+| `cascade` | The entry exists because of a cascade (revoke, delete) rather than a direct request. |
+
+## Querying audit
+
+| Surface | How to query |
+|---|---|
+| Dashboard | `/audit` page with filters for event type, agent, item, surface, field |
+| CLI | `abadge audit list` with `--json` for machine-readable output |
+| API | `audit.list` (session) with cursor pagination |
+| SDK | `AbadgeUserClient.getAudit()` and `AbadgeAgentClient.getAudit()` |
+| MCP | `get_audit` tool — same data, returned as JSON to the model |
+
+## Filters
+
+`audit.list` accepts:
+
+| Filter | Type | Notes |
+|---|---|---|
+| `eventType` | enum | Single event type |
+| `result` | enum | `allowed`, `denied`, `expired`, `revoked` |
+| `agentId` | string | Filter to one agent |
+| `itemId` | string | Filter to one item |
+| `surface` | string | `cli`, `mcp`, `api`, `sdk` |
+| `field` | string | Specific field name |
+| `cursor` | string | Pagination cursor |
+| `limit` | integer | 1–100, default 50 |
+
+## What audit does not record
+
+- Secret values
+- Encryption keys, wrapped keys, or KDF parameters
+- The plaintext output of subprocesses spawned by `mount_env`
+
+If you need to detect secret exfiltration, monitor outbound traffic on the agent host. Audit captures the access decision, not the bytes that flowed.

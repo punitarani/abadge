@@ -1,0 +1,41 @@
+---
+title: "abadge logout"
+description: "Drop the daemon-held operator session and audit the event."
+---
+
+`abadge logout` clears the bearer session held in daemon memory and records `auth.logout`.
+
+## Usage
+
+```bash
+abadge logout
+```
+
+## What it does
+
+<Steps>
+  <Step title="Audit auth.logout">
+    Calls `auth.logout` so the audit trail records the operator session ending.
+  </Step>
+  <Step title="Drop the daemon-held bearer">
+    The daemon zeros out the in-memory bearer token. Subsequent operator commands will require `abadge login`.
+  </Step>
+  <Step title="Leave the runtime agents in place">
+    Provisioned `local_cli` and `local_mcp` agents (and their private keys) stay on disk. `abadge run` and the MCP server keep working with their short-lived keypair sessions.
+  </Step>
+</Steps>
+
+## What it does **not** do
+
+- Does **not** delete `~/.abadge/config.json` — `apiUrl` and the runtime agent references remain so your next login is fast.
+- Does **not** invalidate the underlying Better Auth session globally — call `/api/auth/sign-out` (or sign out from the dashboard) for that.
+- Does **not** stop the daemon. Use `abadge daemon stop` for that.
+
+## Audit
+
+- `auth.logout`
+
+## Related
+
+- [`abadge login`](/cli/login)
+- [`abadge daemon stop`](/cli/daemon)

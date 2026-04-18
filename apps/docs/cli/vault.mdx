@@ -1,0 +1,82 @@
+---
+title: "Vault commands"
+description: "Unlock, lock, inspect, and change the password of a zero-knowledge profile."
+---
+
+Vault commands operate on the **active zero-knowledge profile** through the local daemon. Server-managed profiles do not need unlock — the API decrypts on authorized requests.
+
+<Note>
+  These commands live under `abadge profile`. `abadge vault ...` is a deprecated alias that still works and prints a warning; prefer `abadge profile ...` in scripts.
+</Note>
+
+## `abadge profile unlock`
+
+Prompt for the profile master password and unwrap the root key into daemon memory.
+
+```bash
+abadge profile unlock
+```
+
+What happens:
+
+1. Daemon fetches the active profile envelope (`wrappedRootKey`, `kdfSalt`, `kdfParams`).
+2. Daemon derives the KEK from the password via Argon2id (64 MiB memory, 3 iterations).
+3. Daemon unwraps the root key with XChaCha20-Poly1305.
+4. Root key sits in process memory until lock or idle timeout.
+
+If the password is wrong, the XChaCha20-Poly1305 authentication tag fails and the unwrap errors out. abadge does not perform a separate password verification step.
+
+The password is read from a TTY prompt with echo disabled. There is no `--password-stdin` flag — scripts that need unattended unlock should issue a session through the API directly.
+
+## `abadge profile lock`
+
+Zero the in-memory root key and clear daemon-held authenticated state.
+
+```bash
+abadge profile lock
+```
+
+The operator session and provisioned runtime agent references stay loaded. Only the unlocked root key is dropped.
+
+## `abadge profile status`
+
+Report whether a profile is currently unlocked and which key version is live.
+
+```bash
+abadge profile status
+```
+
+Output:
+
+```
+Profile: unlocked
+Key version: 1
+```
+
+## `abadge profile change-password`
+
+Prompt for the current password and a new password, then re-wrap the root key.
+
+```bash
+abadge profile change-password
+```
+
+What happens:
+
+1. Daemon unwraps the current root key with the old password's KEK.
+2. Daemon derives a new KEK from the new password and a fresh 16-byte salt.
+3. Daemon wraps the root key with the new KEK.
+4. The CLI calls `profiles.changePassword` with the new wrapped root key, salt, and KDF parameters.
+
+The root key itself is unchanged — every existing item remains decryptable. Existing recovery keys still work.
+
+## Recovery and key rotation
+
+Recovery key generation and root-key rotation are dashboard operations in v1. CLI support is on the roadmap.
+
+## Related
+
+- [`abadge profile`](/cli/profile) — create / list / switch profiles
+- [`abadge daemon`](/cli/daemon)
+- [Vault security (dashboard)](/dashboard/vault-security)
+- [Zero-knowledge encryption](/security/zero-knowledge)

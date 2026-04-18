@@ -1,0 +1,53 @@
+---
+title: "abadge profile"
+description: "Create, list, and switch the active profile within an organization."
+---
+
+Profiles are encryption namespaces inside an organization. Each profile carries its own root key.
+
+## `abadge profile create`
+
+```bash
+abadge profile create --name "production"
+abadge profile create --name "staging" --storage-mode zero_knowledge
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--name <name>` | yes | Profile display name (unique within org) |
+| `--description <desc>` | no | Optional description |
+| `--storage-mode <mode>` | no | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
+
+The CLI calls `profiles.create` and prints the new profile ID. Bootstrapping a zero-knowledge profile (generating the KEK, wrapping the root key) is a dashboard operation in v1 — create it in the CLI and finish the bootstrap at [abadge.io](https://abadge.io) before adding items.
+
+## `abadge profile list`
+
+Lists profiles in the active organization.
+
+```bash
+abadge profile list
+abadge profile list --json
+```
+
+Output columns: `ID`, `Name`, `Storage Mode`, `Created`, `Active` (checkmark for the active profile).
+
+## `abadge profile use <name-or-id>`
+
+Set the active profile. Persisted to `~/.abadge/config.json` as `activeProfileId`. Subsequent `item create` commands target this profile.
+
+```bash
+abadge profile use production
+abadge profile use prof_01HZ...
+```
+
+Accepts either the profile name or ID. If the name isn't unique, use the ID.
+
+## Vault operations
+
+For `unlock`, `lock`, `status`, and `change-password`, see [Vault commands](/cli/vault). Those commands are also exposed as `abadge profile unlock|lock|status|change-password`.
+
+## Related
+
+- [Concepts: profiles](/concepts/profiles)
+- [Dashboard: profiles](/dashboard/profiles)
+- [API: profiles procedures](/api/procedures/profiles)

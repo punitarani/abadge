@@ -1,0 +1,65 @@
+---
+title: "abadge export"
+description: "Export server-managed items as a .env file or JSON."
+---
+
+`abadge export` walks the active profile's server-managed items and prints them as either an `.env` file or JSON.
+
+Zero-knowledge items are skipped — they require local decryption through the daemon and are not exportable through this command.
+
+## Usage
+
+```bash
+abadge export
+abadge export --format env > secrets.env
+abadge export --format json > secrets.json
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--format <fmt>` | `env` (default) or `json` |
+
+Export always uses the active organization's server-managed items. To target a different scope, switch orgs with `abadge org use`.
+
+## env format
+
+```dotenv
+DATABASE_URL=postgres://app:s3cret@db.example.com/prod
+REDIS_URL=redis://red.example.com
+```
+
+Single-field items (kind `opaque` or `token` with a `value` field) emit `LABEL=value`. Multi-field items emit one line per field: `LABEL_FIELDNAME=value`.
+
+## json format
+
+```json
+[
+  {
+    "id": "item_...",
+    "label": "DATABASE_URL",
+    "kind": "opaque",
+    "fields": { "value": "postgres://..." }
+  }
+]
+```
+
+## Audit
+
+- `item.export` — emitted once per export run with the item count in `meta`.
+
+## Constraints
+
+- Server-managed items only.
+- Permissions are not enforced at the API level for `items.ownerReveal` (the operator owns all items in their orgs), but the audit trail records each read.
+- Export does **not** include encryption material, IVs, or other internals.
+
+## Why no ZK export
+
+Exporting zero-knowledge items would require decrypting them through the daemon, then re-emitting them as cleartext. That's a one-line `for` loop with `abadge item get --reveal` if you really need it, but the explicit gap is intentional — `export` is for moving server-managed items between deployments or backing up a profile.
+
+## Related
+
+- [`abadge import`](/cli/import)
+- [`abadge item get`](/cli/item)

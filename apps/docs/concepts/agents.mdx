@@ -1,0 +1,95 @@
+---
+title: "Agents"
+description: "Automated callers scoped to an organization. Each agent authenticates and gets explicit, capability-scoped grants."
+---
+
+An **agent** is an automated caller scoped to an organization. CI runners, MCP servers, browser agents, and cron jobs all register as agents. Every credential access happens under an agent identity, with an explicit permission, and ends up in the audit log.
+
+## Kinds
+
+| Kind | Locality | Typical use |
+|---|---|---|
+| `local_cli` | local | The user's own `abadge` CLI installation |
+| `local_mcp` | local | The user's own MCP server (Claude Desktop, etc.) |
+| `remote` | remote | CI worker, cloud agent, webhook receiver |
+
+Locality is derived from kind. Local agents can use any capability. Remote agents are restricted to `reveal_plaintext` on server-managed items.
+
+## Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | text (PK) | Agent ID |
+| `organizationId` | text | Owning org |
+| `createdBy` | text | User who registered the agent |
+| `name` | text | Human-readable name |
+| `kind` | text | `local_cli`, `local_mcp`, `remote` |
+| `locality` | text | `local` or `remote` (derived from kind) |
+| `authMethod` | text | `public_key_session` (default) or `legacy_api_key` |
+| `publicKey` | text | Ed25519 JWK (session auth) |
+| `secretHash` | text | SHA-256 hash of legacy API key |
+| `secretPrefix` | text | First chars for fast lookup |
+| `enabled` | boolean | Whether the agent can authenticate |
+| `revokedAt` | timestamptz | Revocation timestamp |
+| `lastUsedAt` | timestamptz | Last successful authentication |
+| `metadata` | jsonb | Free-form |
+
+## Authentication methods
+
+<Tabs>
+  <Tab title="Public key sessions (default)">
+    The agent generates an Ed25519 keypair locally and uploads the public key during enrollment. Each working session is a short-lived `abs_...` token (15-minute TTL) issued in exchange for a signed challenge.
+
+    No long-lived secret is stored on disk. The private key lives in `~/.abadge/agents/<agent>.ed25519.jwk` with `0600` permissions.
+
+    See [Authentication](/api/authentication) for the full lifecycle.
+  </Tab>
+  <Tab title="Legacy API keys">
+    Single token shown once at creation, prefixed `abl_` (local) or `abg_` (remote). The server stores only its SHA-256 hash plus a 4–8 character lookup prefix.
+
+    Use only for migrating existing integrations. New agents should default to keypair sessions.
+  </Tab>
+</Tabs>
+
+## Token formats
+
+| Token | Prefix | TTL | Storage | Purpose |
+|---|---|---|---|---|
+| Agent session | `abs_` | 15 minutes | SHA-256 hash | Short-lived bearer token |
+| Bootstrap token | `abe_` | 10 minutes | SHA-256 hash | One-time enrollment token |
+| Challenge | `abc_` | 60 seconds | SHA-256 hash | Signature verification |
+| Local API key | `abl_` | None | SHA-256 hash + prefix | Legacy local auth |
+| Remote API key | `abg_` | None | SHA-256 hash + prefix | Legacy remote auth |
+
+## Lifecycle
+
+<Steps>
+  <Step title="Create">
+    `agents.create` registers the agent. `public_key_session` agents either provide `publicKey` directly or set `issueBootstrapToken: true` to receive an `abe_...` token.
+  </Step>
+  <Step title="Enroll">
+    For bootstrap-flow agents: the runtime generates an Ed25519 keypair and calls `auth.enroll` with the bootstrap token and public key. The token is consumed.
+  </Step>
+  <Step title="Exchange sessions">
+    For each working session: `auth.createChallenge` → sign → `auth.exchangeSession` → receive `abs_...`. Repeat as the SDK's background refresher does.
+  </Step>
+  <Step title="Use">
+    Pass `Authorization: Bearer abs_...` to any agent procedure. The CLI and SDK do this automatically.
+  </Step>
+  <Step title="Revoke">
+    `agents.revoke` invalidates all active sessions and disables future authentication.
+  </Step>
+</Steps>
+
+## Cascades
+
+Revoking an agent revokes its active sessions and triggers `agent.revoke_cascade` audit entries for in-flight requests. Permissions are not deleted; they remain visible (and useless) until the agent is rotated or removed.
+
+Removing an organization member cascades agent revocation for that member's owned agents.
+
+## Related
+
+- [API: agents procedures](/api/procedures/agents)
+- [API: authentication](/api/authentication)
+- [CLI: agent commands](/cli/agent)
+- [Dashboard: agents](/dashboard/agents)

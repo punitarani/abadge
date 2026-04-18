@@ -1,0 +1,39 @@
+---
+title: "release_mount"
+description: "Release a previously mounted secret file and its temporary directory immediately."
+---
+
+`release_mount` deletes a mounted secret file and its enclosing `0700` directory before the 5-minute auto-cleanup fires.
+
+## Input
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `mountId` | string | yes | Opaque mount ID returned by `mount_secret` |
+
+## Output
+
+```json
+{
+  "released": true,
+  "mountId": "3a8f1c..."
+}
+```
+
+## When to use it
+
+- The host runtime has finished using the mounted secret and wants to drop it sooner than 5 minutes.
+- The agent decided to abort the operation that needed the secret.
+- A controlling supervisor wants tight cleanup as part of an undo.
+
+## Safety
+
+`release_mount` only removes mounts owned by the calling agent. Passing a `mountId` that doesn't exist (or has already been released) is idempotent — the response still reports `{ released: true, mountId }`.
+
+## Audit
+
+No dedicated audit event. The lifetime of a mount is implicit in `access.mount_file`.
+
+## Related
+
+- [`mount_secret`](/mcp/tools/mount_secret)

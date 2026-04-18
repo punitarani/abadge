@@ -1,0 +1,63 @@
+---
+title: "Introduction"
+description: "abadge is the credential control plane for AI agents. Store secrets, scope agent access, control delivery, audit everything."
+---
+
+abadge gives teams a single place to store credentials, decide which AI agents can use them, and see exactly what happened. Instead of scattering API keys across environment variables or giving agents broad access to a vault, abadge puts a policy-checked, audited gateway between every agent and every credential.
+
+## How it works
+
+```
+Store → Permission → Deliver → Audit
+```
+
+<Steps>
+  <Step title="Store">
+    Credentials live in abadge encrypted at rest. Pick **zero-knowledge** mode (the server never sees plaintext) or **server-managed** mode (server-side AES-256-GCM, accessible to remote agents).
+  </Step>
+  <Step title="Permission">
+    Every agent must be explicitly granted access to each credential, scoped to a specific capability and optional expiry. No wildcards.
+  </Step>
+  <Step title="Deliver">
+    Pick the delivery mode: env-var injection, file mount with `0600` permissions, or direct reveal over HTTPS. MCP tools never expose raw secrets to the LLM.
+  </Step>
+  <Step title="Audit">
+    Every access attempt — allowed or denied — is appended to an immutable audit log with the agent, item, capability, delivery mode, and outcome.
+  </Step>
+</Steps>
+
+## Surfaces
+
+The same control plane is available through five interfaces:
+
+<CardGroup cols={2}>
+  <Card title="Dashboard" icon="browser" href="/dashboard/overview">
+    Operator UI for managing credentials, agents, permissions, and audit.
+  </Card>
+  <Card title="CLI" icon="terminal" href="/cli/installation">
+    Local binary that injects secrets into any command via `abadge run`.
+  </Card>
+  <Card title="API" icon="code" href="/api/overview">
+    Typed tRPC control plane on Cloudflare Workers, with a TypeScript SDK.
+  </Card>
+  <Card title="MCP server" icon="robot" href="/mcp/overview">
+    Model Context Protocol tools that use secrets without leaking them to the model.
+  </Card>
+</CardGroup>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Why abadge" href="/why-abadge">
+    The problem agents create with credentials, and what abadge does about it.
+  </Card>
+  <Card title="Quickstart" href="/quickstart">
+    Install the CLI, store a secret, register an agent, grant access in five minutes.
+  </Card>
+  <Card title="Architecture" href="/architecture">
+    System design, surfaces, trust boundaries, and the four-layer model.
+  </Card>
+  <Card title="Security model" href="/security/overview">
+    Encryption, auth, authorization, audit, and what a server breach exposes.
+  </Card>
+</CardGroup>

@@ -1,0 +1,51 @@
+---
+title: "list_items"
+description: "Returns item metadata for the items the calling agent can access. Never returns secret values."
+---
+
+`list_items` is a metadata-only tool. It calls `items.listForAgent` under the hood and returns one summary per item the calling agent has at least one permission row on. Agents with no grants get an empty array.
+
+## Input
+
+None.
+
+## Output
+
+A JSON object with an `items` array:
+
+```json
+{
+  "items": [
+    {
+      "id": "item_...",
+      "label": "OpenAI API key",
+      "storageMode": "server_managed",
+      "cryptoVersion": 1,
+      "contentVersion": 1,
+      "createdAt": "2026-04-12T14:00:00.000Z",
+      "updatedAt": "2026-04-12T14:00:00.000Z"
+    }
+  ]
+}
+```
+
+## What's not returned
+
+- `ciphertext`, `serverCiphertext`, `encryptedItemKey`, or any other encryption material
+- `kind`, `tags`, or `notes` — those live inside the encrypted payload and are not exposed by list
+- Field values (use `run_with_secret` or `mount_secret` instead)
+- Items the agent has no permission row on
+
+## Audit
+
+`list_items` does not emit an audit row. The metadata listing is informational; the audited boundary is the `access.*` family (`run_with_secret` → `access.mount_env`; `mount_secret` → `access.mount_file`).
+
+## Why metadata only
+
+Letting the model see secret values would defeat the entire MCP design. The model should plan with metadata (item IDs, kinds, labels) and call `run_with_secret` or `mount_secret` to use the secret without seeing it.
+
+## Related
+
+- [API: `items.listForAgent`](/api/procedures/items)
+- [`run_with_secret`](/mcp/tools/run_with_secret)
+- [`mount_secret`](/mcp/tools/mount_secret)

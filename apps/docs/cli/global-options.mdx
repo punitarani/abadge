@@ -1,0 +1,67 @@
+---
+title: "Global options"
+description: "Flags that work on every command."
+---
+
+The CLI accepts a small set of flags on every command.
+
+| Flag | Description |
+|---|---|
+| `--help`, `-h` | Show help for the command |
+| `--version`, `-v` | Print the CLI version |
+| `--json` | Print machine-readable JSON output (where supported) |
+| `--token-stdin` | Read a bearer session token from stdin for this command |
+
+## `--json`
+
+Most commands have a default human-readable output and an opt-in JSON output. When `--json` is set:
+
+- Tables become arrays of objects
+- Status messages move to stderr
+- Exit codes still indicate success or failure
+
+```bash
+abadge item list --json | jq '.[].id'
+abadge agent list --json
+abadge permission list --json
+abadge audit --json
+```
+
+## `--token-stdin`
+
+Override the bearer session token the CLI would normally use (the daemon-held operator session). Useful for one-off API calls in scripts where you don't want to log in interactively.
+
+```bash
+echo "$ABADGE_TOKEN" | abadge item list --token-stdin
+```
+
+The token is consumed once and never written to disk.
+
+## Environment variables
+
+| Variable | Effect |
+|---|---|
+| `ABADGE_API_URL` | Override `apiUrl` for the current invocation |
+| `ABADGE_SESSION_TOKEN` | Use a pre-minted bearer session token instead of the daemon-held one |
+| `ABADGE_AGENT_ID` | Use a specific agent ID (mostly relevant for MCP) |
+| `ABADGE_PRIVATE_KEY_PATH` | Path to an Ed25519 private key JWK (mostly relevant for MCP) |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | General error (the CLI prints `code` and `hint` from the API on stderr) |
+| `2` | Usage error (bad flags, missing required argument) |
+| Other | Forwarded from `abadge run` (the child process exit code) |
+
+## Error output
+
+When the API returns an error, the CLI prints:
+
+```
+error: PERMISSION_DENIED — No matching permission for (agent, item, capability).
+hint: Grant a permission with `abadge permission create --agent ... --item ... --capability mount_env`.
+```
+
+The error envelope (`code`, `message`, `hint`, `meta`) comes straight from the API. With `--json` the CLI prints the envelope as JSON instead.

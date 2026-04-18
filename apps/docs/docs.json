@@ -1,0 +1,232 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "abadge",
+  "description": "Credential control plane for AI agents. Store secrets, scope agent access, control delivery, audit everything.",
+  "colors": {
+    "primary": "#0F172A",
+    "light": "#3B82F6",
+    "dark": "#0F172A"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg",
+    "href": "/"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/punitarani/abadge"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://abadge.io"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/punitarani/abadge"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "why-abadge",
+              "quickstart",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "concepts/organizations",
+              "concepts/profiles",
+              "concepts/items",
+              "concepts/agents",
+              "concepts/permissions-and-capabilities",
+              "concepts/fields",
+              "concepts/audit-log"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/zero-knowledge",
+              "security/trust-boundaries"
+            ]
+          },
+          {
+            "group": "Workflows",
+            "pages": [
+              "workflows/flows"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Dashboard",
+        "groups": [
+          {
+            "group": "Using the dashboard",
+            "pages": [
+              "dashboard/overview",
+              "dashboard/signing-in",
+              "dashboard/organizations",
+              "dashboard/profiles",
+              "dashboard/items",
+              "dashboard/agents",
+              "dashboard/permissions",
+              "dashboard/audit",
+              "dashboard/vault-security"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "Introduction",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/errors",
+              "api/rate-limiting"
+            ]
+          },
+          {
+            "group": "REST endpoints",
+            "pages": [
+              "api/rest/health",
+              "api/rest/auth-routes"
+            ]
+          },
+          {
+            "group": "tRPC procedures",
+            "pages": [
+              "api/procedures/auth",
+              "api/procedures/organizations",
+              "api/procedures/profiles",
+              "api/procedures/items",
+              "api/procedures/agents",
+              "api/procedures/permissions",
+              "api/procedures/access",
+              "api/procedures/audit"
+            ]
+          },
+          {
+            "group": "SDK",
+            "pages": [
+              "api/sdk/installation",
+              "api/sdk/user-client",
+              "api/sdk/agent-client",
+              "api/sdk/error-handling"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "cli/installation",
+              "cli/configuration",
+              "cli/global-options"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "cli/login",
+              "cli/logout"
+            ]
+          },
+          {
+            "group": "Local daemon",
+            "pages": [
+              "cli/daemon",
+              "cli/vault"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "cli/org",
+              "cli/profile",
+              "cli/item",
+              "cli/agent",
+              "cli/permission"
+            ]
+          },
+          {
+            "group": "Runtime",
+            "pages": [
+              "cli/run",
+              "cli/mount"
+            ]
+          },
+          {
+            "group": "Data movement",
+            "pages": [
+              "cli/import",
+              "cli/export",
+              "cli/audit"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "MCP",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "mcp/overview",
+              "mcp/installation",
+              "mcp/authentication",
+              "mcp/claude-desktop"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "mcp/tools/list_items",
+              "mcp/tools/run_with_secret",
+              "mcp/tools/mount_secret",
+              "mcp/tools/release_mount",
+              "mcp/tools/get_audit"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "mcp/security"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source": "/docs/:path*",
+      "destination": "/:path*"
+    }
+  ]
+}

@@ -393,17 +393,18 @@ bun test                      # Run test suite
 
 ## Documentation rules
 
-Documentation lives in `docs/` and must stay accurate with the code.
+Internal contributor docs live in `docs/`. The public documentation site lives in `apps/docs/` (Mintlify). Both must stay accurate with the code; when they disagree, `docs/*.md` is the source of truth and `apps/docs/` follows.
 
 ### When to update docs
 
-* **New API route** -> update `docs/API.md` with method, path, auth, request/response schema
-* **Changed API route** (new field, changed behavior, removed endpoint) -> update `docs/API.md`
-* **New CLI command or changed flags** -> update `docs/CLI.md`
-* **New MCP tool or changed tool behavior** -> update `docs/MCP.md`
-* **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md`
-* **Security model change** (new auth method, changed encryption, new permission type) -> update `docs/SECURITY.md`
-* **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md`
+* **New API route** -> update `docs/API.md` with method, path, auth, request/response schema, then mirror in `apps/docs/api/procedures/*.mdx`
+* **Changed API route** (new field, changed behavior, removed endpoint) -> update `docs/API.md` and the corresponding `apps/docs/api/procedures/*.mdx`
+* **New CLI command or changed flags** -> update `docs/CLI.md` and `apps/docs/cli/*.mdx`
+* **New MCP tool or changed tool behavior** -> update `docs/MCP.md` and `apps/docs/mcp/tools/*.mdx`
+* **New dashboard page or changed flow** -> update `apps/docs/dashboard/*.mdx`
+* **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md` and `apps/docs/architecture.mdx`
+* **Security model change** (new auth method, changed encryption, new permission type) -> update `docs/SECURITY.md` and `apps/docs/security/*.mdx`
+* **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md` (internal only; not on Mintlify)
 * **Changed invariant or working rule** -> update this file (`AGENTS.md`)
 
 ### How to update docs
@@ -419,6 +420,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | File | Audience | Purpose |
 |------|----------|---------|
 | `AGENTS.md` | Devs and AI agents working in the repo | Product model, invariants, working rules, code conventions |
+| `apps/docs/` | External integrators, operators, agent builders | Public Mintlify documentation site (Company, App, API, CLI, MCP). User-facing reference: when content here disagrees with `docs/*.md`, the `docs/*.md` source wins, then update Mintlify. |
 | `docs/ARCHITECTURE.md` | Devs and agents | System design, entity model, trust boundaries, request flows |
 | `docs/API.md` | API consumers (CLI, SDK, integrations) | Every endpoint with method, path, auth, request/response |
 | `docs/CLI.md` | Developers using the CLI | Command reference with examples |

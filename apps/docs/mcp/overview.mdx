@@ -1,0 +1,57 @@
+---
+title: "MCP overview"
+description: "Item-aware MCP tools for AI agents — secrets are injected into subprocesses, never into model context."
+---
+
+The abadge MCP server exposes item-aware tools to AI runtimes via [Model Context Protocol](https://modelcontextprotocol.io). It runs as a subprocess over stdio and is consumed by clients like Claude Desktop, MCP-aware IDEs, and custom agent runtimes.
+
+The model **never receives raw secret material**. Tools either operate on metadata or inject secrets into subprocesses behind a redaction boundary.
+
+## Transport
+
+| Property | Value |
+|---|---|
+| Protocol | MCP |
+| Transport | stdio |
+| Server name | `abadge-mcp` |
+
+## Quick reference
+
+| Tool | Purpose |
+|---|---|
+| [`list_items`](/mcp/tools/list_items) | Item metadata only |
+| [`run_with_secret`](/mcp/tools/run_with_secret) | Run a command with a secret injected as an env var. Output redacted, capped at 4 KB. |
+| [`mount_secret`](/mcp/tools/mount_secret) | Mount a secret as a `0600` temp file. Returns an opaque `mountId`. Auto-deletes after 5 minutes. |
+| [`release_mount`](/mcp/tools/release_mount) | Release a mounted secret early. |
+| [`get_audit`](/mcp/tools/get_audit) | Fetch recent audit entries. |
+
+## Auth at a glance
+
+Ed25519 keypair sessions — the same auth the SDK's `AbadgeAgentClient` uses.
+
+```bash
+export ABADGE_API_URL=http://localhost:8787
+export ABADGE_AGENT_ID=agent_...
+export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/<agent-id>.ed25519.jwk
+```
+
+The MCP server runs an Ed25519 challenge / session exchange on startup and refreshes the `abs_...` token before it expires. No long-lived secret ever sits on disk.
+
+Legacy API keys are not supported by the MCP server. See [Authentication](/mcp/authentication) for the full configuration matrix, MCP-specific overrides, and the `~/.abadge/config.json` fallback.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Installation" href="/mcp/installation">
+    Run via `bun run mcp` or the compiled binary.
+  </Card>
+  <Card title="Authentication" href="/mcp/authentication">
+    Env vars, config fallback, and the keypair handshake.
+  </Card>
+  <Card title="Claude Desktop" href="/mcp/claude-desktop">
+    The `mcpServers` JSON snippet to drop into your client config.
+  </Card>
+  <Card title="Security model" href="/mcp/security">
+    What the model sees vs doesn't, and the redaction boundary.
+  </Card>
+</CardGroup>

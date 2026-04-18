@@ -1,0 +1,62 @@
+---
+title: "Why abadge"
+description: "The problem AI agents create for credential handling, and the wedge abadge addresses."
+---
+
+## The problem
+
+AI agents are shipping to production. They sign into APIs, browse the web, talk to databases, and act on behalf of real users. But credential handling around those agents is still usually one of four bad patterns:
+
+- **Hardcoded** — secrets embedded in code, prompts, or config files
+- **Over-shared** — plaintext environment variables available to everything on the machine
+- **Over-privileged** — agents given broad standing access to an entire vault
+- **Invisible** — agent actions hidden behind shared human or service identities
+
+When something leaks or an agent takes an unauthorized action, there is no way to trace it, scope the blast radius, or revoke just that agent's access.
+
+This is exactly the failure surface security guidance is calling out. OWASP's Top 10 for LLM applications lists [sensitive information disclosure](https://owasp.org/www-project-top-10-for-large-language-model-applications/) and insecure plugin/tool design as major risks for LLM-powered systems.
+
+## Why now
+
+The adoption curve is no longer hypothetical:
+
+- On August 26, 2025, Gartner predicted that **40% of enterprise applications** would include task-specific AI agents by the end of 2026, up from less than 5% in 2025. [Gartner](https://www.gartner.com/en/newsroom/press-releases/2025-08-26-gartner-predicts-40-percent-of-enterprise-apps-will-feature-task-specific-ai-agents-by-2026-up-from-less-than-5-percent-in-2025)
+- On March 24, 2026, the Cloud Security Alliance reported that **85% of organizations** already use AI agents in production and **74%** say agents often receive more access than necessary. [Cloud Security Alliance](https://cloudsecurityalliance.org/press-releases/2026/03/24/more-than-two-thirds-of-organizations-cannot-clearly-distinguish-ai-agent-from-human-actions)
+
+The category is forming now. The gap is a developer-first control plane that combines scoped runtime access, policy checks, connectors, and an interface surface that feels native to how agent builders already work.
+
+## Who abadge is for
+
+abadge is built for teams shipping:
+
+<CardGroup cols={2}>
+  <Card title="Browser agents" icon="globe">
+    Agents that sign in and operate websites on behalf of users.
+  </Card>
+  <Card title="Workflow automation" icon="diagram-project">
+    Pipelines that call third-party APIs with customer credentials.
+  </Card>
+  <Card title="Internal copilots" icon="user-shield">
+    Assistants that need scoped access to company systems.
+  </Card>
+  <Card title="B2B platforms" icon="building">
+    SaaS products acting on behalf of customer accounts.
+  </Card>
+</CardGroup>
+
+It is especially useful when an agent needs customer-specific credentials, organization secrets, or privileged internal access without being handed broad standing permissions.
+
+## What abadge is — and isn't
+
+<Tip>
+  abadge is the secure access layer between AI agents and credentials. It stores native secrets (or connects to external vaults), grants least-privilege access just in time, supports approval flows for sensitive actions, and keeps every access attributable and auditable.
+</Tip>
+
+For v1, abadge is **not** positioned as:
+
+- a generic password manager
+- a browser autofill product
+- a zero-knowledge vault platform
+- an agent orchestration system
+
+Those stories are either too crowded, not supported by the current implementation, or not the sharp wedge. Native credential storage matters, but it supports the access-control story rather than replacing it.

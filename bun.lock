@@ -40,6 +40,10 @@
         "wrangler": "latest",
       },
     },
+    "apps/docs": {
+      "name": "@abadge/docs",
+      "version": "0.0.0",
+    },
     "apps/web": {
       "name": "@abadge/web",
       "version": "0.0.0",
@@ -263,6 +267,8 @@
     "@abadge/daemon": ["@abadge/daemon@workspace:packages/daemon"],
 
     "@abadge/db": ["@abadge/db@workspace:packages/db"],
+
+    "@abadge/docs": ["@abadge/docs@workspace:apps/docs"],
 
     "@abadge/env": ["@abadge/env@workspace:packages/env"],
 
