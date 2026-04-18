@@ -21,13 +21,13 @@ Return the encrypted blob of a zero-knowledge item for local-daemon decryption.
 
 ```ts
 {
-  encryptedItemKey: string;   // DEK wrapped by root key
-  keyNonce: string;
-  ciphertext: string;          // payload encrypted by DEK
-  contentNonce: string;
+  encryptedItemKey: string;   // nonce || DEK encrypted by root key (nonce prepended)
+  ciphertext: string;          // nonce || payload encrypted by DEK (nonce prepended)
   cryptoVersion: number;
 }
 ```
+
+The 24-byte XChaCha20-Poly1305 nonce is prepended to each blob — the decrypt side splits on the fixed nonce length. No separate nonce fields are returned.
 
 Denied if: remote agent, server-managed item, or missing `read_ciphertext` permission.
 
@@ -88,10 +88,8 @@ For zero-knowledge items (the daemon decrypts locally):
 ```ts
 {
   storageMode: "zero_knowledge";
-  encryptedItemKey: string;
-  keyNonce: string;
-  ciphertext: string;
-  contentNonce: string;
+  encryptedItemKey: string;   // nonce prepended
+  ciphertext: string;          // nonce prepended
   cryptoVersion: number;
 }
 ```
