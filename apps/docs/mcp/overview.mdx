@@ -13,7 +13,7 @@ The model **never receives raw secret material**. Tools either operate on metada
 |---|---|
 | Protocol | MCP |
 | Transport | stdio |
-| Server name | `abadge` |
+| Server name | `abadge-mcp` |
 
 ## Quick reference
 
@@ -27,30 +27,17 @@ The model **never receives raw secret material**. Tools either operate on metada
 
 ## Auth at a glance
 
-Two modes, in order of preference:
+Ed25519 keypair sessions — the same auth the SDK's `AbadgeAgentClient` uses.
 
-<Tabs>
-  <Tab title="Keypair (preferred)">
-    Set environment variables:
+```bash
+export ABADGE_API_URL=http://localhost:8787
+export ABADGE_AGENT_ID=agent_...
+export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/<agent-id>.ed25519.jwk
+```
 
-    ```bash
-    export ABADGE_API_URL=http://localhost:8787
-    export ABADGE_AGENT_ID=agent_...
-    export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/mcp.ed25519.jwk
-    ```
+The MCP server runs an Ed25519 challenge / session exchange on startup and refreshes the `abs_...` token before it expires. No long-lived secret ever sits on disk.
 
-    The MCP server runs an Ed25519 challenge / session exchange on startup and refreshes the `abs_...` token before it expires. No long-lived secret on disk.
-
-    See [Authentication](/mcp/authentication) for the full configuration matrix and the `~/.abadge/config.json` fallback.
-  </Tab>
-  <Tab title="Legacy API key">
-    ```bash
-    export ABADGE_AUTH_TOKEN=abl_...
-    ```
-
-    The server emits a deprecation warning when this path is used. Prefer keypair sessions.
-  </Tab>
-</Tabs>
+Legacy API keys are not supported by the MCP server. See [Authentication](/mcp/authentication) for the full configuration matrix, MCP-specific overrides, and the `~/.abadge/config.json` fallback.
 
 ## Where to go next
 

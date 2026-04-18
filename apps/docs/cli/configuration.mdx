@@ -12,18 +12,16 @@ Permissions: `0600`.
 ```json
 {
   "apiUrl": "http://localhost:8787",
-  "operatorUserId": "user_...",
   "activeOrgId": "org_...",
   "activeProfileId": "prof_...",
-  "profileName": "default",
   "localAgents": {
     "cli": {
       "agentId": "agent_...",
-      "privateKeyPath": "/Users/you/.abadge/agents/cli.ed25519.jwk"
+      "privateKeyPath": "/Users/you/.abadge/agents/agent_.ed25519.jwk"
     },
     "mcp": {
       "agentId": "agent_...",
-      "privateKeyPath": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+      "privateKeyPath": "/Users/you/.abadge/agents/agent_.ed25519.jwk"
     }
   }
 }
@@ -32,14 +30,12 @@ Permissions: `0600`.
 | Field | Description |
 |---|---|
 | `apiUrl` | Base URL of the abadge API the CLI talks to |
-| `operatorUserId` | The user the CLI is currently logged in as |
 | `activeOrgId` | The active organization for `item`, `agent`, `permission` commands |
 | `activeProfileId` | The active profile for `item` commands |
-| `profileName` | Human-readable label for the active profile |
 | `localAgents.cli` | Provisioned `local_cli` runtime agent (used by `abadge run` / `abadge mount`) |
 | `localAgents.mcp` | Provisioned `local_mcp` runtime agent (used by the MCP server) |
 
-The config file does **not** store any bearer token, password, or secret. Stored references are scoped to the current `(operatorUserId, apiUrl)` pair — `abadge login` reprovisions them when either changes.
+The config file does **not** store any bearer token, password, or secret. Stored agent references are scoped to the current `(operator, apiUrl)` pair — the CLI migrates older fields away on first load and prints a warning.
 
 ## Daemon files
 
@@ -56,16 +52,16 @@ The daemon enforces the socket permissions on startup. The CLI refuses to talk t
 Most users never need to set this manually — it's written by `abadge login`. To target a different deployment:
 
 ```bash
-abadge login --api-url https://api.staging.abadge.dev
+abadge login --api-url https://api.staging.abadge.io
 ```
 
-`logout` does not clear `apiUrl`; the next `login` reuses it.
+The `apiUrl` is persisted. Subsequent `abadge login` calls reuse it unless you override.
 
 ## Setting the active org and profile
 
 ```bash
-abadge org use <org-id>
-abadge profile use <profile-name>
+abadge org use <id-or-slug>
+abadge profile use <name-or-id>
 ```
 
 Subsequent `item`, `agent`, and `permission` commands act on the active org and profile.
@@ -76,9 +72,11 @@ Subsequent `item`, `agent`, and `permission` commands act on the active org and 
 # Where is the CLI talking?
 cat ~/.abadge/config.json
 
-# Is the daemon running and unlocked?
+# Is the daemon running?
 abadge daemon status
-abadge vault status
+
+# Is the profile unlocked?
+abadge profile status
 ```
 
 ## Resetting state
@@ -90,4 +88,4 @@ abadge daemon stop
 rm -rf ~/.abadge/config.json ~/.abadge/agents
 ```
 
-The next `abadge login` reprovisions the local runtime agents.
+On the next `abadge login`, the config file is recreated.

@@ -3,75 +3,69 @@ title: "abadge audit"
 description: "Inspect the immutable audit log from the CLI."
 ---
 
-`abadge audit` lists the recent audit log for the active organization. Use `--json` to pipe into `jq` for structured queries.
+`abadge audit` lists the recent audit log for the active organization. Use `--json` to pipe into `jq` for structured queries and further filtering.
 
 ## Usage
 
 ```bash
 abadge audit
-abadge audit list
-abadge audit list --json
+abadge audit --limit 100
+abadge audit --json | jq '.entries[] | select(.result == "denied")'
 ```
-
-`abadge audit` is an alias for `abadge audit list`.
 
 ## Flags
 
 | Flag | Description |
 |---|---|
-| `--limit` | Number of entries to fetch (1–100, default 50) |
-| `--cursor` | Pagination cursor from a previous response |
-| `--event-type` | Filter by event category |
-| `--result` | `allowed`, `denied`, `expired`, `revoked`, `cascade` |
-| `--agent-id` | Filter to one agent |
-| `--item-id` | Filter to one item |
-| `--surface` | `cli`, `mcp`, `api`, `sdk` |
-| `--field` | Specific field name accessed |
-| `--json` | Print machine-readable JSON |
+| `--limit <count>` | Number of entries to fetch (1–100; API default is 50) |
+| `--cursor <cursor>` | Pagination cursor returned from a previous response |
+| `--json` | Print machine-readable JSON (the raw API response) |
 
-Filters compose. Pagination uses cursor tokens.
+The CLI exposes only pagination flags. All filtering — by event type, agent, item, result, surface, or field — is done either with `jq` on `--json` output or via the API's `audit.list` endpoint directly.
 
 ## Default output
 
 ```
-TIME                  EVENT                  RESULT    AGENT      ITEM       FIELD
-2026-04-18T01:14:22Z  access.reveal          allowed   ci-deploy  prod-db    password
-2026-04-18T01:13:55Z  agent.session_issue    allowed   ci-deploy
-2026-04-18T01:10:10Z  permission.create      allowed              prod-db
+ID     Agent        Item        Event                  Outcome   Mode   Time
+123    ci-deploy    prod-db     access.reveal          allowed   -      2026-04-18T01:14:22Z
+122    ci-deploy    -           agent.session_issue    allowed   -      2026-04-18T01:13:55Z
+121    -            prod-db     permission.create      allowed   -      2026-04-18T01:10:10Z
 ```
 
-## Common queries
+## Pagination
+
+If there are more entries, the CLI prints `Next cursor: <value>` after the table. Pass it to the next invocation:
 
 ```bash
-# Every denied access in the last 50 events
-abadge audit list --result denied
+abadge audit --cursor <value>
+```
+
+## Scripting
+
+For structured filtering, pipe JSON into `jq`:
+
+```bash
+# Every denied access in the last 100 events
+abadge audit --limit 100 --json | jq '.entries[] | select(.result == "denied")'
 
 # Everything one agent did
-abadge audit list --agent-id <agent-id>
+abadge audit --limit 100 --json | jq '.entries[] | select(.agentId == "agent_...")'
 
-# Reveals of one item, JSON output
-abadge audit list --item-id <item-id> --event-type access.reveal --json
-
-# Walk all entries with a cursor
+# Walk every entry with a cursor
 NEXT=""
 while true; do
-  RESP=$(abadge audit list --json --cursor "$NEXT")
+  RESP=$(abadge audit --json --cursor "$NEXT")
   echo "$RESP" | jq -r '.entries[]'
-  NEXT=$(echo "$RESP" | jq -r '.nextCursor')
-  [ "$NEXT" = "null" ] && break
+  NEXT=$(echo "$RESP" | jq -r '.nextCursor // empty')
+  [ -z "$NEXT" ] && break
 done
 ```
 
+For first-class filters (by event type, agent, item, result, surface, or field), call the API directly: [`audit.list`](/api/procedures/audit) accepts all of them.
+
 ## What audit captures
 
-See [Audit log](/concepts/audit-log) for the full event catalog. Categories:
-
-- `auth.*` — operator login / logout, token issue / revoke
-- `agent.*` — create, enroll, rotate, revoke, session lifecycle
-- `permission.*` — create, revoke, cascade
-- `item.*` — create, read, update, delete, export, cascade
-- `profile.*` — create, rotate, delete, cascade
-- `access.*` — `ciphertext`, `reveal`, `mount_env`, `mount_file`
+See [Audit log](/concepts/audit-log) for the full event catalog. Categories include `auth.*`, `agent.*`, `permission.*`, `item.*`, `profile.*`, and `access.*`.
 
 ## What audit does not capture
 

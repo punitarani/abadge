@@ -3,9 +3,9 @@ title: "abadge run"
 description: "Spawn a subprocess with a secret injected as an environment variable."
 ---
 
-`abadge run` resolves a secret value and injects it into a subprocess via the daemon. The CLI exits with the child process exit code, so it composes naturally with shell scripts and CI pipelines.
+`abadge run` resolves a secret and injects it into a subprocess. The CLI exits with the child process exit code, so it composes naturally with shell scripts and CI pipelines.
 
-The CLI uses the provisioned `local_cli` runtime agent (registered automatically by `abadge login`) to mint or refresh a short-lived `abs_...` agent session, calls `access.mount` with `mountType: env`, and asks the daemon to spawn the subprocess with the secret in its environment.
+The CLI uses the provisioned `local_cli` runtime agent (written to `~/.abadge/config.json` by `abadge agent register --kind local_cli`) to mint or refresh a short-lived `abs_...` agent session, calls `access.mount` with `mountType: env`, and spawns the subprocess with the secret in its environment.
 
 ## Single-value items
 
@@ -19,60 +19,56 @@ abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
 
 ## Multi-field items
 
-Use `--field` to pick a single named field:
+Use `--field` to pick a single named field, paired with `--env-var` for the target variable name:
 
 ```bash
 abadge run --item <item-id> --field password --env-var DB_PASSWORD -- psql "$DB_HOST"
 ```
 
-Stack multiple `--field` / `--env-var` pairs to inject several fields from one item:
-
-```bash
-abadge run --item prod-db \
-  --field username --env-var DB_USER \
-  --field password --env-var DB_PASSWORD \
-  -- ./migrate.sh
-```
+`abadge run` injects one secret per invocation (one `--field` + `--env-var` pair). To inject more than one field from the same item, use `--expand-env`.
 
 ## Expand every field
 
-`--expand-env` injects every field of a multi-field item as a separate env var. The field name becomes the variable name (uppercased if needed by your shell convention — pass the field name in the casing you want).
+`--expand-env` injects every field of a multi-field item as a separate environment variable. The field name becomes the variable name (pass names in the casing you want).
 
 ```bash
 abadge run --item my-service-env --expand-env -- ./server
 # → DATABASE_URL=..., REDIS_URL=..., API_KEY=... (one per field)
 ```
 
+`--expand-env` requires the local daemon — start it with `abadge daemon start` if needed.
+
 ## Flags
 
-| Flag | Description |
-|---|---|
-| `--item` | Item ID or label |
-| `--field` | Named field to inject (for multi-field items). Can be repeated. |
-| `--env-var` | Environment variable name (default: `ABADGE_SECRET`). Pair with `--field`. |
-| `--expand-env` | Inject every field as a separate env var |
-| `--purpose` | Caller-declared purpose, recorded in audit |
+| Flag | Required | Description |
+|---|---|---|
+| `--item <id>` | yes | Item ID |
+| `--field <name>` | no | Named field to inject (for multi-field items) |
+| `--env-var <name>` | no | Environment variable name. Defaults to `ABADGE_SECRET`. |
+| `--expand-env` | no | Inject every field as a separate env var (requires the daemon) |
+
+Everything after `--` is the subprocess command and arguments.
 
 ## Behavior
 
 <Steps>
-  <Step title="Mint or refresh the runtime session">
-    The CLI ensures a fresh `abs_...` session for `localAgents.cli`.
+  <Step title="Ensure a runtime session">
+    The CLI mints or refreshes a fresh `abs_...` session for `localAgents.cli`. If no local runtime agent is registered, the command fails with a clear hint.
   </Step>
   <Step title="Resolve the item">
-    Fetches the item from the API. Server-managed items come back decrypted; ZK items come back as ciphertext that the daemon decrypts locally.
+    Fetches the item from the API. Server-managed items come back decrypted; zero-knowledge items come back as ciphertext that the daemon decrypts locally.
   </Step>
-  <Step title="Resolve fields">
-    `resolveFieldValue` (from `@abadge/core/secret-delivery`) picks the right field based on `--field`, `--expand-env`, and the item shape. See [Field delivery](/concepts/fields).
+  <Step title="Resolve the field">
+    `resolveFieldValue` picks the right field based on `--field` or the item's shape. Multi-field items without `--field` error with `MULTI_FIELD_ITEM`.
   </Step>
   <Step title="Spawn the subprocess">
-    The daemon spawns the command with the secret(s) in env vars. The secret lives only in the child's process memory.
+    The CLI (or daemon, for `--expand-env`) spawns the command with the secret(s) in env vars. The secret lives only in the child's process memory.
   </Step>
   <Step title="Wait for the child">
     The CLI exits with the child's exit code so caller scripts see the right status.
   </Step>
-  <Step title="Audit access.mount_env">
-    Every attempt — allowed or denied — appends an audit row.
+  <Step title="Audit">
+    An `access.mount_env` audit row is appended — allowed or denied.
   </Step>
 </Steps>
 
@@ -80,10 +76,10 @@ abadge run --item my-service-env --expand-env -- ./server
 
 | Error | Cause | Fix |
 |---|---|---|
-| `PERMISSION_DENIED` | No matching `mount_env` permission | `abadge permission create --capability mount_env` |
+| `PERMISSION_DENIED` | No matching `mount_env` permission for `localAgents.cli` | `abadge permission create --capability mount_env --agent-id <cli-agent> --item-id <item>` |
 | `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted | Pass `--field <name>` or `--expand-env` |
-| `FIELD_NOT_FOUND` | Specified field doesn't exist | Inspect `meta.availableFields` in the error |
-| `INVALID_CAPABILITY_LOCALITY` | Trying to use a remote agent for `mount_env` | Use `local_cli` agent instead |
+| `FIELD_NOT_FOUND` | Specified field doesn't exist on the item | Inspect `meta.availableFields` in the error output |
+| No local agent | `localAgents.cli` is missing from config | `abadge agent register --kind local_cli --name dev-laptop` |
 
 ## Related
 

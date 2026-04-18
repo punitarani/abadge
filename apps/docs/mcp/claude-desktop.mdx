@@ -33,9 +33,9 @@ Replace:
 
 Restart Claude Desktop after editing.
 
-## Using the CLI's provisioned MCP agent
+## Using a CLI-registered MCP agent
 
-If you've already run `abadge login`, the CLI provisioned a `local_mcp` agent and wrote its private key. Read the values out of `~/.abadge/config.json`:
+After running `abadge agent register --kind local_mcp --name "mcp host"`, the CLI writes the agent's ID and private-key path to `~/.abadge/config.json` under `localAgents.mcp`. The MCP server does **not** read `localAgents.mcp` directly — you need to copy those values into the `env` block above.
 
 ```bash
 jq '.localAgents.mcp' ~/.abadge/config.json
@@ -44,13 +44,15 @@ jq '.localAgents.mcp' ~/.abadge/config.json
 ```json
 {
   "agentId": "agent_01HZ...",
-  "privateKeyPath": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+  "privateKeyPath": "/Users/you/.abadge/agents/agent_01HZ....ed25519.jwk"
 }
 ```
 
-Drop those into the `env` block above.
+Paste `agentId` into `ABADGE_AGENT_ID` and `privateKeyPath` into `ABADGE_PRIVATE_KEY_PATH`.
 
-You can also omit the `env` block entirely — if neither `ABADGE_AGENT_ID` nor `ABADGE_PRIVATE_KEY_PATH` is set, the MCP server falls back to `~/.abadge/config.json` `localAgents.mcp`.
+<Tip>
+  If you want the MCP server to read from the config file without an `env` block, write the values at the **top level** of `~/.abadge/config.json`: `{ "apiUrl": ..., "agentId": ..., "privateKeyPath": ... }`. Env vars still take precedence.
+</Tip>
 
 ## Other MCP clients
 

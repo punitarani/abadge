@@ -11,24 +11,28 @@ None.
 
 ## Output
 
+A JSON object with an `items` array:
+
 ```json
-[
-  {
-    "id": "item_...",
-    "label": "OpenAI API key",
-    "kind": "api_key",
-    "storageMode": "server_managed",
-    "profileId": "prof_...",
-    "tags": ["ci"],
-    "createdAt": "2026-04-12T14:00:00.000Z",
-    "updatedAt": "2026-04-12T14:00:00.000Z"
-  }
-]
+{
+  "items": [
+    {
+      "id": "item_...",
+      "label": "OpenAI API key",
+      "storageMode": "server_managed",
+      "cryptoVersion": 1,
+      "contentVersion": 1,
+      "createdAt": "2026-04-12T14:00:00.000Z",
+      "updatedAt": "2026-04-12T14:00:00.000Z"
+    }
+  ]
+}
 ```
 
 ## What's not returned
 
 - `ciphertext`, `serverCiphertext`, `encryptedItemKey`, or any other encryption material
+- `kind`, `tags`, or `notes` — those live inside the encrypted payload and are not exposed by list
 - Field values (use `run_with_secret` or `mount_secret` instead)
 - Items the agent has no permission row on
 

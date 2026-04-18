@@ -37,7 +37,7 @@ abadge mount --item <item-id> --path /tmp/my-secret.txt
     The CLI prints the absolute path on stdout. With `--json`, the path is in the `path` field.
   </Step>
   <Step title="Track for cleanup">
-    The daemon records the mount so `daemon stop` (or `vault lock`) can release it.
+    The daemon records the mount so `daemon stop` (or `abadge profile lock`) can release it.
   </Step>
 </Steps>
 

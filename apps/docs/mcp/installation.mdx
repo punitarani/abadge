@@ -28,20 +28,17 @@ A standalone binary release is on the roadmap. In the meantime, embed the monore
 ## What it does on startup
 
 <Steps>
-  <Step title="Resolve auth">
-    Read env vars (or fall back to `~/.abadge/config.json` `localAgents.mcp`). Choose keypair or legacy mode.
+  <Step title="Sweep orphaned mounts">
+    The server walks the OS temp directory and removes any `abadge-*` directory older than 10 minutes. This cleans up after crashed previous runs.
   </Step>
-  <Step title="Mint a session">
-    For keypair mode: run the Ed25519 challenge / exchange against the API. Cache the `abs_...` token. Schedule refresh at T-2 minutes before expiry.
-  </Step>
-  <Step title="Sweep orphan mounts">
-    Walk the OS temp directory and remove any `abadge-*` directory older than 10 minutes. This cleans up after crashed previous runs.
+  <Step title="Resolve configuration">
+    Read env vars (or fall back to top-level `apiUrl`, `agentId`, `privateKeyPath` in `~/.abadge/config.json`). Error out on missing required fields.
   </Step>
   <Step title="Register tools">
     `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`.
   </Step>
   <Step title="Listen on stdio">
-    The server is now ready to handle MCP requests from the host client.
+    The server prints `abadge-mcp server running on stdio` on stderr and begins handling MCP requests. The keypair session exchange happens lazily on the first tool invocation.
   </Step>
 </Steps>
 
@@ -51,9 +48,11 @@ There's no separate health endpoint — the server exits non-zero if startup fai
 
 | Symptom | Likely cause |
 |---|---|
+| `ABADGE_API_URL is required` | No env var and no config file |
+| `ABADGE_AGENT_ID is required` | No agent ID configured |
+| `ABADGE_PRIVATE_KEY or ABADGE_PRIVATE_KEY_PATH is required` | No private key configured |
 | `ENOENT` on the private key path | `ABADGE_PRIVATE_KEY_PATH` typo or file missing |
-| `AGENT_NOT_ENROLLED` | The agent has never enrolled a public key. Run `abadge agent enroll`. |
-| `UNAUTHORIZED` | Wrong agent ID, wrong key, or the agent has been revoked |
+| `UNAUTHORIZED` / `AGENT_NOT_ENROLLED` | Wrong agent ID, wrong key, agent revoked, or public key never enrolled |
 | Connection refused on `ABADGE_API_URL` | API not reachable from the host running the MCP server |
 
 ## Logs
@@ -66,7 +65,7 @@ In Claude Desktop, MCP server logs are captured in the application log directory
 
 <CardGroup cols={2}>
   <Card title="Authentication" href="/mcp/authentication">
-    Env vars, config fallback, deprecation warnings.
+    Env vars, config fallback, keypair session lifecycle.
   </Card>
   <Card title="Claude Desktop" href="/mcp/claude-desktop">
     Drop-in JSON config snippet.

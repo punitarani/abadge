@@ -21,15 +21,15 @@ Most commands have a default human-readable output and an opt-in JSON output. Wh
 - Exit codes still indicate success or failure
 
 ```bash
-abadge item list --json | jq '.[] | select(.kind == "api_key")'
+abadge item list --json | jq '.[].id'
 abadge agent list --json
 abadge permission list --json
-abadge audit list --json
+abadge audit --json
 ```
 
 ## `--token-stdin`
 
-Override the token the CLI would normally use (the daemon-held operator session or the provisioned local runtime agent session). Useful for one-off API calls in scripts where you don't want to log in interactively.
+Override the bearer session token the CLI would normally use (the daemon-held operator session). Useful for one-off API calls in scripts where you don't want to log in interactively.
 
 ```bash
 echo "$ABADGE_TOKEN" | abadge item list --token-stdin
@@ -42,6 +42,7 @@ The token is consumed once and never written to disk.
 | Variable | Effect |
 |---|---|
 | `ABADGE_API_URL` | Override `apiUrl` for the current invocation |
+| `ABADGE_SESSION_TOKEN` | Use a pre-minted bearer session token instead of the daemon-held one |
 | `ABADGE_AGENT_ID` | Use a specific agent ID (mostly relevant for MCP) |
 | `ABADGE_PRIVATE_KEY_PATH` | Path to an Ed25519 private key JWK (mostly relevant for MCP) |
 

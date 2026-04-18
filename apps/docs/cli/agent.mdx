@@ -1,44 +1,56 @@
 ---
 title: "abadge agent"
-description: "Register, enroll, list, rotate, and revoke automated callers."
+description: "Register, list, rotate, and revoke automated callers."
 ---
 
 ## `abadge agent register`
 
-Register a new agent. Defaults to `public_key_session` auth. Generates an Ed25519 keypair on-device, stores the private key in `~/.abadge/agents/`, and uploads the public key via a one-time bootstrap token.
+Register a new agent. Defaults to `public_key_session` auth: generates an Ed25519 keypair on-device, stores the private key in `~/.abadge/agents/`, and uploads the public key directly. For `local_cli` and `local_mcp` kinds, the agent ID and private-key path are written to the matching `localAgents.*` config slot so that `abadge run` and the MCP server find them automatically.
+
+Pass `--legacy-api-key` to opt into legacy API-key auth instead.
 
 ```bash
-abadge agent register --kind local_cli
-abadge agent register --name "ci bot" --kind remote
-abadge agent register --name "legacy bot" --kind remote --legacy-api-key
+abadge agent register --name dev-laptop
+abadge agent register --name dev-laptop --kind local_cli
+abadge agent register --name mcp-host --kind local_mcp
+abadge agent register --name ci-bot --kind remote
+abadge agent register --name legacy-bot --kind remote --legacy-api-key
 ```
 
-| Flag | Description |
-|---|---|
-| `--name`, `-n` | Agent display name |
-| `--kind`, `-k` | `local_cli`, `local_mcp`, or `remote` |
-| `--description`, `-d` | Optional metadata description |
-| `--legacy-api-key` | Opt into legacy API-key auth (warns about deprecation) |
-| `--no-bootstrap-token` | Skip bootstrap-token issuance (for `public_key_session` agents enrolling via direct `publicKey` upload) |
-| `--json` | Print raw JSON |
+| Flag | Required | Description |
+|---|---|---|
+| `-n, --name <name>` | yes | Agent display name |
+| `-k, --kind <kind>` | no | `local_cli` (default), `local_mcp`, or `remote` |
+| `-d, --description <text>` | no | Optional description (stored in `metadata.description`) |
+| `--legacy-api-key` | no | Opt into legacy API-key auth instead of Ed25519 keypair |
+| `--json` | no | Print raw JSON |
 
 <Warning>
-  The bootstrap token (`abe_...`) or legacy API key (`abl_/abg_...`) is shown exactly once. Save it before the command exits.
+  For `--legacy-api-key`, the `abl_...` (local) or `abg_...` (remote) key is shown **exactly once**. Save it before the command exits.
 </Warning>
 
-## `abadge agent enroll`
+### Keypair registration (default)
 
-Redeem a one-time bootstrap token, generate a local Ed25519 keypair, write the private key with `0600` permissions, and upload only the public key.
+<Steps>
+  <Step title="Generate keypair">
+    The CLI uses WebCrypto to generate an Ed25519 keypair locally.
+  </Step>
+  <Step title="Upload the public key">
+    `agents.create` is called with `publicKey` (JWK JSON) and the agent's metadata.
+  </Step>
+  <Step title="Store the private key">
+    The private key is written to `~/.abadge/agents/<agent-id>.ed25519.jwk` with `0600` permissions inside a `0700` directory.
+  </Step>
+  <Step title="Update config">
+    For `local_cli` and `local_mcp` agents, `~/.abadge/config.json` gets `localAgents.cli` or `localAgents.mcp` populated with the agent ID and private-key path.
+  </Step>
+</Steps>
 
-```bash
-abadge agent enroll --bootstrap-token abe_...
-abadge agent enroll --bootstrap-token abe_... --private-key-path ~/.abadge/agents/remote.jwk
-```
+Remote agents skip the config step — the CLI prints the agent ID, kind, and path to the private-key file, plus a warning that you need to configure the remote service with those credentials yourself.
 
-| Flag | Description |
-|---|---|
-| `--bootstrap-token` | The `abe_...` token from `agent register` |
-| `--private-key-path` | Where to write the private key. Defaults to `~/.abadge/agents/<agent>.ed25519.jwk`. |
+### Legacy API-key registration (`--legacy-api-key`)
+
+No keypair is generated. `agents.create` is called with `authMethod: "legacy_api_key"`; the API returns a one-time `abl_/abg_...` key. The CLI prints the key and a save-it-now warning.
 
 ## `abadge agent list`
 
@@ -47,14 +59,15 @@ abadge agent list
 abadge agent list --json
 ```
 
-Output columns: `id`, `name`, `kind`, `locality`, `authMethod`, `enabled`, `lastUsedAt`.
+Output columns: `ID`, `Name`, `Kind`, `Locality`, `Enabled`, `Created`.
 
 ## `abadge agent rotate <agent-id>`
 
-Rotate a legacy API key. Public-key agents must re-enroll instead.
+Rotate a legacy API key. Public-key agents cannot be rotated — instead, revoke and re-register, or have the owner re-enroll with a new keypair via `auth.issueBootstrapToken` + `auth.enroll`.
 
 ```bash
 abadge agent rotate <agent-id>
+abadge agent rotate <agent-id> --json
 ```
 
 The new key is shown once.

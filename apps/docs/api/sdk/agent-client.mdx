@@ -13,21 +13,35 @@ description: "Agent-authenticated client for accessing secrets. Keypair sessions
     import { AbadgeAgentClient } from "@abadge/sdk";
 
     const agent = new AbadgeAgentClient({
-      apiUrl: "https://api.abadge.dev",
+      apiUrl: "https://api.abadge.io",
       agentId: "agent_...",
-      privateKey: ed25519PrivateKey,   // JWK or CryptoKey
+      privateKey: ed25519PrivateKey,   // CryptoKey, JWK object, or JSON-serialized JWK string
     });
     ```
+
+    <ParamField path="apiUrl" type="string" required />
+    <ParamField path="agentId" type="string" required />
+    <ParamField path="privateKey" type="CryptoKey | Ed25519PrivateKeyJwk | string" required>
+      Ed25519 private key. Strings are parsed as JWK JSON at construction; malformed keys fail fast.
+    </ParamField>
+    <ParamField path="onSessionError" type="(error, attempt) => void">
+      Callback fired on each background refresh failure. After the bounded retry budget is exhausted, the client flips to `sessionExpired` and outgoing calls reject with `SESSION_REFRESH_FAILED`.
+    </ParamField>
   </Tab>
   <Tab title="Legacy API key">
     ```ts
     import { AbadgeAgentClient } from "@abadge/sdk";
 
     const agent = new AbadgeAgentClient({
-      apiUrl: "https://api.abadge.dev",
-      apiKey: "abl_...",
+      apiUrl: "https://api.abadge.io",
+      apiKey: "abl_...",    // or abg_... for remote, or abs_... for a pre-exchanged session
     });
     ```
+
+    <ParamField path="apiUrl" type="string" required />
+    <ParamField path="apiKey" type="string" required>
+      Legacy agent API key (`abl_`, `abg_`) or a short-lived session token (`abs_`) minted elsewhere.
+    </ParamField>
   </Tab>
 </Tabs>
 
@@ -43,13 +57,13 @@ await agent.connect();
 agent.disconnect();
 ```
 
-`connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain.
+`connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain. The refresh timer is `.unref()`'d so it does not keep the event loop alive on its own.
 
 Legacy API-key clients do not need `connect()` — they use the long-lived bearer key directly.
 
 ## Enrollment
 
-The first time an agent runs, it can use the bootstrap token to enroll:
+The first time a keypair agent runs, it can use its bootstrap token to enroll:
 
 ```ts
 agent.enroll(bootstrapToken: string, publicKey: string);
@@ -70,9 +84,7 @@ Read the encrypted blob of a zero-knowledge item for local decryption.
 ```ts
 const {
   encryptedItemKey,
-  keyNonce,
   ciphertext,
-  contentNonce,
   cryptoVersion,
 } = await agent.accessCiphertext(itemId);
 ```
@@ -105,14 +117,17 @@ For server-managed items, `data.payload` carries the resolved field value. For z
 ## Other methods
 
 ```ts
-agent.getSelf();                          // Get this agent's own record
-agent.listItems(profileId);               // Metadata only
-agent.listAuditEntries(orgId, filters?);  // Structured audit listing
+agent.getCurrentAgent();                // Get this agent's own record ({ agent })
+agent.listItems();                      // Metadata only — scoped to items with a grant
+agent.getItem(itemId);                  // Full item record (ciphertext for ZK)
+agent.getAudit(filters?);               // Structured audit listing
 ```
 
 ## Background refresh
 
-Keypair clients schedule a background refresh at T-2 minutes before the current `abs_...` session expires. If a refresh fails, the SDK retries with bounded backoff. After the retry budget is exhausted, the next request rejects with `SESSION_REFRESH_FAILED`. Recover by calling `disconnect()` and `connect()` again, or instantiate a fresh client.
+Keypair clients schedule a background refresh at T-2 minutes before the current `abs_...` session expires. If a refresh fails, the SDK retries with the bounded-exponential schedule `30s → 60s → 120s → 240s → 300s`. After all five attempts fail, the client flips to `sessionExpired` and subsequent requests reject with `SESSION_REFRESH_FAILED`.
+
+Recover by calling `disconnect()` and `connect()` again, or instantiate a fresh client:
 
 ```ts
 try {
@@ -132,7 +147,7 @@ try {
 import { AbadgeAgentClient } from "@abadge/sdk";
 
 const agent = new AbadgeAgentClient({
-  apiUrl: "https://api.abadge.dev",
+  apiUrl: "https://api.abadge.io",
   agentId: "agent_...",
   privateKey: ed25519PrivateKey,
 });

@@ -16,27 +16,20 @@ The limits are enforced by middleware in the API worker (`apps/api/src/index.ts`
 
 ## Response
 
-When a caller exceeds the limit, the API returns:
-
-- HTTP `429 Too Many Requests`
-- The standard error envelope with `code: "RATE_LIMITED"`
-- A `Retry-After` header in seconds
+When a caller exceeds the limit, the API returns HTTP `429 Too Many Requests` with a minimal body:
 
 ```json
-{
-  "code": "RATE_LIMITED",
-  "message": "Too many requests.",
-  "hint": "Back off and retry after the Retry-After header.",
-  "meta": {}
-}
+{ "error": "Too many requests" }
 ```
+
+The rate-limit middleware currently does **not** emit the standard `{code, message, hint, meta}` envelope — the edge check runs before tRPC wraps the response. Treat any 429 response from `/api/auth/*` or `/trpc/*` as `RATE_LIMITED`.
 
 ## Recommended client behavior
 
-- Respect the `Retry-After` header. Treat the value as a minimum.
+- Back off when you see a 429. Counters reset once per minute, so a 60-second retry window is a safe default.
 - Apply jitter when retrying so concurrent clients don't synchronize.
 - Cache idempotent reads (item metadata, permission lists) on the client when you can.
-- Use the SDK — `AbadgeAgentClient`'s session refresh has bounded backoff retries built in.
+- Use the SDK — `AbadgeAgentClient`'s session refresh has bounded-backoff retries built in.
 
 ## Health endpoint
 

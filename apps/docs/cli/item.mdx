@@ -17,18 +17,20 @@ abadge item create --label "Deploy SSH key" --kind ssh_key --storage-mode zero_k
 
 | Flag | Description |
 |---|---|
-| `--name`, `--label` | Item label |
-| `--kind` | `opaque`, `api_key`, `login`, `token`, `ssh_key`, `certificate`, `json` |
-| `--value` | Secret value. **Rejected on a TTY** — pipe from stdin to avoid shell history leaks. |
-| `--storage-mode` | `zero_knowledge` or `server_managed`. Defaults to the profile's mode. |
+| `--label <label>` | Item label (cleartext). `--name` is accepted as a synonym. |
+| `--kind <kind>` | `opaque`, `api_key`, `login`, `token`, `ssh_key`, `certificate`, `json` |
+| `--value <value>` | Secret value. Prefer the interactive prompt — passing on the command line risks leaking into shell history. |
+| `--storage-mode <mode>` | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
 | `--json` | Print raw JSON |
+
+Fields not provided via flags are prompted interactively (the value prompt is echo-masked).
 
 For zero-knowledge items, the daemon must be unlocked. The CLI:
 
 1. Generates a 32-byte DEK locally.
 2. Encrypts the payload with the DEK (XChaCha20-Poly1305).
 3. Wraps the DEK with the profile root key (XChaCha20-Poly1305).
-4. Sends `encryptedItemKey`, `keyNonce`, `ciphertext`, `contentNonce` to `items.create`.
+4. Sends `encryptedItemKey` and `ciphertext` to `items.create`.
 
 For server-managed items, the CLI sends the plaintext payload to `items.create` and the API encrypts with AES-256-GCM.
 
@@ -48,12 +50,13 @@ Fetch a single item.
 ```bash
 abadge item get <item-id>
 abadge item get <item-id> --reveal
+abadge item get <item-id> --json
 ```
 
-By default, returns metadata. With `--reveal`:
-
-- For zero-knowledge items, the CLI fetches the encrypted blob and asks the daemon to decrypt.
-- For server-managed items, the CLI calls `items.ownerReveal`.
+| Flag | Description |
+|---|---|
+| `--reveal` | For zero-knowledge items, fetch the encrypted blob and ask the daemon to decrypt. For server-managed items, this flag is a no-op — use `AbadgeUserClient.ownerReveal()` or the dashboard to reveal plaintext. |
+| `--json` | Print raw JSON |
 
 ## `abadge item update <id>`
 

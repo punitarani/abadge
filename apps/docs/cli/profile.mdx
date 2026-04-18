@@ -9,19 +9,16 @@ Profiles are encryption namespaces inside an organization. Each profile carries 
 
 ```bash
 abadge profile create --name "production"
-abadge profile create --name "staging" --storage-mode server_managed
+abadge profile create --name "staging" --storage-mode zero_knowledge
 ```
 
-| Flag | Description |
-|---|---|
-| `--name`, `-n` | Profile display name (unique within org) |
-| `--storage-mode` | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
-| `--description`, `-d` | Optional description |
-| `--json` | Print raw JSON |
+| Flag | Required | Description |
+|---|---|---|
+| `--name <name>` | yes | Profile display name (unique within org) |
+| `--description <desc>` | no | Optional description |
+| `--storage-mode <mode>` | no | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
 
-For zero-knowledge profiles, the CLI prompts for a master password, derives the KEK locally, generates the root key, and ships only the wrapped material to the server (`profiles.create` + `profiles.bootstrap`).
-
-For server-managed profiles, the CLI just creates the empty profile shell.
+The CLI calls `profiles.create` and prints the new profile ID. Bootstrapping a zero-knowledge profile (generating the KEK, wrapping the root key) is a dashboard operation in v1 — create it in the CLI and finish the bootstrap at [abadge.io](https://abadge.io) before adding items.
 
 ## `abadge profile list`
 
@@ -32,17 +29,22 @@ abadge profile list
 abadge profile list --json
 ```
 
-## `abadge profile use <name>`
+Output columns: `ID`, `Name`, `Storage Mode`, `Created`, `Active` (checkmark for the active profile).
 
-Sets the active profile. Persisted to `~/.abadge/config.json`. Subsequent `item create` commands target this profile.
+## `abadge profile use <name-or-id>`
+
+Set the active profile. Persisted to `~/.abadge/config.json` as `activeProfileId`. Subsequent `item create` commands target this profile.
 
 ```bash
 abadge profile use production
+abadge profile use prof_01HZ...
 ```
 
-## Recovery
+Accepts either the profile name or ID. If the name isn't unique, use the ID.
 
-Recovery-key setup and key rotation are dashboard operations in v1.
+## Vault operations
+
+For `unlock`, `lock`, `status`, and `change-password`, see [Vault commands](/cli/vault). Those commands are also exposed as `abadge profile unlock|lock|status|change-password`.
 
 ## Related
 

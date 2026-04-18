@@ -7,34 +7,37 @@ description: "Create, list, switch, and inspect members of organizations."
 
 ```bash
 abadge org create --name "Acme"
-abadge org create --name "Acme" --json
+abadge org create --name "Acme" --slug acme
 ```
 
-| Flag | Description |
-|---|---|
-| `--name`, `-n` | Display name (required) |
-| `--json` | Print raw JSON |
+| Flag | Required | Description |
+|---|---|---|
+| `--name <name>` | yes | Display name |
+| `--slug <slug>` | no | URL-safe identifier. Auto-generated if omitted. |
 
-Calls `organizations.create`. Returns `{ id, name, slug }`.
+Calls `organizations.create` and prints the new org name and ID.
 
 ## `abadge org list`
 
-Lists every organization the current operator belongs to, with role and bootstrap state.
+Lists every organization the current operator belongs to, with role and active state.
 
 ```bash
 abadge org list
 abadge org list --json
 ```
 
-## `abadge org use <id>`
+Output columns: `ID`, `Name`, `Slug`, `Role`, `Active` (checkmark for the active org).
 
-Sets the active organization for subsequent commands. Persisted to `~/.abadge/config.json`.
+## `abadge org use <id-or-slug>`
+
+Set the active organization for subsequent commands. Persisted to `~/.abadge/config.json` as `activeOrgId`. Clearing `activeProfileId` at the same time is automatic so you don't accidentally target a stale profile.
 
 ```bash
 abadge org use org_...
+abadge org use acme
 ```
 
-Subsequent `item`, `agent`, `permission`, and `audit` commands act on this org.
+Accepts either the organization ID or slug. Subsequent `item`, `agent`, `permission`, `audit`, and `profile` commands act on this org.
 
 ## `abadge org members`
 
@@ -42,17 +45,11 @@ Lists members of the active organization.
 
 ```bash
 abadge org members
-abadge org members --json
 ```
 
-Output columns:
+Output columns: `User` (name, email, or user ID — whichever is populated), `Role` (`owner`, `admin`, `member`).
 
-- `id` (membership row)
-- `userId`
-- `name`
-- `email` (visible to admins and owners only)
-- `role` (`owner`, `admin`, `member`)
-- `createdAt`
+For the full member record (including `memberId`, `email`, `createdAt`), call [`organizations.members.list`](/api/procedures/organizations) via the SDK.
 
 ## Related
 

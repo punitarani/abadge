@@ -7,42 +7,44 @@ The `items` router is where credentials live. Most procedures are session-scoped
 
 ## `items.create`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization — items inherit the caller's active profile).
 
-<ParamField path="profileId" type="string" required>
-  Target profile.
-</ParamField>
-<ParamField path="storageMode" type="string" required>
-  `zero_knowledge` or `server_managed`. Must match the profile.
-</ParamField>
-<ParamField path="label" type="string" required>
-  Cleartext display name.
-</ParamField>
-<ParamField path="kind" type="string">
-  `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque`. Defaults to `opaque`.
-</ParamField>
-<ParamField path="tags" type="string[]" />
-<ParamField path="payload" type="object">
-  Required for `server_managed`. Plain JSON envelope `{ v, label, kind, tags, fields }`.
-</ParamField>
-<ParamField path="encryptedItemKey" type="string">
-  Required for `zero_knowledge`. DEK wrapped with profile root key, base64.
-</ParamField>
-<ParamField path="keyNonce" type="string">
-  Required for `zero_knowledge`.
-</ParamField>
-<ParamField path="ciphertext" type="string">
-  Required for `zero_knowledge`. Payload encrypted with the DEK.
-</ParamField>
-<ParamField path="contentNonce" type="string">
-  Required for `zero_knowledge`.
-</ParamField>
+Input is a **discriminated union** on `storageMode`. The two shapes are:
+
+<Tabs>
+  <Tab title="Zero-knowledge">
+    <ParamField path="storageMode" type='"zero_knowledge"' required />
+    <ParamField path="label" type="string" required>
+      Cleartext display name. Stored in cleartext for listing.
+    </ParamField>
+    <ParamField path="encryptedItemKey" type="string" required>
+      DEK wrapped with the profile root key (XChaCha20-Poly1305). Base64, `nonce || ciphertext+tag`.
+    </ParamField>
+    <ParamField path="ciphertext" type="string" required>
+      Payload encrypted with the DEK (XChaCha20-Poly1305). Base64, `nonce || ciphertext+tag`. The plaintext envelope is `{ v, label, kind, tags, notes?, fields }` — see [the envelope spec](/security/zero-knowledge#zk-item-plaintext-envelope).
+    </ParamField>
+  </Tab>
+  <Tab title="Server-managed">
+    <ParamField path="storageMode" type='"server_managed"' required />
+    <ParamField path="label" type="string" required />
+    <ParamField path="payload" type="ItemPayload" required>
+      `{ v?, label?, kind?, tags?, notes?, fields }`. The API encrypts the payload with AES-256-GCM using the Worker's `ENCRYPTION_KEY`.
+    </ParamField>
+  </Tab>
+</Tabs>
+
+`profileId` is not a request field. The server routes the item automatically:
+
+- **Zero-knowledge items** land in the active organization's first `zero_knowledge` profile. If none exists, the API returns `NOT_FOUND` with a hint to create one.
+- **Server-managed items** are scoped to the organization and carry no profile association at the row level.
 
 **Returns:** `{ id }`.
 
 ## `items.list`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
+
+**Input:** none.
 
 **Returns:**
 
@@ -51,10 +53,8 @@ The `items` router is where credentials live. Most procedures are session-scoped
   items: Array<{
     id: string;
     label: string;
-    kind: string;
     storageMode: "zero_knowledge" | "server_managed";
-    profileId: string;
-    tags: string[];
+    cryptoVersion: number;
     contentVersion: number;
     createdAt: string;
     updatedAt: string;
@@ -62,43 +62,50 @@ The `items` router is where credentials live. Most procedures are session-scoped
 }
 ```
 
-Metadata only — never returns secret data.
+Metadata only — never returns ciphertext or payload. `kind`, `tags`, and `notes` live inside the item's encrypted payload (ZK) or server-managed ciphertext and are not exposed by the list endpoint.
 
 ## `items.get`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
 
 <ParamField path="itemId" type="string" required />
 
-**Returns:** `{ item }` with the full record (including ciphertext fields).
+**Returns:** `{ item }` as a discriminated union on `storageMode`:
+
+- `zero_knowledge` items include `encryptedItemKey` and `ciphertext` for client-side decryption.
+- `server_managed` items return metadata only — call [`items.ownerReveal`](#items-ownerreveal) to decrypt.
 
 ## `items.update`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
 
 <ParamField path="itemId" type="string" required />
 <ParamField path="data" type="object" required>
-  Updated fields. Must include the current `contentVersion` for optimistic concurrency.
+  A discriminated union on `storageMode`, matching the original item:
+
+  - **Zero-knowledge:** `{ storageMode: "zero_knowledge", label, encryptedItemKey, ciphertext, contentVersion }`
+  - **Server-managed:** `{ storageMode: "server_managed", payload, contentVersion }`
+
+  The `contentVersion` must match the current version on the server — it's the optimistic-concurrency guard.
 </ParamField>
 
 **Returns:** `{ ok: true, contentVersion }`.
 
-Errors: `STALE_VERSION` if the version mismatches.
+Errors: `STALE_VERSION` if the version mismatches — re-fetch with `items.get` and retry.
 
 ## `items.ownerReveal`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
 
-Decrypt and return a **server-managed** item the current user owns.
+Decrypt and return a **server-managed** item the current user owns. Zero-knowledge items cannot be revealed by the server — use the daemon locally instead.
 
 <ParamField path="itemId" type="string" required />
-<ParamField path="field" type="string">
-  Specific field for multi-field items.
-</ParamField>
 
-**Returns:** `{ payload }`.
+**Returns:** `{ payload }` — the full `ItemPayload` envelope.
 
-Errors: fails on zero-knowledge items. `MULTI_FIELD_ITEM` / `FIELD_NOT_FOUND` for field issues.
+The owner reveal endpoint does not take a `field` parameter. Callers that want a single field should pick it from the returned payload; the `field` parameter is specific to the agent access path ([`access.reveal`](/api/procedures/access)).
+
+Errors: fails on zero-knowledge items.
 
 ## `items.delete`
 

@@ -11,12 +11,25 @@ description: "Session-token authenticated client for operator commands."
 import { AbadgeUserClient } from "@abadge/sdk";
 
 const client = new AbadgeUserClient({
-  apiUrl: "https://api.abadge.dev",
-  token: sessionToken,
+  apiUrl: "https://api.abadge.io",
+  sessionToken: userSessionToken,
+  orgId: "org_...",  // optional — sets X-Abadge-Org-Id for org-scoped requests
 });
 ```
 
-`token` is the Better Auth bearer access token — the same one the CLI receives from the device-code flow and the dashboard receives from `/api/auth/sign-in/*`.
+<ParamField path="apiUrl" type="string" required>
+  API endpoint URL, no trailing slash.
+</ParamField>
+<ParamField path="sessionToken" type="string" required>
+  Better Auth bearer token. The same token the CLI receives from the device-code flow and the dashboard holds in its session cookie.
+</ParamField>
+<ParamField path="orgId" type="string">
+  Active organization ID. Sent as `X-Abadge-Org-Id` on every request. Required when the signed-in user belongs to multiple organizations.
+</ParamField>
+
+<Tip>
+  A legacy `{ apiUrl, token }` config is also accepted for backwards compatibility, but new code should use `sessionToken`.
+</Tip>
 
 ## Organizations
 
@@ -24,19 +37,27 @@ const client = new AbadgeUserClient({
 client.createOrganization({ name, slug? });
 client.listOrganizations();
 client.getOrganization(orgId);
-client.updateOrganization(orgId, { name, slug });
+client.updateOrganization(orgId, { name });
 client.deleteOrganization(orgId);
 
 client.listMembers(orgId);
-client.inviteMember(orgId, email, role);
-client.removeMember(orgId, userId);
-client.updateMemberRole(orgId, userId, role);
+client.inviteMember(orgId, { role });           // no email param — invites are token-based
+client.getInviteInfo(token);
+client.acceptInvite(token);
+client.revokeInvite(orgId, invitationId);
+client.removeMember(orgId, memberId);           // memberId, not userId
+client.updateMemberRole(orgId, memberId, role);
 ```
 
 ## Profiles
 
 ```ts
-client.createProfile(orgId, { name, description?, storageMode? });
+client.createProfile({
+  orgId: string;
+  name: string;
+  description?: string;
+  storageMode: "zero_knowledge" | "server_managed";
+});
 client.listProfiles(orgId);
 client.getProfile(profileId);
 client.bootstrapProfile(profileId, { wrappedRootKey, kdfSalt, kdfParams });
@@ -55,55 +76,47 @@ client.deleteProfile(profileId);
 ```ts
 // Zero-knowledge item
 client.createItem({
-  profileId: string;
   storageMode: "zero_knowledge";
   label: string;
-  kind: ItemKind;
-  tags?: string[];
   encryptedItemKey: string;
-  keyNonce: string;
   ciphertext: string;
-  contentNonce: string;
 });
 
 // Server-managed item
 client.createItem({
-  profileId: string;
   storageMode: "server_managed";
   label: string;
-  kind: ItemKind;
-  tags?: string[];
   payload: ItemPayload;
 });
 
-client.listItems(profileId?);
+client.listItems();              // no profileId param; scoped to active org
 client.getItem(itemId);
-client.updateItem(itemId, data);          // optimistic concurrency via contentVersion
+client.updateItem(itemId, data); // data shape matches items.update — includes contentVersion
 client.deleteItem(itemId);
 
-// Owner reveal: { payload: ItemPayload } for the requested field
-client.ownerRevealItem(itemId, field?);
+// Owner reveal for server-managed items. Returns { payload: ItemPayload }.
+// Pick fields from payload.fields yourself — the user-client method takes no
+// field argument. Use AbadgeAgentClient.accessReveal for field-level resolution.
+client.ownerReveal(itemId);
 ```
 
 ## Agents
 
 ```ts
 client.createAgent({
-  organizationId: string;
   name: string;
-  kind: AgentKind;
-  description?: string;
+  kind: "local_cli" | "local_mcp" | "remote";
   authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
   publicKey?: string;
   issueBootstrapToken?: boolean;
+  metadata?: Record<string, unknown>;   // put description, owner tags, etc. here
 });
 
 client.listAgents();
-client.getAgent(agentId);
-client.rotateAgent(agentId);
+client.rotateAgent(agentId);            // legacy API key only
 client.revokeAgent(agentId);
 
-// Issue a new bootstrap token for an existing agent
+// Issue a fresh bootstrap token for an existing agent.
 client.issueBootstrapToken(agentId);
 ```
 
@@ -124,13 +137,9 @@ client.revokePermission(permissionId);
 ## Audit
 
 ```ts
-client.listAuditEntries({
-  orgId?: string;
-  profileId?: string;
+client.getAudit({
   agentId?: string;
   itemId?: string;
-  surface?: string;
-  field?: string;
   eventType?: AuditEventType;
   result?: AuditResult;
   cursor?: string;
@@ -144,16 +153,14 @@ client.listAuditEntries({
 import { AbadgeUserClient } from "@abadge/sdk";
 
 const client = new AbadgeUserClient({
-  apiUrl: "https://api.abadge.dev",
-  token: userSessionToken,
+  apiUrl: "https://api.abadge.io",
+  sessionToken: userSessionToken,
+  orgId: "org_...",
 });
 
 const { id: itemId } = await client.createItem({
-  profileId: "prof_...",
   storageMode: "server_managed",
   label: "GitHub Deploy Token",
-  kind: "token",
-  tags: ["ci", "github"],
   payload: {
     v: 1,
     label: "GitHub Deploy Token",
@@ -164,7 +171,6 @@ const { id: itemId } = await client.createItem({
 });
 
 const { agent, bootstrapToken } = await client.createAgent({
-  organizationId: "org_...",
   name: "github-actions-deploy",
   kind: "remote",
   issueBootstrapToken: true,

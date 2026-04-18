@@ -7,9 +7,9 @@ The `auth` router owns agent enrollment, the keypair-based session exchange, and
 
 ## `auth.issueBootstrapToken`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
 
-Issue a one-time `abe_...` bootstrap token for an existing agent. Used to re-enroll an agent that's lost its private key, or to enroll an agent that was created with no `publicKey` and no initial bootstrap token.
+Issue a one-time `abe_...` bootstrap token for an existing agent. Used to re-enroll an agent that's lost its private key, or to enroll an agent that was created without a public key.
 
 <ParamField path="agentId" type="string" required>
   Agent to issue the token for.
@@ -19,8 +19,9 @@ Issue a one-time `abe_...` bootstrap token for an existing agent. Used to re-enr
 
 ```ts
 {
-  bootstrapToken: string;       // abe_... shown once
-  bootstrapExpiresAt: string;   // ISO timestamp, +10 minutes
+  agentId: string;
+  bootstrapToken: string;   // abe_... shown once
+  expiresAt: string;        // ISO timestamp, +10 minutes
 }
 ```
 
@@ -43,6 +44,7 @@ Redeem a bootstrap token and upload an Ed25519 public key. Consumes the token.
 ```ts
 {
   agent: Agent;
+  enrolledAt: string;   // ISO timestamp
 }
 ```
 
@@ -66,13 +68,14 @@ Create a short-lived signing challenge for the given agent.
 
 ```ts
 {
+  agentId: string;
   challengeId: string;
-  challenge: string;       // abc_... opaque, base64url-encoded
+  challenge: string;       // opaque base64url-encoded bytes
   expiresAt: string;       // ISO timestamp, +60 seconds
 }
 ```
 
-The agent signs `challenge` (the raw decoded bytes) with its Ed25519 private key, then calls `auth.exchangeSession` with the signature.
+The agent signs the raw decoded `challenge` bytes with its Ed25519 private key, then calls `auth.exchangeSession` with `challengeId`, the same `challenge` string, and the signature.
 
 ## `auth.exchangeSession`
 
@@ -84,8 +87,11 @@ Verify the signed challenge and issue an `abs_...` session token.
 <ParamField path="challengeId" type="string" required>
   ID returned by `auth.createChallenge`.
 </ParamField>
+<ParamField path="challenge" type="string" required>
+  The same challenge string returned by `auth.createChallenge`. The server cross-checks it against the stored challenge to prevent ID confusion.
+</ParamField>
 <ParamField path="signature" type="string" required>
-  Detached Ed25519 signature over the challenge bytes, base64url-encoded.
+  Detached Ed25519 signature over the raw challenge bytes, base64url-encoded.
 </ParamField>
 
 **Returns:**
@@ -107,11 +113,13 @@ Errors:
 
 ## `auth.revokeSession`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization).
 
 Revoke a single active `abs_...` session belonging to an agent the operator owns.
 
-<ParamField path="sessionId" type="string" required />
+<ParamField path="token" type="string" required>
+  The `abs_...` token to revoke. The server hashes it and looks up the matching session row.
+</ParamField>
 
 **Returns:** `{ ok: true }`.
 

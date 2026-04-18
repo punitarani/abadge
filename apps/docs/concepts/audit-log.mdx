@@ -62,7 +62,7 @@ The audit log is the source of truth for what happened in abadge. It's append-on
 | Dashboard | `/audit` page with filters for event type, agent, item, surface, field |
 | CLI | `abadge audit list` with `--json` for machine-readable output |
 | API | `audit.list` (session) with cursor pagination |
-| SDK | `AbadgeUserClient.listAuditEntries()` and `AbadgeAgentClient.listAuditEntries()` |
+| SDK | `AbadgeUserClient.getAudit()` and `AbadgeAgentClient.getAudit()` |
 | MCP | `get_audit` tool — same data, returned as JSON to the model |
 
 ## Filters

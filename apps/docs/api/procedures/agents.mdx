@@ -7,27 +7,23 @@ The `agents` router manages the automated callers that consume credentials.
 
 ## `agents.create`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (scoped to the active organization — the agent is owned by the session's active org; `organizationId` is not a request field).
 
-<ParamField path="organizationId" type="string" required>
-  Owning organization.
-</ParamField>
 <ParamField path="name" type="string" required />
 <ParamField path="kind" type="string" required>
   `local_cli`, `local_mcp`, or `remote`.
 </ParamField>
-<ParamField path="description" type="string" />
 <ParamField path="authMethod" type="string">
   `public_key_session` (default) or `legacy_api_key`.
 </ParamField>
 <ParamField path="publicKey" type="string">
-  Ed25519 JWK for direct enrollment of `public_key_session` agents.
+  Ed25519 JWK for direct enrollment of `public_key_session` agents. JSON-serialized JWK string.
 </ParamField>
 <ParamField path="issueBootstrapToken" type="boolean">
   Issue a one-time `abe_...` enrollment token instead of direct enrollment.
 </ParamField>
 <ParamField path="metadata" type="object">
-  Free-form metadata stored on the agent record.
+  Free-form metadata stored on the agent record. Use this for `description`, owner tags, etc.
 </ParamField>
 
 **Returns:**
@@ -44,7 +40,7 @@ The `agents` router manages the automated callers that consume credentials.
 Behavior:
 
 - `public_key_session` agents must provide either `publicKey` or `issueBootstrapToken: true`. Missing both yields `PUBLIC_KEY_REQUIRED`.
-- `legacy_api_key` agents receive a one-time `abl_...` (local kinds) or `abg_...` (remote) key.
+- `legacy_api_key` agents receive a one-time `abl_...` (local kinds) or `abg_...` (remote) key and cannot set `publicKey` or `issueBootstrapToken`.
 - Bootstrap tokens have a 10-minute TTL.
 
 ## `agents.list`

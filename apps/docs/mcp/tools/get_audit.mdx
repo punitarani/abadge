@@ -1,35 +1,40 @@
 ---
 title: "get_audit"
-description: "Fetch recent audit entries visible to the calling agent."
+description: "Fetch recent audit entries. Optionally filter by item."
 ---
 
-`get_audit` lets the model inspect the audit trail. It calls `audit.list` under the hood and returns the structured entries directly.
+`get_audit` lets the model inspect the audit trail. It calls `audit.list` under the hood and returns the structured entries.
 
 ## Input
 
-None for v1. Optional filters may be added in future versions.
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `itemId` | string | no | Filter to one item |
+| `limit` | integer | no | Max entries to return (1–100; server-side default when omitted is ~20) |
 
 ## Output
 
-```json
-[
-  {
-    "id": "12345",
-    "organizationId": "org_...",
-    "agentId": "agent_...",
-    "itemId": "item_...",
-    "eventType": "access.mount_env",
-    "result": "allowed",
-    "deliveryMode": "env",
-    "field": "token",
-    "purpose": "fetch user profile",
-    "occurredAt": "2026-04-18T01:14:22.000Z",
-    "meta": {}
-  }
-]
-```
+A JSON object with an `entries` array, newest first:
 
-The response is an array of audit entries newest-first, capped at the API default (50 entries).
+```json
+{
+  "entries": [
+    {
+      "id": "12345",
+      "organizationId": "org_...",
+      "agentId": "agent_...",
+      "itemId": "item_...",
+      "eventType": "access.mount_env",
+      "result": "allowed",
+      "deliveryMode": "env",
+      "field": "token",
+      "purpose": "fetch user profile",
+      "occurredAt": "2026-04-18T01:14:22.000Z",
+      "meta": {}
+    }
+  ]
+}
+```
 
 ## What it's good for
 
@@ -41,10 +46,11 @@ The response is an array of audit entries newest-first, capped at the API defaul
 
 - Long-range analytics — use the dashboard or CLI for that
 - Listing entries the agent isn't allowed to see — `audit.list` enforces org scoping
+- Rich filtering by event type, result, agent, or surface — call the API directly for those filters
 
 ## Permission
 
-The MCP agent must be scoped to an organization with audit visibility. There is no separate `view_audit` capability — audit entries follow the agent's organization.
+The MCP agent must belong to the organization whose audit log is being read. There is no separate `view_audit` capability — audit entries are scoped by the agent's organization.
 
 ## Audit
 

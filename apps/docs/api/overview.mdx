@@ -16,7 +16,7 @@ There is no separate REST application layer. Every operation — items, agents, 
 
 | Environment | Base |
 |---|---|
-| Production | `https://api.abadge.dev` |
+| Production | `https://api.abadge.io` |
 | Local development | `http://localhost:8787` |
 
 ## Recommended client
@@ -68,7 +68,7 @@ Every procedure is registered against one of three tiers:
 tRPC accepts JSON via POST or GET. The minimum dependency-free shape:
 
 ```bash
-curl -X POST https://api.abadge.dev/trpc/items.list \
+curl -X POST https://api.abadge.io/trpc/items.list \
   -H "Authorization: Bearer abs_..." \
   -H "Content-Type: application/json" \
   -d '{"json":{}}'

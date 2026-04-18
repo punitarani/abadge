@@ -11,17 +11,18 @@ Every SDK error is an instance of `AbadgeApiError`. The class carries the same e
 import { AbadgeApiError } from "@abadge/sdk";
 
 class AbadgeApiError extends Error {
-  statusCode: number;                      // HTTP status code
-  code: string;                            // Machine-readable code (e.g. "PERMISSION_DENIED")
-  message: string;                         // Human-readable description
-  hint: string;                            // Actionable next step
-  meta?: Record<string, unknown>;          // Structured context for clients
-  issues?: Array<{ path: string[]; message: string }>;  // VALIDATION_ERROR only
+  readonly statusCode: number;                      // HTTP status code
+  readonly code: ErrorCode | string;                // e.g. "PERMISSION_DENIED"
+  readonly message: string;                         // Human-readable description (inherited from Error)
+  readonly hint?: string;                           // Actionable next step, if provided
+  readonly meta?: Readonly<Record<string, unknown>>; // Structured context for clients
 
   static fromResponse(res: Response, fallback: string): Promise<AbadgeApiError>;
   static fromUnknown(error: unknown, fallback: string): AbadgeApiError;
 }
 ```
+
+For `VALIDATION_ERROR`, validation issues are delivered inside `meta.issues` as an array of `{ path, message }` objects. There is no dedicated top-level `issues` field on the SDK error class.
 
 ## Basic usage
 
@@ -108,12 +109,15 @@ try {
 
 ## Validation errors
 
-`VALIDATION_ERROR` carries an `issues` array describing each failing input:
+`VALIDATION_ERROR` carries the failing inputs under `meta.issues`:
 
 ```ts
+type ValidationIssue = { path: string[]; message: string };
+
 catch (err) {
   if (err instanceof AbadgeApiError && err.code === "VALIDATION_ERROR") {
-    for (const issue of err.issues ?? []) {
+    const issues = (err.meta?.issues ?? []) as ValidationIssue[];
+    for (const issue of issues) {
       console.error(`${issue.path.join(".")}: ${issue.message}`);
     }
   }

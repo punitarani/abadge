@@ -1,16 +1,20 @@
 ---
-title: "abadge vault"
+title: "Vault commands"
 description: "Unlock, lock, inspect, and change the password of a zero-knowledge profile."
 ---
 
-The `vault` subcommands operate on the active zero-knowledge profile through the local daemon. Server-managed profiles do not need unlock — the API decrypts on authorized requests.
+Vault commands operate on the **active zero-knowledge profile** through the local daemon. Server-managed profiles do not need unlock — the API decrypts on authorized requests.
 
-## `abadge vault unlock`
+<Note>
+  These commands live under `abadge profile`. `abadge vault ...` is a deprecated alias that still works and prints a warning; prefer `abadge profile ...` in scripts.
+</Note>
 
-Prompts for the profile master password and unwraps the root key into daemon memory.
+## `abadge profile unlock`
+
+Prompt for the profile master password and unwrap the root key into daemon memory.
 
 ```bash
-abadge vault unlock
+abadge profile unlock
 ```
 
 What happens:
@@ -20,45 +24,41 @@ What happens:
 3. Daemon unwraps the root key with XChaCha20-Poly1305.
 4. Root key sits in process memory until lock or idle timeout.
 
-If the password is wrong, the unwrap fails — abadge does not perform a separate password check.
+If the password is wrong, the XChaCha20-Poly1305 authentication tag fails and the unwrap errors out. abadge does not perform a separate password verification step.
 
-The password is read from a TTY prompt with echo disabled. Passing `--password-stdin` reads from stdin instead, useful for scripts:
+The password is read from a TTY prompt with echo disabled. There is no `--password-stdin` flag — scripts that need unattended unlock should issue a session through the API directly.
+
+## `abadge profile lock`
+
+Zero the in-memory root key and clear daemon-held authenticated state.
 
 ```bash
-echo "$PROFILE_PASSWORD" | abadge vault unlock --password-stdin
+abadge profile lock
 ```
 
-## `abadge vault lock`
+The operator session and provisioned runtime agent references stay loaded. Only the unlocked root key is dropped.
 
-Zeros the in-memory root key and clears daemon-held authenticated state.
+## `abadge profile status`
+
+Report whether a profile is currently unlocked and which key version is live.
 
 ```bash
-abadge vault lock
+abadge profile status
 ```
 
-The operator session and provisioned runtime agent references stay loaded. Just the unlocked root key is dropped.
+Output:
 
-## `abadge vault status`
-
-Reports whether a profile is currently unlocked.
-
-```bash
-abadge vault status
-abadge vault status --json
+```
+Profile: unlocked
+Key version: 1
 ```
 
-Output includes:
+## `abadge profile change-password`
 
-- The active profile (or `none`)
-- Whether the root key is unlocked
-- Time until auto-lock (in minutes)
-
-## `abadge vault change-password`
-
-Prompts for the current password and a new password, then re-wraps the root key.
+Prompt for the current password and a new password, then re-wrap the root key.
 
 ```bash
-abadge vault change-password
+abadge profile change-password
 ```
 
 What happens:
@@ -70,12 +70,13 @@ What happens:
 
 The root key itself is unchanged — every existing item remains decryptable. Existing recovery keys still work.
 
-## Recovery (planned)
+## Recovery and key rotation
 
-Recovery key generation and rotation are managed in the dashboard for v1. CLI support is on the roadmap.
+Recovery key generation and root-key rotation are dashboard operations in v1. CLI support is on the roadmap.
 
 ## Related
 
+- [`abadge profile`](/cli/profile) — create / list / switch profiles
 - [`abadge daemon`](/cli/daemon)
 - [Vault security (dashboard)](/dashboard/vault-security)
 - [Zero-knowledge encryption](/security/zero-knowledge)

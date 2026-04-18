@@ -21,9 +21,9 @@ What happens:
 2. Spawn the daemon as a detached background process.
 3. Bind the socket with `0600` permissions.
 4. Write the PID file.
-5. Wait for the socket to accept a `vault.status` ping.
+5. Wait for the socket to accept a status ping.
 
-The daemon does **not** unlock any vault on start. Run `abadge vault unlock` to load a profile root key.
+The daemon does **not** unlock any profile on start. Run `abadge profile unlock` to load a profile root key into daemon memory.
 
 ## `abadge daemon status`
 
@@ -33,18 +33,7 @@ Print the daemon's runtime state.
 abadge daemon status
 ```
 
-Output includes:
-
-- Whether the daemon is running and the PID
-- Whether an operator session is currently loaded in memory
-- Which profile (if any) is unlocked
-- Auto-lock countdown (default 15 minutes of inactivity)
-
-With `--json`:
-
-```bash
-abadge daemon status --json
-```
+Output includes whether the daemon is running and its PID. For profile-level unlock state, use `abadge profile status`.
 
 ## `abadge daemon stop`
 
@@ -56,18 +45,16 @@ abadge daemon stop
 
 What happens:
 
-1. Send a `daemon.shutdown` RPC over the socket.
+1. Send a shutdown RPC over the socket.
 2. The daemon zeros out the in-memory operator session and any unlocked root key.
-3. Mounted secret files (from `mount_file`) are released and deleted.
+3. Any mounted secret files are released and deleted.
 4. The PID file and socket are removed.
 
 If the daemon is wedged, fall back to `kill $(cat ~/.abadge/vaultd.pid)`.
 
 ## Auto-lock
 
-The daemon tracks idle time. After 15 minutes without an RPC it auto-locks: the in-memory root key is zeroed and `vault.status` reports `locked`. The operator session stays loaded.
-
-To override the timeout, pass `--auto-lock-minutes` to `daemon start` (planned; check `--help` for current support).
+The daemon tracks idle time. After the idle window passes, the in-memory root key is zeroed and `abadge profile status` reports `locked`. The operator session stays loaded.
 
 ## File permissions
 
@@ -80,6 +67,6 @@ To override the timeout, pass `--auto-lock-minutes` to `daemon start` (planned; 
 
 ## Related
 
-- [`abadge vault unlock`](/cli/vault)
+- [`abadge profile unlock`](/cli/vault)
 - [Trust boundaries](/security/trust-boundaries)
 - [Configuration](/cli/configuration)

@@ -19,8 +19,9 @@ abadge export --format json > secrets.json
 
 | Flag | Description |
 |---|---|
-| `--format` | `env` (default) or `json` |
-| `--profile` | Override the active profile |
+| `--format <fmt>` | `env` (default) or `json` |
+
+Export always uses the active organization's server-managed items. To target a different scope, switch orgs with `abadge org use`.
 
 ## env format
 

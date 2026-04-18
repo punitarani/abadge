@@ -8,19 +8,30 @@ description: "Grant, list, and revoke capabilities."
 Grant an explicit capability for an agent on an item.
 
 ```bash
-abadge permission create --agent <agent-id> --item <item-id> --capability reveal_plaintext
-abadge permission create --agent <agent-id> --item <item-id> --capability mount_env
-abadge permission create --agent <agent-id> --item <item-id> --capability mount_env \
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability reveal_plaintext
+
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability mount_env
+
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability mount_env \
   --expires-at 2026-12-31T00:00:00Z
 ```
 
-| Flag | Description |
-|---|---|
-| `--agent`, `--agent-id` | Target agent |
-| `--item`, `--item-id` | Target item |
-| `--capability` | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file`. Defaults to `mount_env`. |
-| `--expires-at` | Optional ISO timestamp expiry |
-| `--json` | Print raw JSON |
+| Flag | Required | Description |
+|---|---|---|
+| `--agent-id <id>` | yes | Target agent |
+| `--item-id <id>` | yes | Target item |
+| `--capability <cap>` | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file` |
+| `--expires-at <ts>` | no | ISO timestamp expiry |
+| `--json` | no | Print raw JSON |
 
 The CLI rejects invalid combinations at create time. The capability matrix:
 
@@ -40,11 +51,17 @@ abadge permission list --item-id <item-id>
 abadge permission list --json
 ```
 
-Output columns: `id`, `agentId`, `itemId`, `capability`, `expiresAt`, `grantedBy`, `createdAt`.
+| Flag | Description |
+|---|---|
+| `--agent-id <id>` | Filter to one agent |
+| `--item-id <id>` | Filter to one item |
+| `--json` | Print raw JSON |
 
-## `abadge permission revoke <id>`
+Output columns: `ID`, `Agent`, `Item`, `Capability`, `Expires`, `Created`.
 
-Revokes a permission immediately. In-flight access attempts that haven't yet checked the row see the deletion and are denied.
+## `abadge permission revoke <permission-id>`
+
+Revoke a permission immediately. In-flight access attempts that haven't yet checked the row see the deletion and are denied.
 
 ```bash
 abadge permission revoke <permission-id>

@@ -71,7 +71,7 @@ Validation errors include an extra `issues` array:
 | `PROFILE_ALREADY_EXISTS` | 409 | Profile with this name already exists in the org |
 | `PROFILE_NOT_EMPTY` | 409 | Profile deletion blocked because it still contains items |
 | `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |
-| `RATE_LIMITED` | 429 | Too many requests; back off and retry |
+| `RATE_LIMITED` | 429 | Too many requests; back off and retry. Emitted by edge middleware as `{ "error": "Too many requests" }` — see [Rate limiting](/api/rate-limiting). |
 | `INTEGRITY_ERROR` | 500 | Server-side data integrity failure |
 
 ## SDK error handling

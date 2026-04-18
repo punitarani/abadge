@@ -7,7 +7,7 @@ The `organizations` router covers the top-level isolation boundary plus member m
 
 ## `organizations.create`
 
-**Tier:** `sessionProcedure`
+**Tier:** `userProcedure` — requires an authenticated user, but the caller does not need an active organization context. Used for first-org creation during onboarding.
 
 <ParamField path="name" type="string" required>
   Organization display name.
@@ -20,7 +20,7 @@ The `organizations` router covers the top-level isolation boundary plus member m
 
 ## `organizations.list`
 
-**Tier:** `sessionProcedure`
+**Tier:** `userProcedure` — requires an authenticated user; no active-org context needed.
 
 **Input:** none.
 
@@ -113,6 +113,10 @@ Cascades to agents, permissions, profiles, and items. Audit entries persist.
 
 Only the SHA-256 hash of `token` is stored. Invitations expire after 7 days. The frontend builds the URL: `{APP_URL}/invite/accept?token={token}`.
 
+<Note>
+  The invite procedure does not take an email address. The recipient's identity is bound at accept time — anyone holding the token (and signed in) can redeem it. Distribute invite URLs through an authenticated channel.
+</Note>
+
 ## `organizations.members.getInviteInfo`
 
 **Tier:** `sessionProcedure`
@@ -165,7 +169,9 @@ Atomic: uses `WHERE usedAt IS NULL` to prevent double-accept races.
 **Tier:** `sessionProcedure`
 
 <ParamField path="orgId" type="string" required />
-<ParamField path="userId" type="string" required />
+<ParamField path="memberId" type="string" required>
+  The `member.id` from `organizations.members.list`. Not the user's `userId`.
+</ParamField>
 
 **Returns:** `{ ok: true }`.
 
@@ -176,7 +182,9 @@ Cascades agent revocation for agents owned by the removed member.
 **Tier:** `sessionProcedure`
 
 <ParamField path="orgId" type="string" required />
-<ParamField path="userId" type="string" required />
+<ParamField path="memberId" type="string" required>
+  The `member.id` from `organizations.members.list`. Not the user's `userId`.
+</ParamField>
 <ParamField path="role" type="string" required>
   `owner`, `admin`, or `member`.
 </ParamField>

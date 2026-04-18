@@ -16,11 +16,11 @@ The `profiles` router manages credential namespaces. Each profile carries its ow
   Profile display name. Unique within the org.
 </ParamField>
 <ParamField path="description" type="string" />
-<ParamField path="storageMode" type="string">
-  `zero_knowledge` or `server_managed`. Defaults to `server_managed`.
+<ParamField path="storageMode" type="string" required>
+  `zero_knowledge` or `server_managed`. No default — must be explicit at the API level.
 </ParamField>
 
-**Returns:** `{ id }`.
+**Returns:** `{ profile }` with the full [profile record](/concepts/profiles).
 
 Errors: `PROFILE_ALREADY_EXISTS` if `(orgId, name)` collides.
 
@@ -38,7 +38,7 @@ Errors: `PROFILE_ALREADY_EXISTS` if `(orgId, name)` collides.
 
 <ParamField path="profileId" type="string" required />
 
-**Returns:** profile metadata, including `wrappedRootKey` and `kdfParams` so the client can derive the KEK.
+**Returns:** `{ profile }`. Includes `wrappedRootKey`, `kdfSalt`, and `kdfParams` so the client can derive the KEK for zero-knowledge profiles.
 
 ## `profiles.bootstrap`
 
@@ -54,12 +54,12 @@ Initialize encryption state for a zero-knowledge profile.
   16 random bytes, base64.
 </ParamField>
 <ParamField path="kdfParams" type="object" required>
-  `{ algorithm, memory, iterations, parallelism, hashLength }`.
+  `{ algorithm: "argon2id", memory, iterations, parallelism, hashLength }`.
 </ParamField>
 
-**Returns:** `{ id }`.
+**Returns:** `{ ok: true }`.
 
-Errors: `VAULT_ALREADY_EXISTS` if the profile is already bootstrapped.
+Errors: `PROFILE_ALREADY_EXISTS` if the profile is already bootstrapped.
 
 ## `profiles.changePassword`
 
@@ -68,9 +68,15 @@ Errors: `VAULT_ALREADY_EXISTS` if the profile is already bootstrapped.
 Re-wrap the root key under a new KEK. Root key unchanged, `keyVersion` unchanged.
 
 <ParamField path="profileId" type="string" required />
-<ParamField path="wrappedRootKey" type="string" required />
-<ParamField path="kdfSalt" type="string" required />
-<ParamField path="kdfParams" type="object" required />
+<ParamField path="wrappedRootKey" type="string" required>
+  Root key wrapped with the new KEK.
+</ParamField>
+<ParamField path="kdfSalt" type="string" required>
+  New 16-byte salt, base64.
+</ParamField>
+<ParamField path="kdfParams" type="object" required>
+  `{ algorithm: "argon2id", memory, iterations, parallelism, hashLength }`.
+</ParamField>
 
 **Returns:** `{ ok: true }`.
 
@@ -98,10 +104,10 @@ Generate a new root key and re-wrap every item DEK in a single transaction. Incr
   New root key wrapped with the current KEK.
 </ParamField>
 <ParamField path="recoveryWrappedRootKey" type="string">
-  New root key wrapped with the recovery key. Required if recovery is set up.
+  New root key wrapped with the recovery key. Pass if recovery is set up; otherwise omit.
 </ParamField>
-<ParamField path="rekeyedItems" type="object" required>
-  Map of `itemId` → new `encryptedItemKey`. Must include every item in the profile.
+<ParamField path="rekeyedItems" type="Array<{ itemId, encryptedItemKey, keyNonce }>" required>
+  Array of rewrapped items. Must include every zero-knowledge item in the profile.
 </ParamField>
 
 **Returns:** `{ ok: true, keyVersion }`.
@@ -117,14 +123,6 @@ Errors: `ROTATE_KEY_INCOMPLETE` if any item is missing from `rekeyedItems`. `met
 **Returns:** `{ ok: true }`.
 
 Errors: `PROFILE_NOT_EMPTY` if any items remain.
-
-## Legacy: `vault.*`
-
-Per-user vault procedures retained for web-app compatibility:
-
-- `vault.bootstrap`, `vault.get`, `vault.changePassword`, `vault.setupRecovery`, `vault.rotateKey`
-
-These will be removed in a future release. Prefer `profiles.*` for new integrations.
 
 ## Audit events
 
