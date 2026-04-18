@@ -1,0 +1,138 @@
+---
+title: "access.*"
+description: "The audited boundary. Every secret read goes through one of these procedures."
+---
+
+The `access` router is the audited boundary. Every secret read by an agent runs through one of these procedures, and every attempt — allowed or denied — appends an audit row.
+
+All three procedures are `agentProcedure` — they require an agent bearer credential.
+
+## `access.ciphertext`
+
+Return the encrypted blob of a zero-knowledge item for local-daemon decryption.
+
+**Required capability:** `read_ciphertext`.
+**Required item mode:** `zero_knowledge`.
+**Required locality:** `local`.
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:**
+
+```ts
+{
+  encryptedItemKey: string;   // DEK wrapped by root key
+  keyNonce: string;
+  ciphertext: string;          // payload encrypted by DEK
+  contentNonce: string;
+  cryptoVersion: number;
+}
+```
+
+Denied if: remote agent, server-managed item, or missing `read_ciphertext` permission.
+
+Audit: `access.ciphertext` with `result: allowed` or `denied`.
+
+## `access.reveal`
+
+Decrypt and return a field value from a server-managed item.
+
+**Required capability:** `reveal_plaintext`.
+**Required item mode:** `server_managed`.
+**Required locality:** any.
+
+<ParamField path="itemId" type="string" required />
+<ParamField path="field" type="string">
+  Named field for multi-field items. See [Field delivery](/concepts/fields).
+</ParamField>
+
+**Returns:** `{ payload }` containing the resolved field value.
+
+Errors:
+
+- `MULTI_FIELD_ITEM` when the item has multiple fields and `field` is omitted. `meta.availableFields` lists the names.
+- `FIELD_NOT_FOUND` when `field` does not exist.
+- `INVALID_CAPABILITY_STORAGE` for zero-knowledge items.
+
+Audit: `access.reveal`.
+
+## `access.mount`
+
+Return data appropriate for local injection (env var or temp file).
+
+**Required capability:** `mount_env` or `mount_file`.
+**Required item mode:** any.
+**Required locality:** `local`.
+
+<ParamField path="itemId" type="string" required />
+<ParamField path="mountType" type="string" required>
+  `env` or `file`.
+</ParamField>
+<ParamField path="field" type="string">
+  Named field for multi-field items.
+</ParamField>
+
+**Returns:**
+
+For server-managed items:
+
+```ts
+{
+  storageMode: "server_managed";
+  payload: ItemPayload;
+}
+```
+
+For zero-knowledge items (the daemon decrypts locally):
+
+```ts
+{
+  storageMode: "zero_knowledge";
+  encryptedItemKey: string;
+  keyNonce: string;
+  ciphertext: string;
+  contentNonce: string;
+  cryptoVersion: number;
+}
+```
+
+Denied if: remote agent, or missing the corresponding `mount_*` permission.
+
+Audit: `access.mount_env` or `access.mount_file`.
+
+## Decision flow
+
+Every `access.*` call runs the same decision flow before any decryption:
+
+<Steps>
+  <Step title="Authenticate the bearer token">
+    Resolve `abs_...`, then `abl_/abg_...`, then legacy fallback.
+  </Step>
+  <Step title="Resolve the item">
+    Must belong to the same organization as the agent.
+  </Step>
+  <Step title="Check the permission row">
+    `(agentId, itemId, capability)` must exist.
+  </Step>
+  <Step title="Check expiry">
+    `expiresAt` must be null or in the future. Otherwise `result: expired`.
+  </Step>
+  <Step title="Enforce the capability matrix">
+    Locality and storage mode must match.
+  </Step>
+  <Step title="Audit the attempt">
+    Append the row before returning. Allowed and denied alike.
+  </Step>
+  <Step title="Decrypt only if authorized">
+    Server-managed items are decrypted by the API. ZK items are returned as ciphertext for local decryption.
+  </Step>
+</Steps>
+
+See [Permissions and capabilities](/concepts/permissions-and-capabilities) for the full matrix.
+
+## Audit events
+
+- `access.ciphertext`
+- `access.reveal`
+- `access.mount_env`
+- `access.mount_file`

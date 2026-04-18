@@ -1,0 +1,190 @@
+---
+title: "organizations.*"
+description: "Org CRUD, member management, and the invite flow."
+---
+
+The `organizations` router covers the top-level isolation boundary plus member management.
+
+## `organizations.create`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="name" type="string" required>
+  Organization display name.
+</ParamField>
+<ParamField path="slug" type="string">
+  URL-safe identifier. Auto-generated if omitted.
+</ParamField>
+
+**Returns:** `{ id, name, slug }`.
+
+## `organizations.list`
+
+**Tier:** `sessionProcedure`
+
+**Input:** none.
+
+**Returns:**
+
+```ts
+{
+  organizations: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    logo: string | null;
+    createdAt: string;
+    role: "owner" | "admin" | "member";
+    hasBootstrappedProfile: boolean;
+  }>;
+}
+```
+
+`hasBootstrappedProfile` is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`. The dashboard onboarding-resume flow uses it to skip a per-org `profiles.list` round trip.
+
+## `organizations.get`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+
+**Returns:** the organization record.
+
+## `organizations.update`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+<ParamField path="name" type="string" />
+
+**Returns:** `{ ok: true }`.
+
+## `organizations.delete`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+Cascades to agents, permissions, profiles, and items. Audit entries persist.
+
+## `organizations.members.list`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+
+**Returns:**
+
+```ts
+{
+  members: Array<{
+    id: string;
+    userId: string;
+    name: string;
+    email: string | null;
+    role: "owner" | "admin" | "member";
+    createdAt: string;
+  }>;
+}
+```
+
+`email` is `null` when the caller's role is `member`, including for the caller's own row. Members should read their email from the session.
+
+## `organizations.members.invite`
+
+**Tier:** `sessionProcedure` (admin or owner)
+
+<ParamField path="orgId" type="string" required />
+<ParamField path="role" type="string">
+  `owner`, `admin`, or `member`. Defaults to `member`.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  ok: true;
+  invitationId: string;
+  token: string;       // abi_... shown once
+}
+```
+
+Only the SHA-256 hash of `token` is stored. Invitations expire after 7 days. The frontend builds the URL: `{APP_URL}/invite/accept?token={token}`.
+
+## `organizations.members.getInviteInfo`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="token" type="string" required />
+
+**Returns:**
+
+```ts
+{
+  organizationName: string;
+  organizationSlug: string;
+  role: "owner" | "admin" | "member";
+  expiresAt: string;
+}
+```
+
+Authentication is required to prevent enumeration of org names. Rate-limited to 10 lookups / minute per (user, IP); excess returns `RATE_LIMITED`.
+
+## `organizations.members.acceptInvite`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="token" type="string" required />
+
+**Returns:**
+
+```ts
+{
+  ok: true;
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+}
+```
+
+Atomic: uses `WHERE usedAt IS NULL` to prevent double-accept races.
+
+## `organizations.members.revokeInvite`
+
+**Tier:** `sessionProcedure` (admin or owner)
+
+<ParamField path="orgId" type="string" required />
+<ParamField path="invitationId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+## `organizations.members.remove`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+<ParamField path="userId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+Cascades agent revocation for agents owned by the removed member.
+
+## `organizations.members.updateRole`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+<ParamField path="userId" type="string" required />
+<ParamField path="role" type="string" required>
+  `owner`, `admin`, or `member`.
+</ParamField>
+
+**Returns:** `{ ok: true }`.
+
+## Audit events
+
+- `org.create`, `org.update`, `org.delete`
+- `member.invite`, `member.accept`, `member.remove`, `member.update_role`
+- `agent.revoke_cascade` (when a member with owned agents is removed)

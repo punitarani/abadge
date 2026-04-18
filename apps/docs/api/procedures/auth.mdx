@@ -1,0 +1,146 @@
+---
+title: "auth.*"
+description: "Agent enrollment, challenge / session exchange, and operator audit lifecycle."
+---
+
+The `auth` router owns agent enrollment, the keypair-based session exchange, and the audit hooks for operator login / logout.
+
+## `auth.issueBootstrapToken`
+
+**Tier:** `sessionProcedure`
+
+Issue a one-time `abe_...` bootstrap token for an existing agent. Used to re-enroll an agent that's lost its private key, or to enroll an agent that was created with no `publicKey` and no initial bootstrap token.
+
+<ParamField path="agentId" type="string" required>
+  Agent to issue the token for.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  bootstrapToken: string;       // abe_... shown once
+  bootstrapExpiresAt: string;   // ISO timestamp, +10 minutes
+}
+```
+
+## `auth.enroll`
+
+**Tier:** `publicProcedure`
+
+Redeem a bootstrap token and upload an Ed25519 public key. Consumes the token.
+
+<ParamField path="bootstrapToken" type="string" required>
+  The `abe_...` token issued by `auth.issueBootstrapToken` or `agents.create`.
+</ParamField>
+
+<ParamField path="publicKey" type="string" required>
+  Ed25519 public key serialized as JWK JSON.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  agent: Agent;
+}
+```
+
+Errors:
+
+- `INVALID_BOOTSTRAP_TOKEN` — token not found or already used
+- `BOOTSTRAP_TOKEN_EXPIRED` — past 10-minute TTL
+- `AGENT_ALREADY_ENROLLED` — the agent already has a public key
+
+## `auth.createChallenge`
+
+**Tier:** `publicProcedure`
+
+Create a short-lived signing challenge for the given agent.
+
+<ParamField path="agentId" type="string" required>
+  Agent that will sign the challenge.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  challengeId: string;
+  challenge: string;       // abc_... opaque, base64url-encoded
+  expiresAt: string;       // ISO timestamp, +60 seconds
+}
+```
+
+The agent signs `challenge` (the raw decoded bytes) with its Ed25519 private key, then calls `auth.exchangeSession` with the signature.
+
+## `auth.exchangeSession`
+
+**Tier:** `publicProcedure`
+
+Verify the signed challenge and issue an `abs_...` session token.
+
+<ParamField path="agentId" type="string" required />
+<ParamField path="challengeId" type="string" required>
+  ID returned by `auth.createChallenge`.
+</ParamField>
+<ParamField path="signature" type="string" required>
+  Detached Ed25519 signature over the challenge bytes, base64url-encoded.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  token: string;          // abs_... shown once
+  expiresAt: string;      // ISO timestamp, +15 minutes default
+}
+```
+
+Errors:
+
+- `AGENT_CHALLENGE_NOT_FOUND` — `challengeId` unknown or already used
+- `AGENT_CHALLENGE_EXPIRED` — past 60-second TTL
+- `AGENT_NOT_ENROLLED` — no public key on file
+- `AGENT_REVOKED` — agent disabled
+- `UNAUTHORIZED` — signature did not verify
+
+## `auth.revokeSession`
+
+**Tier:** `sessionProcedure`
+
+Revoke a single active `abs_...` session belonging to an agent the operator owns.
+
+<ParamField path="sessionId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+Audit: `agent.session_revoke`.
+
+## `auth.recordLogin`
+
+**Tier:** `sessionProcedure`
+
+Append an `auth.login` audit entry for the current operator. Called by the CLI after a successful device-code exchange.
+
+**Input:** none.
+**Returns:** `{ ok: true }`.
+
+## `auth.logout`
+
+**Tier:** `sessionProcedure`
+
+Append an `auth.logout` audit entry for the current operator. Called by `abadge logout` and the dashboard sign-out handler. The actual session invalidation happens through Better Auth (`/api/auth/sign-out`).
+
+**Input:** none.
+**Returns:** `{ ok: true }`.
+
+## Audit events
+
+- `agent.bootstrap_issue`
+- `agent.enroll`
+- `agent.session_issue`
+- `agent.session_reject`
+- `agent.session_revoke`
+- `auth.login`
+- `auth.logout`

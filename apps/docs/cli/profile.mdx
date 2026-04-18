@@ -1,0 +1,51 @@
+---
+title: "abadge profile"
+description: "Create, list, and switch the active profile within an organization."
+---
+
+Profiles are encryption namespaces inside an organization. Each profile carries its own root key.
+
+## `abadge profile create`
+
+```bash
+abadge profile create --name "production"
+abadge profile create --name "staging" --storage-mode server_managed
+```
+
+| Flag | Description |
+|---|---|
+| `--name`, `-n` | Profile display name (unique within org) |
+| `--storage-mode` | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
+| `--description`, `-d` | Optional description |
+| `--json` | Print raw JSON |
+
+For zero-knowledge profiles, the CLI prompts for a master password, derives the KEK locally, generates the root key, and ships only the wrapped material to the server (`profiles.create` + `profiles.bootstrap`).
+
+For server-managed profiles, the CLI just creates the empty profile shell.
+
+## `abadge profile list`
+
+Lists profiles in the active organization.
+
+```bash
+abadge profile list
+abadge profile list --json
+```
+
+## `abadge profile use <name>`
+
+Sets the active profile. Persisted to `~/.abadge/config.json`. Subsequent `item create` commands target this profile.
+
+```bash
+abadge profile use production
+```
+
+## Recovery
+
+Recovery-key setup and key rotation are dashboard operations in v1.
+
+## Related
+
+- [Concepts: profiles](/concepts/profiles)
+- [Dashboard: profiles](/dashboard/profiles)
+- [API: profiles procedures](/api/procedures/profiles)

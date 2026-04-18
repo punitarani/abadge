@@ -1,0 +1,343 @@
+---
+title: "Workflows"
+description: "Visual reference for every major workflow across all surfaces."
+---
+
+These diagrams describe the canonical flows in abadge. Each one is implemented in code and exercised by tests; if a diagram and the implementation disagree, the implementation wins.
+
+## System overview
+
+```mermaid
+flowchart LR
+  subgraph Clients["Surfaces"]
+    Browser["Dashboard"]
+    CLI["CLI"]
+    MCP["MCP server"]
+    SDK["SDK"]
+    Remote["Remote agent"]
+  end
+
+  subgraph Local["Local runtime"]
+    Daemon["vaultd<br/>(ZK crypto)"]
+  end
+
+  subgraph Edge["Cloudflare edge"]
+    Web["Next.js<br/>(Dashboard)"]
+    API["Hono + tRPC<br/>(API)"]
+    Auth["Better Auth"]
+  end
+
+  subgraph Data["Storage"]
+    HD["Hyperdrive"]
+    DB[(PostgreSQL)]
+  end
+
+  Browser --> Web --> API
+  CLI --> API
+  CLI --> Daemon
+  MCP --> API
+  MCP --> Daemon
+  SDK --> API
+  Remote --> API
+  API --> Auth
+  API --> HD --> DB
+```
+
+## User authentication
+
+### Dashboard login
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant Web as Dashboard
+  participant API as API
+  participant Auth as Better Auth
+  participant DB as PostgreSQL
+
+  User->>Web: Open login page
+  User->>Web: Enter email + password
+  Web->>API: POST /api/auth/sign-in
+  API->>Auth: Verify credentials
+  Auth->>DB: Lookup account
+  DB-->>Auth: Account record
+  Auth->>DB: Create session (7-day TTL)
+  Auth-->>API: Session cookie
+  API-->>Web: Set-Cookie
+  Web-->>User: Redirect to dashboard
+```
+
+### CLI device authorization
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as API
+  participant Browser as Browser
+
+  CLI->>API: Request device code
+  API-->>CLI: device_code + user_code + verification URL
+  CLI->>CLI: Display user_code
+  Note over CLI: Open browser and enter code: ABCD-1234
+  Browser->>API: User approves device code
+  API-->>Browser: Approved
+  CLI->>API: Poll for token
+  API-->>CLI: Access token
+  CLI->>CLI: Store session in daemon memory
+  Note over CLI: Config file never stores human bearer token
+```
+
+### Social login (Google / GitHub)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant Web as Dashboard
+  participant API as API
+  participant Provider as OAuth Provider
+
+  User->>Web: Click "Sign in with Google/GitHub"
+  Web->>API: Initiate OAuth
+  API->>Provider: Redirect to authorization
+  Provider-->>User: Consent screen
+  User->>Provider: Approve
+  Provider-->>API: Authorization code
+  API->>Provider: Exchange for tokens
+  Provider-->>API: Access token + profile
+  API->>API: Create or link account
+  API-->>Web: Session cookie
+  Web-->>User: Dashboard
+```
+
+## Agent lifecycle
+
+### Agent registration
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant API as API
+  participant DB as PostgreSQL
+
+  User->>API: Create agent (name, kind)
+  API->>API: Generate Ed25519 keypair or API key
+  API->>DB: Store agent (public key or hashed secret)
+  API->>DB: Audit: agent.create
+  API-->>User: Agent ID + one-time secret/bootstrap token
+
+  Note over User: API key or bootstrap token shown ONCE
+  Note over User: Never retrievable again
+```
+
+### Agent enrollment (public key)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant Agent as Agent
+  participant API as API
+
+  User->>API: Issue bootstrap token for agent
+  API-->>User: Bootstrap token (10-min TTL)
+  User->>Agent: Deliver bootstrap token (out-of-band)
+
+  Agent->>Agent: Generate Ed25519 keypair
+  Agent->>API: Enroll (bootstrap token + public key)
+  API->>API: Verify token (hash match, not expired, not used)
+  API->>API: Store public key, mark token used
+  API->>API: Audit: agent.enroll
+  API-->>Agent: Enrollment confirmed
+```
+
+### Agent session exchange
+
+```mermaid
+sequenceDiagram
+  participant Agent as Agent
+  participant API as API
+  participant DB as PostgreSQL
+
+  Agent->>API: Request challenge (agent ID)
+  API->>DB: Create challenge (60-second TTL)
+  API-->>Agent: Challenge + challenge ID
+
+  Agent->>Agent: Sign challenge with private key
+  Agent->>API: Exchange (agent ID, challenge ID, signature)
+  API->>API: Verify Ed25519 signature
+  API->>API: Hash session token
+  API->>DB: Store session (15-minute TTL)
+  API->>DB: Audit: agent.session_issue
+  API-->>Agent: Session token (abs_...)
+```
+
+## Profile and item management
+
+### Zero-knowledge profile bootstrap
+
+```mermaid
+sequenceDiagram
+  participant User as User (Browser/CLI)
+  participant API as API
+
+  User->>User: Enter master password
+  User->>User: Generate salt (16 bytes)
+  User->>User: Derive KEK via Argon2id (64 MiB)
+  User->>User: Generate root key (32 bytes)
+  User->>User: Wrap root key with KEK (XChaCha20-Poly1305)
+  User->>API: Bootstrap profile (wrapped root key, salt, KDF params)
+  API->>API: Store profile envelope
+  API->>API: Audit: profile.create
+  API-->>User: Success
+```
+
+### Creating a zero-knowledge item
+
+```mermaid
+sequenceDiagram
+  participant User as User (Browser/CLI)
+  participant Daemon as Daemon (if CLI)
+  participant API as API
+
+  User->>User: Prepare payload (label, kind, fields)
+  User->>User: Generate DEK (32 bytes)
+  User->>User: Encrypt payload with DEK (XChaCha20-Poly1305)
+  User->>User: Wrap DEK with root key (XChaCha20-Poly1305)
+  User->>API: Create item (encryptedItemKey, ciphertext)
+  API->>API: Store ciphertext (server never sees plaintext)
+  API->>API: Audit: item.create
+  API-->>User: Item ID
+```
+
+### Creating a server-managed item
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant API as API
+
+  User->>API: Create item (payload: {label, kind, fields})
+  API->>API: Generate IV (12 bytes)
+  API->>API: Encrypt with AES-256-GCM (ENCRYPTION_KEY)
+  API->>API: Store ciphertext + IV
+  API->>API: Audit: item.create
+  API-->>User: Item ID
+```
+
+## Permission and access control
+
+### Grant permission
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant API as API
+  participant DB as PostgreSQL
+
+  User->>API: Create permission (agent, item, capability, expiry?)
+  API->>API: Validate capability vs agent locality
+  API->>API: Validate capability vs item storage mode
+  API->>DB: Insert grant record
+  API->>DB: Audit: permission.create
+  API-->>User: Permission ID
+```
+
+### Full access decision flow
+
+```mermaid
+flowchart TD
+  Start["Agent sends request<br/>(Bearer token)"] --> AuthCheck{"Authenticate<br/>token"}
+  AuthCheck -->|"abs_ prefix"| SessionAuth["Verify session<br/>(hash lookup, TTL check)"]
+  AuthCheck -->|"abl_/abg_ prefix"| KeyAuth["Verify API key<br/>(prefix lookup, hash match)"]
+  AuthCheck -->|"other"| LegacyAuth["Legacy Better Auth<br/>API key fallback"]
+
+  SessionAuth --> Resolved{"Agent<br/>resolved?"}
+  KeyAuth --> Resolved
+  LegacyAuth --> Resolved
+
+  Resolved -->|No| Deny1["DENY<br/>(401 Unauthorized)"]
+  Resolved -->|Yes| LoadItem["Load target item<br/>(same org check)"]
+
+  LoadItem --> ItemExists{"Item<br/>exists?"}
+  ItemExists -->|No| Deny2["DENY<br/>(404 Not Found)"]
+  ItemExists -->|Yes| PermCheck["Check permission<br/>(agent + item + capability)"]
+
+  PermCheck --> HasPerm{"Explicit<br/>permission?"}
+  HasPerm -->|No| Deny3["DENY<br/>(403 Forbidden)"]
+  HasPerm -->|Yes| Expired{"Permission<br/>expired?"}
+
+  Expired -->|Yes| Deny4["DENY<br/>(403 Expired)"]
+  Expired -->|No| LocalityCheck{"Locality +<br/>storage mode<br/>valid?"}
+
+  LocalityCheck -->|No| Deny5["DENY<br/>(403 Invalid capability)"]
+  LocalityCheck -->|Yes| Decrypt["Decrypt / return<br/>based on capability"]
+
+  Decrypt --> AuditAllow["Audit: ALLOWED"]
+  Deny1 --> AuditDeny["Audit: DENIED"]
+  Deny2 --> AuditDeny
+  Deny3 --> AuditDeny
+  Deny4 --> AuditDeny
+  Deny5 --> AuditDeny
+```
+
+### Environment injection (`abadge run`)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant CLI as CLI
+  participant Daemon as Daemon
+  participant API as API
+  participant Proc as Subprocess
+
+  User->>CLI: abadge run --item <id> --env-var SECRET -- ./app
+  CLI->>API: Access mount (item ID, mountType: env)
+  API->>API: Auth + permission + capability check
+  API->>API: Decrypt (server-managed) or return ciphertext (ZK)
+  API-->>CLI: Secret payload
+  alt Zero-knowledge item
+    CLI->>Daemon: Decrypt (encryptedItemKey, ciphertext)
+    Daemon-->>CLI: Plaintext
+  end
+  CLI->>Proc: Spawn with SECRET=<value> in env
+  Note over Proc: Secret lives only in process memory
+  Proc-->>CLI: Exit code
+  CLI-->>User: Done
+```
+
+### File mounting (`abadge mount`)
+
+```mermaid
+sequenceDiagram
+  participant User as User
+  participant CLI as CLI
+  participant API as API
+  participant FS as Filesystem
+
+  User->>CLI: abadge mount --item <id>
+  CLI->>API: Access mount (item ID, mountType: file)
+  API->>API: Auth + permission check
+  API-->>CLI: Secret payload
+  CLI->>FS: Write to temp file (mode 0600)
+  CLI-->>User: File path
+  Note over FS: File auto-cleaned on process exit
+```
+
+### MCP tool execution
+
+```mermaid
+sequenceDiagram
+  participant LLM as AI Model
+  participant MCP as MCP server
+  participant API as API
+  participant Proc as Subprocess
+
+  LLM->>MCP: run_with_secret(itemId, command)
+  MCP->>API: Access mount (item ID)
+  API->>API: Auth + permission check
+  API-->>MCP: Secret value
+  MCP->>Proc: Spawn with secret in env var
+  Proc-->>MCP: stdout + stderr
+  MCP->>MCP: Redact secret from output
+  MCP->>MCP: Truncate to 4 KB
+  MCP-->>LLM: Sanitized output (secret NEVER visible)
+```

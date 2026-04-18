@@ -1,0 +1,95 @@
+---
+title: "Authentication"
+description: "Configure the MCP server with keypair sessions or a legacy API key."
+---
+
+The MCP server resolves credentials from environment variables and the CLI config file in this order. The first source that provides a complete credential set wins.
+
+## Preferred: keypair sessions
+
+Set these env vars on the MCP subprocess:
+
+| Variable | Required | Description |
+|---|---|---|
+| `ABADGE_API_URL` | yes | Base URL of the API |
+| `ABADGE_AGENT_ID` | yes | Provisioned MCP agent ID |
+| `ABADGE_PRIVATE_KEY_PATH` | yes | Path to the Ed25519 private key (JWK) |
+
+MCP-specific overrides (take precedence over the generic ones):
+
+| Variable | Description |
+|---|---|
+| `ABADGE_MCP_AGENT_ID` | Overrides `ABADGE_AGENT_ID` for MCP only |
+| `ABADGE_MCP_PRIVATE_KEY_PATH` | Overrides `ABADGE_PRIVATE_KEY_PATH` for MCP only |
+
+The server runs the keypair session lifecycle on startup:
+
+<Steps>
+  <Step title="Create an anonymous client">
+    No bearer set yet.
+  </Step>
+  <Step title="Request a challenge">
+    `auth.createChallenge` returns `abc_...` (60-second TTL).
+  </Step>
+  <Step title="Sign the challenge">
+    Ed25519 detached signature with the configured private key.
+  </Step>
+  <Step title="Exchange for a session">
+    `auth.exchangeSession` returns `abs_...` (15-minute TTL).
+  </Step>
+  <Step title="Schedule refresh">
+    A timer re-runs steps 2–4 at T-2 minutes before expiry. If a refresh fails, the next tool call returns `SESSION_REFRESH_FAILED`.
+  </Step>
+</Steps>
+
+## Config file fallback
+
+If the env vars aren't set, the server reads `~/.abadge/config.json` and uses `localAgents.mcp`:
+
+```json
+{
+  "apiUrl": "http://localhost:8787",
+  "localAgents": {
+    "mcp": {
+      "agentId": "agent_...",
+      "privateKeyPath": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+    }
+  }
+}
+```
+
+`abadge login` provisions this entry automatically. If you're running both the CLI and the MCP server on the same host as the same operator, the MCP server "just works" without any extra environment.
+
+Env vars take precedence over the config file. Use overrides when you want the MCP server to use a different agent than the CLI's local runtime agent — for example, when running an agent owned by a different teammate.
+
+## Legacy API key
+
+For migration only. Set:
+
+```bash
+export ABADGE_AUTH_TOKEN=abl_...
+```
+
+The server emits a deprecation warning on startup and on every tool invocation. Move to keypair sessions when you can.
+
+## What gets persisted
+
+- The Ed25519 **private key** lives at `ABADGE_PRIVATE_KEY_PATH` with `0600` permissions. Generate it with `abadge agent enroll`.
+- The Ed25519 **public key** is stored on the server (`agents.publicKey`).
+- Session tokens (`abs_...`) live in MCP server process memory only. Restarting the MCP server forces a new exchange.
+- Bootstrap tokens (`abe_...`) are consumed during enrollment and never persisted.
+
+## Audit
+
+The MCP server emits standard auth audit events:
+
+- `agent.session_issue` (on each successful exchange)
+- `agent.session_reject` (on failed signature verification)
+- `agent.session_revoke` (on explicit revocation)
+- All `access.*` events for tool calls
+
+## Related
+
+- [API: authentication](/api/authentication)
+- [API: `auth.*` procedures](/api/procedures/auth)
+- [`abadge agent enroll`](/cli/agent)

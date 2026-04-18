@@ -1,0 +1,92 @@
+---
+title: "abadge run"
+description: "Spawn a subprocess with a secret injected as an environment variable."
+---
+
+`abadge run` resolves a secret value and injects it into a subprocess via the daemon. The CLI exits with the child process exit code, so it composes naturally with shell scripts and CI pipelines.
+
+The CLI uses the provisioned `local_cli` runtime agent (registered automatically by `abadge login`) to mint or refresh a short-lived `abs_...` agent session, calls `access.mount` with `mountType: env`, and asks the daemon to spawn the subprocess with the secret in its environment.
+
+## Single-value items
+
+```bash
+# Inject as ABADGE_SECRET (default env var name)
+abadge run --item <item-id> -- npm run deploy
+
+# Inject as a custom env var name
+abadge run --item <item-id> --env-var OPENAI_API_KEY -- node script.js
+```
+
+## Multi-field items
+
+Use `--field` to pick a single named field:
+
+```bash
+abadge run --item <item-id> --field password --env-var DB_PASSWORD -- psql "$DB_HOST"
+```
+
+Stack multiple `--field` / `--env-var` pairs to inject several fields from one item:
+
+```bash
+abadge run --item prod-db \
+  --field username --env-var DB_USER \
+  --field password --env-var DB_PASSWORD \
+  -- ./migrate.sh
+```
+
+## Expand every field
+
+`--expand-env` injects every field of a multi-field item as a separate env var. The field name becomes the variable name (uppercased if needed by your shell convention — pass the field name in the casing you want).
+
+```bash
+abadge run --item my-service-env --expand-env -- ./server
+# → DATABASE_URL=..., REDIS_URL=..., API_KEY=... (one per field)
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--item` | Item ID or label |
+| `--field` | Named field to inject (for multi-field items). Can be repeated. |
+| `--env-var` | Environment variable name (default: `ABADGE_SECRET`). Pair with `--field`. |
+| `--expand-env` | Inject every field as a separate env var |
+| `--purpose` | Caller-declared purpose, recorded in audit |
+
+## Behavior
+
+<Steps>
+  <Step title="Mint or refresh the runtime session">
+    The CLI ensures a fresh `abs_...` session for `localAgents.cli`.
+  </Step>
+  <Step title="Resolve the item">
+    Fetches the item from the API. Server-managed items come back decrypted; ZK items come back as ciphertext that the daemon decrypts locally.
+  </Step>
+  <Step title="Resolve fields">
+    `resolveFieldValue` (from `@abadge/core/secret-delivery`) picks the right field based on `--field`, `--expand-env`, and the item shape. See [Field delivery](/concepts/fields).
+  </Step>
+  <Step title="Spawn the subprocess">
+    The daemon spawns the command with the secret(s) in env vars. The secret lives only in the child's process memory.
+  </Step>
+  <Step title="Wait for the child">
+    The CLI exits with the child's exit code so caller scripts see the right status.
+  </Step>
+  <Step title="Audit access.mount_env">
+    Every attempt — allowed or denied — appends an audit row.
+  </Step>
+</Steps>
+
+## Errors
+
+| Error | Cause | Fix |
+|---|---|---|
+| `PERMISSION_DENIED` | No matching `mount_env` permission | `abadge permission create --capability mount_env` |
+| `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted | Pass `--field <name>` or `--expand-env` |
+| `FIELD_NOT_FOUND` | Specified field doesn't exist | Inspect `meta.availableFields` in the error |
+| `INVALID_CAPABILITY_LOCALITY` | Trying to use a remote agent for `mount_env` | Use `local_cli` agent instead |
+
+## Related
+
+- [`abadge mount`](/cli/mount) — write the secret to a temp file instead
+- [Field delivery](/concepts/fields)
+- [API: `access.mount`](/api/procedures/access)

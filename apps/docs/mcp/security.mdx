@@ -1,0 +1,84 @@
+---
+title: "MCP security model"
+description: "What the model sees, what it doesn't, and the boundaries the MCP server enforces."
+---
+
+The MCP server treats the model as **untrusted**. Every tool is designed so the model can plan and act with secrets without ever receiving the raw bytes.
+
+## What the model sees
+
+| Surface | Content |
+|---|---|
+| `list_items` | Item metadata (IDs, labels, kinds, storage modes, tags, timestamps) |
+| `run_with_secret` | Exit code, redacted output (≤ 4 KB), truncation flag |
+| `mount_secret` | Opaque `mountId`, permissions string, expiry window |
+| `release_mount` | Confirmation of release |
+| `get_audit` | Audit metadata (no secrets) |
+
+## What the model does not see
+
+- Raw plaintext secret values
+- The full stdout / stderr of subprocesses spawned by `run_with_secret`
+- The filesystem path of mounted secrets
+- Decrypted zero-knowledge payloads
+- Bearer session tokens, private keys, or any auth material
+- The host's real environment variables
+
+## Enforcement
+
+| Guarantee | How |
+|---|---|
+| Secrets never in model context | `list_items` returns metadata only; `run_with_secret` returns redacted output; `mount_secret` returns an opaque ID |
+| Output redaction | `run_with_secret` scans stdout/stderr and replaces every occurrence of the secret with `[REDACTED]` (exact substring match) |
+| Output size cap | Each stream bounded to 8 KB pre-redaction; combined post-redaction output capped at 4 KB |
+| Opaque mount IDs | File paths are never returned; mount IDs are random hex tokens |
+| Restricted file permissions | Mounted files use mode `0600` inside a `0700` temp directory |
+| Auto-cleanup | Mounted files are deleted after 5 minutes; orphaned directories are swept on startup |
+| No raw-secret tool | No tool returns raw secret bytes to the model |
+
+## Redaction limitations
+
+Output redaction is **best-effort defense in depth**, not a guarantee. The MCP server scans stdout/stderr for the literal bytes of the secret and replaces each occurrence with `[REDACTED]`. It does **not** catch transformed forms:
+
+- **Base64-encoded** — a subprocess that emits `base64(secret)` leaks the secret
+- **URL-encoded / percent-encoded** — same
+- **JSON-escaped** (e.g., `\u0041`) — same
+- **Split across chunks** — if the subprocess emits the secret with a separator (newline, null byte, ANSI escape) spliced in the middle, redaction may miss that occurrence. The 8 KB pre-redaction buffer mitigates short secrets but doesn't eliminate the issue.
+
+If a tool must emit data derived from the secret, the **subprocess** is responsible for scrubbing it.
+
+## Zero-knowledge items
+
+For zero-knowledge items, the MCP server still relies on the local daemon for decrypt operations. The MCP server itself never holds the profile root key — it asks the daemon to decrypt and inject.
+
+This means the MCP server's trust tier matches the daemon's (Tier 1). A compromised MCP server can ask the daemon to decrypt items it has permissions for, but it can't extract the root key or decrypt items it lacks permission for.
+
+## Error responses
+
+Tool errors are returned as JSON text content with the shape:
+
+```json
+{
+  "error": "Human-readable message",
+  "code": "<domain code>",
+  "hint": "<remediation>",
+  "meta": { }
+}
+```
+
+`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer error from the control plane). Non-API failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only.
+
+LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
+
+## Permissions
+
+The MCP server can only access items where the configured agent has an explicit permission. The `mount_env` and `mount_file` capabilities are the typical grants for MCP. See [Permissions and capabilities](/concepts/permissions-and-capabilities) for the full matrix.
+
+## Trust boundary summary
+
+The MCP server sits at Tier 1 (local daemon trust) for ZK items and Tier 3 (server trust) for server-managed items. The model itself is **outside** every trust tier — the MCP server's job is to keep it that way.
+
+## Related
+
+- [Trust boundaries](/security/trust-boundaries)
+- [Security model](/security/overview)

@@ -1,0 +1,75 @@
+---
+title: "Permissions"
+description: "Grant capabilities to agents on individual items, with optional expiries."
+---
+
+The **Permissions** view is where you connect agents to the items they can use. Every grant is one row: agent + item + capability.
+
+## Listing permissions
+
+The permissions table shows:
+
+- Agent name and kind
+- Item label and storage mode
+- Capability
+- Expires at (or "never")
+- Granted by (user)
+
+Filter by agent or item from the table header. Columns are sortable.
+
+## Creating a permission
+
+<Steps>
+  <Step title="Click Grant access">
+    Select an agent and an item from the dropdowns.
+  </Step>
+  <Step title="Pick a capability">
+    The dashboard shows only capabilities that are valid for the chosen agent + item combination, based on the [capability matrix](/concepts/permissions-and-capabilities).
+  </Step>
+  <Step title="(Optional) Set an expiry">
+    ISO timestamp. Leave blank for a non-expiring grant.
+  </Step>
+  <Step title="Save">
+    The grant takes effect immediately. Future access attempts will check this row.
+  </Step>
+</Steps>
+
+The composite unique constraint `(agentId, itemId, capability)` means each triple has at most one row. Re-granting the same triple updates the existing row.
+
+## Capability cheatsheet
+
+| Capability | Use when |
+|---|---|
+| `read_ciphertext` | A local agent needs the encrypted blob to decrypt via the daemon (zero-knowledge items only). |
+| `reveal_plaintext` | Plaintext should be returned over HTTPS (server-managed only). The default for remote agents. |
+| `mount_env` | The CLI or MCP should inject the secret into a subprocess env var. |
+| `mount_file` | The CLI or MCP should write the secret to a temp file with `0600` permissions. |
+
+Invalid combinations (for example, a remote agent + `mount_env`) are rejected at create time with `INVALID_CAPABILITY_LOCALITY` or `INVALID_CAPABILITY_STORAGE`.
+
+## Revoking a permission
+
+**Revoke** deletes the permission row immediately. Any in-flight access attempt that hasn't yet checked the row sees the deletion and is denied. Audit entries get `permission.revoke` and `permission.revoke_cascade` for cascaded denials.
+
+## Expiring permissions
+
+Set `expiresAt` to a future ISO timestamp when granting. The server treats a permission as missing once the time passes. Audit entries show `result: expired`.
+
+There is no auto-renewal. To extend a permission, revoke and re-grant with a later expiry.
+
+## Common patterns
+
+| Goal | Setup |
+|---|---|
+| CI runner needs DB password | Remote agent + server-managed item + `reveal_plaintext` + 24-hour expiry |
+| Local script needs an API key on demand | `local_cli` agent + any item + `mount_env` |
+| MCP server runs a CLI tool with a token | `local_mcp` agent + any item + `mount_env` |
+| Local script needs to mount a TLS key as a file | `local_cli` agent + any item + `mount_file` |
+| Local app needs the encrypted blob to decrypt offline | `local_cli` agent + zero-knowledge item + `read_ciphertext` |
+
+## Related
+
+- [Concepts: permissions and capabilities](/concepts/permissions-and-capabilities)
+- [API: permissions procedures](/api/procedures/permissions)
+- [API: access procedures](/api/procedures/access)
+- [CLI: permission commands](/cli/permission)

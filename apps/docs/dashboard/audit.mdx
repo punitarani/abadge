@@ -1,0 +1,76 @@
+---
+title: "Audit"
+description: "Inspect every meaningful action in your organization."
+---
+
+The **Audit** view is the human interface to the audit log. Every login, agent registration, permission change, and access attempt — allowed or denied — appears here.
+
+## Layout
+
+The audit table shows entries newest-first. Each row carries:
+
+- Timestamp
+- Event type (`access.reveal`, `permission.create`, `agent.session_issue`, etc.)
+- Result (`allowed`, `denied`, `expired`, `revoked`, `cascade`)
+- Agent (if any) and item (if any)
+- User who triggered the event (for operator actions)
+- Surface (`cli`, `mcp`, `api`, `sdk`)
+- Field (when applicable)
+
+Click a row to see the full structured `meta` payload.
+
+## Filters
+
+Filter by:
+
+| Filter | Notes |
+|---|---|
+| Event type | One category at a time |
+| Result | Useful for "show me every denial" |
+| Agent | Pinpoint a single agent's activity |
+| Item | What touched this credential |
+| Surface | Which channel made the call |
+| Field | Specific field name accessed |
+| Date range | Start / end timestamps |
+
+Filters compose. Pagination uses cursor tokens (50 entries per page by default; max 100).
+
+## Export
+
+Click **Export JSON** to download the current filtered view as JSON for offline analysis. The export honours your filter settings.
+
+For programmatic export, use `audit.list` from the API or `abadge audit list --json` from the CLI.
+
+## What every event captures
+
+| Field | Always present? | Description |
+|---|---|---|
+| `id` | yes | Auto-incrementing |
+| `organizationId` | yes | Org context |
+| `eventType` | yes | Category |
+| `result` | yes | `allowed`, `denied`, `expired`, `revoked`, `cascade` |
+| `occurredAt` | yes | Timestamp |
+| `userId` | when an operator triggered it | |
+| `agentId` | when an agent triggered it | |
+| `itemId` | for item / access events | |
+| `profileId` | for profile events | |
+| `surface` | usually | `cli`, `mcp`, `api`, `sdk` |
+| `deliveryMode` | for access events | `env`, `file`, `reveal`, `ciphertext` |
+| `field` | when a single field was requested | |
+| `purpose` | when the caller declared one | |
+| `meta` | always (often empty) | Structured per event type |
+| `ipAddress` | usually | Client IP from the API |
+
+## What audit does not record
+
+- Secret values
+- Encryption keys, wrapped keys, or KDF parameters
+- The plaintext output of subprocesses spawned by `mount_env`
+
+If you need byte-level visibility into what an agent did with a secret, instrument the consumer.
+
+## Related
+
+- [Concepts: audit log](/concepts/audit-log)
+- [API: audit procedures](/api/procedures/audit)
+- [CLI: audit](/cli/audit)

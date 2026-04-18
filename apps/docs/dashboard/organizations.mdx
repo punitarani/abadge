@@ -1,0 +1,73 @@
+---
+title: "Organizations"
+description: "Create, switch, and invite teammates to organizations."
+---
+
+Every resource in abadge belongs to an organization. The dashboard always operates against the **active organization**, shown in the header.
+
+## Creating an organization
+
+<Steps>
+  <Step title="Open the org switcher">
+    Click the organization name in the header.
+  </Step>
+  <Step title="Choose Create organization">
+    Enter a display name. The slug is auto-generated; override it if you want a specific URL fragment.
+  </Step>
+  <Step title="Land inside the new org">
+    The dashboard switches context. The new org has no profiles, items, agents, or permissions yet.
+  </Step>
+</Steps>
+
+## Switching organizations
+
+The org switcher lists every organization you're a member of. Selecting one updates the active context and reloads the items, agents, permissions, and audit views.
+
+The active organization is also persisted to the Better Auth session, so subsequent dashboard visits land in the same place.
+
+## Inviting members
+
+<Steps>
+  <Step title="Open Settings → Members">
+    Available to `owner` and `admin` roles.
+  </Step>
+  <Step title="Click Invite">
+    Choose a role: `owner`, `admin`, or `member`. The dashboard generates a one-time invite token.
+  </Step>
+  <Step title="Send the invite link">
+    Copy the link from the success dialog and send it through your usual channel. The link expires after 7 days; the token can be redeemed exactly once.
+  </Step>
+  <Step title="Recipient accepts">
+    The recipient signs in (or creates an account) and lands at `/invite/accept?token=...`. After confirming the org name and role, they're added with the assigned role.
+  </Step>
+</Steps>
+
+<Warning>
+  The invite token is shown once. Only its SHA-256 hash is stored. If you lose the link, revoke the pending invitation and create a new one.
+</Warning>
+
+## Member roles
+
+| Role | Can do |
+|---|---|
+| `owner` | Everything, including delete the organization |
+| `admin` | Invite, remove, and update members; manage org settings |
+| `member` | Read org resources; create and manage their own agents and items |
+
+## Managing members
+
+The members table on **Settings → Members** lets owners and admins:
+
+- Change a member's role
+- Remove a member (cascades agent revocation)
+- Revoke a pending invitation
+
+## Removing the organization
+
+Deleting an organization cascades to its agents, permissions, profiles, and items. Audit entries persist (they have no foreign-key constraints). This is irreversible.
+
+## Related
+
+- [Concepts: organizations](/concepts/organizations)
+- [API: organizations procedures](/api/procedures/organizations)
+- [CLI: org commands](/cli/org)

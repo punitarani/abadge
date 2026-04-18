@@ -1,0 +1,114 @@
+---
+title: "Errors"
+description: "Standard error envelope and the full list of error codes."
+---
+
+All abadge API errors share a consistent JSON envelope.
+
+```json
+{
+  "code": "ITEM_NOT_FOUND",
+  "message": "Item not found.",
+  "hint": "Verify the item ID and that it belongs to your organization.",
+  "meta": {}
+}
+```
+
+Validation errors include an extra `issues` array:
+
+```json
+{
+  "code": "VALIDATION_ERROR",
+  "message": "Missing required field.",
+  "hint": "Check the invalid input fields and try again.",
+  "issues": [
+    { "path": ["itemId"], "message": "Required" }
+  ]
+}
+```
+
+## Error codes
+
+| Code | HTTP | Description |
+|---|---|---|
+| `BAD_REQUEST` | 400 | Generic bad request |
+| `VALIDATION_ERROR` | 400 | Input failed schema validation; see `issues` array |
+| `FIELD_NOT_FOUND` | 400 | Requested field does not exist on this item; `meta.availableFields` lists valid names |
+| `MULTI_FIELD_ITEM` | 400 | Item has multiple fields; specify `field` to select one; `meta.availableFields` lists them |
+| `STALE_VERSION` | 400 | Optimistic-concurrency conflict on item update; re-fetch and retry |
+| `PUBLIC_KEY_REQUIRED` | 400 | `public_key_session` agent created without `publicKey` or `issueBootstrapToken` |
+| `ENROLLMENT_REQUIRED` | 400 | Agent has no enrolled public key; run the enrollment flow first |
+| `INVALID_BOOTSTRAP_TOKEN` | 400 | Bootstrap token is malformed or does not match any agent |
+| `BOOTSTRAP_TOKEN_EXPIRED` | 400 | Bootstrap token has passed its 10-minute TTL |
+| `INVALID_CAPABILITY` | 400 | Requested capability is not a valid enum value |
+| `INVALID_CAPABILITY_LOCALITY` | 400 | Capability is not allowed for this agent locality (e.g. remote agent + `mount_env`) |
+| `INVALID_CAPABILITY_STORAGE` | 400 | Capability is not compatible with the item's storage mode |
+| `ORG_HEADER_REQUIRED` | 400 | User belongs to 2+ orgs; set `X-Abadge-Org-Id`. `meta.availableOrgIds` lists the user's orgs |
+| `ROTATE_KEY_INCOMPLETE` | 400 | Profile rotateKey payload does not rewrap every ZK item; `meta.missingItemIds` lists the omitted ones |
+| `UNAUTHORIZED` | 401 | No valid bearer credential provided |
+| `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
+| `ORG_MEMBERSHIP_REQUIRED` | 401 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
+| `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |
+| `AGENT_SESSION_NOT_FOUND` | 401 | `abs_...` session token not found or already expired |
+| `AGENT_CHALLENGE_NOT_FOUND` | 401 | Challenge ID not found or already used |
+| `AGENT_CHALLENGE_EXPIRED` | 401 | Challenge has passed its 60-second TTL |
+| `SESSION_REFRESH_FAILED` | 401 | SDK-only: `AbadgeAgentClient` background session refresh exhausted retries; call `disconnect()` and `connect()` again |
+| `FORBIDDEN` | 403 | Authenticated but not authorized for this operation |
+| `PERMISSION_DENIED` | 403 | No matching permission for (agent, item, capability) |
+| `PERMISSION_EXPIRED` | 403 | Permission exists but has passed its `expiresAt` |
+| `AGENT_REVOKED` | 403 | Agent has been revoked and cannot authenticate |
+| `MEMBER_INSUFFICIENT_ROLE` | 403 | Operation requires a higher org role |
+| `MEMBER_AGENT_OWNERSHIP` | 403 | Agent does not belong to the requesting org member |
+| `NOT_FOUND` | 404 | Generic not found |
+| `ITEM_NOT_FOUND` | 404 | Item ID does not exist, is deleted, or belongs to another user |
+| `AGENT_NOT_FOUND` | 404 | Agent ID does not exist or belongs to another user |
+| `PERMISSION_NOT_FOUND` | 404 | Permission ID does not exist |
+| `PROFILE_NOT_FOUND` | 404 | Profile ID does not exist or belongs to another org |
+| `VAULT_NOT_FOUND` | 404 | Vault has not been bootstrapped yet |
+| `AGENT_ALREADY_ENROLLED` | 409 | Agent already has a public key enrolled |
+| `CONFLICT` | 409 | Generic conflict |
+| `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault already exists |
+| `PROFILE_ALREADY_EXISTS` | 409 | Profile with this name already exists in the org |
+| `PROFILE_NOT_EMPTY` | 409 | Profile deletion blocked because it still contains items |
+| `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |
+| `RATE_LIMITED` | 429 | Too many requests; back off and retry |
+| `INTEGRITY_ERROR` | 500 | Server-side data integrity failure |
+
+## SDK error handling
+
+The SDK wraps every API error in `AbadgeApiError`:
+
+```ts
+import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
+
+const agent = new AbadgeAgentClient({ apiUrl, apiKey });
+
+try {
+  const result = await agent.accessReveal(itemId);
+} catch (err) {
+  if (err instanceof AbadgeApiError) {
+    console.error(err.code);    // e.g. "PERMISSION_DENIED"
+    console.error(err.message); // human-readable
+    console.error(err.hint);    // remediation
+    console.error(err.meta);    // structured (may be undefined)
+    console.error(err.issues);  // VALIDATION_ERROR only
+  }
+}
+```
+
+## Field-related errors
+
+When accessing multi-field items, inspect `meta.availableFields` to choose the right field:
+
+```ts
+try {
+  await agent.accessReveal(itemId);
+} catch (err) {
+  if (err instanceof AbadgeApiError && err.code === "MULTI_FIELD_ITEM") {
+    const fields = err.meta?.availableFields as string[];
+    await agent.accessReveal(itemId, fields[0]);
+  }
+}
+```
+
+See [Field delivery](/concepts/fields) for the full resolution model.

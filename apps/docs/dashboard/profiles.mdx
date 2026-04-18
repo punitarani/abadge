@@ -1,0 +1,72 @@
+---
+title: "Profiles"
+description: "Create encryption boundaries inside an organization. Bootstrap zero-knowledge profiles and manage recovery keys."
+---
+
+A **profile** is a named credential namespace inside an organization. Each profile has its own encryption root, so credentials can be partitioned by environment, team, or sensitivity.
+
+## Creating a profile
+
+<Steps>
+  <Step title="Open the Profiles section">
+    From the dashboard sidebar.
+  </Step>
+  <Step title="Click New profile">
+    Provide a display name (unique within the org), an optional description, and pick a storage mode.
+  </Step>
+  <Step title="Choose storage mode">
+    - **Zero-knowledge** — server never sees plaintext. Requires bootstrap (next step).
+    - **Server-managed** — items are encrypted with AES-256-GCM by the API. Ready to use immediately.
+  </Step>
+</Steps>
+
+## Bootstrapping a zero-knowledge profile
+
+A new ZK profile is empty until you bootstrap encryption material.
+
+<Steps>
+  <Step title="Open the new profile and click Bootstrap">
+    The dashboard prompts for a master password. Pick something strong — Argon2id makes brute-force expensive, not impossible.
+  </Step>
+  <Step title="Browser derives the KEK">
+    Argon2id (64 MiB memory, 3 iterations) turns your password and a fresh 16-byte salt into a 32-byte KEK.
+  </Step>
+  <Step title="Browser generates the root key">
+    A random 32-byte root key is wrapped with the KEK using XChaCha20-Poly1305 and shipped to the server. The unwrapped root key never leaves your browser.
+  </Step>
+  <Step title="Save the recovery key">
+    The dashboard offers to generate a 256-bit recovery key (base32, shown once). The key wraps a copy of the root key. Store it offline. Without it, losing your master password means losing access to every item in the profile.
+  </Step>
+</Steps>
+
+<Warning>
+  Take recovery setup seriously. There is no server-side reset for zero-knowledge profiles. The recovery key is shown once.
+</Warning>
+
+## Server-managed profiles
+
+Server-managed profiles are ready immediately after creation. The API encrypts each item with AES-256-GCM using the Worker's `ENCRYPTION_KEY`. Use this mode when remote agents need access (`reveal_plaintext`).
+
+## Switching the active profile
+
+Item create / edit forms operate against an active profile. Switch profiles from the profile picker on the **Items** page or the profile detail page.
+
+## Vault security operations
+
+Per-profile operations live on the profile detail page:
+
+| Action | What it does |
+|---|---|
+| Change master password | Re-wraps the root key under a new KEK. Root key unchanged. |
+| Set up recovery | Adds a recovery-key-wrapped copy of the root key. |
+| Rotate root key | Generates a new root key and re-wraps every item DEK. Atomic. |
+| Delete profile | Refused if the profile contains items (`PROFILE_NOT_EMPTY`). |
+
+See [Vault security](/dashboard/vault-security) for the full procedures.
+
+## Related
+
+- [Concepts: profiles](/concepts/profiles)
+- [Security: zero-knowledge](/security/zero-knowledge)
+- [API: profiles procedures](/api/procedures/profiles)
+- [CLI: profile commands](/cli/profile)

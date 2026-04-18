@@ -1,0 +1,86 @@
+---
+title: "abadge audit"
+description: "Inspect the immutable audit log from the CLI."
+---
+
+`abadge audit` lists the recent audit log for the active organization. Use `--json` to pipe into `jq` for structured queries.
+
+## Usage
+
+```bash
+abadge audit
+abadge audit list
+abadge audit list --json
+```
+
+`abadge audit` is an alias for `abadge audit list`.
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--limit` | Number of entries to fetch (1–100, default 50) |
+| `--cursor` | Pagination cursor from a previous response |
+| `--event-type` | Filter by event category |
+| `--result` | `allowed`, `denied`, `expired`, `revoked`, `cascade` |
+| `--agent-id` | Filter to one agent |
+| `--item-id` | Filter to one item |
+| `--surface` | `cli`, `mcp`, `api`, `sdk` |
+| `--field` | Specific field name accessed |
+| `--json` | Print machine-readable JSON |
+
+Filters compose. Pagination uses cursor tokens.
+
+## Default output
+
+```
+TIME                  EVENT                  RESULT    AGENT      ITEM       FIELD
+2026-04-18T01:14:22Z  access.reveal          allowed   ci-deploy  prod-db    password
+2026-04-18T01:13:55Z  agent.session_issue    allowed   ci-deploy
+2026-04-18T01:10:10Z  permission.create      allowed              prod-db
+```
+
+## Common queries
+
+```bash
+# Every denied access in the last 50 events
+abadge audit list --result denied
+
+# Everything one agent did
+abadge audit list --agent-id <agent-id>
+
+# Reveals of one item, JSON output
+abadge audit list --item-id <item-id> --event-type access.reveal --json
+
+# Walk all entries with a cursor
+NEXT=""
+while true; do
+  RESP=$(abadge audit list --json --cursor "$NEXT")
+  echo "$RESP" | jq -r '.entries[]'
+  NEXT=$(echo "$RESP" | jq -r '.nextCursor')
+  [ "$NEXT" = "null" ] && break
+done
+```
+
+## What audit captures
+
+See [Audit log](/concepts/audit-log) for the full event catalog. Categories:
+
+- `auth.*` — operator login / logout, token issue / revoke
+- `agent.*` — create, enroll, rotate, revoke, session lifecycle
+- `permission.*` — create, revoke, cascade
+- `item.*` — create, read, update, delete, export, cascade
+- `profile.*` — create, rotate, delete, cascade
+- `access.*` — `ciphertext`, `reveal`, `mount_env`, `mount_file`
+
+## What audit does not capture
+
+- Secret values
+- Encryption material
+- Subprocess output from `abadge run`
+
+## Related
+
+- [Concepts: audit log](/concepts/audit-log)
+- [API: audit procedures](/api/procedures/audit)
+- [Dashboard: audit](/dashboard/audit)

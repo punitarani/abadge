@@ -1,0 +1,128 @@
+---
+title: "items.*"
+description: "Create, list, read, update, and delete credentials."
+---
+
+The `items` router is where credentials live. Most procedures are session-scoped; `items.listForAgent` is the agent-scoped listing.
+
+## `items.create`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="profileId" type="string" required>
+  Target profile.
+</ParamField>
+<ParamField path="storageMode" type="string" required>
+  `zero_knowledge` or `server_managed`. Must match the profile.
+</ParamField>
+<ParamField path="label" type="string" required>
+  Cleartext display name.
+</ParamField>
+<ParamField path="kind" type="string">
+  `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque`. Defaults to `opaque`.
+</ParamField>
+<ParamField path="tags" type="string[]" />
+<ParamField path="payload" type="object">
+  Required for `server_managed`. Plain JSON envelope `{ v, label, kind, tags, fields }`.
+</ParamField>
+<ParamField path="encryptedItemKey" type="string">
+  Required for `zero_knowledge`. DEK wrapped with profile root key, base64.
+</ParamField>
+<ParamField path="keyNonce" type="string">
+  Required for `zero_knowledge`.
+</ParamField>
+<ParamField path="ciphertext" type="string">
+  Required for `zero_knowledge`. Payload encrypted with the DEK.
+</ParamField>
+<ParamField path="contentNonce" type="string">
+  Required for `zero_knowledge`.
+</ParamField>
+
+**Returns:** `{ id }`.
+
+## `items.list`
+
+**Tier:** `sessionProcedure`
+
+**Returns:**
+
+```ts
+{
+  items: Array<{
+    id: string;
+    label: string;
+    kind: string;
+    storageMode: "zero_knowledge" | "server_managed";
+    profileId: string;
+    tags: string[];
+    contentVersion: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+```
+
+Metadata only — never returns secret data.
+
+## `items.get`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:** `{ item }` with the full record (including ciphertext fields).
+
+## `items.update`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="itemId" type="string" required />
+<ParamField path="data" type="object" required>
+  Updated fields. Must include the current `contentVersion` for optimistic concurrency.
+</ParamField>
+
+**Returns:** `{ ok: true, contentVersion }`.
+
+Errors: `STALE_VERSION` if the version mismatches.
+
+## `items.ownerReveal`
+
+**Tier:** `sessionProcedure`
+
+Decrypt and return a **server-managed** item the current user owns.
+
+<ParamField path="itemId" type="string" required />
+<ParamField path="field" type="string">
+  Specific field for multi-field items.
+</ParamField>
+
+**Returns:** `{ payload }`.
+
+Errors: fails on zero-knowledge items. `MULTI_FIELD_ITEM` / `FIELD_NOT_FOUND` for field issues.
+
+## `items.delete`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:** `{ ok: true }`. Soft-delete — sets `deletedAt`, retains ciphertext.
+
+## `items.listForAgent`
+
+**Tier:** `agentProcedure`
+
+Lists items the calling agent has at least one permission row on. Metadata only — no secret data, no per-call audit row (the audited boundary is `access.*`).
+
+**Returns:** same shape as `items.list`.
+
+Agents without any grant receive an empty list.
+
+## Audit events
+
+- `item.create`
+- `item.read` (issued by `items.get` and `items.ownerReveal`)
+- `item.update`
+- `item.delete`
+- `item.delete_cascade`
+- `item.export`

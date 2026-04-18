@@ -1,0 +1,183 @@
+---
+title: "AbadgeUserClient"
+description: "Session-token authenticated client for operator commands."
+---
+
+`AbadgeUserClient` is the operator client. It calls every `sessionProcedure` in the API on behalf of a signed-in user.
+
+## Construction
+
+```ts
+import { AbadgeUserClient } from "@abadge/sdk";
+
+const client = new AbadgeUserClient({
+  apiUrl: "https://api.abadge.dev",
+  token: sessionToken,
+});
+```
+
+`token` is the Better Auth bearer access token — the same one the CLI receives from the device-code flow and the dashboard receives from `/api/auth/sign-in/*`.
+
+## Organizations
+
+```ts
+client.createOrganization({ name, slug? });
+client.listOrganizations();
+client.getOrganization(orgId);
+client.updateOrganization(orgId, { name, slug });
+client.deleteOrganization(orgId);
+
+client.listMembers(orgId);
+client.inviteMember(orgId, email, role);
+client.removeMember(orgId, userId);
+client.updateMemberRole(orgId, userId, role);
+```
+
+## Profiles
+
+```ts
+client.createProfile(orgId, { name, description?, storageMode? });
+client.listProfiles(orgId);
+client.getProfile(profileId);
+client.bootstrapProfile(profileId, { wrappedRootKey, kdfSalt, kdfParams });
+client.changeProfilePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams });
+client.setupProfileRecovery(profileId, { recoveryWrappedRootKey });
+client.rotateProfileKey(profileId, {
+  wrappedRootKey,
+  recoveryWrappedRootKey?,
+  rekeyedItems,
+});
+client.deleteProfile(profileId);
+```
+
+## Items
+
+```ts
+// Zero-knowledge item
+client.createItem({
+  profileId: string;
+  storageMode: "zero_knowledge";
+  label: string;
+  kind: ItemKind;
+  tags?: string[];
+  encryptedItemKey: string;
+  keyNonce: string;
+  ciphertext: string;
+  contentNonce: string;
+});
+
+// Server-managed item
+client.createItem({
+  profileId: string;
+  storageMode: "server_managed";
+  label: string;
+  kind: ItemKind;
+  tags?: string[];
+  payload: ItemPayload;
+});
+
+client.listItems(profileId?);
+client.getItem(itemId);
+client.updateItem(itemId, data);          // optimistic concurrency via contentVersion
+client.deleteItem(itemId);
+
+// Owner reveal: { payload: ItemPayload } for the requested field
+client.ownerRevealItem(itemId, field?);
+```
+
+## Agents
+
+```ts
+client.createAgent({
+  organizationId: string;
+  name: string;
+  kind: AgentKind;
+  description?: string;
+  authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
+  publicKey?: string;
+  issueBootstrapToken?: boolean;
+});
+
+client.listAgents();
+client.getAgent(agentId);
+client.rotateAgent(agentId);
+client.revokeAgent(agentId);
+
+// Issue a new bootstrap token for an existing agent
+client.issueBootstrapToken(agentId);
+```
+
+## Permissions
+
+```ts
+client.createPermission({
+  agentId: string;
+  itemId: string;
+  capability: Capability;
+  expiresAt?: string;        // ISO 8601
+});
+
+client.listPermissions({ agentId?, itemId? });
+client.revokePermission(permissionId);
+```
+
+## Audit
+
+```ts
+client.listAuditEntries({
+  orgId?: string;
+  profileId?: string;
+  agentId?: string;
+  itemId?: string;
+  surface?: string;
+  field?: string;
+  eventType?: AuditEventType;
+  result?: AuditResult;
+  cursor?: string;
+  limit?: number;            // 1-100, default 50
+});
+```
+
+## Example: bootstrap an org and grant access
+
+```ts
+import { AbadgeUserClient } from "@abadge/sdk";
+
+const client = new AbadgeUserClient({
+  apiUrl: "https://api.abadge.dev",
+  token: userSessionToken,
+});
+
+const { id: itemId } = await client.createItem({
+  profileId: "prof_...",
+  storageMode: "server_managed",
+  label: "GitHub Deploy Token",
+  kind: "token",
+  tags: ["ci", "github"],
+  payload: {
+    v: 1,
+    label: "GitHub Deploy Token",
+    kind: "token",
+    tags: ["ci", "github"],
+    fields: { token: "ghp_xxxxxxxxxxxx" },
+  },
+});
+
+const { agent, bootstrapToken } = await client.createAgent({
+  organizationId: "org_...",
+  name: "github-actions-deploy",
+  kind: "remote",
+  issueBootstrapToken: true,
+});
+
+await client.createPermission({
+  agentId: agent.id,
+  itemId,
+  capability: "reveal_plaintext",
+  expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+});
+```
+
+## Errors
+
+Every error is wrapped in `AbadgeApiError`. See [Error handling](/api/sdk/error-handling).

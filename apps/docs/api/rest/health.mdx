@@ -1,0 +1,37 @@
+---
+title: "GET /health"
+description: "Liveness check. No authentication required."
+---
+
+The only first-class REST endpoint outside of Better Auth and tRPC.
+
+## Request
+
+```bash
+curl https://api.abadge.dev/health
+```
+
+No headers, no body, no authentication.
+
+## Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+HTTP `200 OK`.
+
+## Use cases
+
+- Cloudflare health probes
+- External uptime monitors
+- Local development sanity checks
+- CI smoke tests
+
+## Behavior
+
+- Excluded from rate limiting
+- Does not touch the database
+- Returns immediately even when downstream Postgres is unhealthy (use `audit.list` or `items.list` for an end-to-end check)

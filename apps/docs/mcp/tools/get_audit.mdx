@@ -1,0 +1,56 @@
+---
+title: "get_audit"
+description: "Fetch recent audit entries visible to the calling agent."
+---
+
+`get_audit` lets the model inspect the audit trail. It calls `audit.list` under the hood and returns the structured entries directly.
+
+## Input
+
+None for v1. Optional filters may be added in future versions.
+
+## Output
+
+```json
+[
+  {
+    "id": "12345",
+    "organizationId": "org_...",
+    "agentId": "agent_...",
+    "itemId": "item_...",
+    "eventType": "access.mount_env",
+    "result": "allowed",
+    "deliveryMode": "env",
+    "field": "token",
+    "purpose": "fetch user profile",
+    "occurredAt": "2026-04-18T01:14:22.000Z",
+    "meta": {}
+  }
+]
+```
+
+The response is an array of audit entries newest-first, capped at the API default (50 entries).
+
+## What it's good for
+
+- Debugging permission denials ("why did `run_with_secret` fail?")
+- Confirming a recent action landed in the audit log
+- Building a small "recent activity" view inside an agent's reasoning
+
+## What it's not good for
+
+- Long-range analytics — use the dashboard or CLI for that
+- Listing entries the agent isn't allowed to see — `audit.list` enforces org scoping
+
+## Permission
+
+The MCP agent must be scoped to an organization with audit visibility. There is no separate `view_audit` capability — audit entries follow the agent's organization.
+
+## Audit
+
+`get_audit` does not write its own audit row. It's a read of read.
+
+## Related
+
+- [API: `audit.list`](/api/procedures/audit)
+- [Concepts: audit log](/concepts/audit-log)

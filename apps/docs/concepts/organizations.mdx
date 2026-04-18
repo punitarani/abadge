@@ -1,0 +1,74 @@
+---
+title: "Organizations"
+description: "The top-level isolation boundary. Every resource belongs to an organization."
+---
+
+An **organization** is the top-level resource owner in abadge. Every profile, item, agent, permission, and audit entry is scoped to an organization.
+
+A personal workspace is just an organization with one member.
+
+## Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | text (PK) | Unique organization ID |
+| `name` | text | Display name |
+| `slug` | text (unique) | URL-safe identifier |
+| `logo` | text | Optional logo URL |
+| `createdAt` | timestamptz | Creation time |
+
+## Membership
+
+Users join organizations through the `member` table. Roles are the standard Better Auth set:
+
+| Role | Can do |
+|---|---|
+| `owner` | Everything, including delete the organization |
+| `admin` | Invite, remove, and update members; manage org settings |
+| `member` | Read org resources; create/manage their own agents and items |
+
+<Note>
+  Member emails are visible to `owner` and `admin` roles only. `member`-role callers see `null` for email — including their own row. Users should read their own email from their session.
+</Note>
+
+## Invitations
+
+Invitations are one-time tokens (`abi_...`) shown once and stored as SHA-256 hashes. They expire after 7 days.
+
+The flow:
+
+<Steps>
+  <Step title="Admin creates invite">
+    `organizations.members.invite` returns a token. The frontend builds the URL: `{APP_URL}/invite/accept?token={token}`.
+  </Step>
+  <Step title="Recipient looks up the invite">
+    `organizations.members.getInviteInfo` reveals the org name, role, and expiry. Authentication is required to prevent enumeration.
+  </Step>
+  <Step title="Recipient accepts">
+    `organizations.members.acceptInvite` adds them to the organization with the invite's role. The token is consumed atomically.
+  </Step>
+</Steps>
+
+## Cascades
+
+Deleting an organization cascades to its agents, permissions, profiles, and items. The audit log retains entries (no FK constraints).
+
+Removing a member cascades agent revocation for agents owned by that member.
+
+## In the dashboard
+
+Switch the active organization using the org switcher in the dashboard header. Operations on profiles, items, agents, and permissions act on the active organization.
+
+In the CLI, set the active organization with:
+
+```bash
+abadge org use <org-id>
+```
+
+The `apiUrl` and `activeOrgId` are persisted in `~/.abadge/config.json`.
+
+## Related
+
+- [API: organizations procedures](/api/procedures/organizations)
+- [CLI: org commands](/cli/org)
+- [Dashboard: organizations](/dashboard/organizations)

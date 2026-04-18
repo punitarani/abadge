@@ -1,0 +1,111 @@
+---
+title: "Permissions and capabilities"
+description: "Capability-based access control. Every grant is one row: agent + item + capability."
+---
+
+abadge uses **capability-based** access control. There are no roles, no groups, and no wildcards. To access an item, an agent must have an explicit `permissions` row matching the requested capability.
+
+## The four capabilities
+
+| Capability | What it returns | Storage modes | Localities |
+|---|---|---|---|
+| `read_ciphertext` | Encrypted blob for daemon decryption | `zero_knowledge` | local |
+| `reveal_plaintext` | Decrypted plaintext over HTTPS | `server_managed` | any |
+| `mount_env` | Data for environment-variable injection | any | local |
+| `mount_file` | Data for temp-file injection | any | local |
+
+## Capability matrix
+
+The API enforces this matrix at permission-create time and again at every access:
+
+| | ZK + local | ZK + remote | Server-managed + local | Server-managed + remote |
+|---|---|---|---|---|
+| `read_ciphertext` | ✓ Allowed | ✗ Denied | N/A | N/A |
+| `reveal_plaintext` | N/A | N/A | ✓ Allowed | ✓ Allowed |
+| `mount_env` | ✓ Allowed | ✗ Denied | ✓ Allowed | ✗ Denied |
+| `mount_file` | ✓ Allowed | ✗ Denied | ✓ Allowed | ✗ Denied |
+
+Key restrictions:
+
+- Remote agents can never access zero-knowledge items.
+- Remote agents on server-managed items get only `reveal_plaintext`.
+- Mount capabilities require a local runtime to inject into.
+
+Invalid combinations return `INVALID_CAPABILITY_LOCALITY` or `INVALID_CAPABILITY_STORAGE`.
+
+## Permission shape
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | text (PK) | Permission ID |
+| `organizationId` | text | Owning org |
+| `agentId` | text | Agent receiving access |
+| `itemId` | text | Target item |
+| `capability` | text | One of the four capabilities |
+| `expiresAt` | timestamptz | Optional auto-expiration |
+| `grantedBy` | text | User who created the grant |
+| `createdAt` | timestamptz | Creation time |
+
+Composite unique index on `(agentId, itemId, capability)` — one permission per triple.
+
+## Decision flow
+
+Every access request follows this exact order:
+
+<Steps>
+  <Step title="Authenticate">
+    Resolve the bearer token: `abs_...` session, `abl_/abg_...` API key, or legacy fallback.
+  </Step>
+  <Step title="Resolve item">
+    The item must belong to the same organization as the agent.
+  </Step>
+  <Step title="Check permission">
+    A row matching `(agentId, itemId, capability)` must exist.
+  </Step>
+  <Step title="Check expiry">
+    `expiresAt` must be null or in the future.
+  </Step>
+  <Step title="Enforce matrix">
+    Locality and storage mode must match the capability.
+  </Step>
+  <Step title="Audit">
+    Append the attempt — allowed or denied — before returning a response.
+  </Step>
+  <Step title="Decrypt">
+    Only if every preceding check passed.
+  </Step>
+</Steps>
+
+## Procedure mapping
+
+| Procedure | Required capability | Item mode | Locality |
+|---|---|---|---|
+| `access.ciphertext` | `read_ciphertext` | `zero_knowledge` | local |
+| `access.reveal` | `reveal_plaintext` | `server_managed` | any |
+| `access.mount` | `mount_env` or `mount_file` | any | local |
+
+## Delivery flow by scenario
+
+| Scenario | Flow |
+|---|---|
+| User views ZK item in browser | Browser decrypts locally with the in-memory root key |
+| CLI runs command with ZK secret | CLI → daemon (IPC) → daemon decrypts → daemon spawns subprocess with env var |
+| Local MCP uses ZK secret | MCP → daemon (IPC) → daemon decrypts → daemon injects |
+| Remote agent reveals SM secret | Agent → API (HTTPS) → server decrypts → returns plaintext |
+| Remote agent tries ZK | Denied at permission-create or access route |
+
+## Cascades
+
+| Trigger | Effect |
+|---|---|
+| Agent revoked | Permissions remain (useless until agent re-enabled or removed). Audit gets `result: cascade`. |
+| Item soft-deleted | All access attempts return `ITEM_DELETED` with `result: cascade`. |
+| Member removed | Agents owned by that member are revoked. |
+| Profile deleted | Blocked by `PROFILE_NOT_EMPTY` if any items remain. |
+
+## Related
+
+- [API: permissions procedures](/api/procedures/permissions)
+- [API: access procedures](/api/procedures/access)
+- [CLI: permission commands](/cli/permission)
+- [Field delivery](/concepts/fields)

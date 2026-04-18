@@ -1,0 +1,73 @@
+---
+title: "abadge mount"
+description: "Resolve a secret and write it to a temporary file with 0600 permissions."
+---
+
+`abadge mount` resolves a secret and asks the daemon to mount it as a temporary file. The CLI prints the file path so you can use it in subsequent commands.
+
+The file lives inside a `0700` temp directory under the OS tmpdir. The file itself is `0600`. The daemon tracks active mounts and cleans them up on `daemon stop` (and the MCP server cleans up its own mounts after 5 minutes).
+
+## Usage
+
+```bash
+abadge mount --item <item-id>
+abadge mount --item <item-id> --field private_key
+abadge mount --item <item-id> --path /tmp/my-secret.txt
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--item` | Item ID or label |
+| `--field` | Named field to mount (for multi-field items) |
+| `--path` | Suggest a path. The daemon may reject paths outside its allowed temp directory. |
+| `--purpose` | Caller-declared purpose, recorded in audit |
+
+## Behavior
+
+<Steps>
+  <Step title="Resolve the item">
+    Same path as `abadge run`: API call to `access.mount` with `mountType: file`, daemon decryption for ZK items.
+  </Step>
+  <Step title="Pick a path">
+    The daemon allocates a temp directory and writes the secret to a file inside it. If `--path` is provided, the daemon validates that it falls inside the allowed temp directory and uses it. Paths outside `os.tmpdir()` are rejected.
+  </Step>
+  <Step title="Print the path">
+    The CLI prints the absolute path on stdout. With `--json`, the path is in the `path` field.
+  </Step>
+  <Step title="Track for cleanup">
+    The daemon records the mount so `daemon stop` (or `vault lock`) can release it.
+  </Step>
+</Steps>
+
+## Cleanup
+
+The CLI's mount lifetime is tied to the daemon. There's no auto-expiry like the MCP server's 5-minute timeout — the file persists until you stop the daemon or remove it manually.
+
+```bash
+# Manual cleanup
+rm <path-printed-by-mount>
+```
+
+## Use cases
+
+- Loading a TLS private key into nginx
+- Passing an SSH key to `ssh -i`
+- Feeding a service-account JSON to a Google Cloud client
+- Anything that takes a `--key-file` style argument and not an env var
+
+## Errors
+
+| Error | Cause |
+|---|---|
+| `PERMISSION_DENIED` | No matching `mount_file` permission |
+| `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted |
+| `FIELD_NOT_FOUND` | Specified field doesn't exist |
+| `INVALID_CAPABILITY_LOCALITY` | Trying to use a remote agent for `mount_file` |
+
+## Related
+
+- [`abadge run`](/cli/run) — env-var injection instead of file mount
+- [Field delivery](/concepts/fields)
+- [API: `access.mount`](/api/procedures/access)

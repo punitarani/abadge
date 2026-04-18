@@ -1,0 +1,61 @@
+---
+title: "abadge org"
+description: "Create, list, switch, and inspect members of organizations."
+---
+
+## `abadge org create`
+
+```bash
+abadge org create --name "Acme"
+abadge org create --name "Acme" --json
+```
+
+| Flag | Description |
+|---|---|
+| `--name`, `-n` | Display name (required) |
+| `--json` | Print raw JSON |
+
+Calls `organizations.create`. Returns `{ id, name, slug }`.
+
+## `abadge org list`
+
+Lists every organization the current operator belongs to, with role and bootstrap state.
+
+```bash
+abadge org list
+abadge org list --json
+```
+
+## `abadge org use <id>`
+
+Sets the active organization for subsequent commands. Persisted to `~/.abadge/config.json`.
+
+```bash
+abadge org use org_...
+```
+
+Subsequent `item`, `agent`, `permission`, and `audit` commands act on this org.
+
+## `abadge org members`
+
+Lists members of the active organization.
+
+```bash
+abadge org members
+abadge org members --json
+```
+
+Output columns:
+
+- `id` (membership row)
+- `userId`
+- `name`
+- `email` (visible to admins and owners only)
+- `role` (`owner`, `admin`, `member`)
+- `createdAt`
+
+## Related
+
+- [Concepts: organizations](/concepts/organizations)
+- [Dashboard: organizations](/dashboard/organizations)
+- [API: organizations procedures](/api/procedures/organizations)

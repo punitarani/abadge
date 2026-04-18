@@ -1,0 +1,92 @@
+---
+title: "abadge item"
+description: "Create, list, get, update, and delete credentials."
+---
+
+The `item` subcommands operate against the active profile.
+
+## `abadge item create`
+
+Create a new item interactively.
+
+```bash
+abadge item create
+abadge item create --label "OpenAI" --kind api_key --storage-mode server_managed
+abadge item create --label "Deploy SSH key" --kind ssh_key --storage-mode zero_knowledge
+```
+
+| Flag | Description |
+|---|---|
+| `--name`, `--label` | Item label |
+| `--kind` | `opaque`, `api_key`, `login`, `token`, `ssh_key`, `certificate`, `json` |
+| `--value` | Secret value. **Rejected on a TTY** — pipe from stdin to avoid shell history leaks. |
+| `--storage-mode` | `zero_knowledge` or `server_managed`. Defaults to the profile's mode. |
+| `--json` | Print raw JSON |
+
+For zero-knowledge items, the daemon must be unlocked. The CLI:
+
+1. Generates a 32-byte DEK locally.
+2. Encrypts the payload with the DEK (XChaCha20-Poly1305).
+3. Wraps the DEK with the profile root key (XChaCha20-Poly1305).
+4. Sends `encryptedItemKey`, `keyNonce`, `ciphertext`, `contentNonce` to `items.create`.
+
+For server-managed items, the CLI sends the plaintext payload to `items.create` and the API encrypts with AES-256-GCM.
+
+## `abadge item list`
+
+Lists items in the active profile. Metadata only — never returns secret values.
+
+```bash
+abadge item list
+abadge item list --json
+```
+
+## `abadge item get <id>`
+
+Fetch a single item.
+
+```bash
+abadge item get <item-id>
+abadge item get <item-id> --reveal
+```
+
+By default, returns metadata. With `--reveal`:
+
+- For zero-knowledge items, the CLI fetches the encrypted blob and asks the daemon to decrypt.
+- For server-managed items, the CLI calls `items.ownerReveal`.
+
+## `abadge item update <id>`
+
+Update an item interactively. Optimistic concurrency rejects stale edits with `STALE_VERSION`.
+
+```bash
+abadge item update <item-id>
+abadge item update <item-id> --json
+```
+
+## `abadge item delete <id>`
+
+Soft-delete the item. Ciphertext is retained but inaccessible; permissions cascade-deny.
+
+```bash
+abadge item delete <item-id>
+abadge item delete <item-id> --force
+```
+
+`--force` skips the confirmation prompt.
+
+## Storage modes
+
+| Mode | Encryption | Where |
+|---|---|---|
+| `zero_knowledge` | XChaCha20-Poly1305 with per-item DEK | Client-side (daemon) |
+| `server_managed` | AES-256-GCM with `ENCRYPTION_KEY` | API worker |
+
+The mode is fixed at creation and inherited from the profile.
+
+## Related
+
+- [Concepts: items](/concepts/items)
+- [Concepts: fields](/concepts/fields)
+- [Dashboard: items](/dashboard/items)
+- [API: items procedures](/api/procedures/items)

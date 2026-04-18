@@ -1,0 +1,104 @@
+---
+title: "agents.*"
+description: "Register, list, rotate, and revoke automated callers."
+---
+
+The `agents` router manages the automated callers that consume credentials.
+
+## `agents.create`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="organizationId" type="string" required>
+  Owning organization.
+</ParamField>
+<ParamField path="name" type="string" required />
+<ParamField path="kind" type="string" required>
+  `local_cli`, `local_mcp`, or `remote`.
+</ParamField>
+<ParamField path="description" type="string" />
+<ParamField path="authMethod" type="string">
+  `public_key_session` (default) or `legacy_api_key`.
+</ParamField>
+<ParamField path="publicKey" type="string">
+  Ed25519 JWK for direct enrollment of `public_key_session` agents.
+</ParamField>
+<ParamField path="issueBootstrapToken" type="boolean">
+  Issue a one-time `abe_...` enrollment token instead of direct enrollment.
+</ParamField>
+<ParamField path="metadata" type="object">
+  Free-form metadata stored on the agent record.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  agent: Agent;
+  apiKey: string | null;            // legacy: shown once
+  bootstrapToken: string | null;    // public_key_session: shown once
+  bootstrapExpiresAt: string | null;
+}
+```
+
+Behavior:
+
+- `public_key_session` agents must provide either `publicKey` or `issueBootstrapToken: true`. Missing both yields `PUBLIC_KEY_REQUIRED`.
+- `legacy_api_key` agents receive a one-time `abl_...` (local kinds) or `abg_...` (remote) key.
+- Bootstrap tokens have a 10-minute TTL.
+
+## `agents.list`
+
+**Tier:** `sessionProcedure`
+
+**Returns:** `{ agents }`.
+
+## `agents.get`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="agentId" type="string" required />
+
+**Returns:** `{ agent }`.
+
+## `agents.rotate`
+
+**Tier:** `sessionProcedure`
+
+Rotate a legacy API key. Public-key agents must re-enroll instead.
+
+<ParamField path="agentId" type="string" required />
+
+**Returns:** `{ apiKey, keyPrefix }`. The new key is shown once.
+
+## `agents.revoke`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="agentId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+Invalidates all active `abs_...` sessions and disables future authentication. Permissions are not deleted but become useless until the agent is re-enabled.
+
+## `agents.self`
+
+**Tier:** `agentProcedure`
+
+Return the calling agent's own record. Useful for runtime self-introspection.
+
+**Input:** none.
+
+**Returns:** `{ agent }`.
+
+## Audit events
+
+- `agent.create`
+- `agent.bootstrap_issue`
+- `agent.enroll`
+- `agent.rotate`
+- `agent.revoke`
+- `agent.revoke_cascade`
+- `agent.session_issue`
+- `agent.session_reject`
+- `agent.session_revoke`

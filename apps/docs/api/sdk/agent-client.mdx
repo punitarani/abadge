@@ -1,0 +1,164 @@
+---
+title: "AbadgeAgentClient"
+description: "Agent-authenticated client for accessing secrets. Keypair sessions preferred."
+---
+
+`AbadgeAgentClient` is the agent runtime client. It owns the bearer credential, runs the keypair challenge / session exchange, refreshes tokens before they expire, and exposes the `access.*` methods.
+
+## Construction
+
+<Tabs>
+  <Tab title="Keypair (preferred)">
+    ```ts
+    import { AbadgeAgentClient } from "@abadge/sdk";
+
+    const agent = new AbadgeAgentClient({
+      apiUrl: "https://api.abadge.dev",
+      agentId: "agent_...",
+      privateKey: ed25519PrivateKey,   // JWK or CryptoKey
+    });
+    ```
+  </Tab>
+  <Tab title="Legacy API key">
+    ```ts
+    import { AbadgeAgentClient } from "@abadge/sdk";
+
+    const agent = new AbadgeAgentClient({
+      apiUrl: "https://api.abadge.dev",
+      apiKey: "abl_...",
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Lifecycle
+
+For keypair clients you must `connect()` before making requests:
+
+```ts
+await agent.connect();
+
+// ... use the client ...
+
+agent.disconnect();
+```
+
+`connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain.
+
+Legacy API-key clients do not need `connect()` — they use the long-lived bearer key directly.
+
+## Enrollment
+
+The first time an agent runs, it can use the bootstrap token to enroll:
+
+```ts
+agent.enroll(bootstrapToken: string, publicKey: string);
+```
+
+After enrollment, future `connect()` calls use the keypair session exchange.
+
+## Access methods
+
+These enforce the capability matrix and audit every attempt.
+
+### `accessCiphertext(itemId)`
+
+Read the encrypted blob of a zero-knowledge item for local decryption.
+
+**Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
+
+```ts
+const {
+  encryptedItemKey,
+  keyNonce,
+  ciphertext,
+  contentNonce,
+  cryptoVersion,
+} = await agent.accessCiphertext(itemId);
+```
+
+### `accessReveal(itemId, field?)`
+
+Decrypt and return a field value from a server-managed item.
+
+**Requires:** `reveal_plaintext` permission. Server-managed item only.
+
+```ts
+const { payload } = await agent.accessReveal(itemId);
+
+// Specific field for a multi-field item
+const { payload: fieldPayload } = await agent.accessReveal(itemId, "password");
+```
+
+### `accessMount(itemId, mountType, field?)`
+
+Request item data for local injection (env var or temp file).
+
+**Requires:** `mount_env` or `mount_file` permission. Local agent only.
+
+```ts
+const data = await agent.accessMount(itemId, "env", "password");
+```
+
+For server-managed items, `data.payload` carries the resolved field value. For zero-knowledge items, `data` carries the encrypted blob (the daemon decrypts).
+
+## Other methods
+
+```ts
+agent.getSelf();                          // Get this agent's own record
+agent.listItems(profileId);               // Metadata only
+agent.listAuditEntries(orgId, filters?);  // Structured audit listing
+```
+
+## Background refresh
+
+Keypair clients schedule a background refresh at T-2 minutes before the current `abs_...` session expires. If a refresh fails, the SDK retries with bounded backoff. After the retry budget is exhausted, the next request rejects with `SESSION_REFRESH_FAILED`. Recover by calling `disconnect()` and `connect()` again, or instantiate a fresh client.
+
+```ts
+try {
+  const { payload } = await agent.accessReveal(itemId);
+} catch (err) {
+  if (err instanceof AbadgeApiError && err.code === "SESSION_REFRESH_FAILED") {
+    agent.disconnect();
+    await agent.connect();
+  }
+  throw err;
+}
+```
+
+## Example
+
+```ts
+import { AbadgeAgentClient } from "@abadge/sdk";
+
+const agent = new AbadgeAgentClient({
+  apiUrl: "https://api.abadge.dev",
+  agentId: "agent_...",
+  privateKey: ed25519PrivateKey,
+});
+
+await agent.connect();
+
+const { payload } = await agent.accessReveal(itemId);
+const token = payload.fields.token as string;
+
+// Use the token...
+
+agent.disconnect();
+```
+
+## Field delivery
+
+The `field` parameter on `accessReveal` and `accessMount` selects a specific named field from a multi-field item. Resolution is centralized in `resolveFieldValue` from `@abadge/core/secret-delivery` (re-exported from the SDK).
+
+| Case | Result |
+|---|---|
+| Single-field item, `field` omitted | The field is returned |
+| Multi-field item, `field` omitted | `MULTI_FIELD_ITEM` with `meta.availableFields` |
+| `field` specified but missing | `FIELD_NOT_FOUND` with `meta.availableFields` |
+
+See [Field delivery](/concepts/fields) for details.
+
+## Errors
+
+Wrapped in `AbadgeApiError`. See [Error handling](/api/sdk/error-handling).

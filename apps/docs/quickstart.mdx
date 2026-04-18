@@ -1,0 +1,131 @@
+---
+title: "Quickstart"
+description: "Install the CLI, store a secret, register an agent, grant access, and inject the secret into a subprocess."
+---
+
+This walkthrough takes you from zero to a running agent that uses a stored secret in about five minutes.
+
+## Prerequisites
+
+- macOS or Linux (x86_64 or arm64)
+- An [abadge.dev](https://abadge.dev) account, or a self-hosted API URL
+
+## 1. Install the CLI
+
+<CodeGroup>
+```bash macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+```bash Verify
+abadge --version
+```
+</CodeGroup>
+
+The installer downloads the latest signed CLI release, verifies SHA-256 checksums, installs to `~/.abadge/bin/abadge`, and adds it to your shell profile.
+
+## 2. Authenticate
+
+```bash
+abadge login
+```
+
+The CLI starts a device-code flow and opens your browser. Approve the request to attach your CLI to your account. The bearer token is held in **daemon memory only** — never written to disk.
+
+<Tip>
+  `abadge login` also provisions local Ed25519 keypair-backed agents for the CLI and MCP runtime so that `abadge run` and the MCP server work out of the box.
+</Tip>
+
+## 3. Store a secret
+
+```bash
+abadge item create \
+  --label "OpenAI API key" \
+  --kind api_key \
+  --storage-mode server_managed
+```
+
+The CLI prompts for the value (use stdin or interactive prompt — `--value` is rejected on a TTY to avoid leaking into shell history). Server-managed items are encrypted with AES-256-GCM by the API.
+
+For a zero-knowledge item — encrypted locally, the server never sees plaintext — pass `--storage-mode zero_knowledge`. You'll need an unlocked vault (`abadge vault unlock`).
+
+## 4. Register an agent
+
+```bash
+abadge agent register --name "deploy-bot" --kind remote
+```
+
+The CLI returns the new agent's ID and a one-time bootstrap token (`abe_...`, 10-minute TTL). Store the token securely — it can be redeemed exactly once with `abadge agent enroll`.
+
+<Warning>
+  The bootstrap token (or one-time API key, if you opt into legacy auth) is shown **only once**. There is no way to recover it after this command exits.
+</Warning>
+
+## 5. Grant access
+
+Permissions are explicit: agent + item + capability.
+
+```bash
+abadge permission create \
+  --agent <agent-id> \
+  --item <item-id> \
+  --capability reveal_plaintext
+```
+
+For local agents (CLI, MCP), use `mount_env` or `mount_file` to inject the secret into a subprocess instead of revealing the plaintext over the wire.
+
+## 6. Use the secret
+
+For a local CLI runtime, inject the secret as an env var into any command:
+
+```bash
+abadge run \
+  --item <item-id> \
+  --env-var OPENAI_API_KEY \
+  -- node script.js
+```
+
+The CLI minted a short-lived `abs_...` agent session, fetched the item, and spawned `node` with `OPENAI_API_KEY=<value>` in its environment. The secret lives only in the child's process memory.
+
+For a remote agent, call the API directly:
+
+```bash
+curl https://api.abadge.dev/trpc/access.reveal \
+  -H "Authorization: Bearer abs_..." \
+  -H "Content-Type: application/json" \
+  -d '{"itemId":"<item-id>"}'
+```
+
+## What just happened
+
+<Steps>
+  <Step title="Stored">
+    The secret was encrypted (AES-256-GCM server-managed, or XChaCha20-Poly1305 zero-knowledge) and persisted as ciphertext.
+  </Step>
+  <Step title="Permissioned">
+    A capability grant was recorded against (agent, item, capability). No wildcards, no implicit access.
+  </Step>
+  <Step title="Delivered">
+    The secret was injected into a subprocess env var. It never touched disk and never appeared in shell history.
+  </Step>
+  <Step title="Audited">
+    Every step — login, agent create, permission create, access — was appended to the immutable audit log. View it with `abadge audit`.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Concepts" href="/concepts/organizations">
+    Understand organizations, profiles, items, agents, and permissions.
+  </Card>
+  <Card title="CLI reference" href="/cli/installation">
+    Every command, flag, and option.
+  </Card>
+  <Card title="MCP integration" href="/mcp/overview">
+    Use stored secrets from Claude Desktop or other MCP clients.
+  </Card>
+  <Card title="API reference" href="/api/overview">
+    tRPC procedures and the TypeScript SDK.
+  </Card>
+</CardGroup>

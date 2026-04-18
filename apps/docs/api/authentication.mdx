@@ -1,0 +1,125 @@
+---
+title: "Authentication"
+description: "Operator sessions, agent sessions, and the keypair-based exchange."
+---
+
+The API authenticates two kinds of callers: human operators (via Better Auth) and agents (via short-lived sessions or legacy API keys).
+
+## Human operators
+
+Better Auth handles operator identity at `/api/auth/*`.
+
+Common routes:
+
+```text
+POST /api/auth/sign-up/email
+POST /api/auth/sign-in/email
+POST /api/auth/sign-out
+GET  /api/auth/get-session
+```
+
+Device authorization (used by the CLI):
+
+```text
+POST /api/auth/device/code
+POST /api/auth/device/token
+GET  /api/auth/device?user_code=...
+POST /api/auth/device/approve
+POST /api/auth/device/deny
+```
+
+`/api/auth/device/approve` and `/api/auth/device/deny` require an authenticated browser session.
+
+Session-backed tRPC procedures accept either:
+
+- Better Auth browser **cookies** (set by `/api/auth/sign-in/*`)
+- Better Auth **bearer tokens** in `Authorization: Bearer ...`
+
+The CLI's device-login bearer token is held in daemon memory only — never written to disk.
+
+### Device authorization flow
+
+<Steps>
+  <Step title="Request a device code">
+    `POST /api/auth/device/code` returns `device_code`, `user_code`, and `verification_uri`.
+  </Step>
+  <Step title="User approves in the browser">
+    The user opens `verification_uri`, signs in if needed, and approves the matching `user_code`.
+  </Step>
+  <Step title="CLI polls for the token">
+    `POST /api/auth/device/token` returns the access token once approval lands.
+  </Step>
+  <Step title="CLI validates the session">
+    `GET /api/auth/get-session` confirms the session is alive.
+  </Step>
+  <Step title="CLI stores the token in daemon memory">
+    The bearer token is never persisted to disk.
+  </Step>
+</Steps>
+
+## Agents
+
+Agent-facing procedures resolve `Authorization: Bearer <token>` in this order:
+
+1. **`abs_...`** — short-lived agent session lookup in `agent_sessions` (hash-based)
+2. **`abl_...` / `abg_...`** — legacy API-key verification by stored prefix and hash
+3. Legacy Better Auth API-key fallback for migrated principals
+
+`abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes.
+
+### Session lifecycle
+
+Public-key agents use seven dedicated `auth.*` procedures:
+
+| Procedure | Tier | Description |
+|---|---|---|
+| `auth.issueBootstrapToken` | session | Issue a one-time `abe_...` enrollment token |
+| `auth.enroll` | public | Redeem the bootstrap token and upload the agent's public key |
+| `auth.createChallenge` | public | Create a short-lived `abc_...` signing challenge |
+| `auth.exchangeSession` | public | Verify the Ed25519 signature and mint an `abs_...` session |
+| `auth.revokeSession` | session | Revoke an active `abs_...` session for the current operator |
+| `auth.recordLogin` | session | Audit `auth.login` for the current operator |
+| `auth.logout` | session | Audit `auth.logout` for the current operator |
+
+### Defaults
+
+| Parameter | Value |
+|---|---|
+| New remote agents auth method | `public_key_session` |
+| Bootstrap token TTL | 10 minutes |
+| Challenge TTL | 60 seconds |
+| Session token TTL | 15 minutes |
+| SDK refresh schedule | T-2 minutes before expiry |
+
+### Authorization header examples
+
+<CodeGroup>
+```bash Operator session
+curl https://api.abadge.dev/trpc/items.list \
+  -H "Authorization: Bearer <better-auth-bearer-token>"
+```
+
+```bash Agent session
+curl https://api.abadge.dev/trpc/access.reveal \
+  -H "Authorization: Bearer abs_..."
+```
+
+```bash Legacy API key
+curl https://api.abadge.dev/trpc/access.reveal \
+  -H "Authorization: Bearer abl_..."
+```
+</CodeGroup>
+
+## Audit events for auth
+
+Every auth lifecycle event is audited:
+
+- `auth.login`
+- `auth.logout`
+- `agent.bootstrap_issue`
+- `agent.enroll`
+- `agent.session_issue`
+- `agent.session_reject`
+- `agent.session_revoke`
+
+See [Audit log](/concepts/audit-log) for the full event catalog.

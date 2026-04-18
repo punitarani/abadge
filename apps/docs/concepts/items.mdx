@@ -1,0 +1,100 @@
+---
+title: "Items"
+description: "Stored credentials. Each item lives inside a profile and carries a kind, fields, and tags."
+---
+
+An **item** is a stored credential. Every item belongs to a profile, inherits its storage mode, and carries a kind that suggests which fields are expected.
+
+## Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | text (PK) | Item ID |
+| `organizationId` | text | Owning organization |
+| `profileId` | text | Parent profile |
+| `label` | text | Cleartext display name |
+| `kind` | text | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
+| `tags` | jsonb | Array of strings |
+| `storageMode` | text | `zero_knowledge` or `server_managed` (inherited from profile) |
+| `encryptedItemKey` | text | DEK wrapped by root key (ZK only) |
+| `keyNonce` | text | Nonce for key wrapping (ZK only) |
+| `ciphertext` | text | Payload encrypted by DEK (ZK only) |
+| `contentNonce` | text | Nonce for content encryption (ZK only) |
+| `serverCiphertext` | text | AES-256-GCM ciphertext (server-managed only) |
+| `serverIv` | text | 12-byte IV (server-managed only) |
+| `serverKeyVersion` | integer | Encryption-key version (server-managed only) |
+| `cryptoVersion` | integer | Envelope format version |
+| `contentVersion` | integer | Optimistic-concurrency counter |
+| `deletedAt` | timestamptz | Soft-delete timestamp |
+
+Labels and tags are stored in cleartext to allow listing without decryption.
+
+## The plaintext envelope
+
+The plaintext that gets encrypted has a stable JSON shape:
+
+```json
+{
+  "v": 1,
+  "label": "prod postgres",
+  "kind": "login",
+  "tags": ["prod", "db"],
+  "notes": "Primary production database",
+  "fields": {
+    "host": "db.example.com",
+    "port": 5432,
+    "username": "app",
+    "password": "s3cret"
+  }
+}
+```
+
+For zero-knowledge items the entire JSON is encrypted with the item DEK. For server-managed items it's encrypted with AES-256-GCM by the API.
+
+## Kinds and standard fields
+
+Each kind suggests the standard fields readers will look for. The fields themselves are free-form, but using the standard names enables single-field auto-delivery.
+
+| Kind | Standard fields |
+|---|---|
+| `login` | `username`, `email`, `password`, `url`, `totp_secret` |
+| `api_key` | `value`, `key_id`, `key_secret` |
+| `token` | `value` |
+| `certificate` | `cert`, `key`, `chain`, `passphrase` |
+| `ssh_key` | `private_key`, `public_key`, `passphrase` |
+| `json` | (user-defined) |
+| `opaque` | `value` |
+
+See [Field delivery](/concepts/fields) for the resolution rules when a reader requests a specific field.
+
+## Optimistic concurrency
+
+Updates use `contentVersion` for optimistic concurrency. Pass the current version with the update; the server rejects stale writes with `STALE_VERSION`. Re-fetch and retry.
+
+## Lifecycle
+
+```
+[Created] → item.create
+  │
+  ├── [Updated] → item.update (contentVersion++)
+  │
+  └── [SoftDeleted] → item.delete (deletedAt set, ciphertext retained)
+```
+
+Soft-delete preserves the ciphertext but prevents future access. Permissions cascade-deny with `result: cascade` audit entries.
+
+## Listing
+
+Both operators and agents can list items, but the responses differ:
+
+- `items.list` (session) returns metadata for every item the user can see in the active organization.
+- `items.listForAgent` (agent) returns metadata only for items the calling agent has at least one permission row on. Agents without grants get an empty list.
+
+Neither endpoint returns secret data. To read a secret, call `access.ciphertext`, `access.reveal`, or `access.mount` with the appropriate capability.
+
+## Related
+
+- [API: items procedures](/api/procedures/items)
+- [CLI: item commands](/cli/item)
+- [Field delivery](/concepts/fields)
+- [Permissions and capabilities](/concepts/permissions-and-capabilities)

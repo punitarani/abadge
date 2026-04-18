@@ -1,0 +1,74 @@
+---
+title: "Installation"
+description: "Run the abadge MCP server from the monorepo or as a compiled binary."
+---
+
+The MCP server lives in `packages/mcp` and runs as a subprocess that an MCP-aware client launches over stdio.
+
+## From the monorepo
+
+Once you've cloned `punitarani/abadge` and run `bun install`:
+
+```bash
+bun run mcp
+```
+
+This is equivalent to:
+
+```bash
+bun packages/mcp/src/index.ts
+```
+
+Both forms expect the auth env vars (or `~/.abadge/config.json`) to be set so the server can authenticate. See [Authentication](/mcp/authentication).
+
+## As a compiled binary (planned)
+
+A standalone binary release is on the roadmap. In the meantime, embed the monorepo command in your client config (see [Claude Desktop](/mcp/claude-desktop)).
+
+## What it does on startup
+
+<Steps>
+  <Step title="Resolve auth">
+    Read env vars (or fall back to `~/.abadge/config.json` `localAgents.mcp`). Choose keypair or legacy mode.
+  </Step>
+  <Step title="Mint a session">
+    For keypair mode: run the Ed25519 challenge / exchange against the API. Cache the `abs_...` token. Schedule refresh at T-2 minutes before expiry.
+  </Step>
+  <Step title="Sweep orphan mounts">
+    Walk the OS temp directory and remove any `abadge-*` directory older than 10 minutes. This cleans up after crashed previous runs.
+  </Step>
+  <Step title="Register tools">
+    `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`.
+  </Step>
+  <Step title="Listen on stdio">
+    The server is now ready to handle MCP requests from the host client.
+  </Step>
+</Steps>
+
+## Health check
+
+There's no separate health endpoint — the server exits non-zero if startup fails. Common failure modes:
+
+| Symptom | Likely cause |
+|---|---|
+| `ENOENT` on the private key path | `ABADGE_PRIVATE_KEY_PATH` typo or file missing |
+| `AGENT_NOT_ENROLLED` | The agent has never enrolled a public key. Run `abadge agent enroll`. |
+| `UNAUTHORIZED` | Wrong agent ID, wrong key, or the agent has been revoked |
+| Connection refused on `ABADGE_API_URL` | API not reachable from the host running the MCP server |
+
+## Logs
+
+The server writes structured logs to stderr. Routes that fail include the API error envelope (`code`, `message`, `hint`).
+
+In Claude Desktop, MCP server logs are captured in the application log directory. On macOS that's `~/Library/Logs/Claude/`.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Authentication" href="/mcp/authentication">
+    Env vars, config fallback, deprecation warnings.
+  </Card>
+  <Card title="Claude Desktop" href="/mcp/claude-desktop">
+    Drop-in JSON config snippet.
+  </Card>
+</CardGroup>

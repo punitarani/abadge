@@ -1,0 +1,85 @@
+---
+title: "abadge daemon"
+description: "Start, stop, and inspect the local vault daemon."
+---
+
+`vaultd` is a long-running local process that holds the operator session, unwraps the profile root key in memory for zero-knowledge profiles, and injects secrets into subprocesses on demand. The daemon is the strongest trust tier in abadge.
+
+The CLI talks to the daemon over a `0600`-permissioned Unix socket at `~/.abadge/vaultd.sock`.
+
+## `abadge daemon start`
+
+Start the daemon if it isn't already running.
+
+```bash
+abadge daemon start
+```
+
+What happens:
+
+1. Check `~/.abadge/vaultd.pid` — fail fast if a healthy daemon is already running.
+2. Spawn the daemon as a detached background process.
+3. Bind the socket with `0600` permissions.
+4. Write the PID file.
+5. Wait for the socket to accept a `vault.status` ping.
+
+The daemon does **not** unlock any vault on start. Run `abadge vault unlock` to load a profile root key.
+
+## `abadge daemon status`
+
+Print the daemon's runtime state.
+
+```bash
+abadge daemon status
+```
+
+Output includes:
+
+- Whether the daemon is running and the PID
+- Whether an operator session is currently loaded in memory
+- Which profile (if any) is unlocked
+- Auto-lock countdown (default 15 minutes of inactivity)
+
+With `--json`:
+
+```bash
+abadge daemon status --json
+```
+
+## `abadge daemon stop`
+
+Stop the daemon and remove the socket.
+
+```bash
+abadge daemon stop
+```
+
+What happens:
+
+1. Send a `daemon.shutdown` RPC over the socket.
+2. The daemon zeros out the in-memory operator session and any unlocked root key.
+3. Mounted secret files (from `mount_file`) are released and deleted.
+4. The PID file and socket are removed.
+
+If the daemon is wedged, fall back to `kill $(cat ~/.abadge/vaultd.pid)`.
+
+## Auto-lock
+
+The daemon tracks idle time. After 15 minutes without an RPC it auto-locks: the in-memory root key is zeroed and `vault.status` reports `locked`. The operator session stays loaded.
+
+To override the timeout, pass `--auto-lock-minutes` to `daemon start` (planned; check `--help` for current support).
+
+## File permissions
+
+| File | Permissions | Notes |
+|---|---|---|
+| `~/.abadge/vaultd.sock` | `0600` | Daemon refuses to bind looser permissions |
+| `~/.abadge/vaultd.pid` | `0644` | Standard PID file |
+| `~/.abadge/agents/*.jwk` | `0600` | Provisioned runtime agent private keys |
+| `<tmp>/abadge-*/...` | `0600` inside `0700` dir | Mounted secret files |
+
+## Related
+
+- [`abadge vault unlock`](/cli/vault)
+- [Trust boundaries](/security/trust-boundaries)
+- [Configuration](/cli/configuration)

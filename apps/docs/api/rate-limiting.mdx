@@ -1,0 +1,47 @@
+---
+title: "Rate limiting"
+description: "Per-IP request limits on auth and tRPC paths."
+---
+
+abadge applies in-memory per-IP rate limits at the API edge.
+
+## Limits
+
+| Path | Limit |
+|---|---|
+| `/api/auth/*` | 60 requests / minute / IP |
+| `/trpc/*` | 100 requests / minute / IP |
+
+The limits are enforced by middleware in the API worker (`apps/api/src/index.ts`). Counters are per-instance and reset every minute.
+
+## Response
+
+When a caller exceeds the limit, the API returns:
+
+- HTTP `429 Too Many Requests`
+- The standard error envelope with `code: "RATE_LIMITED"`
+- A `Retry-After` header in seconds
+
+```json
+{
+  "code": "RATE_LIMITED",
+  "message": "Too many requests.",
+  "hint": "Back off and retry after the Retry-After header.",
+  "meta": {}
+}
+```
+
+## Recommended client behavior
+
+- Respect the `Retry-After` header. Treat the value as a minimum.
+- Apply jitter when retrying so concurrent clients don't synchronize.
+- Cache idempotent reads (item metadata, permission lists) on the client when you can.
+- Use the SDK — `AbadgeAgentClient`'s session refresh has bounded backoff retries built in.
+
+## Health endpoint
+
+`GET /health` is excluded from rate limiting and requires no authentication. Use it for liveness checks.
+
+## What rate limiting does not do
+
+Rate limiting bounds request volume. It does **not** replace permission checks, capability enforcement, or audit logging — every legitimate request still goes through the full decision flow described in [Permissions and capabilities](/concepts/permissions-and-capabilities).

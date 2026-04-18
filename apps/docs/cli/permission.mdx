@@ -1,0 +1,57 @@
+---
+title: "abadge permission"
+description: "Grant, list, and revoke capabilities."
+---
+
+## `abadge permission create`
+
+Grant an explicit capability for an agent on an item.
+
+```bash
+abadge permission create --agent <agent-id> --item <item-id> --capability reveal_plaintext
+abadge permission create --agent <agent-id> --item <item-id> --capability mount_env
+abadge permission create --agent <agent-id> --item <item-id> --capability mount_env \
+  --expires-at 2026-12-31T00:00:00Z
+```
+
+| Flag | Description |
+|---|---|
+| `--agent`, `--agent-id` | Target agent |
+| `--item`, `--item-id` | Target item |
+| `--capability` | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file`. Defaults to `mount_env`. |
+| `--expires-at` | Optional ISO timestamp expiry |
+| `--json` | Print raw JSON |
+
+The CLI rejects invalid combinations at create time. The capability matrix:
+
+| Capability | Local + ZK | Local + SM | Remote + ZK | Remote + SM |
+|---|---|---|---|---|
+| `read_ciphertext` | ✓ | – | ✗ | – |
+| `reveal_plaintext` | – | ✓ | – | ✓ |
+| `mount_env` | ✓ | ✓ | ✗ | ✗ |
+| `mount_file` | ✓ | ✓ | ✗ | ✗ |
+
+## `abadge permission list`
+
+```bash
+abadge permission list
+abadge permission list --agent-id <agent-id>
+abadge permission list --item-id <item-id>
+abadge permission list --json
+```
+
+Output columns: `id`, `agentId`, `itemId`, `capability`, `expiresAt`, `grantedBy`, `createdAt`.
+
+## `abadge permission revoke <id>`
+
+Revokes a permission immediately. In-flight access attempts that haven't yet checked the row see the deletion and are denied.
+
+```bash
+abadge permission revoke <permission-id>
+```
+
+## Related
+
+- [Concepts: permissions and capabilities](/concepts/permissions-and-capabilities)
+- [Dashboard: permissions](/dashboard/permissions)
+- [API: permissions procedures](/api/procedures/permissions)

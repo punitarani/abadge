@@ -1,0 +1,65 @@
+---
+title: "permissions.*"
+description: "Capability-based grants linking agents to items."
+---
+
+The `permissions` router creates and revokes the `(agent, item, capability)` grants that authorize access. The capability matrix is enforced both at create time and at every access.
+
+## `permissions.create`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="agentId" type="string" required>
+  Agent receiving access.
+</ParamField>
+<ParamField path="itemId" type="string" required>
+  Target item. Must belong to the same organization as the agent.
+</ParamField>
+<ParamField path="capability" type="string" required>
+  `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file`.
+</ParamField>
+<ParamField path="expiresAt" type="string">
+  ISO 8601 timestamp for permission expiry.
+</ParamField>
+
+**Returns:** `{ id }`.
+
+Creation-time validation rejects:
+
+| Combination | Error |
+|---|---|
+| Remote agent + zero-knowledge item | `INVALID_CAPABILITY_STORAGE` |
+| Remote agent + capability other than `reveal_plaintext` | `INVALID_CAPABILITY_LOCALITY` |
+| `read_ciphertext` + server-managed item | `INVALID_CAPABILITY_STORAGE` |
+| `reveal_plaintext` + zero-knowledge item | `INVALID_CAPABILITY_STORAGE` |
+
+The composite unique constraint `(agentId, itemId, capability)` makes each triple at most one row. Re-granting an existing triple updates the row.
+
+## `permissions.list`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="agentId" type="string">
+  Filter to grants for one agent.
+</ParamField>
+<ParamField path="itemId" type="string">
+  Filter to grants on one item.
+</ParamField>
+
+**Returns:** `{ permissions }`.
+
+## `permissions.revoke`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="permissionId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+In-flight access attempts that have not yet checked the row see the deletion and are denied.
+
+## Audit events
+
+- `permission.create`
+- `permission.revoke`
+- `permission.revoke_cascade` — emitted when an item or agent is deleted with permissions still attached

@@ -1,0 +1,78 @@
+---
+title: "abadge login"
+description: "Device-code authentication. Browser approval, daemon-held bearer token, runtime agent provisioning."
+---
+
+`abadge login` starts a Better Auth device authorization flow, opens your browser to approve the request, and stores the resulting operator session in **daemon memory** — never on disk.
+
+## Usage
+
+```bash
+abadge login
+abadge login --api-url http://localhost:8787
+abadge login --no-open-browser
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--api-url <url>` | Override the API base URL. Persisted to `~/.abadge/config.json`. |
+| `--no-open-browser` | Skip auto-opening the verification URL. Print it for manual visit. |
+
+## What it does
+
+<Steps>
+  <Step title="Request a device code">
+    `POST /api/auth/device/code` returns `device_code`, `user_code`, and a verification URL.
+  </Step>
+  <Step title="Print and open the URL">
+    The CLI prints the user code and tries to open the URL in your default browser. Use `--no-open-browser` to skip.
+  </Step>
+  <Step title="Poll for the token">
+    `POST /api/auth/device/token` is polled until the user approves or denies the request.
+  </Step>
+  <Step title="Hold the bearer in daemon memory">
+    The Better Auth bearer token is stored in the daemon's process memory. The config file never holds a human bearer token.
+  </Step>
+  <Step title="Provision local runtime agents">
+    If the local CLI and MCP runtime agents (`localAgents.cli`, `localAgents.mcp`) aren't already provisioned for this `(operatorUserId, apiUrl)`, the CLI registers them with `public_key_session` auth and writes their private keys to `~/.abadge/agents/` with `0600` permissions.
+  </Step>
+  <Step title="Audit auth.login">
+    `auth.recordLogin` appends an `auth.login` event.
+  </Step>
+</Steps>
+
+<Tip>
+  `abadge login` does not auto-register a non-runtime agent. Use `abadge agent register` to create agents for CI runners or remote workers.
+</Tip>
+
+## Effect on configuration
+
+After a successful login, `~/.abadge/config.json` contains:
+
+```json
+{
+  "apiUrl": "http://localhost:8787",
+  "operatorUserId": "user_...",
+  "localAgents": {
+    "cli": { "agentId": "agent_...", "privateKeyPath": "..." },
+    "mcp": { "agentId": "agent_...", "privateKeyPath": "..." }
+  }
+}
+```
+
+`activeOrgId` and `activeProfileId` are set later by `abadge org use` and `abadge profile use`.
+
+## Audit
+
+- `auth.login` — recorded by `auth.recordLogin`
+- `agent.create` — for any newly provisioned local runtime agent
+- `agent.enroll` — when the runtime agent's public key is uploaded
+- `agent.session_issue` — first session for the new runtime agent
+
+## Related
+
+- [Authentication (API)](/api/authentication)
+- [Configuration](/cli/configuration)
+- [`abadge logout`](/cli/logout)

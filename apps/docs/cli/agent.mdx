@@ -1,0 +1,77 @@
+---
+title: "abadge agent"
+description: "Register, enroll, list, rotate, and revoke automated callers."
+---
+
+## `abadge agent register`
+
+Register a new agent. Defaults to `public_key_session` auth. Generates an Ed25519 keypair on-device, stores the private key in `~/.abadge/agents/`, and uploads the public key via a one-time bootstrap token.
+
+```bash
+abadge agent register --kind local_cli
+abadge agent register --name "ci bot" --kind remote
+abadge agent register --name "legacy bot" --kind remote --legacy-api-key
+```
+
+| Flag | Description |
+|---|---|
+| `--name`, `-n` | Agent display name |
+| `--kind`, `-k` | `local_cli`, `local_mcp`, or `remote` |
+| `--description`, `-d` | Optional metadata description |
+| `--legacy-api-key` | Opt into legacy API-key auth (warns about deprecation) |
+| `--no-bootstrap-token` | Skip bootstrap-token issuance (for `public_key_session` agents enrolling via direct `publicKey` upload) |
+| `--json` | Print raw JSON |
+
+<Warning>
+  The bootstrap token (`abe_...`) or legacy API key (`abl_/abg_...`) is shown exactly once. Save it before the command exits.
+</Warning>
+
+## `abadge agent enroll`
+
+Redeem a one-time bootstrap token, generate a local Ed25519 keypair, write the private key with `0600` permissions, and upload only the public key.
+
+```bash
+abadge agent enroll --bootstrap-token abe_...
+abadge agent enroll --bootstrap-token abe_... --private-key-path ~/.abadge/agents/remote.jwk
+```
+
+| Flag | Description |
+|---|---|
+| `--bootstrap-token` | The `abe_...` token from `agent register` |
+| `--private-key-path` | Where to write the private key. Defaults to `~/.abadge/agents/<agent>.ed25519.jwk`. |
+
+## `abadge agent list`
+
+```bash
+abadge agent list
+abadge agent list --json
+```
+
+Output columns: `id`, `name`, `kind`, `locality`, `authMethod`, `enabled`, `lastUsedAt`.
+
+## `abadge agent rotate <agent-id>`
+
+Rotate a legacy API key. Public-key agents must re-enroll instead.
+
+```bash
+abadge agent rotate <agent-id>
+```
+
+The new key is shown once.
+
+## `abadge agent revoke <agent-id>`
+
+Revoke an agent. Invalidates all active `abs_...` sessions and disables future authentication.
+
+```bash
+abadge agent revoke <agent-id>
+```
+
+Permissions are not deleted; they remain visible (and useless) until the agent is rotated, removed, or re-enabled.
+
+## Related
+
+- [Concepts: agents](/concepts/agents)
+- [Dashboard: agents](/dashboard/agents)
+- [API: agents procedures](/api/procedures/agents)
+- [API: authentication](/api/authentication)

@@ -1,0 +1,77 @@
+---
+title: "Signing in"
+description: "Email and password, Google or GitHub OAuth, and the device-code approval flow for the CLI."
+---
+
+The dashboard supports three sign-in methods. All of them produce a Better Auth session cookie that lasts 7 days.
+
+## Email and password
+
+<Steps>
+  <Step title="Sign up">
+    On the login page, click **Create an account**. Enter your email and a password. Better Auth verifies email format and minimum password complexity.
+  </Step>
+  <Step title="Sign in">
+    Enter the same email and password. The session cookie is set on success.
+  </Step>
+  <Step title="Land in your personal organization">
+    On first sign-in, abadge creates a personal organization for you. You can rename it from **Settings → Organization** or create a separate org for your team.
+  </Step>
+</Steps>
+
+## Google or GitHub
+
+If your deployment has the OAuth providers configured, the login page shows **Sign in with Google** and **Sign in with GitHub** buttons.
+
+<Steps>
+  <Step title="Click the provider button">
+    The browser is redirected to the provider's consent screen.
+  </Step>
+  <Step title="Approve">
+    Approve the abadge app's requested scopes (email and profile).
+  </Step>
+  <Step title="Land back in the dashboard">
+    On first sign-in, abadge creates a personal organization linked to your provider account. Subsequent sign-ins reuse it.
+  </Step>
+</Steps>
+
+## Approving a CLI device code
+
+The CLI uses Better Auth's device authorization flow. When `abadge login` runs, it prints a **user code** and a verification URL.
+
+<Steps>
+  <Step title="Open the verification URL">
+    The CLI tries to open it for you. Otherwise, paste it into a browser.
+  </Step>
+  <Step title="Sign in if needed">
+    If you're not already signed in to the dashboard, complete the sign-in flow first.
+  </Step>
+  <Step title="Confirm the user code">
+    The dashboard shows the user code from your CLI. Confirm that it matches before approving.
+  </Step>
+  <Step title="Click Approve">
+    The CLI's device-code poll succeeds within a few seconds. Your CLI is now attached.
+  </Step>
+</Steps>
+
+<Warning>
+  Only approve a device code that you initiated. If a verification page appears unexpectedly, deny it and rotate any agents that may have been provisioned during a stolen session.
+</Warning>
+
+## Sessions
+
+| Property | Value |
+|---|---|
+| Storage | HttpOnly cookie set by Better Auth |
+| TTL | 7 days |
+| Refresh | Sliding — extended on each request |
+| Revocation | **Settings → Sessions** lists active sessions; sign out invalidates the current one |
+
+## Multi-factor authentication
+
+Not in v1. Use a strong unique password and rely on your provider's MFA when signing in via Google or GitHub.
+
+## Related
+
+- [API: authentication](/api/authentication)
+- [CLI: login](/cli/login)

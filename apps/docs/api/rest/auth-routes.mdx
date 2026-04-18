@@ -1,0 +1,60 @@
+---
+title: "Better Auth routes"
+description: "Email + password sign-in, OAuth, and the device authorization flow."
+---
+
+Better Auth is mounted at `/api/auth/*` and owns operator authentication. The dashboard, the CLI, and any custom client use these routes for human auth.
+
+## Email and password
+
+| Method | Path | Body | Description |
+|---|---|---|---|
+| POST | `/api/auth/sign-up/email` | `{ email, password, name? }` | Create a new account |
+| POST | `/api/auth/sign-in/email` | `{ email, password }` | Sign in with email + password |
+| POST | `/api/auth/sign-out` | none | Invalidate the current session |
+| GET | `/api/auth/get-session` | none | Return the current session, if any |
+
+All four set or read the standard Better Auth session cookie. They also accept the cookie via `Cookie:` header.
+
+## OAuth (Google / GitHub)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/auth/sign-in/social/google` | Begin Google OAuth flow |
+| GET | `/api/auth/sign-in/social/github` | Begin GitHub OAuth flow |
+| GET | `/api/auth/callback/google` | OAuth callback (set by Google) |
+| GET | `/api/auth/callback/github` | OAuth callback (set by GitHub) |
+
+OAuth providers are enabled only when the deployment configures the corresponding `*_CLIENT_ID` and `*_CLIENT_SECRET` env vars.
+
+## Device authorization (CLI)
+
+| Method | Path | Body | Auth | Description |
+|---|---|---|---|---|
+| POST | `/api/auth/device/code` | none | none | Issue `device_code`, `user_code`, `verification_uri` |
+| POST | `/api/auth/device/token` | `{ device_code }` | none | Poll for an access token |
+| GET | `/api/auth/device?user_code=...` | none | session | Render the verification page |
+| POST | `/api/auth/device/approve` | `{ user_code }` | session | Approve a pending device code |
+| POST | `/api/auth/device/deny` | `{ user_code }` | session | Deny a pending device code |
+
+The CLI calls `device/code` to start, prints the `user_code` and verification URL for the user, and polls `device/token` until the user approves or denies the request in their browser.
+
+`device/approve` and `device/deny` require an authenticated browser session — the user must already be signed in to the dashboard.
+
+## Bearer tokens
+
+The Better Auth bearer access token returned by `device/token` (and `sign-in/email`) can be used in `Authorization: Bearer ...` against any `sessionProcedure` tRPC endpoint. The CLI holds this token in daemon memory only.
+
+## Audit
+
+| Event | When |
+|---|---|
+| `auth.login` | After `auth.recordLogin` is called by the CLI or dashboard |
+| `auth.logout` | After `auth.logout` is called |
+| `auth.token_issue` | After a device-code or OAuth exchange |
+| `auth.token_revoke` | When a session is invalidated |
+
+## Related
+
+- [API: authentication](/api/authentication)
+- [Concepts: agents](/concepts/agents)
