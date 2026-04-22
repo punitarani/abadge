@@ -1,0 +1,133 @@
+---
+# abadge sweep plan seed
+# Generated from references/surface-map.md
+# The controller copies this into state/plan.yaml on `start`. After init,
+# this file is NOT read again — controller mutates state/plan.yaml only.
+#
+# Cell facets: happy / adversarial / edge / regression
+# To save space, only happy + adversarial seeded; the controller expands
+# to the other two facets on demand for cells with priority<=2.
+
+generated_at: 0000-00-00T00:00:00Z
+total: 0  # populated by controller after expansion
+pending: 0
+in_progress: 0
+done: 0
+cells:
+
+  # ============== STATIC =====================================
+  - {id: static.typecheck.happy,         surface: static, cell: typecheck,        facet: happy,       status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: static.lint.happy,              surface: static, cell: lint,             facet: happy,       status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: static.test-suite.happy,        surface: static, cell: test-suite,       facet: happy,       status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: static.build-prod.happy,        surface: static, cell: build-prod,       facet: happy,       status: pending, parallelizable: false, priority: 1, requires: [], notes: "long-running; serial"}
+  - {id: static.changeset-coverage.adversarial, surface: static, cell: changeset-coverage, facet: adversarial, status: pending, parallelizable: true, priority: 3, requires: []}
+
+  # ============== API ========================================
+  - {id: api.health.happy,                          surface: api, cell: health,                          facet: happy, status: pending, parallelizable: true, priority: 3, requires: []}
+  - {id: api.cors-preflight.adversarial,            surface: api, cell: cors-preflight,                  facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.security-headers.happy,                surface: api, cell: security-headers,                facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.rate-limit-trpc.adversarial,           surface: api, cell: rate-limit-trpc,                 facet: adversarial, status: pending, parallelizable: false, priority: 2, requires: [], notes: "shared bucket"}
+  - {id: api.rate-limit-auth.adversarial,           surface: api, cell: rate-limit-auth,                 facet: adversarial, status: pending, parallelizable: false, priority: 2, requires: []}
+  - {id: api.404-default-body.happy,                surface: api, cell: 404-default-body,                facet: happy, status: pending, parallelizable: true, priority: 4, requires: []}
+  - {id: api.body-size-limit.adversarial,           surface: api, cell: body-size-limit,                 facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.auth.signup.happy,                     surface: api, cell: auth.signup,                     facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.signup.adversarial,               surface: api, cell: auth.signup,                     facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.signin.happy,                     surface: api, cell: auth.signin,                     facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.signin.adversarial,               surface: api, cell: auth.signin,                     facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.signout.happy,                    surface: api, cell: auth.signout,                    facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.auth.forget-password.regression,       surface: api, cell: auth.forget-password,            facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§AU1"]}
+  - {id: api.auth.device-code.happy,                surface: api, cell: auth.device-code,                facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.auth.enroll.happy,                     surface: api, cell: auth.enroll,                     facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.enroll.adversarial,               surface: api, cell: auth.enroll,                     facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.auth.createChallenge.adversarial,      surface: api, cell: auth.createChallenge,            facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.auth.exchangeSession.adversarial,      surface: api, cell: auth.exchangeSession,            facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.organizations.create.happy,            surface: api, cell: organizations.create,            facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.organizations.create.adversarial,      surface: api, cell: organizations.create,            facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.organizations.list.adversarial,        surface: api, cell: organizations.list,              facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: [multi_org_user]}
+  - {id: api.organizations.members.updateRole.regression, surface: api, cell: organizations.members.updateRole, facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§OWN1"]}
+  - {id: api.organizations.members.remove.regression, surface: api, cell: organizations.members.remove, facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§OWN2"]}
+  - {id: api.organizations.invitations.create.adversarial, surface: api, cell: organizations.invitations.create, facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.organizations.acceptInvite.regression, surface: api, cell: organizations.acceptInvite,      facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I4"]}
+  - {id: api.profiles.create.regression,            surface: api, cell: profiles.create,                 facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§ON5", "§ON5b"]}
+  - {id: api.profiles.bootstrap.adversarial,        surface: api, cell: profiles.bootstrap,              facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§SEC11"]}
+  - {id: api.profiles.rotateKey.regression,         surface: api, cell: profiles.rotateKey,              facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I5"]}
+  - {id: api.items.create-zk.happy,                 surface: api, cell: items.create-zk,                 facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.items.create-sm.regression,            surface: api, cell: items.create-sm,                 facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I1", "§I10"]}
+  - {id: api.items.update.regression,               surface: api, cell: items.update,                    facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I8"]}
+  - {id: api.items.get.adversarial,                 surface: api, cell: items.get,                       facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I11"]}
+  - {id: api.agents.create-publickey-dup.regression, surface: api, cell: agents.create-publickey-dup,   facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§AG4"]}
+  - {id: api.agents.create.adversarial,             surface: api, cell: agents.create,                   facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.agents.revoke.happy,                   surface: api, cell: agents.revoke,                   facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.permissions.create.happy,              surface: api, cell: permissions.create,              facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.permissions.create-cross-org.regression, surface: api, cell: permissions.create-cross-org, facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§P1"]}
+  - {id: api.access.reveal-opaque.happy,            surface: api, cell: access.reveal-opaque,            facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.access.reveal-non-opaque.regression,   surface: api, cell: access.reveal-non-opaque,        facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§I2"]}
+  - {id: api.access.reveal-multifield-no-field.regression, surface: api, cell: access.reveal-multifield-no-field, facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§FLD2"]}
+  - {id: api.access.expired-permission.adversarial, surface: api, cell: access.expired-permission,       facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.access.revoked-agent.adversarial,      surface: api, cell: access.revoked-agent,            facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.audit.list.happy,                      surface: api, cell: audit.list,                      facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.audit.listForAgent.regression,         surface: api, cell: audit.listForAgent,              facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§A1"]}
+  - {id: api.error-envelope.adversarial,            surface: api, cell: error-envelope,                  facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: api.stack-trace-leak.regression,           surface: api, cell: stack-trace-leak,                facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§S1"]}
+  - {id: api.idor.adversarial,                      surface: api, cell: idor,                            facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: api.input-fuzz.adversarial,                surface: api, cell: input-fuzz,                      facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+
+  # ============== CLI ========================================
+  - {id: cli.help.happy,                             surface: cli, cell: help,                            facet: happy, status: pending, parallelizable: true, priority: 4, requires: []}
+  - {id: cli.daemon.start-status.happy,              surface: cli, cell: daemon.start-status,             facet: happy, status: pending, parallelizable: false, priority: 2, requires: []}
+  - {id: cli.vault.unlock-multi-org.regression,      surface: cli, cell: vault.unlock-multi-org,          facet: regression, status: pending, parallelizable: false, priority: 1, requires: [multi_org_user], refers_to: ["§O3"]}
+  - {id: cli.item.create-tty-value.regression,       surface: cli, cell: item.create-tty-value,           facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§CLI6"]}
+  - {id: cli.run.happy,                              surface: cli, cell: run,                             facet: happy, status: pending, parallelizable: false, priority: 2, requires: []}
+  - {id: cli.org.list-use-multi.regression,          surface: cli, cell: org.list-use-multi,              facet: regression, status: pending, parallelizable: false, priority: 1, requires: [multi_org_user], refers_to: ["§O2"]}
+  - {id: cli.import-export.adversarial,              surface: cli, cell: import-export,                   facet: adversarial, status: pending, parallelizable: true, priority: 3, requires: []}
+
+  # ============== WEB ========================================
+  - {id: web.register.happy,                         surface: web, cell: register,                        facet: happy, status: pending, parallelizable: false, priority: 1, requires: [playwright]}
+  - {id: web.login.happy,                            surface: web, cell: login,                           facet: happy, status: pending, parallelizable: false, priority: 2, requires: [playwright]}
+  - {id: web.onboarding.step2-server-managed.regression, surface: web, cell: onboarding.step2-server-managed, facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§ON5", "§ON5b"]}
+  - {id: web.onboarding.stale-localStorage.regression, surface: web, cell: onboarding.stale-localStorage, facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§ON1"]}
+  - {id: web.consent-links.regression,               surface: web, cell: consent-links,                   facet: regression, status: pending, parallelizable: true, priority: 2, requires: [playwright], refers_to: ["§W17", "§W18"]}
+  - {id: web.profiles.detail-buttons.regression,     surface: web, cell: profiles.detail-buttons,         facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§W2"]}
+  - {id: web.agents.modal-mutation.regression,       surface: web, cell: agents.modal-mutation,           facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§W19"]}
+  - {id: web.invite.accept.regression,               surface: web, cell: invite.accept,                   facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§I4", "§W22"]}
+  - {id: web.zustand-cross-user.regression,          surface: web, cell: zustand-cross-user,              facet: regression, status: pending, parallelizable: false, priority: 1, requires: [playwright], refers_to: ["§W4"]}
+  - {id: web.xss.org-name.adversarial,               surface: web, cell: xss.org-name,                    facet: adversarial, status: pending, parallelizable: false, priority: 2, requires: [playwright]}
+
+  # ============== MCP ========================================
+  - {id: mcp.boot.no-env.happy,                      surface: mcp, cell: boot.no-env,                     facet: happy, status: pending, parallelizable: true, priority: 3, requires: []}
+  - {id: mcp.boot.keypair.happy,                     surface: mcp, cell: boot.keypair,                    facet: happy, status: pending, parallelizable: false, priority: 1, requires: []}
+  - {id: mcp.tool.run_with_secret.redaction.regression, surface: mcp, cell: tool.run_with_secret.redaction, facet: regression, status: pending, parallelizable: false, priority: 1, requires: [], refers_to: ["§RED1"]}
+  - {id: mcp.tool.mount_secret.persists-after-death.regression, surface: mcp, cell: tool.mount_secret.persists-after-death, facet: regression, status: pending, parallelizable: false, priority: 2, requires: [], refers_to: ["§M2"]}
+  - {id: mcp.tool.get_audit.cross-agent-leak.regression, surface: mcp, cell: tool.get_audit.cross-agent-leak, facet: regression, status: pending, parallelizable: false, priority: 1, requires: [], refers_to: ["§A1"]}
+
+  # ============== DAEMON =====================================
+  - {id: daemon.socket-perms.happy,                  surface: daemon, cell: socket-perms,                 facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: daemon.json-rpc.error-codes.happy,          surface: daemon, cell: json-rpc.error-codes,         facet: happy, status: pending, parallelizable: false, priority: 2, requires: []}
+  - {id: daemon.toctou.mount-write.adversarial,      surface: daemon, cell: toctou.mount-write,           facet: adversarial, status: pending, parallelizable: false, priority: 2, requires: []}
+  - {id: daemon.auto-lock.edge,                      surface: daemon, cell: auto-lock,                    facet: edge, status: pending, parallelizable: false, priority: 3, requires: [], notes: "needs 15 min wall time"}
+  - {id: daemon.stress.happy,                        surface: daemon, cell: stress,                       facet: happy, status: pending, parallelizable: false, priority: 3, requires: []}
+
+  # ============== CRYPTO ====================================
+  - {id: crypto.kdf.argon2id.adversarial,            surface: crypto, cell: kdf.argon2id,                 facet: adversarial, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: crypto.zk.xchacha20poly1305.happy,          surface: crypto, cell: zk.xchacha20poly1305,         facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: crypto.sm.aes256gcm.happy,                  surface: crypto, cell: sm.aes256gcm,                 facet: happy, status: pending, parallelizable: true, priority: 1, requires: []}
+  - {id: crypto.api-key.timing.adversarial,          surface: crypto, cell: api-key.timing,               facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: crypto.rekey.partial-failure.adversarial,   surface: crypto, cell: rekey.partial-failure,        facet: adversarial, status: pending, parallelizable: true, priority: 2, requires: []}
+
+  # ============== DB ========================================
+  - {id: db.schema.audit-fk-absence.happy,           surface: db, cell: schema.audit-fk-absence,          facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: db.indexes.coverage.happy,                  surface: db, cell: indexes.coverage,                 facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: db.stale-tables.regression,                 surface: db, cell: stale-tables,                     facet: regression, status: pending, parallelizable: true, priority: 3, requires: [], refers_to: ["§DB1"]}
+  - {id: db.cascade-soft-delete.happy,               surface: db, cell: cascade-soft-delete,              facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+
+  # ============== SDK =======================================
+  - {id: sdk.user.member-mutate-payload-keys.regression, surface: sdk, cell: user.member-mutate-payload-keys, facet: regression, status: pending, parallelizable: true, priority: 1, requires: [], refers_to: ["§SDK4"]}
+  - {id: sdk.agent.session-refresh-T-2min.edge,      surface: sdk, cell: agent.session-refresh-T-2min,    facet: edge, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: sdk.error.AbadgeApiError-shape.happy,       surface: sdk, cell: error.AbadgeApiError-shape,      facet: happy, status: pending, parallelizable: true, priority: 2, requires: []}
+  - {id: sdk.naming-consistency.regression,          surface: sdk, cell: naming-consistency,              facet: regression, status: pending, parallelizable: true, priority: 2, requires: [], refers_to: ["§SDK7"]}
+
+  # ============== DOCS ======================================
+  - {id: docs.AGENTS.adversarial,                    surface: docs, cell: AGENTS,                         facet: adversarial, status: pending, parallelizable: true, priority: 3, requires: []}
+  - {id: docs.API.adversarial,                       surface: docs, cell: API,                            facet: adversarial, status: pending, parallelizable: true, priority: 3, requires: []}
+  - {id: docs.SECURITY.regression,                   surface: docs, cell: SECURITY,                       facet: regression, status: pending, parallelizable: true, priority: 2, requires: [], refers_to: ["§TM1"]}
+  - {id: docs.ENVELOPE_SPEC.regression,              surface: docs, cell: ENVELOPE_SPEC,                  facet: regression, status: pending, parallelizable: true, priority: 2, requires: [], refers_to: ["§ENV1"]}
