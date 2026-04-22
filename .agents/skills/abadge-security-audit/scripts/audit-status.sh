@@ -43,13 +43,17 @@ merged=$(find "$AUDIT_DIR/findings/merged" -maxdepth 1 -name '*.md' 2>/dev/null 
 printf "  %-15s %s\n" "merged" "$merged"
 echo
 echo "--- latest 10 findings ---"
-find "$AUDIT_DIR/findings" -maxdepth 2 -name '*.md' -not -path '*/merged/*' 2>/dev/null \
-  | xargs ls -t 2>/dev/null \
+# NUL-delimited through xargs so filenames with spaces/quotes don't break.
+find "$AUDIT_DIR/findings" -maxdepth 2 -name '*.md' -not -path '*/merged/*' -print0 2>/dev/null \
+  | xargs -0 ls -t 2>/dev/null \
   | head -10 \
   | sed "s|$AUDIT_DIR/||"
 echo
 echo "--- recent wave reports ---"
-ls -t "$AUDIT_DIR/wave-reports"/*.md 2>/dev/null | head -5 | sed "s|$AUDIT_DIR/||"
+find "$AUDIT_DIR/wave-reports" -maxdepth 1 -name '*.md' -print0 2>/dev/null \
+  | xargs -0 ls -t 2>/dev/null \
+  | head -5 \
+  | sed "s|$AUDIT_DIR/||"
 echo
 echo "--- pen-tests filed ---"
 n_pen=$(find "$AUDIT_DIR/pen-tests" -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
@@ -59,7 +63,33 @@ echo "--- ralph-loop state ---"
 RALPH_STATE="$REPO_ROOT/.claude/ralph-loop.local.md"
 if [[ -f "$RALPH_STATE" ]]; then
   iter=$(grep '^iteration:' "$RALPH_STATE" 2>/dev/null | head -1 | sed 's/iteration: *//')
-  echo "  ACTIVE  iteration=${iter:-?}"
+  max=$(grep '^max_iterations:' "$RALPH_STATE" 2>/dev/null | head -1 | sed 's/max_iterations: *//')
+  rsess=$(grep '^session_id:' "$RALPH_STATE" 2>/dev/null | head -1 | sed 's/session_id: *//')
+  asess=$(grep '^session_id:' "$STATE_DIR/active.yaml" 2>/dev/null | head -1 | sed 's/session_id: *//')
+  mtime=$(stat -f %m "$RALPH_STATE" 2>/dev/null || stat -c %Y "$RALPH_STATE" 2>/dev/null || echo 0)
+  age=$(( $(date +%s) - mtime ))
+  echo "  ACTIVE  iteration=${iter:-?} / ${max:-?}  (last write: ${age}s ago)"
+  echo "  ralph session_id=\"$rsess\"   active.yaml session_id=\"$asess\""
+  if [[ "$rsess" != "$asess" && -n "$rsess" && -n "$asess" ]]; then
+    echo "  ⚠ session_id mismatch — stop-hook may not re-fire in this session."
+    echo "     FIX:  audit-recover.sh set-session --apply"
+  fi
+  # Zombie hint: fresh ralph mtime beside stale iteration-log mtime.
+  if [[ -f "$STATE_DIR/iteration-log.md" ]]; then
+    log_mtime=$(stat -f %m "$STATE_DIR/iteration-log.md" 2>/dev/null || stat -c %Y "$STATE_DIR/iteration-log.md" 2>/dev/null || echo 0)
+    log_age=$(( $(date +%s) - log_mtime ))
+    if [[ $age -lt 300 && $log_age -gt 900 ]]; then
+      echo "  ⚠ zombie-driver pattern: ralph fresh (${age}s) but iteration-log stale ($((log_age/60)) min)."
+      echo "     Run audit-doctor.sh for details."
+    fi
+  fi
+  # Budget warning
+  if [[ "$iter" =~ ^[0-9]+$ && "$max" =~ ^[0-9]+$ && "$max" -gt 0 ]]; then
+    remaining=$(( max - iter ))
+    if [[ $remaining -le 5 ]]; then
+      echo "  ⚠ only $remaining iteration(s) left before max_iterations — audit-recover.sh bump-max 80 --apply"
+    fi
+  fi
 else
-  echo "  INACTIVE  (no .claude/ralph-loop.local.md)"
+  echo "  INACTIVE  (no .claude/ralph-loop.local.md). To continue: audit-resume.sh"
 fi

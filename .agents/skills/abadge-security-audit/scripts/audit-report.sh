@@ -37,10 +37,22 @@ for sev in critical high medium low informational; do
 done
 echo
 
+# Extract a frontmatter field by name. Only reads the region between the
+# first `---` line and the second `---` line, so narrative prose matching
+# `Verified:` in the finding body is correctly ignored. Needed because the
+# AUDIT_COMPLETE gate keys on Critical/High having a Verified: frontmatter.
+fm_field() {
+  local f="$1" k="$2"
+  awk -v key="$k" '
+    /^---$/ {fm = !fm; next}
+    fm && $1 == key":" {sub(/^[^:]+: */, ""); print; exit}
+  ' "$f"
+}
+
 echo "## Critical findings"
 find "$AUDIT_DIR/findings/critical" -maxdepth 1 -name '*.md' 2>/dev/null | sort | while read -r f; do
   title=$(grep -m1 '^# ' "$f" 2>/dev/null | sed 's/^# //')
-  verified=$(grep -m1 '^Verified:' "$f" 2>/dev/null | sed 's/^Verified: *//')
+  verified=$(fm_field "$f" Verified)
   printf "  - %s %s  {verified: %s}\n" "$(basename "$f" .md)" "$title" "${verified:-unverified}"
 done
 echo
@@ -48,7 +60,7 @@ echo
 echo "## High findings"
 find "$AUDIT_DIR/findings/high" -maxdepth 1 -name '*.md' 2>/dev/null | sort | while read -r f; do
   title=$(grep -m1 '^# ' "$f" 2>/dev/null | sed 's/^# //')
-  verified=$(grep -m1 '^Verified:' "$f" 2>/dev/null | sed 's/^Verified: *//')
+  verified=$(fm_field "$f" Verified)
   printf "  - %s %s  {verified: %s}\n" "$(basename "$f" .md)" "$title" "${verified:-unverified}"
 done
 echo

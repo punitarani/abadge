@@ -1,14 +1,31 @@
 #!/usr/bin/env bash
 # audit-init.sh — initialise abadge-security-audit state and seed plan.
 #
-# Usage: audit-init.sh [run-id]
-#   run-id : optional; auto-generated as YYYY-MM-DD-HHMMSS-<rand> if omitted.
+# Usage: audit-init.sh [run-id] [--session-id <id>]
+#   run-id       : optional; auto-generated as YYYY-MM-DD-HHMMSS-<rand> if omitted.
+#   --session-id : controller session id. Written into active.yaml so the
+#                  stop-hook's session-isolation guard works. Falls back to
+#                  $CLAUDE_CODE_SESSION_ID if unset, then "unknown". Passing
+#                  it explicitly is strongly recommended — empty/unknown
+#                  makes the ralph-loop hook re-fire into any session that
+#                  stops on this project.
 #
 # Creates docs/security-audit/<run-id>/state/ with active.yaml, plan.yaml,
-# progress.yaml, plus stubs for findings/, notes/, pen-tests/, wave-reports/.
-# Exits 1 if an active.yaml already exists for the chosen run-id.
+# progress.yaml, iteration-log.md, plus stubs for findings/, notes/,
+# pen-tests/, wave-reports/. Exits 1 if an active.yaml already exists.
 
 set -euo pipefail
+
+EXPLICIT_SESSION=""
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --session-id) EXPLICIT_SESSION="${2:?--session-id needs a value}"; shift 2 ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+# Safe expansion under `set -u` (plain "${POSITIONAL[@]}" would trip on empty).
+set -- ${POSITIONAL[@]+"${POSITIONAL[@]}"}
 
 RUN_ID="${1:-$(date -u +%Y-%m-%d-%H%M%S)-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6)}"
 
@@ -33,7 +50,11 @@ mkdir -p "$STATE_DIR" \
          "$AUDIT_DIR/pen-tests" \
          "$AUDIT_DIR/wave-reports"
 
-SESSION_ID="${CLAUDE_CODE_SESSION_ID:-unknown}"
+# Prefer the explicit --session-id flag (the controller should always pass this).
+# CLAUDE_CODE_SESSION_ID is rarely exported into bash subshells, so the env
+# fallback usually yields "unknown", which weakens the stop-hook's session
+# isolation guard. See SKILL.md "Operations → start".
+SESSION_ID="${EXPLICIT_SESSION:-${CLAUDE_CODE_SESSION_ID:-unknown}}"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 GIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 
@@ -91,6 +112,16 @@ integrity:
   high_unverified_ids: []
 recent_findings: []
 YAML
+
+# iteration-log.md is referenced by state-files.md and by the doctor's zombie
+# detection (fresh ralph mtime + stale iteration-log = hijack). Create the
+# header so the controller's later appends just tail onto it.
+cat > "$STATE_DIR/iteration-log.md" <<MD
+# Iteration Log — Run $RUN_ID
+
+Append-only. One line per iteration:
+\`iter N · <iso> · wave <W> · <K> cells (IDs) · <N> new findings · <N> dups · saturation X/Y\`
+MD
 
 cat > "$AUDIT_DIR/INDEX.md" <<MD
 # Security Audit — Run $RUN_ID

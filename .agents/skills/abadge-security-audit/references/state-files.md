@@ -1,44 +1,48 @@
 # State File Schemas
 
-All state lives under `docs/security-audit/state/`. The controller is the single writer. Finding/note files under `docs/security-audit/{findings,notes,pen-tests,wave-reports}/` are written by subagents but managed by the controller's plan.
+All state lives under `docs/security-audit/<run-id>/state/`. The controller is the single writer. Finding/note files under `docs/security-audit/<run-id>/{findings,notes,pen-tests,wave-reports}/` are written by subagents but managed by the controller's plan.
+
+This doc tracks **what `audit-init.sh` actually writes** (not an aspirational schema). If you edit either side, edit the other.
 
 ## `state/active.yaml`
+
+Written by `audit-init.sh`. Mutated by the controller (status, current_wave, completed_at) and by `audit-cancel.sh` / `audit-recover.sh` (status, cancelled_at, cancelled_reason, session_id). One `---` opener, no closer — the rest of the file is flat YAML.
 
 ```yaml
 ---
 run_id: 2026-04-22-114530-abc123
-session_id: <claude code session id>
-created_at: <iso>
-wave: 1                         # 1 | 2 | 3 | 4
-parallel_limit: 3               # max concurrent subagents per iter
-checkpoint_interval: 10
-saturation_threshold: 4         # iters with zero new findings before advisor query
-max_iterations: 80
-status: active | saturated | cancelled | complete
+session_id: <claude code session id or "unknown">
+created_at: 2026-04-22T11:45:30Z
+git_sha: <HEAD at init>
+parallel_limit: 4
+checkpoint_interval: 5
+saturation_zero_iters_required: 3    # zero-finding iters before advisor query
+max_iterations: 120
+current_wave: 1                       # 1 | 2 | 3 | 4
+status: active                        # active | cancelled | completed
 cancelled_at: null
 completed_at: null
-audit_dir: docs/security-audit
+cancelled_reason: ""                  # set by audit-cancel.sh; first-class field
+audit_dir: <absolute path>
 notes: |
-  free-form at start; user-provided context
+  Initialised by audit-init.sh. Contract is READ-ONLY — subagents may not
+  modify source code, start servers, or run mutating commands.
 ```
 
 ## `state/plan.yaml`
 
+Seeded from `assets/plan-seed.yaml` at init. Mutated by the controller each iteration: status transitions (`pending → in_progress → done | blocked`), `started_at`, `finished_at`, `findings_filed`, `blocked_reason`.
+
 ```yaml
 ---
 generated_at: <iso>
-total: 40                       # 11 + 12 + 12 + ≥4 (wave 4 grows with findings)
-waves:
-  1: {total: 11, done: 0, pending: 11, blocked: 0}
-  2: {total: 12, done: 0, pending: 12, blocked: 0}
-  3: {total: 12, done: 0, pending: 12, blocked: 0}
-  4: {total: 0,  done: 0, pending: 0,  blocked: 0}   # seeded after W3 completes
+total: 40                       # 11 + 12 + 12 + ≥4 (W4 grows as findings are filed)
 cells:
   - id: W1S01
     wave: 1
     kind: surface                 # surface | threat | pentest | verifier
     scope: "apps/api — Hono routes, middleware, CORS, rate limit"
-    notes_path: docs/security-audit/notes/api.md
+    notes_path: docs/security-audit/<run-id>/notes/api.md
     findings_prefix: W1S01
     parallelizable: true
     requires: []                  # e.g. [wave-1-complete] for W2+
@@ -47,41 +51,37 @@ cells:
     finished_at: null
     findings_filed: []            # IDs; populated after completion
     blocked_reason: null
-  # ... 40 total seed cells, plus W4 verifiers added dynamically
+  # ... 40 total seed cells, plus W4 verifiers added dynamically after W3
 ```
 
 ## `state/progress.yaml`
+
+Written by `audit-init.sh`. Rewritten atomically (temp+rename) by the controller each iteration. Also rewritten by `audit-recover.sh reconcile-counts` to re-derive `findings_by_severity` and `integrity.*` from disk reality.
 
 ```yaml
 ---
 last_updated: <iso>
 iteration: 0
-cells_total: 40
-cells_done: 0
-cells_in_progress: 0
-cells_pending: 40
-cells_blocked: 0
-findings:
-  critical: 0
-  high: 0
-  medium: 0
-  low: 0
-  informational: 0
-findings_total: 0
-findings_verified: 0            # Critical/High with W4 stamp
-findings_pending_verify: 0      # Critical/High without W4 stamp
+wave_1: {dispatched: 0, completed: 0, blocked: 0}
+wave_2: {dispatched: 0, completed: 0, blocked: 0}
+wave_3: {dispatched: 0, completed: 0, blocked: 0}
+wave_4: {dispatched: 0, completed: 0, blocked: 0}
+findings_by_severity: {critical: 0, high: 0, medium: 0, low: 0, informational: 0}
 findings_this_iter: 0
 consecutive_zero_finding_iters: 0
 last_advisor_iter: 0
-next_advisor_iter: 10
-current_wave: 1
-wave_status:
-  1: in_progress | complete | not_started
-  2: not_started
-  3: not_started
-  4: not_started
-recent_findings:
-  - {id: "W1S06-001", severity: "high", surface: "daemon", iter: 3}
+next_advisor_iter: 5
+triage:
+  wave_1: null                   # iso timestamp when wave-N triage ran; null = not yet
+  wave_2: null
+  wave_3: null
+  wave_4: null
+integrity:
+  critical_verified: 0           # count of Critical findings with `Verified:` frontmatter
+  high_verified: 0               # count of High findings with `Verified:` frontmatter
+  critical_unverified_ids: []    # IDs still missing W4 sign-off
+  high_unverified_ids: []
+recent_findings: []              # bounded list; newest first; controller caps length
 ```
 
 ## `state/iteration-log.md`

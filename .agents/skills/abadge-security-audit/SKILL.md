@@ -34,34 +34,75 @@ When all four waves have closed out cleanly, the skill emits the production-read
 
 ## Operations
 
-The user invokes with one of: `start`, `resume`, `status`, `report`, `cancel`, `reset`. Default: `status`.
+The user invokes with one of: `start`, `resume`, `status`, `doctor`, `recover`, `report`, `cancel`, `reset`. Default: `status` (safest read-only op).
 
 ### `start [--wave 1-4] [--only <id>] [--parallel N] [--max-iterations N]`
 
 1. Refuse if `state/active.yaml` already exists.
-2. Run `scripts/audit-init.sh` which:
-   - creates `docs/security-audit/` structure (00-AUDIT-PLAN, 01-METHODOLOGY, 02-SCOPE, 03-THREAT-MODEL-RECAP, 04-SEVERITY-RUBRIC, 05-TASKLIST, 06-PROMPT-TEMPLATE, findings/{critical,high,medium,low,informational}, notes/, pen-tests/, wave-reports/)
+2. Capture the controller's Claude Code session id (ask the user, or read `$CLAUDE_CODE_SESSION_ID` from their terminal). You will need it in step 3.
+3. Run `scripts/audit-init.sh <run-id> --session-id <id>` which:
+   - creates `docs/security-audit/<run-id>/` structure (findings/{critical,high,medium,low,informational,merged}, notes/, pen-tests/, wave-reports/)
    - seeds plan from `assets/plan-seed.yaml` (40 cells — 11 surface, 12 threat, 12 pen-test, 4+ verify)
-   - writes `state/` sibling: `active.yaml`, `plan.yaml`, `progress.yaml`, `iteration-log.md`
-3. Verify worktree is clean (audit outputs are the only files touched). If dirty, warn and proceed.
-4. Hand off to `/ralph-loop:ralph-loop` with `scripts/audit-iteration-prompt.md` as the prompt, `--completion-promise "AUDIT_COMPLETE"`, `--max-iterations` from flag (default 80).
-5. Print run-id, state-dir, and the audit-dir path.
+   - writes `state/` sibling: `active.yaml`, `plan.yaml`, `progress.yaml`, `iteration-log.md`.
+   Passing the session id explicitly is important — otherwise the stop-hook's session-isolation guard degrades to "any session drives the loop," which is how a dead controller leaves a zombie driver that hijacks unrelated sessions.
+4. Verify worktree is clean (audit outputs are the only files touched). If dirty, warn and proceed.
+5. Hand off to `/ralph-loop:ralph-loop` with `scripts/audit-iteration-prompt.md` as the prompt, `--completion-promise "AUDIT_COMPLETE"`, `--max-iterations` from flag (default 80).
+6. Print run-id, state-dir, and the audit-dir path.
 
 ### `resume`
 
-Re-attach to the existing run-id. Ralph gets a fresh `session_id`; plan.yaml tells the controller which cell to pick next. No data loss on session crash.
+**Resume continues an existing run in place. It never creates a new run, never overwrites audit memory, and never rewrites `active.yaml`'s run-config fields.** Its only job is to re-attach the ralph-loop driver to state that already exists.
+
+1. Refuse if `state/active.yaml` is missing (→ use `start`).
+2. Refuse if `status: cancelled` (→ use `recover uncancel --apply` first) or `status: completed` (→ start a new run).
+3. Run `scripts/audit-resume.sh [run-id] --session-id <id>` which:
+   - reads `progress.yaml.iteration` and calls `audit-recover.sh reseed-ralph --apply` (writes `.claude/ralph-loop.local.md` starting at that iteration, so the next stop fires iteration N+1 of the same run — not iteration 1 of a new one);
+   - calls `audit-recover.sh set-session <id> --apply` so the stop-hook's session guard names this session as the owner.
+4. Tell the user the run-id the loop re-attached to, the current wave, and that findings/plan/progress are preserved untouched.
+
+Resume is a boundary, not a restart. `plan.yaml`, `progress.yaml`, `iteration-log.md`, `findings/**`, `notes/**`, `pen-tests/**`, `wave-reports/**` belong to the original run and must not be rewritten during resume. If any are corrupt, that's a `reset` conversation, not resume.
 
 ### `status`
 
-Read-only dump of `state/progress.yaml` + last 10 iteration-log lines + counts under `docs/security-audit/findings/<severity>/`. Never mutates.
+Read-only dump of `state/progress.yaml` + finding counts + latest 10 findings + ralph-loop health (iteration, max, session match, zombie hint, budget warning). Never mutates.
+
+### `doctor`
+
+Run `scripts/audit-doctor.sh` to diagnose why the loop looks stuck. Read-only. Checks:
+
+- Is the audit state dir discoverable? Does `active.yaml` have `status: active`?
+- Does `.claude/ralph-loop.local.md` exist? If missing while audit is active, the driver is gone — nothing will re-fire.
+- Is ralph's `iteration` numeric, and below `max_iterations`? Near-budget warnings flagged.
+- Does ralph's `session_id` match the current `$CLAUDE_CODE_SESSION_ID`? If mismatched, the stop-hook in this session exits without re-firing.
+- **Zombie driver:** ralph mtime fresh but `iteration-log.md` stale → a stop-hook is advancing the counter without any iteration body running (controller session is dead, bystander sessions are being hijacked).
+- **Finding-count drift:** filesystem count under each `findings/<sev>/` vs `progress.yaml.findings_by_severity`.
+- **Unverified Critical/High list:** every C/H finding without a `Verified:` frontmatter key blocks AUDIT_COMPLETE; doctor names them.
+- **Frontmatter integrity:** every finding file must have a `Severity:` frontmatter matching its parent dir.
+- **Wave-gate consistency:** if `current_wave=N`, prior waves should have zero pending cells.
+
+Exits 0 on no problems, 1 otherwise. Each `[PROB]` line comes with the exact `audit-recover.sh` invocation that fixes it.
+
+### `recover`
+
+Run `scripts/audit-recover.sh <subcommand> [args] [--apply]` to fix specific blockers. **Dry-run by default** — pass `--apply` to mutate. Every mutation writes a `.bak.<epoch>` sidecar first.
+
+- `reseed-ralph [--max N] [--force]` — rebuild `.claude/ralph-loop.local.md` from `active.yaml + progress.yaml` when missing/corrupt/stale. Refuses to clobber a ralph state younger than 60 s without `--force` (avoids racing a live stop-hook).
+- `bump-max [N=80]` — increase `max_iterations` in ralph state.
+- `set-session [ID]` — write `$CLAUDE_CODE_SESSION_ID` (or supplied id) into both ralph state and `active.yaml`.
+- `uncancel` — flip `active.yaml.status: cancelled` back to `active`. Refuses if `completed`.
+- `reconcile-counts` — scan `findings/**/*.md`, recompute `progress.yaml.findings_by_severity` and `integrity.{critical_verified, high_verified}` from disk reality. Use when counters drift.
+- `revalidate-findings` — walk `findings/**/*.md`, verify each has `Severity:` frontmatter matching parent dir and at least one `file:line` cite. Report-only (never moves files).
+- `all` — runs reseed-ralph (if missing), set-session, bump-max, uncancel (if cancelled), reconcile-counts.
+
+Invariant: **recover never touches `findings/**`, `notes/**`, `pen-tests/**`, `wave-reports/**`, `plan.yaml`, or `iteration-log.md`.** Those are audit memory; recover only fixes the drivers around them.
 
 ### `report`
 
-Dispatches the reporter subagent with all the wave-reports, findings, and notes. Produces `docs/security-audit/99-FINAL-REPORT.md` plus `100-PRODUCTION-CHECKLIST.md` — format proven by the prior audit (executive summary, severity table, finding index, attack chains, remediation roadmap, checklist).
+Dispatches the reporter subagent with all the wave-reports, findings, and notes. Produces `docs/security-audit/99-FINAL-REPORT.md` plus `100-PRODUCTION-CHECKLIST.md`.
 
 ### `cancel`
 
-Session-id-checked ralph removal. Preserves `state/` and all `docs/security-audit/` content. Safe to resume later.
+Session-id-checked ralph removal (only removes `.claude/ralph-loop.local.md` if its session matches this one, or is empty; `--force` overrides). Backs up `active.yaml` to `active.yaml.bak.<epoch>` before rewriting. Stores the reason as a first-class `cancelled_reason` field. Preserves `state/` and all `docs/security-audit/` content. Safe to revive via `recover uncancel`.
 
 ### `reset`
 
@@ -160,19 +201,24 @@ Subagent templates:
 - `subagents/reporter.md` — final report + production checklist generator
 
 Scripts:
-- `scripts/audit-init.sh` — creates docs/security-audit/* + state/ + seeds plan
-- `scripts/audit-status.sh` — pure read; progress dump
-- `scripts/audit-cancel.sh` — session-id-checked ralph removal; preserves state
-- `scripts/audit-report.sh` — prints inputs for reporter subagent
+- `scripts/audit-init.sh` — creates docs/security-audit/* + state/ + seeds plan. Accepts `--session-id`.
+- `scripts/audit-resume.sh` — continue an existing run; re-attaches ralph-loop via audit-recover.sh
+- `scripts/audit-status.sh` — pure read; progress dump + ralph-loop health (session match, budget, zombie hint)
+- `scripts/audit-doctor.sh` — pure read; diagnoses blockers and prints exact recover commands
+- `scripts/audit-recover.sh` — dry-run-by-default fixes (reseed-ralph, bump-max, set-session, uncancel, reconcile-counts, revalidate-findings, all)
+- `scripts/audit-cancel.sh` — session-id-checked ralph removal; backs up active.yaml; first-class cancelled_reason
+- `scripts/audit-report.sh` — prints inputs for reporter subagent; frontmatter-aware Verified parsing
 - `scripts/audit-iteration-prompt.md` — the per-iter prompt fed to ralph
 
 ## Quick reference
 
 | User says | Op | Effect |
 |---|---|---|
-| "start the security audit" | `start` | Init + seed + hand off to ralph |
-| "continue the audit" / "resume" | `resume` | Re-attach to existing run-id |
-| "what's the audit finding" | `status` | Progress + counts (read-only) |
+| "start the security audit" | `start` | Init + seed + hand off to ralph. Pass controller's session id. |
+| "continue the audit" / "resume" | `resume` | Re-attach to existing run-id; never creates a new run |
+| "what's the audit finding" | `status` | Progress + counts + ralph health (read-only) |
+| "the audit looks stuck" / "why isn't it iterating" | `doctor` | Diagnose (read-only); prints recover commands |
+| "unblock the audit" / "get it running again" | `recover <subcmd> --apply` | Targeted fix: reseed-ralph / bump-max / set-session / uncancel / reconcile-counts / revalidate-findings / all |
 | "generate the security report" / "production checklist" | `report` | Render `99-FINAL-REPORT.md` + `100-PRODUCTION-CHECKLIST.md` |
-| "stop the audit" | `cancel` | Remove ralph state, preserve findings |
+| "stop the audit" | `cancel` | Session-id-checked ralph removal; preserves findings |
 | "reset security audit" | `reset` | Destructive; requires `--confirm` |
