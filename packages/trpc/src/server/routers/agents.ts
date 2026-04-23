@@ -25,8 +25,15 @@ import {
   runSessionEffect,
   SessionRequestContextTag,
   strictSchema,
+  tryAsync,
 } from "../effect";
-import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
+import {
+  agentProcedure,
+  createTrpcRouter,
+  requireAgentOwnership,
+  requireOrgRole,
+  scopedSessionProcedure,
+} from "../init";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -223,6 +230,19 @@ const rotateAgent = (agentId: string) =>
       );
     }
 
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* tryAsync(() =>
+      requireAgentOwnership(
+        ctx.db,
+        agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
+
     if (agent.authMethod !== "legacy_api_key") {
       return yield* Effect.fail(
         new BadRequestError({
@@ -286,6 +306,19 @@ const revokeAgent = (agentId: string) =>
         }),
       );
     }
+
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* tryAsync(() =>
+      requireAgentOwnership(
+        ctx.db,
+        agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    );
 
     // Atomic: flip the agent record to revoked, write the primary
     // agent.revoke audit, and run the cascade (session invalidation + one
