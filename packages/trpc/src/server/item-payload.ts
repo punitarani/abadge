@@ -1,5 +1,5 @@
 import { ItemPayloadSchema } from "@abadge/core";
-import type { ItemPayload } from "@abadge/core";
+import type { ItemKind, ItemPayload } from "@abadge/core";
 import { Either, Schema } from "effect";
 
 const migrationFallback = (itemId: string, text: string): ItemPayload & { label: string } => ({
@@ -30,12 +30,14 @@ export function decodeServerManagedPayload(
   }
 
   const decoded = result.right;
+  const resolvedKind: ItemKind = decoded.kind ?? "opaque";
+  const resolvedLabel: string = decoded.label ?? `migrated-${itemId.slice(0, 8)}`;
   return {
-    ...decoded,
-    label: decoded.label ?? `migrated-${itemId.slice(0, 8)}`,
-    kind: decoded.kind ?? "opaque",
-  } as ItemPayload & { label: string };
+    v: decoded.v,
+    label: resolvedLabel,
+    kind: resolvedKind,
+    tags: decoded.tags,
+    notes: decoded.notes,
+    fields: decoded.fields,
+  };
 }
-
-// Alias export matching the single public helper contract.
-export const decodePayload = decodeServerManagedPayload;
