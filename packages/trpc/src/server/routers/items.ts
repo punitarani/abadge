@@ -17,7 +17,7 @@ import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
 import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
 import {
   AgentRequestContextTag,
@@ -32,7 +32,10 @@ import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
-const loadOwnedItem = (itemId: string) =>
+const loadOwnedItem = (
+  itemId: string,
+  eventType: "item.read" | "item.update" | "item.export" | "item.delete",
+) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const [item] = yield* tryAsync(() =>
@@ -50,7 +53,15 @@ const loadOwnedItem = (itemId: string) =>
     );
 
     if (!item) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          eventType,
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
@@ -253,7 +264,7 @@ const listItemsForAgent = Effect.gen(function* () {
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.read");
 
     yield* logSessionAudit({
       organizationId: ctx.identity.organizationId,
@@ -270,7 +281,7 @@ const getItem = (itemId: string) =>
 const updateItem = (itemId: string, input: UpdateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.update");
 
     if (input.storageMode === "zero_knowledge") {
       const updated = yield* tryAsync(() =>
@@ -341,10 +352,18 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
 const ownerReveal = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.export");
 
     if (item.storageMode !== "server_managed") {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          eventType: "item.export",
+          reason: "zk_item_cannot_be_revealed",
+          ipAddress: ctx.ipAddress,
+        },
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only server-managed items can be revealed via the API",
@@ -387,7 +406,7 @@ const ownerReveal = (itemId: string) =>
 const deleteItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    yield* loadOwnedItem(itemId);
+    yield* loadOwnedItem(itemId, "item.delete");
 
     // Atomic: soft-delete the item, write the primary item.delete audit,
     // and run the cascade (delete permissions + one cascade audit row)

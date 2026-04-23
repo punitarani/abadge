@@ -33,7 +33,7 @@ import {
   agentSessions,
 } from "@abadge/db/schema";
 import { Effect } from "effect";
-import { logBaseAudit, logSessionAudit } from "../audit";
+import { auditDeniedSession, logBaseAudit, logSessionAudit } from "../audit";
 import {
   BaseRequestContextTag,
   runBaseEffect,
@@ -261,7 +261,15 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
     const agent = yield* loadOwnedAgent(input.agentId);
 
     if (!agent.enabled) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: agent.id,
+          eventType: "agent.bootstrap_issue",
+          reason: "agent_disabled",
+          ipAddress: ctx.ipAddress,
+        },
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Agent is disabled",
@@ -271,7 +279,15 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
     }
 
     if (agent.revokedAt) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: agent.id,
+          eventType: "agent.bootstrap_issue",
+          reason: "agent_revoked",
+          ipAddress: ctx.ipAddress,
+        },
         new ForbiddenError({
           code: "AGENT_REVOKED",
           message: "Agent is revoked",
@@ -281,7 +297,15 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
     }
 
     if (agent.authMethod !== "public_key_session") {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: agent.id,
+          eventType: "agent.bootstrap_issue",
+          reason: "unsupported_auth_method",
+          ipAddress: ctx.ipAddress,
+        },
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: "Bootstrap tokens are only available for keypair-backed agents",
@@ -291,7 +315,15 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
     }
 
     if (agent.publicKey) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: agent.id,
+          eventType: "agent.bootstrap_issue",
+          reason: "already_enrolled",
+          ipAddress: ctx.ipAddress,
+        },
         new ForbiddenError({
           code: "AGENT_ALREADY_ENROLLED",
           message: "Agent is already enrolled",

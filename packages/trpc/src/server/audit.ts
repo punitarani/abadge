@@ -9,6 +9,84 @@ import {
   UserRequestContextTag,
 } from "./effect";
 
+// ---------------------------------------------------------------------------
+// auditDenied helpers (W2T12-003)
+//
+// Write a denied audit row and re-raise the original domain error. The audit
+// write is caller-safe: a DB blip does NOT invert the auth-fail (see C1).
+// Use auditDeniedSession for sessionProcedure routes (most common),
+// auditDeniedUser for userProcedure routes, auditDeniedBase for publicProcedure
+// routes with a BaseRequestContext.
+// ---------------------------------------------------------------------------
+
+export interface DeniedAuditFields {
+  organizationId: string;
+  userId: string;
+  agentId?: string;
+  itemId?: string;
+  profileId?: string;
+  eventType: AuditEventType;
+  reason: string;
+  meta?: Record<string, unknown>;
+  ipAddress?: string;
+}
+
+export const auditDeniedSession = <E extends Error>(
+  fields: DeniedAuditFields,
+  error: E,
+): Effect.Effect<never, E, SessionRequestContextTag> =>
+  Effect.gen(function* () {
+    yield* logSessionAudit({
+      organizationId: fields.organizationId,
+      userId: fields.userId,
+      agentId: fields.agentId,
+      itemId: fields.itemId,
+      profileId: fields.profileId,
+      eventType: fields.eventType,
+      result: "denied",
+      ipAddress: fields.ipAddress,
+      meta: { reason: fields.reason, ...(fields.meta ?? {}) },
+    });
+    return yield* Effect.fail(error);
+  });
+
+export const auditDeniedUser = <E extends Error>(
+  fields: DeniedAuditFields,
+  error: E,
+): Effect.Effect<never, E, UserRequestContextTag> =>
+  Effect.gen(function* () {
+    yield* logUserAudit({
+      organizationId: fields.organizationId,
+      userId: fields.userId,
+      agentId: fields.agentId,
+      itemId: fields.itemId,
+      profileId: fields.profileId,
+      eventType: fields.eventType,
+      result: "denied",
+      ipAddress: fields.ipAddress,
+      meta: { reason: fields.reason, ...(fields.meta ?? {}) },
+    });
+    return yield* Effect.fail(error);
+  });
+
+export const auditDeniedBase = <E extends Error>(
+  fields: DeniedAuditFields,
+  error: E,
+): Effect.Effect<never, E, BaseRequestContextTag> =>
+  Effect.gen(function* () {
+    yield* logBaseAudit({
+      organizationId: fields.organizationId,
+      userId: fields.userId,
+      agentId: fields.agentId,
+      itemId: fields.itemId,
+      eventType: fields.eventType,
+      result: "denied",
+      ipAddress: fields.ipAddress,
+      meta: { reason: fields.reason, ...(fields.meta ?? {}) },
+    });
+    return yield* Effect.fail(error);
+  });
+
 export interface AuditEntryInput {
   organizationId: string;
   userId: string;

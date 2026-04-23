@@ -1,6 +1,7 @@
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   type KdfParams,
   NotFoundError,
   ProfileListResultSchema,
@@ -11,7 +12,7 @@ import {
 import { and, eq, isNull, sql } from "@abadge/db";
 import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
   isUniqueViolation,
   runSessionEffect,
@@ -79,7 +80,11 @@ const ProfileRotateKeySchema = Schema.Struct({
 });
 
 /** Loads a profile and verifies the caller is a member of its org. Throws if not found or not a member. */
-const loadProfile = (profileId: string, userId: string) =>
+const loadProfile = (
+  profileId: string,
+  userId: string,
+  eventType: "profile.create" | "profile.delete" | "profile.bootstrap" | "profile.rotate",
+) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
@@ -88,7 +93,15 @@ const loadProfile = (profileId: string, userId: string) =>
     );
 
     if (!profile) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId,
+          profileId,
+          eventType,
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "PROFILE_NOT_FOUND",
           message: "Profile not found",
@@ -97,13 +110,31 @@ const loadProfile = (profileId: string, userId: string) =>
       );
     }
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "member"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "member")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId,
+              profileId,
+              eventType,
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
+    );
 
     return profile;
   });
 
 /** Like loadProfile but requires admin role — use for destructive key operations. */
-const loadProfileForWrite = (profileId: string, userId: string) =>
+const loadProfileForWrite = (
+  profileId: string,
+  userId: string,
+  eventType: "profile.create" | "profile.delete" | "profile.bootstrap" | "profile.rotate",
+) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
@@ -112,7 +143,15 @@ const loadProfileForWrite = (profileId: string, userId: string) =>
     );
 
     if (!profile) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId,
+          profileId,
+          eventType,
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "PROFILE_NOT_FOUND",
           message: "Profile not found",
@@ -121,7 +160,21 @@ const loadProfileForWrite = (profileId: string, userId: string) =>
       );
     }
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "admin"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, profile.organizationId, userId, "admin")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId,
+              profileId,
+              eventType,
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
+    );
 
     return profile;
   });
@@ -203,7 +256,7 @@ const listProfiles = (orgId: string) =>
 const getProfile = (profileId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const profile = yield* loadProfile(profileId, ctx.identity.userId);
+    const profile = yield* loadProfile(profileId, ctx.identity.userId, "profile.create");
     return { profile: serializeProfile(profile) };
   });
 
@@ -216,7 +269,7 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     // Ownership gate: throws PROFILE_NOT_FOUND if the profile does not exist
     // or the caller is not an admin of its org. Must run before the UPDATE so
     // an un-bootstrapped profile in a foreign org cannot be hijacked.
-    const profile = yield* loadProfileForWrite(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId, "profile.bootstrap");
 
     // Atomic UPDATE: the `isNull(wrappedRootKey)` guard handles both the
     // sequential case (already bootstrapped) and the concurrent case (two
@@ -263,7 +316,7 @@ const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePas
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfileForWrite(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId, "profile.rotate");
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -304,7 +357,7 @@ const setupProfileRecovery = (input: Schema.Schema.Type<typeof ProfileSetupRecov
     const ctx = yield* SessionRequestContextTag;
     const { profileId, recoveryWrappedRootKey } = input;
 
-    const profile = yield* loadProfileForWrite(profileId, ctx.identity.userId);
+    const profile = yield* loadProfileForWrite(profileId, ctx.identity.userId, "profile.rotate");
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -341,7 +394,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     const { profileId, wrappedRootKey, recoveryWrappedRootKey, rekeyedItems } = input;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfileForWrite(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId, "profile.rotate");
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(
@@ -468,7 +521,7 @@ const deleteProfile = (profileId: string) =>
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
 
-    const profile = yield* loadProfileForWrite(profileId, userId);
+    const profile = yield* loadProfileForWrite(profileId, userId, "profile.delete");
 
     const activeItems = yield* tryAsync(() =>
       ctx.db

@@ -437,7 +437,20 @@ const getOrg = (orgId: string) =>
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, userId, "member"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, userId, "member")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId,
+              eventType: "org.update",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
+    );
 
     const [org] = yield* tryAsync(() =>
       ctx.db.select().from(organization).where(eq(organization.id, orgId)).limit(1),
@@ -461,7 +474,20 @@ const updateOrg = (input: Schema.Schema.Type<typeof UpdateOrganizationSchema>) =
     const ctx = yield* SessionRequestContextTag;
     const { orgId, ...updates } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.update",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
+    );
 
     const setValues: Record<string, unknown> = {};
     if (updates.name !== undefined) setValues.name = updates.name;
@@ -489,7 +515,20 @@ const deleteOrg = (orgId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.delete",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
+    );
 
     const activeItems = yield* tryAsync(() =>
       ctx.db
@@ -534,6 +573,19 @@ const listMembers = (orgId: string) =>
     // membership and invites.
     const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.member_remove",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "not_member", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
     );
     const canSeeEmail = callerRole === "owner" || callerRole === "admin";
 
@@ -571,12 +623,38 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
 
     const actorRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.invite",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
     );
 
     // §INV1a: Prevent admins from minting owner-role invites (privilege escalation
     // via invite-accept round-trip). The invited role must not exceed the caller's role.
     const inviteRole = role ?? "member";
-    yield* tryAsync(async () => assertCanAssignRole(actorRole, inviteRole));
+    yield* tryAsync(async () => assertCanAssignRole(actorRole, inviteRole)).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.invite",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "invite_role_exceeds_actor_role", inviteRole, actorRole },
+            })
+          : Effect.void,
+      ),
+    );
 
     const token = generateOpaqueToken(INVITE_TOKEN_PREFIX);
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
@@ -805,7 +883,20 @@ const revokeInvite = (input: Schema.Schema.Type<typeof RevokeInviteSchema>) =>
     const ctx = yield* SessionRequestContextTag;
     const { orgId, invitationId } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.invite_revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId },
+            })
+          : Effect.void,
+      ),
+    );
 
     const deleted = yield* tryAsync(() =>
       ctx.db
@@ -849,6 +940,19 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
 
     const actorRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.member_remove",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId, memberId },
+            })
+          : Effect.void,
+      ),
     );
 
     const [target] = yield* tryAsync(() =>
@@ -871,6 +975,14 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
 
     // §OWN2a: Only owners can remove owners; admins can remove admins + members.
     if (target.role === "owner" && actorRole !== "owner") {
+      yield* logSessionAudit({
+        organizationId: ctx.identity.organizationId,
+        userId: ctx.identity.userId,
+        eventType: "org.member_remove",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason: "insufficient_role_for_owner_removal", memberId, actorRole },
+      });
       return yield* Effect.fail(
         new ForbiddenError({
           code: "MEMBER_INSUFFICIENT_ROLE",
@@ -923,7 +1035,20 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
     const ctx = yield* SessionRequestContextTag;
     const { orgId, memberId, role } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner"));
+    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner")).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              eventType: "org.member_role_change",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role", targetOrgId: orgId, memberId },
+            })
+          : Effect.void,
+      ),
+    );
 
     const [target] = yield* tryAsync(() =>
       ctx.db

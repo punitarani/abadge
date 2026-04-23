@@ -11,6 +11,7 @@ import {
   ConflictError,
   type CreateAgentInput,
   CreateAgentSchema,
+  ForbiddenError,
   MAX_AGENTS_PER_ORG,
   NotFoundError,
   SuccessResultSchema,
@@ -19,7 +20,7 @@ import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/
 import { and, count, eq, isNull } from "@abadge/db";
 import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onAgentRevoked } from "../cascades";
 import {
   AgentRequestContextTag,
@@ -241,7 +242,15 @@ const rotateAgent = (agentId: string) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.rotate",
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
@@ -252,6 +261,20 @@ const rotateAgent = (agentId: string) =>
 
     const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.rotate",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
     );
     yield* tryAsync(() =>
       requireAgentOwnership(
@@ -261,10 +284,32 @@ const rotateAgent = (agentId: string) =>
         ctx.identity.organizationId,
         callerRole,
       ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.rotate",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
     );
 
     if (agent.authMethod !== "legacy_api_key") {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.rotate",
+          reason: "unsupported_auth_method",
+          ipAddress: ctx.ipAddress,
+        },
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only legacy API key agents support key rotation",
@@ -318,7 +363,15 @@ const revokeAgent = (agentId: string) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.revoke",
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
@@ -329,6 +382,20 @@ const revokeAgent = (agentId: string) =>
 
     const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
     );
     yield* tryAsync(() =>
       requireAgentOwnership(
@@ -337,6 +404,20 @@ const revokeAgent = (agentId: string) =>
         ctx.identity.userId,
         ctx.identity.organizationId,
         callerRole,
+      ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
       ),
     );
 
