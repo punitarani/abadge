@@ -1,10 +1,18 @@
 import { createNodeTrpcClient, normalizeTrpcError } from "@abadge/trpc/client";
 import type { VaultMeta } from "./types";
 
-function createSessionClient(apiUrl: string, headers: Record<string, string>) {
+function createSessionClient(
+  apiUrl: string,
+  headers: Record<string, string>,
+  organizationId?: string | null,
+) {
+  const allHeaders: Record<string, string> = { ...headers };
+  if (organizationId) {
+    allHeaders["X-Abadge-Org-Id"] = organizationId;
+  }
   return createNodeTrpcClient({
     baseUrl: apiUrl,
-    headers,
+    headers: allHeaders,
   });
 }
 
@@ -19,8 +27,9 @@ export async function fetchVaultMeta(
   apiUrl: string,
   headers: Record<string, string>,
   profileId: string,
+  organizationId?: string | null,
 ): Promise<VaultMeta | null> {
-  const client = createSessionClient(apiUrl, headers);
+  const client = createSessionClient(apiUrl, headers, organizationId);
 
   try {
     const data = await client.profiles.get.query({ profileId });
@@ -50,8 +59,9 @@ export async function updateVaultPassword(
   headers: Record<string, string>,
   profileId: string,
   body: { wrappedRootKey: string; kdfSalt: string; kdfParams: unknown },
+  organizationId?: string | null,
 ): Promise<void> {
-  const client = createSessionClient(apiUrl, headers);
+  const client = createSessionClient(apiUrl, headers, organizationId);
 
   try {
     await client.profiles.changePassword.mutate({

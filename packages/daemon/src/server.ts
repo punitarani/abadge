@@ -195,12 +195,32 @@ function buildHandlers(
         };
       }
 
+      const rawOrgId = params.organizationId;
+      const organizationId = typeof rawOrgId === "string" && rawOrgId ? rawOrgId : null;
+
       auth = {
         type,
         token,
         expiresAt: resolveAuthExpiry(params.expiresAt),
+        organizationId,
       };
 
+      return authStatus(auth);
+    },
+
+    // Updates the cached org scope without re-supplying the token. Called by
+    // `abadge org use` so outbound tRPC calls pick up the new org immediately
+    // (§O3 / multi-org CLI fix).
+    "auth.setOrg": async (params): Promise<DaemonAuthStatus> => {
+      if (!auth || isAuthExpired(auth)) {
+        throw {
+          code: RPC_ERRORS.AUTH_REQUIRED,
+          message: "Not logged in. Run `abadge login` first.",
+        };
+      }
+      const rawOrgId = params.organizationId;
+      const organizationId = typeof rawOrgId === "string" && rawOrgId ? rawOrgId : null;
+      auth = { ...auth, organizationId };
       return authStatus(auth);
     },
 
@@ -231,7 +251,12 @@ function buildHandlers(
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
+      const meta = await fetchVaultMeta(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        auth?.organizationId,
+      );
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
@@ -273,7 +298,12 @@ function buildHandlers(
       }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
+      const meta = await fetchVaultMeta(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        auth?.organizationId,
+      );
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -289,7 +319,13 @@ function buildHandlers(
         throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
-      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, profileId, result);
+      await updateVaultPassword(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        result,
+        auth?.organizationId,
+      );
       return { ok: true };
     },
 

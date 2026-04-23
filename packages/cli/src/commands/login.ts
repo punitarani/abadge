@@ -97,6 +97,9 @@ async function completeDeviceLogin(
       type: "better_auth_session",
       token: accessToken,
       expiresAt,
+      // Pass the active org so the daemon scopes outbound tRPC calls to the
+      // right org immediately after login (§O3 / multi-org CLI fix).
+      organizationId: loadConfig()?.activeOrgId ?? null,
     });
   }
 

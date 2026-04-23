@@ -18,6 +18,8 @@ export interface DaemonAuthState {
   type: DaemonAuthType;
   token: string;
   expiresAt: string;
+  /** Scopes outbound tRPC calls to this org (§O3 / multi-org CLI fix). */
+  organizationId?: string | null;
 }
 
 export interface DaemonAuthStatus {

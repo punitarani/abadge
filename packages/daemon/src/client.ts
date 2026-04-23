@@ -24,6 +24,7 @@ import type {
  */
 const SENSITIVE_RPC_METHODS = new Set<string>([
   "auth.setSession",
+  "auth.setOrg",
   "vault.unlock",
   "vault.changePassword",
   "item.encrypt",
@@ -190,6 +191,15 @@ export class DaemonClient {
   /** Store a short-lived bearer session token in daemon memory. */
   async setAuthSession(session: DaemonAuthState): Promise<DaemonAuthStatus> {
     return (await this.send("auth.setSession", { ...session })) as DaemonAuthStatus;
+  }
+
+  /**
+   * Update the cached org scope without re-supplying the token.
+   * Called after `abadge org use` so outbound tRPC calls pick up the new
+   * org immediately without a full re-login (§O3 / multi-org CLI fix).
+   */
+  async setAuthOrg(organizationId: string | null): Promise<DaemonAuthStatus> {
+    return (await this.send("auth.setOrg", { organizationId })) as DaemonAuthStatus;
   }
 
   /** Clear daemon-held session auth. */

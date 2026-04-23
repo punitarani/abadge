@@ -75,6 +75,10 @@ export async function daemonSetAuthSession(session: DaemonAuthState): Promise<Da
   return withDaemonClient((client) => client.setAuthSession(session));
 }
 
+export async function daemonSetAuthOrg(organizationId: string | null): Promise<DaemonAuthStatus> {
+  return withDaemonClient((client) => client.setAuthOrg(organizationId));
+}
+
 export async function daemonClearAuthSession(): Promise<DaemonAuthStatus> {
   return withDaemonClient((client) => client.clearAuthSession());
 }

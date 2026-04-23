@@ -12,6 +12,7 @@ import {
   wrapRootKey,
   zeroKey,
 } from "@abadge/crypto";
+import { fetchVaultMeta } from "./api";
 import { DaemonClient } from "./client";
 import { type DaemonServer, resolveConfig, startServer } from "./server";
 import type { JsonRpcRequest, JsonRpcResponse, VaultMeta } from "./types";
@@ -196,6 +197,42 @@ describe("daemon auth session state", () => {
       type: "better_auth_session",
       headers: { Authorization: "Bearer session-token" },
     });
+  });
+
+  // §O3 / multi-org CLI — organizationId plumbing regression tests.
+
+  test("auth.setSession accepts and stores organizationId", async () => {
+    const { client } = await startTestServer();
+
+    const status = await client.setAuthSession({
+      type: "better_auth_session",
+      token: "session-token",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      organizationId: "org-abc",
+    });
+
+    // setAuthSession returns DaemonAuthStatus — just confirm it is authenticated.
+    expect(status.authenticated).toBe(true);
+  });
+
+  test("auth.setOrg updates the org scope without re-supplying the token", async () => {
+    const { client } = await startTestServer();
+
+    await client.setAuthSession({
+      type: "better_auth_session",
+      token: "session-token",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      organizationId: "org-old",
+    });
+
+    const updated = await client.setAuthOrg("org-new");
+    expect(updated.authenticated).toBe(true);
+  });
+
+  test("auth.setOrg rejects when session is not set", async () => {
+    const { client } = await startTestServer();
+
+    await expect(client.setAuthOrg("org-abc")).rejects.toThrow(/not logged in/i);
   });
 });
 
@@ -626,5 +663,103 @@ describe("daemon identity.sign RPC (W3P12-001)", () => {
       const rb = b.result as { signature: string };
       expect(ra.signature).not.toBe(rb.signature);
     }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// §O3 / multi-org CLI — X-Abadge-Org-Id header forwarding in fetchVaultMeta.
+// -----------------------------------------------------------------------------
+
+describe("fetchVaultMeta X-Abadge-Org-Id header plumbing (§O3)", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test("includes X-Abadge-Org-Id header when organizationId is provided", async () => {
+    let capturedOrgHeader: string | undefined;
+
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      // biome-ignore lint/suspicious/noExplicitAny: HeadersInit not in ES2022 lib
+      const h = new Headers(init?.headers as any);
+      capturedOrgHeader = h.get("X-Abadge-Org-Id") ?? undefined;
+      // Return a valid tRPC batch response for profiles.get
+      return new Response(
+        JSON.stringify([
+          {
+            result: {
+              data: {
+                profile: {
+                  id: "prof-1",
+                  wrappedRootKey: "wrapped",
+                  kdfSalt: "salt",
+                  kdfParams: {
+                    algorithm: "argon2id",
+                    memory: 1024,
+                    iterations: 1,
+                    parallelism: 1,
+                    hashLength: 32,
+                  },
+                  keyVersion: 1,
+                },
+              },
+            },
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    await fetchVaultMeta(
+      "http://localhost:8787",
+      { Authorization: "Bearer test-token" },
+      "prof-1",
+      "org-xyz",
+    );
+
+    expect(capturedOrgHeader).toBe("org-xyz");
+  });
+
+  test("omits X-Abadge-Org-Id header when organizationId is null", async () => {
+    let capturedOrgHeader: string | null = null;
+
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      // biome-ignore lint/suspicious/noExplicitAny: HeadersInit not in ES2022 lib
+      const h = new Headers(init?.headers as any);
+      capturedOrgHeader = h.get("X-Abadge-Org-Id");
+      return new Response(
+        JSON.stringify([
+          {
+            result: {
+              data: {
+                profile: {
+                  id: "prof-2",
+                  wrappedRootKey: "wrapped",
+                  kdfSalt: "salt",
+                  kdfParams: {
+                    algorithm: "argon2id",
+                    memory: 1024,
+                    iterations: 1,
+                    parallelism: 1,
+                    hashLength: 32,
+                  },
+                  keyVersion: 1,
+                },
+              },
+            },
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    await fetchVaultMeta(
+      "http://localhost:8787",
+      { Authorization: "Bearer test-token" },
+      "prof-2",
+      null,
+    );
+
+    expect(capturedOrgHeader).toBeNull();
   });
 });

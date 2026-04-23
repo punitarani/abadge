@@ -15,11 +15,23 @@ import { daemonAuthHeaders } from "./daemon";
 // (recordLogin, logout). These are only used during device-code login/logout.
 // ---------------------------------------------------------------------------
 
+/**
+ * Build outbound tRPC headers from a session config, appending
+ * X-Abadge-Org-Id when the config has an active org (§O3 / multi-org CLI).
+ */
+function buildSessionHeaders(config: SessionConfig): Record<string, string> {
+  const headers: Record<string, string> = { ...config.sessionHeaders };
+  if (config.activeOrgId) {
+    headers["X-Abadge-Org-Id"] = config.activeOrgId;
+  }
+  return headers;
+}
+
 /** @internal Record a login event via the session-authenticated tRPC client. */
 export async function recordLoginViaTrpc(config: SessionConfig): Promise<void> {
   const client = createNodeTrpcClient({
     baseUrl: config.apiUrl,
-    headers: config.sessionHeaders,
+    headers: buildSessionHeaders(config),
   });
   try {
     await client.auth.recordLogin.mutate();
@@ -32,7 +44,7 @@ export async function recordLoginViaTrpc(config: SessionConfig): Promise<void> {
 export async function logoutViaTrpc(config: SessionConfig): Promise<void> {
   const client = createNodeTrpcClient({
     baseUrl: config.apiUrl,
-    headers: config.sessionHeaders,
+    headers: buildSessionHeaders(config),
   });
   try {
     await client.auth.logout.mutate();
