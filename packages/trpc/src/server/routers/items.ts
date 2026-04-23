@@ -103,6 +103,9 @@ async function insertZeroKnowledgeItem(
 
   // Raw SQL for pg_advisory_xact_lock: not expressible in Drizzle's typed API.
   // Released automatically on txn commit/rollback.
+  // pg_advisory_xact_lock takes a single int; hashtext(uuid) collapses UUIDs into 32 bits.
+  // Collisions are rare (<0.1% for 10K profiles) and benign — two unrelated profiles
+  // occasionally serialize. Acceptable perf cost; correctness is unaffected.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${profile.id}))`);
 
   // Re-read keyVersion UNDER the lock; defends against a rotate that committed

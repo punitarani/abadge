@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, createDb, type Database, eq } from "@abadge/db";
 import { items, profiles } from "@abadge/db/schema";
 import { seedOrg, seedProfile, seedUser } from "../helpers/seed";
@@ -24,8 +24,23 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 
+  // Independent DB clients are hoisted here so both the rotate+create and
+  // rotate+rotate tests share the same pool and we dispose them once in afterAll,
+  // preventing CI connection leaks.
+  let dbA: Database;
+  let dbB: Database;
+
   beforeAll(async () => {
     await migrateTestDb();
+    dbA = makeIndependentDb();
+    dbB = makeIndependentDb();
+  });
+
+  afterAll(async () => {
+    // Release the independent connections; the shared `db` (getTestDb()) is
+    // managed by the test harness and must NOT be ended here.
+    await (dbA as unknown as { $client: { end(): Promise<void> } }).$client.end();
+    await (dbB as unknown as { $client: { end(): Promise<void> } }).$client.end();
   });
 
   afterEach(async () => {
@@ -71,8 +86,6 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     // Two independent Database clients → two independent connections → real
     // concurrency on distinct Postgres backends. The shared pool's `max: 1`
     // would otherwise force serialization on the single connection.
-    const dbA = makeIndependentDb();
-    const dbB = makeIndependentDb();
     const callerA = createOperatorCaller(dbA, auth, user.headers, org.orgId);
     const callerB = createOperatorCaller(dbB, auth, user.headers, org.orgId);
 
@@ -217,5 +230,137 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
 
     const [row] = await db.select().from(items).where(eq(items.id, created.id));
     expect(row?.cryptoVersion).toBe(1);
+  });
+
+  test("rotateKey with missing new ZK item: aborts with ROTATE_KEY_INCOMPLETE (deterministic Case A)", async () => {
+    // Forces Case A deterministically: a ZK item is pre-inserted BEFORE rotateKey
+    // is called, and the rotate payload deliberately omits it.
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId, { name: "CaseA Org", slug: "casea-org" });
+    const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+    const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
+
+    await caller.profiles.bootstrap({
+      profileId: profile.profileId,
+      wrappedRootKey: "wrap-v1",
+      kdfSalt: "salt-v1",
+      kdfParams: {
+        algorithm: "argon2id",
+        memory: 65536,
+        iterations: 3,
+        parallelism: 1,
+        hashLength: 32,
+      },
+    });
+
+    // Pre-insert a ZK item that the rotate payload will omit.
+    const orphanId = crypto.randomUUID();
+    await db.insert(items).values({
+      id: orphanId,
+      userId: user.userId,
+      organizationId: org.orgId,
+      profileId: profile.profileId,
+      label: "orphan",
+      storageMode: "zero_knowledge",
+      encryptedItemKey: "ek-omit",
+      ciphertext: "ct-omit",
+      cryptoVersion: 1,
+    });
+
+    try {
+      await caller.profiles.rotateKey({
+        profileId: profile.profileId,
+        wrappedRootKey: "wrap-v2",
+        rekeyedItems: [], // deliberately omits the orphan
+      });
+      expect.unreachable("rotateKey with missing ZK item should have thrown ROTATE_KEY_INCOMPLETE");
+    } catch (err: unknown) {
+      const e = err as { code?: string; cause?: { code?: string } };
+      expect(e.code).toBe("BAD_REQUEST");
+      expect(e.cause?.code).toBe("ROTATE_KEY_INCOMPLETE");
+    }
+
+    // Profile did NOT advance; orphan still at cryptoVersion=1.
+    const [prof] = await db
+      .select({ keyVersion: profiles.keyVersion })
+      .from(profiles)
+      .where(eq(profiles.id, profile.profileId));
+    expect(prof?.keyVersion).toBe(1);
+    const [item] = await db
+      .select({ cryptoVersion: items.cryptoVersion })
+      .from(items)
+      .where(eq(items.id, orphanId));
+    expect(item?.cryptoVersion).toBe(1);
+  });
+
+  test("concurrent rotateKey + rotateKey: both serialized by advisory lock, no wrap clobber", async () => {
+    // Two concurrent rotates on the same profile run under pg_advisory_xact_lock.
+    // The lock serializes them: each re-reads keyVersion inside the lock, so they
+    // cannot both commit at keyVersion=2 (clobber). Both succeed sequentially:
+    //   - first  commits at keyVersion=2 with its wrap
+    //   - second acquires lock, re-reads keyVersion=2, commits at keyVersion=3
+    // After both complete, keyVersion=3 (advanced twice) and the final wrappedRootKey
+    // is the second caller's wrap — but critically the first's wrap was NOT silently
+    // overwritten at the same keyVersion.
+    //
+    // Contrast with un-fixed code (nextKeyVersion computed OUTSIDE lock):
+    //   - both read keyVersion=1 before acquiring lock, both compute nextKeyVersion=2
+    //   - first commits (keyVersion=2, wrap-A). second also commits (keyVersion=2, wrap-B).
+    //   - keyVersion stays at 2; wrap-A is silently overwritten.
+    //
+    // This test catches the regression: without the locked re-read, both callers
+    // compute nextKeyVersion=2 and both commit at keyVersion=2. With the fix,
+    // they commit at keyVersions 2 and 3.
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId, { name: "RR Org", slug: "rr-org" });
+    const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+    const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
+
+    await caller.profiles.bootstrap({
+      profileId: profile.profileId,
+      wrappedRootKey: "wrap-v1",
+      kdfSalt: "salt-v1",
+      kdfParams: {
+        algorithm: "argon2id",
+        memory: 65536,
+        iterations: 3,
+        parallelism: 1,
+        hashLength: 32,
+      },
+    });
+
+    // Use the two independent DB clients so each rotate runs on its own connection
+    // and the two transactions can actually overlap in the Postgres scheduler.
+    const callerA = createOperatorCaller(dbA, auth, user.headers, org.orgId);
+    const callerB = createOperatorCaller(dbB, auth, user.headers, org.orgId);
+
+    const [resA, resB] = await Promise.allSettled([
+      callerA.profiles.rotateKey({
+        profileId: profile.profileId,
+        wrappedRootKey: "wrap-A",
+        rekeyedItems: [],
+      }),
+      callerB.profiles.rotateKey({
+        profileId: profile.profileId,
+        wrappedRootKey: "wrap-B",
+        rekeyedItems: [],
+      }),
+    ]);
+
+    // With the lock + locked re-read in place, both rotates succeed (serialized).
+    expect(resA.status).toBe("fulfilled");
+    expect(resB.status).toBe("fulfilled");
+
+    // With the fix: first caller commits at keyVersion=2, second re-reads and
+    // commits at keyVersion=3. Final keyVersion=3 (advanced twice — no clobber).
+    // Without the fix: both commit at keyVersion=2 (clobber); keyVersion stays at 2.
+    const [row] = await db
+      .select({ wrappedRootKey: profiles.wrappedRootKey, keyVersion: profiles.keyVersion })
+      .from(profiles)
+      .where(eq(profiles.id, profile.profileId));
+    expect(row?.keyVersion).toBe(3);
+    // The last committed wrap wins, which is one of the two submitted.
+    if (!row?.wrappedRootKey) throw new Error("wrappedRootKey should be set after rotate");
+    expect(["wrap-A", "wrap-B"]).toContain(row.wrappedRootKey);
   });
 });

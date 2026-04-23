@@ -353,18 +353,40 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
       );
     }
 
-    const nextKeyVersion = profile.keyVersion + 1;
-
     // Coverage check + updates run in a single tx so a concurrent items.create
     // between SELECT and UPDATE cannot bypass rewrapping (TOCTOU).
     // Throwing the domain error inside the tx triggers rollback; tryAsync's
     // catch preserves the Error instance, and toTrpcError maps it by isDomainError.
-    yield* tryAsync(() =>
+    const nextKeyVersion = yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         // Serialize with concurrent items.create on the same profile (§I5-RACE).
         // Raw SQL because pg_advisory_xact_lock is not expressible in Drizzle's typed API.
         // The lock is released automatically on txn commit/rollback.
+        // pg_advisory_xact_lock takes a single int; hashtext(uuid) collapses UUIDs into 32 bits.
+        // Collisions are rare (<0.1% for 10K profiles) and benign — two unrelated profiles
+        // occasionally serialize. Acceptable perf cost; correctness is unaffected.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${profileId}))`);
+
+        // Re-read keyVersion + recoveryWrappedRootKey UNDER the lock. Defense against a rotate
+        // that committed between loadProfileForWrite and the lock acquisition.
+        const [locked] = await tx
+          .select({
+            keyVersion: profiles.keyVersion,
+            wrappedRootKey: profiles.wrappedRootKey,
+            recoveryWrappedRootKey: profiles.recoveryWrappedRootKey,
+          })
+          .from(profiles)
+          .where(eq(profiles.id, profileId));
+
+        if (!locked || !locked.wrappedRootKey) {
+          throw new NotFoundError({
+            code: "PROFILE_NOT_FOUND",
+            message: "Profile is not bootstrapped",
+            hint: "Bootstrap the profile before rotating keys.",
+          });
+        }
+
+        const txNextKeyVersion = locked.keyVersion + 1;
 
         const zkItemsInProfile = await tx
           .select({ id: items.id })
@@ -388,15 +410,27 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
           });
         }
 
-        await tx
+        // Belt-and-suspenders CAS on the UPDATE — the advisory lock already serializes
+        // concurrent rotates, but the explicit keyVersion check documents the invariant
+        // and protects against any future refactor that loses the lock.
+        const updated = await tx
           .update(profiles)
           .set({
             wrappedRootKey,
-            recoveryWrappedRootKey: recoveryWrappedRootKey ?? profile.recoveryWrappedRootKey,
-            keyVersion: nextKeyVersion,
+            recoveryWrappedRootKey: recoveryWrappedRootKey ?? locked.recoveryWrappedRootKey,
+            keyVersion: txNextKeyVersion,
             updatedAt: new Date(),
           })
-          .where(eq(profiles.id, profileId));
+          .where(and(eq(profiles.id, profileId), eq(profiles.keyVersion, locked.keyVersion)))
+          .returning({ id: profiles.id });
+
+        if (updated.length === 0) {
+          throw new ConflictError({
+            code: "CONFLICT",
+            message: "Profile keyVersion advanced during rotate",
+            hint: "Another rotation committed concurrently. Refresh and retry.",
+          });
+        }
 
         // Persist BOTH encryptedItemKey AND keyNonce — the nonce is paired with the wrapped DEK.
         // Extra ids not in the profile are filtered by the WHERE clause (no-op) rather than rejected,
@@ -407,11 +441,13 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
             .set({
               encryptedItemKey: r.encryptedItemKey,
               keyNonce: r.keyNonce,
-              cryptoVersion: nextKeyVersion,
+              cryptoVersion: txNextKeyVersion,
               updatedAt: new Date(),
             })
             .where(and(eq(items.id, r.itemId), eq(items.profileId, profileId)));
         }
+
+        return txNextKeyVersion;
       }),
     );
 
