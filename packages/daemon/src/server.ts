@@ -307,6 +307,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.env": async (params): Promise<EnvExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock — unauthenticated or
+      // pre-unlock callers must not be able to spawn subprocesses as the
+      // daemon UID.
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const secretValue = params.secretValue as string | undefined;
       const envVar = params.envVar as string | undefined;
       const command = params.command as string | undefined;
@@ -320,8 +326,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       validateEnvKey(envVar);
 
       const proc = Bun.spawn([command, ...args], {
-        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
-        env: { ...process.env, [envVar]: secretValue },
+        env: { ...buildChildEnv(), [envVar]: secretValue },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -331,6 +336,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.expandEnv": async (params): Promise<EnvExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock (moved from the ZK branch
+      // below so that server-managed payloads also require the operator to be
+      // authenticated and the vault unlocked before any subprocess is spawned).
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
       const serverPayload = params.serverPayload;
@@ -342,7 +353,6 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
 
       let payload: unknown;
       if (encryptedItemKey && ciphertext) {
-        requireUnlocked(vault);
         payload = vault.decrypt(encryptedItemKey, ciphertext);
       } else if (serverPayload !== undefined) {
         payload = serverPayload;
@@ -367,8 +377,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
 
       const proc = Bun.spawn([command, ...args], {
-        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
-        env: { ...process.env, ...extraEnv },
+        env: { ...buildChildEnv(), ...extraEnv },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -378,6 +387,10 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.mount": async (params): Promise<MountExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock.
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const secretValue = params.secretValue as string | undefined;
       const targetPath = params.path as string | undefined;
       // mode is never accepted from the caller — always owner-read/write only
@@ -403,6 +416,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.cleanup": async (params) => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock (cleanup removes files
+      // that only an authenticated, unlocked operator could have created via
+      // exec.mount).
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const path = params.path as string | undefined;
       if (!path) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "path is required" };
@@ -419,6 +438,25 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       return { ok: true };
     },
   };
+}
+
+/**
+ * Build the base environment for a daemon-spawned subprocess.
+ *
+ * Strips every ABADGE_* key from the daemon's own process.env before
+ * inheritance — defence-in-depth so daemon-side config (API URL, tokens, etc.)
+ * is not leaked into arbitrary child commands. The explicit secret pass-through
+ * is layered on top by the caller.
+ */
+function buildChildEnv(): Record<string, string | undefined> {
+  const childEnv: Record<string, string | undefined> = {};
+  // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith("ABADGE_")) {
+      childEnv[k] = v;
+    }
+  }
+  return childEnv;
 }
 
 function requireUnlocked(vault: VaultState): void {
@@ -481,7 +519,18 @@ export function startServer(config: DaemonConfig): DaemonServer {
   // Clean up temp files left behind by previous crashed sessions
   void cleanupOrphanedMounts();
 
-  mkdirSync(dirname(config.socketPath), { recursive: true });
+  // W3P12-003: parent dir MUST be 0700 — if it already exists with wider
+  // perms (e.g. a prior install under a permissive umask, or a cross-UID
+  // attacker pre-creating it), fail early rather than silently tightening
+  // with chmod (which would paper over the real issue).
+  const socketDir = dirname(config.socketPath);
+  mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+  const dirMode = statSync(socketDir).mode & 0o777;
+  if (dirMode !== 0o700) {
+    throw new Error(
+      `[vaultd] FATAL: Socket parent dir ${socketDir} has perms ${dirMode.toString(8)}, expected 700`,
+    );
+  }
 
   // Clean up stale socket file
   try {
@@ -493,43 +542,69 @@ export function startServer(config: DaemonConfig): DaemonServer {
   // Buffer for accumulating data per connection
   const connectionBuffers = new WeakMap<object, string>();
 
-  const server = Bun.listen({
-    unix: config.socketPath,
-    socket: {
-      open(socket) {
-        connectionBuffers.set(socket, "");
-      },
-      async data(socket, data) {
-        const prev = connectionBuffers.get(socket) ?? "";
-        const accumulated = prev + data.toString("utf8");
+  // W1S6-001 / W3P12-002: atomic socket permissions. `Bun.listen({ unix })`
+  // creates the socket inode under the process umask. With the default
+  // umask 0022 the socket briefly exists at mode 0755, giving a cross-UID
+  // attacker with an inotify/fsevents watcher a deterministic window to
+  // connect before the follow-up chmodSync(0o600) runs. We temporarily
+  // set umask to 0o077 so the socket is created at 0o600 atomically, then
+  // restore the previous umask in finally{}.
+  // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.umask for atomic socket creation
+  const previousUmask = process.umask(0o077);
+  let server: ReturnType<typeof Bun.listen>;
+  try {
+    server = Bun.listen({
+      unix: config.socketPath,
+      socket: {
+        open(socket) {
+          connectionBuffers.set(socket, "");
+        },
+        async data(socket, data) {
+          const prev = connectionBuffers.get(socket) ?? "";
+          const accumulated = prev + data.toString("utf8");
 
-        // Messages are newline-delimited JSON
-        const lines = accumulated.split("\n");
-        // Keep the incomplete last line in the buffer
-        connectionBuffers.set(socket, lines.pop() ?? "");
+          // Messages are newline-delimited JSON
+          const lines = accumulated.split("\n");
+          // Keep the incomplete last line in the buffer
+          connectionBuffers.set(socket, lines.pop() ?? "");
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const response = await dispatch(trimmed, handlers);
-          socket.write(`${JSON.stringify(response)}\n`);
-        }
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const response = await dispatch(trimmed, handlers);
+            socket.write(`${JSON.stringify(response)}\n`);
+          }
+        },
+        close(socket) {
+          connectionBuffers.delete(socket);
+        },
+        error(_socket, error) {
+          console.error("[vaultd] Socket error:", error.message);
+        },
       },
-      close(socket) {
-        connectionBuffers.delete(socket);
-      },
-      error(_socket, error) {
-        console.error("[vaultd] Socket error:", error.message);
-      },
-    },
-  });
+    });
+  } finally {
+    // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.umask for atomic socket creation
+    process.umask(previousUmask);
+  }
 
-  // Set socket file permissions to owner-only — abort if this fails
+  // Belt-and-suspenders: the umask-at-listen above already creates the socket
+  // at 0o600. chmodSync corrects any platform where umask didn't apply to the
+  // unix inode; the statSync invariant below is the load-bearing guarantee.
   try {
     chmodSync(config.socketPath, 0o600);
   } catch (err) {
     server.stop(true);
     throw new Error(`[vaultd] FATAL: Could not set socket permissions to 0600: ${err}`);
+  }
+
+  // Invariant: socket must be exactly mode 0o600 before we return. Any
+  // deviation means the atomic-create path failed and someone else's
+  // permissions leaked through — abort startup rather than accept the risk.
+  const socketMode = statSync(config.socketPath).mode & 0o777;
+  if (socketMode !== 0o600) {
+    server.stop(true);
+    throw new Error(`[vaultd] FATAL: Socket perms ${socketMode.toString(8)} != 0600 after chmod`);
   }
 
   return {
