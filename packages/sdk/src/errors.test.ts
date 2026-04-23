@@ -49,6 +49,31 @@ describe("AbadgeApiError", () => {
     expect(err.issues?.[1]).toEqual({ path: ["body", "age"], message: "must be positive" });
   });
 
+  test("fromResponse preserves path with numeric segments", async () => {
+    const res = new Response(
+      JSON.stringify({
+        error: "bad input",
+        code: "VALIDATION_ERROR",
+        issues: [{ path: ["body", "items", 0, "name"], message: "required" }],
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.issues).toBeDefined();
+    expect(err.issues?.[0]?.path).toEqual(["body", "items", 0, "name"]);
+    expect(err.issues?.[0]?.message).toBe("required");
+  });
+
+  test("fromResponse returns empty array for empty issues array (distinguishable from missing)", async () => {
+    const res = new Response(
+      JSON.stringify({ error: "x", code: "VALIDATION_ERROR", issues: [] }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.issues).toBeDefined();
+    expect(err.issues).toHaveLength(0);
+  });
+
   test("fromResponse drops malformed issues array", async () => {
     const res = new Response(
       JSON.stringify({
