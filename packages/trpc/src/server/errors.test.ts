@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { BadRequestError, NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "@abadge/core";
+import { TRPCError } from "@trpc/server";
 import { Effect } from "effect";
 import { getTrpcErrorData, toTrpcError } from "./errors";
+import { trpcErrorFormatter } from "./init";
 
 describe("toTrpcError", () => {
   test("unwraps effect failures into domain-specific trpc codes", async () => {
@@ -81,5 +83,111 @@ describe("toTrpcError", () => {
         locality: "remote",
       },
     });
+  });
+
+  // §S1 §SEC4 — generic (non-domain) Errors must not leak DB messages to the wire
+  test("sanitizes generic Error: returns 'Internal server error', not raw DB message", () => {
+    const dbError = new Error(
+      "ERROR: duplicate key value violates unique constraint 'profiles_organization_id_name_unique'",
+    );
+    const result = toTrpcError(dbError);
+
+    expect(result.code).toBe("INTERNAL_SERVER_ERROR");
+    expect(result.message).toBe("Internal server error");
+    // cause is preserved for server-side logging/Sentry; it must not be absent
+    expect(result.cause).toBe(dbError);
+    // The raw DB message must not appear in the tRPC error message at all
+    expect(result.message).not.toContain("profiles_organization_id_name_unique");
+  });
+
+  // §S1 §SEC4 — domain errors must still surface their real message unchanged
+  test("domain errors preserve real message, code, hint, and meta", async () => {
+    const failure = await Effect.runPromise(
+      Effect.fail(
+        new ForbiddenError({
+          code: "MEMBER_INSUFFICIENT_ROLE",
+          message: "Insufficient role",
+          hint: "This action requires the 'admin' role or higher.",
+          meta: { required: "admin", actual: "member" },
+        }),
+      ),
+    ).catch((e) => e);
+
+    const error = toTrpcError(failure);
+    const data = getTrpcErrorData(error);
+
+    expect(error.message).toBe("Insufficient role");
+    expect(data.code).toBe("MEMBER_INSUFFICIENT_ROLE");
+    expect(data.hint).toBe("This action requires the 'admin' role or higher.");
+    expect(data.meta).toEqual({ required: "admin", actual: "member" });
+  });
+});
+
+describe("trpcErrorFormatter (§S1 §SEC4)", () => {
+  // Verifies the whitelist approach: only code + httpStatus survive from shape.data;
+  // stack, path, and zodError (dev-only tRPC fields) are always stripped.
+  test("strips stack, path, and zodError from shape.data unconditionally", () => {
+    const fakeShape = {
+      message: "Internal Server Error",
+      code: -32603 as const,
+      data: {
+        code: "INTERNAL_SERVER_ERROR" as const,
+        httpStatus: 500,
+        stack: "Error\n    at Object.<anonymous> (/app/src/router.ts:42:11)\n    at ...",
+        path: "items.create",
+        zodError: null,
+      },
+    };
+    const fakeTRPCError = new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "x",
+    });
+
+    const result = trpcErrorFormatter({ shape: fakeShape, error: fakeTRPCError });
+
+    expect(result.data).not.toHaveProperty("stack");
+    expect(result.data).not.toHaveProperty("path");
+    expect(result.data).not.toHaveProperty("zodError");
+    // Whitelisted fields are present
+    expect(result.data.code).toBe("INTERNAL_SERVER_ERROR");
+    expect(result.data.httpStatus).toBe(500);
+    // top-level shape fields pass through unchanged
+    expect(result.message).toBe("Internal Server Error");
+    expect(result.code).toBe(-32603);
+  });
+
+  // Domain error extra fields (code, hint, meta) are merged in and survive
+  test("merges domain error fields into data, still without stack/path/zodError", async () => {
+    const failure = await Effect.runPromise(
+      Effect.fail(
+        new NotFoundError({
+          code: "ITEM_NOT_FOUND",
+          message: "Item not found",
+          hint: "Verify the item id.",
+        }),
+      ),
+    ).catch((e) => e);
+
+    const trpcError = toTrpcError(failure);
+    const fakeShape = {
+      message: "Not Found",
+      code: -32004 as const,
+      data: {
+        code: "NOT_FOUND" as const,
+        httpStatus: 404,
+        stack: "Error\n    at ...",
+        path: "items.getById",
+        zodError: null,
+      },
+    };
+
+    const result = trpcErrorFormatter({ shape: fakeShape, error: trpcError });
+
+    expect(result.data).not.toHaveProperty("stack");
+    expect(result.data).not.toHaveProperty("path");
+    expect(result.data).not.toHaveProperty("zodError");
+    expect(result.data.code).toBe("ITEM_NOT_FOUND"); // domain code overrides shape code
+    expect(result.data.httpStatus).toBe(404);
+    expect(result.data.hint).toBe("Verify the item id.");
   });
 });

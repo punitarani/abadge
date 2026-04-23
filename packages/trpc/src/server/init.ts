@@ -2,7 +2,7 @@ import { ForbiddenError, NotFoundError } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
 import { agents, member } from "@abadge/db/schema";
-import { initTRPC } from "@trpc/server";
+import { TRPCError, initTRPC } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
 import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
@@ -52,16 +52,32 @@ export async function requireOrgRole(
   return row.role;
 }
 
+// Exported for unit testing. Production use is only via the initTRPC config below.
+export function trpcErrorFormatter({
+  shape,
+  error,
+}: {
+  shape: { message: string; code: number; data?: Record<string, unknown> };
+  error: TRPCError;
+}) {
+  // Whitelist only the fields that belong on the wire. tRPC's default isDev
+  // is derived from NODE_ENV, which is unset on Cloudflare Workers → defaults
+  // to true, meaning shape.data.stack, shape.data.path, and shape.data.zodError
+  // would be serialised in production. We unconditionally omit them here.
+  // Developers read stack traces from logs; operators read them from Workers
+  // observability. Neither audience needs them in the response body.
+  return {
+    ...shape,
+    data: {
+      code: shape.data?.code,
+      httpStatus: shape.data?.httpStatus,
+      ...getTrpcErrorData(error),
+    },
+  };
+}
+
 const t = initTRPC.context<BaseRequestContext>().create({
-  errorFormatter({ shape, error }) {
-    return {
-      ...shape,
-      data: {
-        ...shape.data,
-        ...getTrpcErrorData(error),
-      },
-    };
-  },
+  errorFormatter: trpcErrorFormatter,
 });
 
 export const createTrpcRouter = t.router;

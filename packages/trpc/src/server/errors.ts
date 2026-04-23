@@ -71,9 +71,13 @@ export function toTrpcError(error: unknown): TRPCError {
   }
 
   if (cause instanceof Error) {
+    // Use a generic message to prevent DB constraint names, SQL snippets, and
+    // other internal details from leaking to the wire. The original cause is
+    // preserved for server-side logging and Sentry; it is not serialised into
+    // the response body after the errorFormatter strips shape.data.
     return new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
-      message: cause.message,
+      message: "Internal server error",
       cause,
     });
   }

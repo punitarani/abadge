@@ -12,6 +12,9 @@
       "custom_domain": true
     }
   ],
+  "vars": {
+    "NODE_ENV": "production"
+  },
   "secrets": {
     "required": [
       "ABADGE_API_URL",
