@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BadRequestError, UnauthorizedError } from "@abadge/core";
+import { BadRequestError, ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
 import { resolveSessionIdentity, resolveUserOrgId } from "./auth";
 import type { BaseRequestContext } from "./context";
@@ -196,7 +196,7 @@ describe("resolveUserOrgId", () => {
       await resolveUserOrgId(ctx, "user_1");
       expect.unreachable("expected resolveUserOrgId to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(UnauthorizedError);
+      expect(err).toBeInstanceOf(ForbiddenError);
       expect(err).toMatchObject({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",

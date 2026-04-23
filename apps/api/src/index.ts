@@ -4,9 +4,11 @@ import { handleTrpcRequest } from "@abadge/trpc/server";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import { getConnectionString, getDb } from "./lib/db";
+import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import type { Bindings } from "./types";
 
@@ -47,6 +49,9 @@ app.use("*", async (c, next) =>
 app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
 app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 
+// Wrap bare Better Auth 4xx responses into the canonical {code, message, hint, meta} envelope.
+app.use("/api/auth/*", authEnvelopeMiddleware);
+
 // Better Auth catch-all route
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
@@ -58,5 +63,43 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// §ENV2c — canonical 404 envelope for unmatched routes.
+app.notFound((c) =>
+  c.json(
+    {
+      code: "NOT_FOUND",
+      message: "Route not found",
+      hint: "Check the API route table at /docs for supported endpoints.",
+      meta: { path: c.req.path, method: c.req.method },
+    },
+    404,
+  ),
+);
+
+// §ENV2c — canonical envelope for unhandled errors.
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    const status = err.status;
+    return c.json(
+      {
+        code: status === 500 ? "INTERNAL_SERVER_ERROR" : "ERROR",
+        message: err.message || "Error",
+        hint: null,
+        meta: null,
+      },
+      status,
+    );
+  }
+  return c.json(
+    {
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Internal server error",
+      hint: null,
+      meta: null,
+    },
+    500,
+  );
+});
 
 export default app;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { UnauthorizedError } from "@abadge/core";
+import { ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
 import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
 import type { BaseRequestContext } from "./context";
@@ -196,7 +196,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
 
     const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
 
-    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(error).toBeInstanceOf(ForbiddenError);
     expect(error).toMatchObject({
       code: "ORG_MEMBERSHIP_REQUIRED",
     });

@@ -1,4 +1,4 @@
-import { UnauthorizedError } from "@abadge/core";
+import { ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { and, asc, eq } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { Effect } from "effect";
@@ -26,7 +26,7 @@ async function resolveOptionalOrgId(
       .where(and(eq(member.userId, userId), eq(member.organizationId, orgIdHeader)))
       .limit(1);
     if (!hit) {
-      throw new UnauthorizedError({
+      throw new ForbiddenError({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",
         hint: "Switch to an organization you belong to.",

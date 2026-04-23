@@ -1,4 +1,9 @@
-import { AGENT_SESSION_PREFIX, BadRequestError, UnauthorizedError } from "@abadge/core";
+import {
+  AGENT_SESSION_PREFIX,
+  BadRequestError,
+  ForbiddenError,
+  UnauthorizedError,
+} from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNull, or } from "@abadge/db";
 import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
@@ -348,7 +353,7 @@ export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string):
       .limit(1);
 
     if (!membership) {
-      throw new UnauthorizedError({
+      throw new ForbiddenError({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",
         hint: "Switch to an organization you belong to.",

@@ -3,10 +3,11 @@ import {
   formatDomainError,
   getDomainErrorStatus,
   isDomainError,
+  parseErrorToValidationError,
   type ValidationIssueSchema,
 } from "@abadge/core";
 import { type TRPC_ERROR_CODE_KEY, TRPCError } from "@trpc/server";
-import { Cause, type Cause as EffectCause, Option, type Schema } from "effect";
+import { Cause, type Cause as EffectCause, Option, ParseResult, type Schema } from "effect";
 
 export interface TrpcErrorData {
   code?: string;
@@ -67,6 +68,18 @@ export function toTrpcError(error: unknown): TRPCError {
       code: mapStatusToTrpcCode(getDomainErrorStatus(cause)),
       message: cause.message,
       cause,
+    });
+  }
+
+  // Effect Schema ParseError — convert to structured ValidationError so clients
+  // receive a proper issues[] array instead of a generic INTERNAL_SERVER_ERROR.
+  // Must be checked before the `instanceof Error` branch because ParseError extends Error.
+  if (ParseResult.isParseError(cause)) {
+    const validation = parseErrorToValidationError(cause);
+    return new TRPCError({
+      code: mapStatusToTrpcCode(getDomainErrorStatus(validation)),
+      message: validation.message,
+      cause: validation,
     });
   }
 
