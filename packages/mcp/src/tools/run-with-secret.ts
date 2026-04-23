@@ -8,7 +8,7 @@ import { resolveSecret } from "../resolve-secret.js";
 export const toolName = "run_with_secret";
 
 export const toolDescription =
-  "Run a command with a secret injected as an environment variable. Returns the exit code, captured output lines (truncated to 4KB total, with secret values replaced by [REDACTED]), and a truncation flag. Secrets larger than 4KB are rejected — use mount_secret instead for large secrets (PEMs, kubeconfigs, etc.). No file paths or secret content are returned to the model.";
+  "Run a command with a secret injected as an environment variable. Returns only the exit code, duration, output-line count, and a truncation flag. Subprocess stdout/stderr text is NOT returned to the model — use a separate audited channel (write to a file via mount_secret, then read back via list_items if needed) if output inspection is required. Secrets larger than 4KB are rejected — use mount_secret instead.";
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to inject"),
@@ -23,23 +23,15 @@ export const toolInputSchema = z.object({
 });
 
 export const MAX_OUTPUT_BYTES = 4 * 1024;
-// Per-stream pre-redaction cap. Two-KB of headroom above the post-redaction
-// cap lets redactSecret still see the full final window even after replacements
-// shrink the buffer, and prevents a misbehaving subprocess from OOMing the
+// Per-stream capture cap. Prevents a misbehaving subprocess from OOMing the
 // MCP process by flooding stdout/stderr (DoS vector from any agent with the
-// run_with_secret capability).
-export const PRE_REDACT_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
+// run_with_secret capability). Output is NOT forwarded to the model — only
+// the line count and truncation flag are returned.
+export const STREAM_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
 
-function redactSecret(text: string, secret: string): string {
-  if (!secret) return text;
-  return text.split(secret).join("[REDACTED]");
-}
-
-function truncateOutput(text: string, maxBytes: number): { text: string; truncated: boolean } {
-  const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes <= maxBytes) return { text, truncated: false };
-  const buf = Buffer.from(text, "utf8").subarray(0, maxBytes);
-  return { text: buf.toString("utf8"), truncated: true };
+function countLines(text: string): number {
+  if (text.length === 0) return 0;
+  return text.split("\n").length;
 }
 
 /**
@@ -92,8 +84,8 @@ export function runCommand(
       on(event: string, listener: (...args: unknown[]) => void): void;
     };
 
-    const stdoutCapture = new BoundedCapture(PRE_REDACT_CAP_BYTES);
-    const stderrCapture = new BoundedCapture(PRE_REDACT_CAP_BYTES);
+    const stdoutCapture = new BoundedCapture(STREAM_CAP_BYTES);
+    const stderrCapture = new BoundedCapture(STREAM_CAP_BYTES);
 
     child.stdout?.on("data", (chunk: Uint8Array) => {
       stdoutCapture.push(chunk);
@@ -130,24 +122,17 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
+  const startMs = Date.now();
   const client = await getApiClient(config);
   const secret = await resolveSecret(client, input.itemId, "env", input.field, input.purpose);
 
-  // Reject secrets that exceed the redaction window. The in-process redactor
-  // (redactSecret + BoundedCapture) guarantees scrubbing only when the full
-  // secret fits inside the PRE_REDACT_CAP_BYTES capture window. For any secret
-  // whose byte length exceeds MAX_OUTPUT_BYTES, even trivial subprocess padding
-  // (a wrapper line, date prefix, debug output) before the secret pushes the
-  // secret past the 8KB window, causing text.split(secret) to return the
-  // original bytes unchanged, and up to 4KB of raw plaintext lands in
-  // stdoutLines returned to the LLM. Large secrets must use mount_secret
-  // (filesystem delivery; no redaction required — the file path, not bytes,
-  // is handed to the subprocess).
+  // Reject large credentials. run_with_secret is env-var injection, not a bulk
+  // data channel. Large secrets (PEMs, kubeconfigs, TLS certs) belong in
+  // mount_secret (filesystem delivery).
   const secretByteLength = Buffer.byteLength(secret, "utf8");
   if (secretByteLength > MAX_OUTPUT_BYTES) {
     throw new Error(
-      `Secret is ${secretByteLength} bytes but run_with_secret can only safely handle secrets ≤ ${MAX_OUTPUT_BYTES} bytes. ` +
-        `The in-process redactor cannot guarantee the full secret fits in the ${PRE_REDACT_CAP_BYTES}-byte capture window. ` +
+      `Secret is ${secretByteLength} bytes but run_with_secret only accepts secrets ≤ ${MAX_OUTPUT_BYTES} bytes. ` +
         `Use mount_secret (filesystem delivery) for large secrets instead.`,
     );
   }
@@ -173,15 +158,18 @@ export async function handler(
     childEnv,
   );
 
-  // Allocate the 4KB budget: stdout gets first priority, stderr gets the remainder
-  const stdoutFinal = truncateOutput(redactSecret(stdout, secret), MAX_OUTPUT_BYTES);
-  const remainingBytes = MAX_OUTPUT_BYTES - Buffer.byteLength(stdoutFinal.text, "utf8");
-  const stderrFinal = truncateOutput(redactSecret(stderr, secret), Math.max(0, remainingBytes));
-
+  // stdout/stderr text is NOT forwarded to the model. Only line counts and
+  // the truncation flag are returned so the model can tell whether the command
+  // produced output without being able to read it. This eliminates all
+  // semantic-leakage vectors (base64, hex, URL-encoded, nth-char, etc.) that
+  // string-based redaction cannot catch (§RED1).
   return JSON.stringify({
     exitCode,
-    stdoutLines: stdoutFinal.text.split("\n"),
-    stderrLines: stderrFinal.text.split("\n"),
-    truncated: stdoutTruncated || stderrTruncated || stdoutFinal.truncated || stderrFinal.truncated,
+    durationMs: Date.now() - startMs,
+    outputLineCount: {
+      stdout: countLines(stdout),
+      stderr: countLines(stderr),
+    },
+    truncated: stdoutTruncated || stderrTruncated,
   });
 }

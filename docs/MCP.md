@@ -84,10 +84,10 @@ Output: JSON array of item summaries.
 
 ### `run_with_secret`
 
-Runs a command with a secret injected as an environment variable. Returns the exit code, captured
-output lines (redacted and truncated to 4 KB total), and a truncation flag. The secret plaintext is
-never returned to the model. Secrets larger than 4 KB are rejected before spawn — use
-`mount_secret` instead for large secrets (PEMs, kubeconfigs, SSH keys, TLS certificates).
+Runs a command with a secret injected as an environment variable. Returns only the exit code,
+duration, output-line count, and a truncation flag. **Subprocess stdout/stderr text is never
+returned to the model.** Secrets larger than 4 KB are rejected before spawn — use `mount_secret`
+instead for large secrets (PEMs, kubeconfigs, SSH keys, TLS certificates).
 
 | Input field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -103,31 +103,24 @@ Output:
 ```json
 {
   "exitCode": 0,
-  "stdoutLines": ["line 1", "line 2"],
-  "stderrLines": [],
+  "durationMs": 42,
+  "outputLineCount": { "stdout": 2, "stderr": 0 },
   "truncated": false
 }
 ```
 
+| Field | Description |
+|------|-------------|
+| `exitCode` | Subprocess exit code |
+| `durationMs` | Wall-clock milliseconds from handler entry to subprocess completion |
+| `outputLineCount` | Number of lines captured per stream (for diagnostic use; text is not returned) |
+| `truncated` | `true` if either stream hit the 8 KB per-stream capture cap |
+
 Security:
-- Secrets larger than 4 KB (`MAX_OUTPUT_BYTES`) are refused before spawn; the handler throws with a redirect to `mount_secret`. This guarantees the redactor's correctness assumption (`secret fully in capture window`) is never violated.
-- Secret value is replaced with `[REDACTED]` throughout stdout and stderr before returning
-- Each stream is bounded to 8 KB (`MAX_OUTPUT_BYTES * 2`) pre-redaction to prevent OOM from a misbehaving subprocess; the combined post-redaction output is then capped at 4 KB (stdout gets priority; stderr gets remaining budget)
-- `truncated: true` is set when the pre-redaction cap dropped chunks or the post-redaction truncation cut output
-- No file paths or secret content are returned to the model
-
-#### Redaction limitations
-
-These limitations apply to secrets ≤ 4 KB (the maximum `run_with_secret` accepts). Secrets over 4 KB are refused entirely — the handler throws before spawn, so the redactor is never called.
-
-Output redaction uses exact substring replacement — it scans stdout/stderr for the secret's literal bytes and replaces each occurrence with `[REDACTED]`. It does NOT catch transformed forms:
-
-- **Base64 encoding** — a subprocess that emits `base64(secret)` leaks the secret
-- **URL-encoded / percent-encoded** — same
-- **JSON-escaped** (e.g., `\u0041`) — same
-- **Split across chunks** — if the subprocess emits the secret with a separator spliced in the middle (newline, null byte, ANSI escape) redaction may miss that occurrence. The 8 KB pre-redaction buffer mitigates chunk-boundary splits for short secrets but does not eliminate them.
-
-If a tool must emit data derived from the secret, the subprocess is responsible for scrubbing it. Redaction is defense-in-depth, not a guarantee.
+- Subprocess stdout/stderr text is captured internally for line counting but is **never forwarded to the model**. This eliminates all semantic-leakage vectors (base64, hex, URL-encoded, nth-char extraction, byte-split, etc.) that string-based redaction cannot catch (§RED1).
+- Secrets larger than 4 KB are refused before spawn — use `mount_secret` for large credentials.
+- Each stream is bounded to 8 KB (`STREAM_CAP_BYTES`) to prevent OOM from a misbehaving subprocess.
+- If the model needs to inspect subprocess output, the operator should route output through a separate audited channel (e.g. write to a file via `mount_secret`, then read back explicitly).
 
 ### `mount_secret`
 
