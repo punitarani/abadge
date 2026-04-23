@@ -83,7 +83,12 @@ const ProfileRotateKeySchema = Schema.Struct({
 const loadProfile = (
   profileId: string,
   userId: string,
-  eventType: "profile.create" | "profile.delete" | "profile.bootstrap" | "profile.rotate",
+  eventType:
+    | "profile.create"
+    | "profile.delete"
+    | "profile.bootstrap"
+    | "profile.rotate"
+    | "profile.setup_recovery",
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -133,7 +138,12 @@ const loadProfile = (
 const loadProfileForWrite = (
   profileId: string,
   userId: string,
-  eventType: "profile.create" | "profile.delete" | "profile.bootstrap" | "profile.rotate",
+  eventType:
+    | "profile.create"
+    | "profile.delete"
+    | "profile.bootstrap"
+    | "profile.rotate"
+    | "profile.setup_recovery",
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -357,7 +367,11 @@ const setupProfileRecovery = (input: Schema.Schema.Type<typeof ProfileSetupRecov
     const ctx = yield* SessionRequestContextTag;
     const { profileId, recoveryWrappedRootKey } = input;
 
-    const profile = yield* loadProfileForWrite(profileId, ctx.identity.userId, "profile.rotate");
+    const profile = yield* loadProfileForWrite(
+      profileId,
+      ctx.identity.userId,
+      "profile.setup_recovery",
+    );
 
     if (!profile.wrappedRootKey) {
       return yield* Effect.fail(

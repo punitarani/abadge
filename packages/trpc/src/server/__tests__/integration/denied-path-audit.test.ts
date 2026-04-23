@@ -77,9 +77,9 @@ describe("denied-path audit (W2T12-003)", () => {
     expect(audit).toBeDefined();
     expect(audit?.userId).toBe(bob.userId);
     expect(audit?.organizationId).toBe(orgId);
-    // reason could be agent_not_owned (bob doesn't own agentId)
+    // requireOrgRole("member") passes for bob; requireAgentOwnership fires
     const meta = audit?.meta as Record<string, unknown> | null;
-    expect(meta?.reason).toBeTruthy();
+    expect(meta?.reason).toBe("agent_not_owned");
   });
 
   // ---------------------------------------------------------------------------
