@@ -1,5 +1,6 @@
 import {
   ConflictError,
+  ForbiddenError,
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
   NotFoundError,
@@ -19,6 +20,7 @@ import {
 } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
+import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
 import { onMemberRemoved } from "../cascades";
 import {
   isUniqueViolation,
@@ -529,7 +531,14 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
     const ctx = yield* SessionRequestContextTag;
     const { orgId, role } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
+    const actorRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"),
+    );
+
+    // §INV1a: Prevent admins from minting owner-role invites (privilege escalation
+    // via invite-accept round-trip). The invited role must not exceed the caller's role.
+    const inviteRole = role ?? "member";
+    yield* tryAsync(async () => assertCanAssignRole(actorRole, inviteRole));
 
     const token = generateOpaqueToken(INVITE_TOKEN_PREFIX);
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
@@ -540,7 +549,7 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
       ctx.db.insert(invitation).values({
         id: invitationId,
         organizationId: orgId,
-        role: role ?? "member",
+        role: inviteRole,
         status: "pending",
         tokenHash,
         expiresAt,
@@ -555,7 +564,7 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
       eventType: "org.invite",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { role: role ?? "member", invitationId },
+      meta: { role: inviteRole, invitationId },
     });
 
     return { ok: true, invitationId, token };
@@ -800,7 +809,9 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
     const ctx = yield* SessionRequestContextTag;
     const { orgId, memberId } = input;
 
-    yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"));
+    const actorRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, orgId, ctx.identity.userId, "admin"),
+    );
 
     const [target] = yield* tryAsync(() =>
       ctx.db
@@ -819,6 +830,22 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
         }),
       );
     }
+
+    // §OWN2a: Only owners can remove owners; admins can remove admins + members.
+    if (target.role === "owner" && actorRole !== "owner") {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "MEMBER_INSUFFICIENT_ROLE",
+          message: "Only an owner can remove another owner",
+          hint: "Ask an owner to perform this removal.",
+        }),
+      );
+    }
+
+    // §OWN2b / B37: Do not strand the org with zero owners.
+    yield* tryAsync(() =>
+      assertOwnersRemainAfterChange(ctx.db, orgId, memberId, target.role, "removed"),
+    );
 
     // Atomic: delete the member row, write the org.member_remove audit
     // entry, and run the cascade that revokes their agents, sessions, and
@@ -862,7 +889,7 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
 
     const [target] = yield* tryAsync(() =>
       ctx.db
-        .select({ id: member.id })
+        .select({ id: member.id, role: member.role })
         .from(member)
         .where(and(eq(member.id, memberId), eq(member.organizationId, orgId)))
         .limit(1),
@@ -877,6 +904,11 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
         }),
       );
     }
+
+    // §OWN1 / B37: Do not strand the org with zero owners when demoting the last owner.
+    yield* tryAsync(() =>
+      assertOwnersRemainAfterChange(ctx.db, orgId, memberId, target.role, role),
+    );
 
     yield* tryAsync(() => ctx.db.update(member).set({ role }).where(eq(member.id, memberId)));
 
