@@ -4,6 +4,7 @@ import {
   AgentSchema,
   AuditEntrySchema,
   CreateItemSchema,
+  ExchangeAgentSessionSchema,
   ItemSummarySchema,
   ProfileSchema,
   UpdateItemSchema,
@@ -156,6 +157,105 @@ describe("item write schemas", () => {
         encryptedItemKey: "wrapped-item-key",
         ciphertext: "ciphertext",
         contentVersion: 2,
+      }),
+    ).toBe(false);
+  });
+});
+
+// §AUTH12: ExchangeAgentSessionSchema must reject malformed base64url inputs at
+// the schema boundary so they never reach verifyEd25519 → fromBase64 → SyntaxError → 500.
+describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format validation", () => {
+  // A realistic challenge: prefix "abc_" + base64url(32 random bytes) = 47 chars.
+  const VALID_CHALLENGE = "abc_" + "A".repeat(43);
+  // A realistic Ed25519 signature: 64 bytes → 86 chars unpadded base64url.
+  const VALID_SIG = "A".repeat(86);
+  const VALID_AGENT_ID = "agt_test";
+  const VALID_CHALLENGE_ID = "some-uuid";
+
+  function base(): object {
+    return {
+      agentId: VALID_AGENT_ID,
+      challengeId: VALID_CHALLENGE_ID,
+      challenge: VALID_CHALLENGE,
+      signature: VALID_SIG,
+    };
+  }
+
+  test("accepts valid base64url challenge and signature", () => {
+    expect(decodeSucceeds(ExchangeAgentSessionSchema, base())).toBe(true);
+  });
+
+  test("accepts padded base64url signature (88 chars)", () => {
+    // Some implementations may emit padding; allow up to 88 chars.
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "A".repeat(86) + "==",
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects signature with characters outside base64url charset", () => {
+    // !@#$%^&*() are not in [A-Za-z0-9_-]; fromBase64 would throw SyntaxError → 500.
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "!@#$%^&*()" + "A".repeat(76),
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects challenge with characters outside base64url charset", () => {
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        challenge: "abc_!@#$%^&*()" + "A".repeat(33),
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects single-char valid-charset signature (invalid base64 quantum → atob throws)", () => {
+    // "A" passes charset check but atob("A") throws InvalidCharacterError.
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "A",
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects oversized signature (>88 chars)", () => {
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "A".repeat(1000),
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects oversized challenge (>256 chars)", () => {
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        challenge: "abc_" + "A".repeat(300),
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects signature shorter than 86 chars (undersized Ed25519 sig)", () => {
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "A".repeat(50),
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects empty signature", () => {
+    expect(
+      decodeSucceeds(ExchangeAgentSessionSchema, {
+        ...base(),
+        signature: "",
       }),
     ).toBe(false);
   });

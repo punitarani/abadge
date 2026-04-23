@@ -144,11 +144,30 @@ export const CreateAgentChallengeSchema = Schema.Struct({
   agentId: NonEmptyString,
 });
 
+// Base64url charset: A–Z a–z 0–9 - _ (no padding). Both fields use unpadded
+// base64url (toBase64 strips "="). A valid base64 quantum is at least 4 chars;
+// require minLength to block single-char valid-charset inputs that pass the
+// pattern but cause atob/fromBase64 to throw SyntaxError → 500 oracle.
+const Base64UrlSig = Schema.String.pipe(
+  Schema.pattern(/^[A-Za-z0-9_-]+=*$/),
+  // Ed25519 sig is 64 bytes → 86 chars unpadded, 88 with padding. Accept both.
+  Schema.minLength(86),
+  Schema.maxLength(88),
+);
+
+const Base64UrlChallenge = Schema.String.pipe(
+  Schema.pattern(/^[A-Za-z0-9_-]+=*$/),
+  // Challenge is prefix (e.g. "abc_") + base64url(32 random bytes) = ~47 chars.
+  // minLength(8) blocks quantum-invalid single-char inputs; maxLength(256) caps DoS.
+  Schema.minLength(8),
+  Schema.maxLength(256),
+);
+
 export const ExchangeAgentSessionSchema = Schema.Struct({
   agentId: NonEmptyString,
   challengeId: NonEmptyString,
-  challenge: NonEmptyString,
-  signature: NonEmptyString,
+  challenge: Base64UrlChallenge,
+  signature: Base64UrlSig,
 });
 
 export const RevokeAgentSessionSchema = Schema.Struct({
