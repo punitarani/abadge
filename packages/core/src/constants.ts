@@ -32,6 +32,7 @@ export type Capability = (typeof CAPABILITIES)[number];
 export const AUDIT_EVENT_TYPES = [
   // profile events
   "profile.create",
+  "profile.bootstrap",
   "profile.rotate",
   "profile.delete",
   "profile.delete_cascade",

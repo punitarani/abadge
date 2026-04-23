@@ -218,19 +218,10 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     // an un-bootstrapped profile in a foreign org cannot be hijacked.
     const profile = yield* loadProfileForWrite(profileId, userId);
 
-    if (profile.wrappedRootKey) {
-      return yield* Effect.fail(
-        new ConflictError({
-          code: "PROFILE_ALREADY_EXISTS",
-          message: "Profile is already bootstrapped",
-          hint: "Use changePassword to rotate the key, not bootstrap.",
-        }),
-      );
-    }
-
-    // Atomic UPDATE: the `isNull(wrappedRootKey)` guard closes the race between
-    // two concurrent bootstrap calls that both passed the SELECT above. The loser
-    // sees 0 rows in RETURNING and gets PROFILE_ALREADY_EXISTS; no silent overwrite.
+    // Atomic UPDATE: the `isNull(wrappedRootKey)` guard handles both the
+    // sequential case (already bootstrapped) and the concurrent case (two
+    // callers race past the SELECT above). The loser sees 0 rows in RETURNING
+    // and gets PROFILE_ALREADY_EXISTS; no silent overwrite.
     const updated = yield* tryAsync(() =>
       ctx.db
         .update(profiles)
@@ -245,12 +236,11 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     );
 
     if (updated.length === 0) {
-      // A concurrent bootstrap completed between our SELECT and UPDATE.
       return yield* Effect.fail(
         new ConflictError({
           code: "PROFILE_ALREADY_EXISTS",
-          message: "Profile bootstrap conflict",
-          hint: "A concurrent bootstrap completed first. Refresh and retry.",
+          message: "Profile is already bootstrapped",
+          hint: "Use changePassword to rotate the key, not bootstrap.",
         }),
       );
     }
@@ -258,7 +248,7 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     yield* logSessionAudit({
       organizationId: profile.organizationId,
       userId,
-      eventType: "profile.create",
+      eventType: "profile.bootstrap",
       result: "allowed",
       ipAddress: ctx.ipAddress,
       meta: { profileId, orgId: profile.organizationId },
