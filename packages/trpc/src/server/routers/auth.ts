@@ -19,12 +19,13 @@ import {
   type IssueAgentBootstrapTokenInput,
   IssueAgentBootstrapTokenSchema,
   NotFoundError,
+  RateLimitError,
   type RevokeAgentSessionInput,
   RevokeAgentSessionSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, count, eq, gt, isNull, lt } from "@abadge/db";
 import {
   agentEnrollmentTokens,
   agents as agentRecords,
@@ -489,6 +490,47 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         }),
       );
     }
+
+    // §R5 — per-agent rate-limit: count live (unused, unexpired) challenges.
+    // Normal usage is ~1 per 15 min (session TTL); 30 gives 30x headroom.
+    const CHALLENGE_RATE_LIMIT = 30;
+    const [stats] = yield* tryAsync(() =>
+      ctx.db
+        .select({ count: count() })
+        .from(agentSessionChallenges)
+        .where(
+          and(
+            eq(agentSessionChallenges.agentId, agent.id),
+            gt(agentSessionChallenges.expiresAt, new Date()),
+            isNull(agentSessionChallenges.usedAt),
+          ),
+        ),
+    );
+    if ((stats?.count ?? 0) >= CHALLENGE_RATE_LIMIT) {
+      return yield* Effect.fail(
+        new RateLimitError({
+          code: "RATE_LIMITED",
+          message: "Too many challenge requests for this agent",
+          hint: "Slow down and reuse existing challenges if possible.",
+        }),
+      );
+    }
+
+    // §DoS1 — opportunistic GC: delete expired rows older than 1h.
+    // 1h grace window past expiry preserves data for replay-attack forensics.
+    // Fire-and-forget: GC failures must not block challenge creation.
+    yield* tryAsync(() =>
+      ctx.db
+        .delete(agentSessionChallenges)
+        .where(lt(agentSessionChallenges.expiresAt, new Date(Date.now() - 60 * 60 * 1000))),
+    ).pipe(
+      Effect.catchAll((err) => {
+        console.warn(
+          `challenge_gc_failed err=${err instanceof Error ? err.message : String(err)}`,
+        );
+        return Effect.void;
+      }),
+    );
 
     const challengeId = crypto.randomUUID();
     const challenge = generateOpaqueToken(AGENT_CHALLENGE_PREFIX);
