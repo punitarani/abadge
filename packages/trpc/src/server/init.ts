@@ -85,8 +85,16 @@ export const sessionProcedure = publicProcedure.use(async ({ ctx, next }) => {
 /**
  * Authenticated procedure that does NOT require org membership. Use this for
  * bootstrap endpoints a user hits before they have an org (organizations.create,
- * organizations.list, organizations.checkSlug). Everywhere else, use
- * sessionProcedure.
+ * organizations.list, organizations.checkSlug, organizations.members.getInviteInfo,
+ * organizations.members.acceptInvite). Everywhere else, use sessionProcedure.
+ *
+ * Org resolution is convenience-best-effort: if the user has exactly one
+ * membership, organizationId is auto-populated. If they have zero memberships
+ * or multiple memberships (without an explicit X-Abadge-Org-Id header),
+ * organizationId is null. Callers that need a specific org should either
+ * use sessionProcedure (requires explicit context) or handle organizationId
+ * being null. This null-return for multi-org + no-header is intentional (§ORG2);
+ * do not re-introduce the ORG_HEADER_REQUIRED throw here.
  */
 export const userProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {

@@ -572,7 +572,7 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
 
 const getInviteInfo = (token: string) =>
   Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
+    const ctx = yield* UserRequestContextTag;
 
     // Throttle before paying the hashing cost so rejected attempts are cheap.
     const rateLimitKey = `${ctx.identity.userId}:${ctx.ipAddress ?? "unknown"}`;
@@ -643,7 +643,7 @@ const getInviteInfo = (token: string) =>
 
 const acceptInvite = (token: string) =>
   Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
+    const ctx = yield* UserRequestContextTag;
     const userId = ctx.identity.userId;
     const tokenHash = yield* tryAsync(() => hashApiKey(token));
 
@@ -745,7 +745,7 @@ const acceptInvite = (token: string) =>
       }),
     );
 
-    yield* logSessionAudit({
+    yield* logUserAudit({
       organizationId: row.organizationId,
       userId,
       eventType: "org.invite_accept",
@@ -965,15 +965,15 @@ export const organizationsRouter = createTrpcRouter({
       .output(strictSchema(CreateInviteResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, createInvite(input))),
 
-    getInviteInfo: sessionProcedure
+    getInviteInfo: userProcedure
       .input(strictSchema(InviteTokenSchema))
       .output(strictSchema(InviteInfoResultSchema))
-      .query(({ ctx, input }) => runSessionEffect(ctx, getInviteInfo(input.token))),
+      .query(({ ctx, input }) => runUserEffect(ctx, getInviteInfo(input.token))),
 
-    acceptInvite: sessionProcedure
+    acceptInvite: userProcedure
       .input(strictSchema(InviteTokenSchema))
       .output(strictSchema(AcceptInviteResultSchema))
-      .mutation(({ ctx, input }) => runSessionEffect(ctx, acceptInvite(input.token))),
+      .mutation(({ ctx, input }) => runUserEffect(ctx, acceptInvite(input.token))),
 
     revokeInvite: sessionProcedure
       .input(strictSchema(RevokeInviteSchema))
