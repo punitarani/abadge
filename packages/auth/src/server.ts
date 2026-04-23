@@ -16,6 +16,7 @@ import {
   buildOrgUpdateAuditRow,
   safeAuditInsert,
 } from "./audit-hooks";
+import { sendEmail } from "./mailer";
 import { createPersonalOrgForUser } from "./personal-org";
 
 // Custom access-control for the organization plugin.
@@ -106,7 +107,39 @@ export function createAuth(db: Database, env: AuthEnv): any {
     secret: env.BETTER_AUTH_SECRET,
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      // §AU1: block sign-in until email is verified; also defends against B36
+      // OAuth pre-claim by ensuring unverified email accounts cannot be used
+      // to silently absorb incoming OAuth logins.
+      requireEmailVerification: true,
+      sendResetPassword: async ({ user, token }) => {
+        await sendEmail({
+          to: user.email,
+          subject: "Reset your abadge password",
+          text: `Reset your password:\n\n${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}\n\nThis link expires in 1 hour.`,
+          html: `<p>Reset your password:</p><p><a href="${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}">${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}</a></p><p>This link expires in 1 hour.</p>`,
+        });
+      },
+    },
+    emailVerification: {
+      sendVerificationEmail: async ({ user, url }) => {
+        await sendEmail({
+          to: user.email,
+          subject: "Verify your abadge email",
+          text: `Confirm your email address:\n\n${url}`,
+          html: `<p>Confirm your email address:</p><p><a href="${url}">${url}</a></p>`,
+        });
+      },
+    },
+    account: {
+      // B36: block OAuth pre-claim takeover. With disableImplicitLinking: true,
+      // Better Auth will not silently link an incoming OAuth login to a
+      // pre-existing credential account that shares the same email. Users must
+      // explicitly call linkSocial() while authenticated to merge accounts.
+      accountLinking: {
+        enabled: true,
+        disableImplicitLinking: true,
+        trustedProviders: [],
+      },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

@@ -11,6 +11,7 @@ export {
   buildOrgUpdateAuditRow,
   safeAuditInsert,
 } from "./audit-hooks";
+export { type MailchannelsEmail, sendEmail } from "./mailer";
 export { createPersonalOrgForUser } from "./personal-org";
 export {
   type AuthEnv,
