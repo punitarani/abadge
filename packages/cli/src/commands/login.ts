@@ -8,7 +8,7 @@ import {
   requestDeviceCode,
   resolveSessionConfig,
 } from "../client";
-import { clearConfig, loadConfig, saveConfig } from "../config";
+import { clearConfig, loadConfig, saveConfig, updateConfig } from "../config";
 import { daemonClearAuthSession, daemonSetAuthSession } from "../daemon";
 import { error, errorMessage, json, success, warn } from "../output";
 import { prompt } from "../prompt";
@@ -79,6 +79,18 @@ async function completeDeviceLogin(
     throw new Error("Authenticated successfully but could not determine the session user.");
   }
 
+  // Persist the config BEFORE the first sensitive daemon RPC so that
+  // DaemonClient's onFirstContact handler can pin the TOFU fingerprint in
+  // ~/.abadge/config.json (W3P12-001 / Critical C-2). Without this ordering,
+  // the pin was being computed but silently dropped on fresh installs,
+  // forcing re-pinning on every login — defeating TOFU's "one-shot-attacker"
+  // guarantee.
+  if (loadConfig()) {
+    updateConfig({ apiUrl });
+  } else {
+    saveConfig({ apiUrl });
+  }
+
   if (!printToken) {
     await ensureDaemonStarted();
     await daemonSetAuthSession({
@@ -88,7 +100,6 @@ async function completeDeviceLogin(
     });
   }
 
-  saveConfig({ apiUrl });
   return { userId };
 }
 

@@ -52,9 +52,13 @@ function allocDaemonDir(): { dir: string; socketPath: string; pidPath: string } 
   };
 }
 
-function startTestServer(): { client: DaemonClient; server: DaemonServer; socketPath: string } {
+async function startTestServer(): Promise<{
+  client: DaemonClient;
+  server: DaemonServer;
+  socketPath: string;
+}> {
   const { socketPath, pidPath } = allocDaemonDir();
-  const server = startServer(
+  const server = await startServer(
     resolveConfig({
       socketPath,
       pidPath,
@@ -93,7 +97,7 @@ async function startTestServerUnlocked(): Promise<{
     kdfParams: TEST_KDF_PARAMS,
   };
 
-  const { client, server, socketPath } = startTestServer();
+  const { client, server, socketPath } = await startTestServer();
   server.vault.unlock(password, meta);
 
   await client.setAuthSession({
@@ -146,7 +150,7 @@ function sendRawRpc(
 
 describe("daemon auth session state", () => {
   test("keeps bearer-session auth in memory and clears it on request", async () => {
-    const { client } = startTestServer();
+    const { client } = await startTestServer();
 
     await expect(client.authStatus()).resolves.toEqual({
       authenticated: false,
@@ -180,7 +184,7 @@ describe("daemon auth session state", () => {
   });
 
   test("always returns bearer auth headers for daemon-managed session auth", async () => {
-    const { client } = startTestServer();
+    const { client } = await startTestServer();
 
     await client.setAuthSession({
       type: "better_auth_session",
@@ -373,11 +377,11 @@ describe("daemon env-var injection guard", () => {
 // -----------------------------------------------------------------------------
 
 describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
-  test("socket file mode is 0o600 atomically after startServer resolves", () => {
+  test("socket file mode is 0o600 atomically after startServer resolves", async () => {
     // biome-ignore lint/style/noRestrictedGlobals: test needs process.umask to set a permissive umask
     const prev = process.umask(0o022);
     try {
-      const { socketPath } = startTestServer();
+      const { socketPath } = await startTestServer();
       const mode = statSync(socketPath).mode & 0o777;
       // The load-bearing assertion for W1S6-001: under a permissive umask,
       // the socket MUST still be 0o600 by the time startServer returns.
@@ -388,14 +392,14 @@ describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
     }
   });
 
-  test("socket parent dir mode is 0o700", () => {
-    const { socketPath } = startTestServer();
+  test("socket parent dir mode is 0o700", async () => {
+    const { socketPath } = await startTestServer();
     const parent = join(socketPath, "..");
     const mode = statSync(parent).mode & 0o777;
     expect(mode).toBe(0o700);
   });
 
-  test("startServer aborts when socket parent dir has wider perms than 0o700", () => {
+  test("startServer aborts when socket parent dir has wider perms than 0o700", async () => {
     const dir = mkdtempSync(join(tmpdir(), "abadge-daemon-wide-"));
     tempDirs.push(dir);
     const wideParent = join(dir, "wide-abadge");
@@ -404,7 +408,7 @@ describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
     // some platforms; force it to 0o755 so the assertion below is meaningful.
     chmodSync(wideParent, 0o755);
 
-    expect(() =>
+    await expect(
       startServer(
         resolveConfig({
           socketPath: join(wideParent, "vaultd.sock"),
@@ -412,13 +416,13 @@ describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
           apiUrl: "http://localhost:8787",
         }),
       ),
-    ).toThrow(/expected 700/);
+    ).rejects.toThrow(/expected 700/);
   });
 });
 
 describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   test("exec.env without auth rejects with AUTH_REQUIRED and spawns nothing", async () => {
-    const { socketPath } = startTestServer();
+    const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
       method: "exec.env",
       params: {
@@ -437,7 +441,7 @@ describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   });
 
   test("exec.expandEnv without auth rejects with AUTH_REQUIRED even for serverPayload", async () => {
-    const { socketPath } = startTestServer();
+    const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
       method: "exec.expandEnv",
       params: {
@@ -453,7 +457,7 @@ describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   });
 
   test("exec.mount without auth rejects with AUTH_REQUIRED", async () => {
-    const { socketPath } = startTestServer();
+    const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
       method: "exec.mount",
       params: { secretValue: "shhh" },
@@ -465,7 +469,7 @@ describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   });
 
   test("exec.cleanup without auth rejects with AUTH_REQUIRED", async () => {
-    const { socketPath } = startTestServer();
+    const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
       method: "exec.cleanup",
       params: { path: "/tmp/whatever" },
@@ -477,7 +481,7 @@ describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   });
 
   test("exec.env with auth but locked vault rejects with VAULT_LOCKED", async () => {
-    const { client } = startTestServer();
+    const { client } = await startTestServer();
 
     await client.setAuthSession({
       type: "better_auth_session",
@@ -491,7 +495,7 @@ describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
   });
 
   test("exec.expandEnv with auth but locked vault rejects with VAULT_LOCKED", async () => {
-    const { client } = startTestServer();
+    const { client } = await startTestServer();
 
     await client.setAuthSession({
       type: "better_auth_session",
@@ -533,6 +537,94 @@ describe("daemon strips ABADGE_* from child env (defence-in-depth)", () => {
     } finally {
       // biome-ignore lint/style/noRestrictedGlobals: test cleanup
       delete process.env.ABADGE_TEST_LEAK;
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// W3P12-001 / Critical C-2 — identity.sign RPC regression tests.
+// -----------------------------------------------------------------------------
+
+describe("daemon identity.sign RPC (W3P12-001)", () => {
+  test("returns a valid Ed25519 signature over nonce|sessionStartMs", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: { nonce: "client-nonce-abc" },
+    });
+    expect("result" in response).toBe(true);
+    if (!("result" in response)) return;
+
+    const result = response.result as {
+      signature: string;
+      publicKey: string;
+      sessionStartMs: number;
+    };
+    expect(typeof result.signature).toBe("string");
+    expect(result.signature.length).toBeGreaterThan(0);
+    expect(typeof result.publicKey).toBe("string");
+    expect(typeof result.sessionStartMs).toBe("number");
+
+    const { verifyEd25519 } = await import("@abadge/crypto");
+    const ok = await verifyEd25519(
+      result.publicKey,
+      `client-nonce-abc|${result.sessionStartMs}`,
+      result.signature,
+    );
+    expect(ok).toBe(true);
+  });
+
+  test("rejects empty nonce with INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: { nonce: "" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("rejects oversize nonce (> 512 chars) with INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: { nonce: "x".repeat(513) },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("rejects missing nonce with INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: {},
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("two consecutive signatures differ — signs the supplied nonce, not a stored constant", async () => {
+    const { socketPath } = await startTestServer();
+    const a = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: { nonce: "nonce-a" },
+    });
+    const b = await sendRawRpc(socketPath, {
+      method: "identity.sign",
+      params: { nonce: "nonce-b" },
+    });
+    expect("result" in a && "result" in b).toBe(true);
+    if ("result" in a && "result" in b) {
+      const ra = a.result as { signature: string };
+      const rb = b.result as { signature: string };
+      expect(ra.signature).not.toBe(rb.signature);
     }
   });
 });

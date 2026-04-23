@@ -17,6 +17,7 @@ import {
 } from "@abadge/core";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
+import { type DaemonIdentity, loadOrCreateDaemonIdentity, signChallenge } from "./identity";
 import { defaultPidPath, defaultSocketPath } from "./paths";
 import type {
   DaemonAuthHeaders,
@@ -148,10 +149,38 @@ async function cleanupOrphanedMounts(): Promise<void> {
   }
 }
 
-function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
+function buildHandlers(
+  vault: VaultState,
+  config: DaemonConfig,
+  identity: DaemonIdentity,
+): Record<string, RpcHandler> {
   let auth: DaemonAuthState | null = null;
 
   return {
+    // W3P12-001 / Critical C-2: TOFU peer verification. Client calls this
+    // BEFORE any sensitive RPC to confirm it's talking to the real daemon and
+    // not a same-UID squatter. Un-gated (no auth / unlock check) on purpose:
+    // gating this would deadlock the handshake since auth.setSession runs
+    // AFTER verification.
+    "identity.sign": async (params) => {
+      const nonce = params.nonce as string | undefined;
+      if (!nonce || typeof nonce !== "string") {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "nonce is required" };
+      }
+      if (nonce.length === 0 || nonce.length > 512) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "nonce must be 1..512 chars",
+        };
+      }
+      const signature = await signChallenge(identity, nonce);
+      return {
+        signature,
+        publicKey: identity.publicKey,
+        sessionStartMs: identity.sessionStartMs,
+      };
+    },
+
     // The daemon does NOT auto-refresh sessions. The CLI is responsible for
     // refreshing the session token and calling auth.setSession with the new
     // token before the stored one expires. The daemon only tracks whether the
@@ -508,9 +537,8 @@ export interface DaemonServer {
  * Start the daemon IPC server on a Unix domain socket.
  * Returns a handle for graceful shutdown.
  */
-export function startServer(config: DaemonConfig): DaemonServer {
+export async function startServer(config: DaemonConfig): Promise<DaemonServer> {
   const vault = new VaultState(config.autoLockMs);
-  const handlers = buildHandlers(vault, config);
 
   vault.setAutoLockCallback(() => {
     console.log("[vaultd] Auto-locked after inactivity");
@@ -531,6 +559,13 @@ export function startServer(config: DaemonConfig): DaemonServer {
       `[vaultd] FATAL: Socket parent dir ${socketDir} has perms ${dirMode.toString(8)}, expected 700`,
     );
   }
+
+  // W3P12-001 / Critical C-2: load or create the daemon's Ed25519 keypair
+  // BEFORE the socket starts accepting connections. This ensures
+  // `identity.sign` handler has the identity in memory the first time a
+  // client calls it for TOFU fingerprint pinning.
+  const identity = await loadOrCreateDaemonIdentity(socketDir);
+  const handlers = buildHandlers(vault, config, identity);
 
   // Clean up stale socket file
   try {

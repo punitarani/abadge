@@ -15,10 +15,42 @@ import {
   startDaemon,
   stopDaemon,
 } from "@abadge/daemon";
-import { requireConfig } from "./config";
+import {
+  loadConfig,
+  readPinnedDaemonFingerprint,
+  requireConfig,
+  writePinnedDaemonFingerprint,
+} from "./config";
+
+/**
+ * Build a DaemonClient wired with the CLI's persistent-pin storage. The
+ * handshake callbacks route through the CLI config so TOFU pinning survives
+ * restarts — the daemon package itself deliberately doesn't import CLI
+ * storage to keep the layering clean (W3P12-001 / Critical C-2).
+ */
+function createClient(): DaemonClient {
+  return new DaemonClient({
+    getPinnedFingerprint: readPinnedDaemonFingerprint,
+    onFirstContact: async (fingerprint) => {
+      const config = loadConfig();
+      console.warn(`[abadge] Pinned daemon identity: ${fingerprint}`);
+      if (!config) {
+        // Pre-login: no config file yet, so the pin can't be persisted now.
+        // The Ed25519 signature still verifies this session; the pin will be
+        // written on the next sensitive call once `saveConfig({ apiUrl })`
+        // runs (login flow).
+        console.warn(
+          "[abadge] Config not yet initialised; fingerprint will be persisted after login.",
+        );
+        return;
+      }
+      await writePinnedDaemonFingerprint(fingerprint, config.apiUrl);
+    },
+  });
+}
 
 async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): Promise<T> {
-  const client = new DaemonClient();
+  const client = createClient();
   return run(client);
 }
 
@@ -115,9 +147,9 @@ export function stopDaemonProcess(): boolean {
   return stopDaemon();
 }
 
-export function serveDaemon(): void {
+export async function serveDaemon(): Promise<void> {
   const config = requireConfig();
-  startDaemon({
+  await startDaemon({
     apiUrl: config.apiUrl,
   });
 }

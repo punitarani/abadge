@@ -1,4 +1,6 @@
 import { connect } from "node:net";
+import { generateOpaqueToken, verifyEd25519 } from "@abadge/crypto";
+import { computeFingerprint } from "./identity";
 import { defaultSocketPath } from "./paths";
 import type {
   DaemonAuthHeaders,
@@ -14,17 +16,134 @@ import type {
   VaultStatus,
 } from "./types";
 
+/**
+ * Methods that touch the operator's master password, Better Auth bearer, or
+ * plaintext secrets. These MUST pass the TOFU handshake before the frame is
+ * written to the socket — otherwise a same-UID squatter would silently
+ * capture credentials (W3P12-001 / Critical C-2).
+ */
+const SENSITIVE_RPC_METHODS = new Set<string>([
+  "auth.setSession",
+  "vault.unlock",
+  "vault.changePassword",
+  "item.encrypt",
+  "item.decrypt",
+  "item.rekey",
+  "exec.env",
+  "exec.expandEnv",
+  "exec.mount",
+]);
+
+export interface DaemonIdentityCallbacks {
+  /** Read the pinned daemon fingerprint from persistent storage. */
+  getPinnedFingerprint?: () => Promise<string | null>;
+  /** Called exactly once when a new fingerprint is pinned (TOFU). */
+  onFirstContact?: (fingerprint: string) => Promise<void>;
+  /** Build the mismatch error. Default: a loud Error. */
+  onMismatch?: (expected: string, actual: string) => Error;
+}
+
+export interface DaemonClientOptions extends DaemonIdentityCallbacks {
+  socketPath?: string;
+}
+
+function defaultMismatchError(expected: string, actual: string): Error {
+  return new Error(
+    `DAEMON_IDENTITY_CHANGED: expected ${expected}, got ${actual}.\n` +
+      "If this was unexpected, your machine may be compromised. Investigate before re-pinning.\n" +
+      "To re-pin: delete the daemonFingerprint field from ~/.abadge/config.json.",
+  );
+}
+
 /** Low-level client that sends JSON-RPC requests over a Unix socket. */
 export class DaemonClient {
   private socketPath: string;
   private nextId = 1;
+  private verifiedFingerprint: string | null = null;
+  private getPinnedFingerprint?: () => Promise<string | null>;
+  private onFirstContact?: (fingerprint: string) => Promise<void>;
+  private onMismatch: (expected: string, actual: string) => Error;
+  private verifyInFlight: Promise<string> | null = null;
 
-  constructor(socketPath?: string) {
-    this.socketPath = socketPath ?? defaultSocketPath();
+  /**
+   * Accepts either a plain socket path (back-compat) or a full options bag.
+   * When callbacks are omitted the handshake is still performed but mismatches
+   * fall back to the default hard-fail — callers that can't plumb pinned
+   * storage (tests, one-shot scripts) still benefit from signature verification
+   * even without persistent pinning.
+   */
+  constructor(options?: string | DaemonClientOptions) {
+    if (typeof options === "string" || options === undefined) {
+      this.socketPath = options ?? defaultSocketPath();
+    } else {
+      this.socketPath = options.socketPath ?? defaultSocketPath();
+      this.getPinnedFingerprint = options.getPinnedFingerprint;
+      this.onFirstContact = options.onFirstContact;
+      this.onMismatch = options.onMismatch ?? defaultMismatchError;
+      return;
+    }
+    this.onMismatch = defaultMismatchError;
   }
 
-  /** Send a JSON-RPC request and wait for the response. */
-  private send(method: string, params?: Record<string, unknown>): Promise<unknown> {
+  /**
+   * Perform the TOFU handshake: send `identity.sign` with a fresh nonce,
+   * verify the Ed25519 signature, then check the fingerprint against storage
+   * (pin on first contact, hard-fail on mismatch). Cached for the lifetime of
+   * the DaemonClient instance to amortize across multiple sensitive calls.
+   */
+  private async ensureVerified(method: string): Promise<void> {
+    if (!SENSITIVE_RPC_METHODS.has(method)) return;
+    if (this.verifiedFingerprint !== null) return;
+
+    // Guard against parallel sensitive calls racing the handshake. The first
+    // caller performs the RPC; everyone else awaits the in-flight promise.
+    if (!this.verifyInFlight) {
+      this.verifyInFlight = this.performHandshake().finally(() => {
+        this.verifyInFlight = null;
+      });
+    }
+    const fingerprint = await this.verifyInFlight;
+    this.verifiedFingerprint = fingerprint;
+  }
+
+  private async performHandshake(): Promise<string> {
+    const nonce = generateOpaqueToken("abn_");
+    const result = (await this.sendRaw("identity.sign", { nonce })) as {
+      signature?: unknown;
+      publicKey?: unknown;
+      sessionStartMs?: unknown;
+    };
+    const signature = typeof result.signature === "string" ? result.signature : null;
+    const publicKey = typeof result.publicKey === "string" ? result.publicKey : null;
+    const sessionStartMs = typeof result.sessionStartMs === "number" ? result.sessionStartMs : null;
+    if (!signature || !publicKey || sessionStartMs === null) {
+      throw new Error("DAEMON_IDENTITY_VERIFICATION_FAILED: malformed identity.sign response");
+    }
+    const ok = await verifyEd25519(publicKey, `${nonce}|${sessionStartMs}`, signature);
+    if (!ok) {
+      throw new Error("DAEMON_IDENTITY_VERIFICATION_FAILED: signature check failed");
+    }
+    const fingerprint = await computeFingerprint(publicKey);
+
+    const pinned = this.getPinnedFingerprint ? await this.getPinnedFingerprint() : null;
+    if (pinned === null) {
+      if (this.onFirstContact) {
+        await this.onFirstContact(fingerprint);
+      }
+    } else if (pinned !== fingerprint) {
+      throw this.onMismatch(pinned, fingerprint);
+    }
+    return fingerprint;
+  }
+
+  /** Send a JSON-RPC request and wait for the response (gated by handshake). */
+  private async send(method: string, params?: Record<string, unknown>): Promise<unknown> {
+    await this.ensureVerified(method);
+    return this.sendRaw(method, params);
+  }
+
+  /** Send a JSON-RPC request without handshake gating (used by handshake itself). */
+  private sendRaw(method: string, params?: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const req: JsonRpcRequest = {
         jsonrpc: "2.0",
@@ -200,7 +319,8 @@ export async function daemonExpandEnv(
   serverPayload: unknown,
   command: string,
   args: string[],
+  options?: DaemonIdentityCallbacks,
 ): Promise<{ exitCode: number }> {
-  const client = new DaemonClient();
+  const client = new DaemonClient({ ...(options ?? {}) });
   return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args);
 }

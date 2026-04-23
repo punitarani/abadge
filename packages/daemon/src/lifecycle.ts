@@ -73,7 +73,7 @@ export function clearDaemonState(partial: Partial<DaemonConfig> = {}): void {
  * Start the vaultd daemon.
  * Throws if another daemon is already running.
  */
-export function startDaemon(partial: Partial<DaemonConfig> = {}): DaemonServer {
+export async function startDaemon(partial: Partial<DaemonConfig> = {}): Promise<DaemonServer> {
   const config = resolveConfig(partial);
 
   const existingPid = readPid(config.pidPath);
@@ -87,7 +87,7 @@ export function startDaemon(partial: Partial<DaemonConfig> = {}): DaemonServer {
 
   let server: DaemonServer;
   try {
-    server = startServer(config);
+    server = await startServer(config);
   } catch (error) {
     clearDaemonState(config);
     throw error;
