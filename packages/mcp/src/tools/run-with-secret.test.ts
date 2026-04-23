@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { validateEnvVarName } from "@abadge/core";
 import { MAX_OUTPUT_BYTES, PRE_REDACT_CAP_BYTES, runCommand } from "./run-with-secret";
 
 const nodeBinary = process.execPath; // bun or node — either can run a -e script
@@ -60,5 +61,64 @@ describe("run_with_secret OOM bound", () => {
 
     expect(result.stderrTruncated).toBe(true);
     expect(Buffer.byteLength(result.stderr, "utf8")).toBeLessThanOrEqual(PRE_REDACT_CAP_BYTES);
+  });
+});
+
+describe("run_with_secret envVarName validation (W3P10-001)", () => {
+  test("rejects LD_PRELOAD", () => {
+    const result = validateEnvVarName("LD_PRELOAD");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("reserved");
+  });
+
+  test("rejects NODE_OPTIONS", () => {
+    const result = validateEnvVarName("NODE_OPTIONS");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("reserved");
+  });
+
+  test("rejects BASH_ENV", () => {
+    const result = validateEnvVarName("BASH_ENV");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("reserved");
+  });
+
+  test("rejects DYLD_INSERT_LIBRARIES", () => {
+    const result = validateEnvVarName("DYLD_INSERT_LIBRARIES");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("reserved");
+  });
+
+  test("accepts ABADGE_SECRET (default)", () => {
+    const result = validateEnvVarName("ABADGE_SECRET");
+    expect(result.ok).toBe(true);
+  });
+
+  test("accepts custom MY_API_KEY", () => {
+    const result = validateEnvVarName("MY_API_KEY");
+    expect(result.ok).toBe(true);
+  });
+
+  test("accepts names starting with underscore (POSIX-valid)", () => {
+    const result = validateEnvVarName("_MY_VAR");
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects lowercase env var names", () => {
+    const result = validateEnvVarName("my_secret");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("invalid_format");
+  });
+
+  test("rejects empty-string envVarName", () => {
+    const result = validateEnvVarName("");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("invalid_format");
+  });
+
+  test("rejects names starting with a digit", () => {
+    const result = validateEnvVarName("1SECRET");
+    expect(result.ok).toBe(false);
+    expect((result as { ok: false; reason: string }).reason).toBe("invalid_format");
   });
 });

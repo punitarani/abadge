@@ -9,7 +9,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { expandFieldSelection, resolveFieldValue } from "@abadge/core";
+import {
+  ENV_VAR_NAME_PATTERN,
+  expandFieldSelection,
+  RESERVED_ENV_KEYS,
+  resolveFieldValue,
+} from "@abadge/core";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { defaultPidPath, defaultSocketPath } from "./paths";
@@ -33,49 +38,11 @@ import { VaultState } from "./vault-state";
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
 
-/** Shell-safe env var name: POSIX identifier. */
-const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
-
-/**
- * Env vars that can alter loader/interpreter behavior of the child process.
- * Injecting these from caller-controlled data would let a malicious or
- * compromised agent hijack subprocess execution (local privilege escalation
- * from agent-level compromise to arbitrary code in the spawned process).
- */
-const RESERVED_ENV_KEYS = new Set([
-  "PATH",
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-  "LD_AUDIT",
-  "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH",
-  "DYLD_FORCE_FLAT_NAMESPACE",
-  "NODE_OPTIONS",
-  "BUN_INSTALL",
-  "BUN_CONFIG_REGISTRY",
-  "PYTHONPATH",
-  "PYTHONSTARTUP",
-  "HOME",
-  "USER",
-  "SHELL",
-  // Node.js bare-import resolution path (analog of PYTHONPATH).
-  "NODE_PATH",
-  // TLS trust / proxy hijack: redirect or MITM outbound TLS from the child.
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "ALL_PROXY",
-  "NO_PROXY",
-  // Shell loader hijack: alter startup or word-splitting of a spawned shell.
-  "BASH_ENV",
-  "ENV",
-  "IFS",
-]);
+// RESERVED_ENV_KEYS and ENV_VAR_NAME_PATTERN are imported from @abadge/core
+// (see import above) — single authoritative source shared with MCP (W3P10-001).
 
 function validateEnvKey(key: string): void {
-  if (!ENV_KEY_PATTERN.test(key)) {
+  if (!ENV_VAR_NAME_PATTERN.test(key)) {
     throw {
       code: RPC_ERRORS.INVALID_PARAMS,
       message: `Invalid env key: ${JSON.stringify(key)}. Must match [A-Z_][A-Z0-9_]*.`,

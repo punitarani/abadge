@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { validateEnvVarName } from "@abadge/core";
 import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
@@ -133,6 +134,18 @@ export async function handler(
   const secret = await resolveSecret(client, input.itemId, "env", input.field, input.purpose);
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
+
+  // Reject reserved env vars (RESERVED_ENV_KEYS shared with daemon's exec.env
+  // blocklist — same loader/runtime escalation surface). Also rejects malformed
+  // names (not matching POSIX [A-Z_][A-Z0-9_]*).
+  const envVarValidation = validateEnvVarName(envVarName);
+  if (!envVarValidation.ok) {
+    if (envVarValidation.reason === "reserved") {
+      throw new Error(`Refusing to inject secret into reserved env var: ${envVarName}`);
+    }
+    throw new Error(`Invalid env var name: ${envVarName}. Must match /^[A-Z_][A-Z0-9_]*$/.`);
+  }
+
   const childEnv = { ...globalThis.process?.env, [envVarName]: secret };
 
   const { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated } = await runCommand(
