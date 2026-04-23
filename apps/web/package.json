@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "rm -rf .next",
     "dev": "next dev --turbopack --port 3000",
     "build": "next build",
     "build:workers": "opennextjs-cloudflare build",
