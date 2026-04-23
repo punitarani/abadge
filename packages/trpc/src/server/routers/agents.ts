@@ -8,13 +8,15 @@ import {
   API_KEY_PREFIX,
   agentLocalityForKind,
   BadRequestError,
+  ConflictError,
   type CreateAgentInput,
   CreateAgentSchema,
+  MAX_AGENTS_PER_ORG,
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, count, eq, isNull } from "@abadge/db";
 import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -76,6 +78,24 @@ const createAgent = (input: CreateAgentInput) =>
           message:
             "public_key_session agents require either a publicKey or issueBootstrapToken: true",
           hint: "Provide a public key or request a bootstrap token for public_key_session agents.",
+        }),
+      );
+    }
+
+    // §AGC1a — Enforce per-org agent quota before insert.
+    const [countRow] = yield* tryAsync(() =>
+      ctx.db
+        .select({ count: count() })
+        .from(agentRecords)
+        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
+    );
+    if ((countRow?.count ?? 0) >= MAX_AGENTS_PER_ORG) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "CONFLICT",
+          message: `Organization has reached the ${MAX_AGENTS_PER_ORG} agent limit`,
+          hint: "Delete or revoke unused agents before creating new ones.",
+          meta: { currentCount: countRow?.count ?? 0, limit: MAX_AGENTS_PER_ORG },
         }),
       );
     }

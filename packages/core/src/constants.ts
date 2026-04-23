@@ -137,6 +137,15 @@ export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+/** §AGC1a — Maximum agents per organization. */
+export const MAX_AGENTS_PER_ORG = 500;
+
+/** §AGC1b — Maximum serialized JSON bytes for agent metadata. */
+export const MAX_AGENT_METADATA_JSON_BYTES = 16 * 1024; // 16 KB
+
+/** §AGC1b — Maximum nesting depth for agent metadata JSON. */
+export const MAX_AGENT_METADATA_DEPTH = 8;
+
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"): AgentLocality {
   switch (kind) {

@@ -6,11 +6,79 @@ import {
   AUDIT_RESULTS,
   CAPABILITIES,
   ITEM_KINDS,
+  MAX_AGENT_METADATA_DEPTH,
+  MAX_AGENT_METADATA_JSON_BYTES,
   STORAGE_MODES,
 } from "./constants";
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
-const BoundedNameString = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(255));
+
+// §AGC1b — iterative depth check: avoids stack-overflow on adversarial input.
+function jsonDepth(root: unknown): number {
+  let maxDepth = 0;
+  // [value, depth] pairs
+  const stack: Array<[unknown, number]> = [[root, 0]];
+  while (stack.length > 0) {
+    // biome-ignore lint/style/noNonNullAssertion: stack.length > 0 checked above
+    const [value, depth] = stack.pop()!;
+    if (depth > maxDepth) maxDepth = depth;
+    // Short-circuit: no need to go deeper once we exceeded the limit.
+    if (maxDepth > MAX_AGENT_METADATA_DEPTH) return maxDepth;
+    if (typeof value === "object" && value !== null) {
+      const children = Array.isArray(value) ? value : Object.values(value);
+      for (const child of children) {
+        stack.push([child, depth + 1]);
+      }
+    }
+  }
+  return maxDepth;
+}
+
+// §AGC1d — Reject names that are pure whitespace or contain zero-width /
+// bidi-control characters commonly used to disguise identifiers.
+// Keep maxLength at 255 to preserve existing data compatibility.
+const BoundedNameString = Schema.String.pipe(
+  Schema.minLength(1),
+  Schema.maxLength(255),
+  Schema.filter((s) => {
+    if (s.trim().length === 0) return "name cannot be empty or whitespace-only";
+    // Reject: U+200B–U+200F (zero-width + LRM/RLM), U+202A–U+202E (bidi embeds/overrides),
+    // U+2066–U+2069 (bidi isolates), U+FEFF (ZWNBSP/BOM), U+180E (Mongolian vowel separator).
+    if (/[​-‏‪-‮⁦-⁩﻿᠎]/.test(s)) {
+      return "name contains zero-width or bidi-control characters";
+    }
+    return true;
+  }),
+);
+
+// §AGC1e — publicKey must be a JSON-serialised JWK with kty:"OKP" and crv:"Ed25519".
+// The codebase stores the result of JSON.stringify(crypto.subtle.exportKey("jwk", ...))
+// which produces ~111-char strings like {"crv":"Ed25519","ext":true,"key_ops":["verify"],"kty":"OKP","x":"..."}.
+// We validate structure rather than a raw base64url pattern.
+const AgentPublicKeyString = Schema.String.pipe(
+  Schema.minLength(50), // JWK with Ed25519 x-value is at least ~80 chars; 50 gives room
+  Schema.maxLength(1024), // generous upper bound; real JWKs are ~111 chars
+  Schema.filter((s) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(s);
+    } catch {
+      return 'publicKey must be a JSON-serialised JWK (e.g. from crypto.subtle.exportKey("jwk", ...))';
+    }
+    const jwk = parsed as Record<string, unknown>;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      jwk.kty !== "OKP" ||
+      jwk.crv !== "Ed25519" ||
+      typeof jwk.x !== "string" ||
+      (jwk.x as string).length < 40
+    ) {
+      return 'publicKey JWK must have kty:"OKP", crv:"Ed25519", and a valid x field';
+    }
+    return true;
+  }),
+);
 const IsoDateString = Schema.String;
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown });
 const NullableIsoDateString = Schema.NullOr(IsoDateString);
@@ -112,7 +180,7 @@ const CreateAgentSchemaBase = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
   authMethod: Schema.optional(AgentAuthMethodSchema),
-  publicKey: Schema.optional(NonEmptyString),
+  publicKey: Schema.optional(AgentPublicKeyString), // §AGC1e — JWK format
   issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
 });
@@ -127,6 +195,37 @@ export const CreateAgentSchema = CreateAgentSchemaBase.pipe(
       return "Legacy API-key agents cannot issue bootstrap tokens.";
     }
 
+    // §AGC1c — reject ambiguous combo: public_key_session with BOTH publicKey
+    // and issueBootstrapToken set. Callers must specify exactly one.
+    const isPublicKeySession =
+      input.authMethod === "public_key_session" || input.authMethod === undefined;
+    if (isPublicKeySession && input.publicKey && input.issueBootstrapToken === true) {
+      return "public_key_session agents: specify either publicKey OR issueBootstrapToken, not both.";
+    }
+
+    // §AGC1b — metadata size (UTF-16 code units; TextEncoder is unavailable in
+    // Effect Schema filter which runs in both browser and CF Workers). JSON.stringify
+    // length is an upper bound on actual UTF-8 bytes because every ASCII char ≤1 byte;
+    // multi-byte chars are fewer in code units than bytes only for >U+FFFF, which are
+    // rare. The 16 KB cap here is a "good enough" guard — a body-limit middleware
+    // (§DoS2) enforces the hard 1 MB ceiling. Depth check runs first to guard against
+    // a pathological tree that causes stringify to stack-overflow.
+    if (input.metadata !== undefined) {
+      const depth = jsonDepth(input.metadata);
+      if (depth > MAX_AGENT_METADATA_DEPTH) {
+        return `metadata nesting exceeds ${MAX_AGENT_METADATA_DEPTH} levels (got ${depth}).`;
+      }
+      let serialized: string;
+      try {
+        serialized = JSON.stringify(input.metadata);
+      } catch {
+        return "metadata contains circular references or non-serializable values.";
+      }
+      if (serialized.length > MAX_AGENT_METADATA_JSON_BYTES) {
+        return `metadata exceeds ${MAX_AGENT_METADATA_JSON_BYTES} bytes (got ${serialized.length}).`;
+      }
+    }
+
     return true;
   }),
 );
@@ -137,7 +236,7 @@ export const IssueAgentBootstrapTokenSchema = Schema.Struct({
 
 export const EnrollAgentSchema = Schema.Struct({
   bootstrapToken: NonEmptyString,
-  publicKey: NonEmptyString,
+  publicKey: AgentPublicKeyString, // §AGC1e — JWK format validation
 });
 
 export const CreateAgentChallengeSchema = Schema.Struct({
