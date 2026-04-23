@@ -30,8 +30,14 @@ describe("multi-org bootstrap trap (§ORG2)", () => {
 
   test("user with 2 orgs can call organizations.list WITHOUT X-Abadge-Org-Id", async () => {
     const user = await seedUser(auth);
-    await seedOrg(auth, user.userId, { name: "Alpha", slug: `alpha-${crypto.randomUUID().slice(0, 8)}` });
-    await seedOrg(auth, user.userId, { name: "Beta", slug: `beta-${crypto.randomUUID().slice(0, 8)}` });
+    await seedOrg(auth, user.userId, {
+      name: "Alpha",
+      slug: `alpha-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await seedOrg(auth, user.userId, {
+      name: "Beta",
+      slug: `beta-${crypto.randomUUID().slice(0, 8)}`,
+    });
 
     // No orgId — this was the trigger for ORG_HEADER_REQUIRED before the fix.
     const caller = createOperatorCaller(db, auth, user.headers);
@@ -42,8 +48,14 @@ describe("multi-org bootstrap trap (§ORG2)", () => {
 
   test("user with 2 orgs can call organizations.create WITHOUT X-Abadge-Org-Id", async () => {
     const user = await seedUser(auth);
-    await seedOrg(auth, user.userId, { name: "Alpha", slug: `alpha-${crypto.randomUUID().slice(0, 8)}` });
-    await seedOrg(auth, user.userId, { name: "Beta", slug: `beta-${crypto.randomUUID().slice(0, 8)}` });
+    await seedOrg(auth, user.userId, {
+      name: "Alpha",
+      slug: `alpha-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await seedOrg(auth, user.userId, {
+      name: "Beta",
+      slug: `beta-${crypto.randomUUID().slice(0, 8)}`,
+    });
 
     const caller = createOperatorCaller(db, auth, user.headers); // no orgId
 
@@ -54,8 +66,14 @@ describe("multi-org bootstrap trap (§ORG2)", () => {
 
   test("user with 2 orgs can call organizations.checkSlug WITHOUT X-Abadge-Org-Id", async () => {
     const user = await seedUser(auth);
-    await seedOrg(auth, user.userId, { name: "Alpha", slug: `alpha-${crypto.randomUUID().slice(0, 8)}` });
-    await seedOrg(auth, user.userId, { name: "Beta", slug: `beta-${crypto.randomUUID().slice(0, 8)}` });
+    await seedOrg(auth, user.userId, {
+      name: "Alpha",
+      slug: `alpha-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await seedOrg(auth, user.userId, {
+      name: "Beta",
+      slug: `beta-${crypto.randomUUID().slice(0, 8)}`,
+    });
 
     const caller = createOperatorCaller(db, auth, user.headers);
 
@@ -67,8 +85,14 @@ describe("multi-org bootstrap trap (§ORG2)", () => {
 
   test("user with 2 orgs CAN still pass X-Abadge-Org-Id explicitly (unchanged path)", async () => {
     const user = await seedUser(auth);
-    const alpha = await seedOrg(auth, user.userId, { name: "Alpha", slug: `alpha-${crypto.randomUUID().slice(0, 8)}` });
-    await seedOrg(auth, user.userId, { name: "Beta", slug: `beta-${crypto.randomUUID().slice(0, 8)}` });
+    const alpha = await seedOrg(auth, user.userId, {
+      name: "Alpha",
+      slug: `alpha-${crypto.randomUUID().slice(0, 8)}`,
+    });
+    await seedOrg(auth, user.userId, {
+      name: "Beta",
+      slug: `beta-${crypto.randomUUID().slice(0, 8)}`,
+    });
 
     const caller = createOperatorCaller(db, auth, user.headers, alpha.orgId);
 
@@ -127,6 +151,6 @@ describe("invite accept by 0-membership user (§I4)", () => {
     // Invitee now has 1 membership and can list orgs.
     const listResult = await inviteeCaller.organizations.list();
     expect(listResult.organizations).toHaveLength(1);
-    expect(listResult.organizations[0]!.id).toBe(org.orgId);
+    expect(listResult.organizations[0]?.id).toBe(org.orgId);
   });
 });

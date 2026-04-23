@@ -3,8 +3,8 @@ import { eq } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { seedMember, seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { TEST_ENV } from "../helpers/test-env";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
+import { TEST_ENV } from "../helpers/test-env";
 
 /**
  * Better Auth org-plugin RBAC tests (W3P8-001)
@@ -47,25 +47,22 @@ describe("Better Auth org-plugin RBAC (W3P8-001)", () => {
       .select({ id: member.id, role: member.role })
       .from(member)
       .where(eq(member.userId, bob.userId));
-    expect(bobRow).toBeDefined();
-    const bobMemberId = bobRow!.id;
+    if (!bobRow) throw new Error("test invariant: bob membership was not seeded");
+    const bobMemberId = bobRow.id;
 
     // Alice (admin) fires the Better Auth HTTP endpoint to promote bob to admin.
     // Build the headers by forwarding alice's session headers then setting content-type.
     const reqHeaders = new Headers(alice.headers);
     reqHeaders.set("content-type", "application/json");
-    const req = new Request(
-      `${baseUrl}/api/auth/organization/update-member-role`,
-      {
-        method: "POST",
-        headers: reqHeaders,
-        body: JSON.stringify({
-          memberId: bobMemberId,
-          role: "admin",
-          organizationId: orgId,
-        }),
-      },
-    );
+    const req = new Request(`${baseUrl}/api/auth/organization/update-member-role`, {
+      method: "POST",
+      headers: reqHeaders,
+      body: JSON.stringify({
+        memberId: bobMemberId,
+        role: "admin",
+        organizationId: orgId,
+      }),
+    });
 
     const res = await auth.handler(req);
     expect(res.status).toBe(403);
@@ -95,22 +92,20 @@ describe("Better Auth org-plugin RBAC (W3P8-001)", () => {
       .select({ id: member.id, role: member.role })
       .from(member)
       .where(eq(member.userId, bob.userId));
-    const bobMemberId = bobRow!.id;
+    if (!bobRow) throw new Error("test invariant: bob membership was not seeded");
+    const bobMemberId = bobRow.id;
 
     const ownerReqHeaders = new Headers(owner.headers);
     ownerReqHeaders.set("content-type", "application/json");
-    const req = new Request(
-      `${baseUrl}/api/auth/organization/update-member-role`,
-      {
-        method: "POST",
-        headers: ownerReqHeaders,
-        body: JSON.stringify({
-          memberId: bobMemberId,
-          role: "admin",
-          organizationId: orgId,
-        }),
-      },
-    );
+    const req = new Request(`${baseUrl}/api/auth/organization/update-member-role`, {
+      method: "POST",
+      headers: ownerReqHeaders,
+      body: JSON.stringify({
+        memberId: bobMemberId,
+        role: "admin",
+        organizationId: orgId,
+      }),
+    });
 
     const res = await auth.handler(req);
     expect(res.status).toBe(200);
