@@ -66,10 +66,10 @@ const createPermission = (input: CreatePermissionInput) =>
       );
     }
 
-    const callerRole = yield* Effect.tryPromise(() =>
+    const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
     );
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       requireAgentOwnership(
         ctx.db,
         input.agentId,
@@ -281,10 +281,10 @@ const revokePermission = (permissionId: string) =>
       );
     }
 
-    const callerRole = yield* Effect.tryPromise(() =>
+    const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
     );
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       requireAgentOwnership(
         ctx.db,
         permission.agentId,
