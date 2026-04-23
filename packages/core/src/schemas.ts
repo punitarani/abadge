@@ -73,6 +73,10 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
+  // Optional CAS: if set, server aborts with CONFLICT when the profile's
+  // current keyVersion differs. Guards against a rotate committing between
+  // the client's wrap (against keyVersion=N) and the insert landing.
+  expectedKeyVersion: Schema.optional(Schema.Int.pipe(Schema.nonNegative())),
 });
 
 export const ServerManagedCreateItemSchema = Schema.Struct({

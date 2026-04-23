@@ -8,7 +8,7 @@ import {
   RekeyedItemSchema,
   SuccessResultSchema,
 } from "@abadge/core";
-import { and, eq, isNull } from "@abadge/db";
+import { and, eq, isNull, sql } from "@abadge/db";
 import { items, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -361,6 +361,11 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     // catch preserves the Error instance, and toTrpcError maps it by isDomainError.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        // Serialize with concurrent items.create on the same profile (§I5-RACE).
+        // Raw SQL because pg_advisory_xact_lock is not expressible in Drizzle's typed API.
+        // The lock is released automatically on txn commit/rollback.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${profileId}))`);
+
         const zkItemsInProfile = await tx
           .select({ id: items.id })
           .from(items)

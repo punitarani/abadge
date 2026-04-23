@@ -14,7 +14,7 @@ import {
   UpdateItemSchema,
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
-import { and, desc, eq, isNull } from "@abadge/db";
+import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit } from "../audit";
@@ -25,6 +25,7 @@ import {
   runSessionEffect,
   SessionRequestContextTag,
   strictSchema,
+  tryAsync,
 } from "../effect";
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
@@ -61,6 +62,89 @@ const loadOwnedItem = (itemId: string) =>
     return item;
   });
 
+/**
+ * ZK insert under an advisory lock (§I5-RACE).
+ * Resolves the first ZK profile in the org, takes `pg_advisory_xact_lock` on
+ * it, re-reads keyVersion (defending against a rotate that committed between
+ * the profile SELECT and the lock acquisition), optionally enforces CAS via
+ * expectedKeyVersion, then inserts with cryptoVersion tagged to the current
+ * keyVersion. Designed to be called from inside `ctx.db.transaction(...)`.
+ */
+async function insertZeroKnowledgeItem(
+  tx: Transaction,
+  opts: {
+    id: string;
+    userId: string;
+    organizationId: string;
+    label: string;
+    encryptedItemKey: string;
+    ciphertext: string;
+    expectedKeyVersion: number | undefined;
+  },
+): Promise<void> {
+  const [profile] = await tx
+    .select({ id: profiles.id, keyVersion: profiles.keyVersion })
+    .from(profiles)
+    .where(
+      and(
+        eq(profiles.organizationId, opts.organizationId),
+        eq(profiles.storageMode, "zero_knowledge"),
+      ),
+    )
+    .limit(1);
+
+  if (!profile) {
+    throw new NotFoundError({
+      code: "NOT_FOUND",
+      message: "No zero-knowledge profile found",
+      hint: "Create a ZK profile first or use server-managed storage mode.",
+    });
+  }
+
+  // Raw SQL for pg_advisory_xact_lock: not expressible in Drizzle's typed API.
+  // Released automatically on txn commit/rollback.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${profile.id}))`);
+
+  // Re-read keyVersion UNDER the lock; defends against a rotate that committed
+  // between the profile SELECT and the advisory-lock acquisition.
+  const [locked] = await tx
+    .select({ keyVersion: profiles.keyVersion })
+    .from(profiles)
+    .where(eq(profiles.id, profile.id));
+
+  if (!locked) {
+    throw new NotFoundError({
+      code: "NOT_FOUND",
+      message: "Profile disappeared during create",
+      hint: "Retry the request.",
+    });
+  }
+
+  if (opts.expectedKeyVersion !== undefined && locked.keyVersion !== opts.expectedKeyVersion) {
+    throw new ConflictError({
+      code: "CONFLICT",
+      message: "Profile key version advanced during item create",
+      hint: "Re-derive the root key for the current keyVersion and retry.",
+      meta: {
+        expectedKeyVersion: opts.expectedKeyVersion,
+        currentKeyVersion: locked.keyVersion,
+      },
+    });
+  }
+
+  await tx.insert(items).values({
+    id: opts.id,
+    userId: opts.userId,
+    organizationId: opts.organizationId,
+    profileId: profile.id,
+    label: opts.label,
+    storageMode: "zero_knowledge",
+    encryptedItemKey: opts.encryptedItemKey,
+    ciphertext: opts.ciphertext,
+    cryptoVersion: locked.keyVersion,
+  });
+}
+
 const createItem = (input: CreateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -68,40 +152,21 @@ const createItem = (input: CreateItemInput) =>
     const id = crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
-      const [profile] = yield* Effect.tryPromise(() =>
-        ctx.db
-          .select({ id: profiles.id })
-          .from(profiles)
-          .where(
-            and(
-              eq(profiles.organizationId, ctx.identity.organizationId),
-              eq(profiles.storageMode, "zero_knowledge"),
-            ),
-          )
-          .limit(1),
-      );
-
-      if (!profile) {
-        return yield* Effect.fail(
-          new NotFoundError({
-            code: "NOT_FOUND",
-            message: "No zero-knowledge profile found",
-            hint: "Create a ZK profile first or use server-managed storage mode.",
+      // tryAsync (not Effect.tryPromise) preserves the domain Error instance
+      // thrown inside the tx callback, so toTrpcError's isDomainError check
+      // maps ConflictError/NotFoundError to the correct tRPC code + cause.
+      yield* tryAsync(() =>
+        ctx.db.transaction((tx) =>
+          insertZeroKnowledgeItem(tx, {
+            id,
+            userId,
+            organizationId: ctx.identity.organizationId,
+            label: resolveStoredLabel(id, input.label),
+            encryptedItemKey: input.encryptedItemKey,
+            ciphertext: input.ciphertext,
+            expectedKeyVersion: input.expectedKeyVersion,
           }),
-        );
-      }
-
-      yield* Effect.tryPromise(() =>
-        ctx.db.insert(items).values({
-          id,
-          userId,
-          organizationId: ctx.identity.organizationId,
-          profileId: profile.id,
-          label: resolveStoredLabel(id, input.label),
-          storageMode: "zero_knowledge",
-          encryptedItemKey: input.encryptedItemKey,
-          ciphertext: input.ciphertext,
-        }),
+        ),
       );
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
