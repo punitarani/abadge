@@ -1,5 +1,5 @@
-import { ItemPayloadSchema } from "@abadge/core";
 import type { ItemKind, ItemPayload } from "@abadge/core";
+import { ItemPayloadSchema } from "@abadge/core";
 import { Either, Schema } from "effect";
 
 const migrationFallback = (itemId: string, text: string): ItemPayload & { label: string } => ({

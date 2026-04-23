@@ -14,7 +14,11 @@ export async function countOwners(
   excludeMemberId?: string,
 ): Promise<number> {
   const conditions = excludeMemberId
-    ? and(eq(member.organizationId, orgId), eq(member.role, "owner"), ne(member.id, excludeMemberId))
+    ? and(
+        eq(member.organizationId, orgId),
+        eq(member.role, "owner"),
+        ne(member.id, excludeMemberId),
+      )
     : and(eq(member.organizationId, orgId), eq(member.role, "owner"));
 
   const [result] = await db.select({ count: count() }).from(member).where(conditions);

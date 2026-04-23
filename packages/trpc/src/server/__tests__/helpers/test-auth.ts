@@ -1,5 +1,5 @@
-import type { Database } from "@abadge/db";
 import { orgPluginAcOptions } from "@abadge/auth";
+import type { Database } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization, testUtils } from "better-auth/plugins";

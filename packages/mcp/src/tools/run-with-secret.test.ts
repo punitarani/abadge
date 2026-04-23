@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { validateEnvVarName } from "@abadge/core";
 import * as apiClientModule from "../api-client.js";
 import * as resolveSecretModule from "../resolve-secret.js";
-import { handler, MAX_OUTPUT_BYTES, STREAM_CAP_BYTES, runCommand } from "./run-with-secret";
+import { handler, MAX_OUTPUT_BYTES, runCommand, STREAM_CAP_BYTES } from "./run-with-secret";
 
 const nodeBinary = process.execPath; // bun or node — either can run a -e script
 
@@ -390,7 +390,12 @@ describe("handler response shape — §RED1", () => {
     expect(result).not.toContain(secret);
     expect(result).not.toContain(base64Secret);
     // Only these four keys must be present.
-    expect(Object.keys(parsed).sort()).toEqual(["durationMs", "exitCode", "outputLineCount", "truncated"]);
+    expect(Object.keys(parsed).sort()).toEqual([
+      "durationMs",
+      "exitCode",
+      "outputLineCount",
+      "truncated",
+    ]);
 
     clientSpy.mockRestore();
     secretSpy.mockRestore();

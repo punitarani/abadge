@@ -65,10 +65,10 @@ describe("AbadgeApiError", () => {
   });
 
   test("fromResponse returns empty array for empty issues array (distinguishable from missing)", async () => {
-    const res = new Response(
-      JSON.stringify({ error: "x", code: "VALIDATION_ERROR", issues: [] }),
-      { status: 400, headers: { "content-type": "application/json" } },
-    );
+    const res = new Response(JSON.stringify({ error: "x", code: "VALIDATION_ERROR", issues: [] }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
     const err = await AbadgeApiError.fromResponse(res, "fallback");
     expect(err.issues).toBeDefined();
     expect(err.issues).toHaveLength(0);
@@ -88,10 +88,10 @@ describe("AbadgeApiError", () => {
   });
 
   test("fromResponse handles missing issues", async () => {
-    const res = new Response(
-      JSON.stringify({ error: "x", code: "UNAUTHORIZED" }),
-      { status: 401, headers: { "content-type": "application/json" } },
-    );
+    const res = new Response(JSON.stringify({ error: "x", code: "UNAUTHORIZED" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
     const err = await AbadgeApiError.fromResponse(res, "fallback");
     expect(err.issues).toBeUndefined();
   });
@@ -103,9 +103,7 @@ describe("AbadgeApiError", () => {
         httpStatus: 400,
         code: "VALIDATION_ERROR",
         hint: "fix the fields",
-        issues: [
-          { path: ["input", "name"], message: "required" },
-        ],
+        issues: [{ path: ["input", "name"], message: "required" }],
       },
     };
     const err = AbadgeApiError.fromUnknown(trpcLike, "fallback");

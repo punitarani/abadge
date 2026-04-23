@@ -525,9 +525,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
         .where(lt(agentSessionChallenges.expiresAt, new Date(Date.now() - 60 * 60 * 1000))),
     ).pipe(
       Effect.catchAll((err) => {
-        console.warn(
-          `challenge_gc_failed err=${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.warn(`challenge_gc_failed err=${err instanceof Error ? err.message : String(err)}`);
         return Effect.void;
       }),
     );

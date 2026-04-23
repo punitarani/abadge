@@ -173,9 +173,7 @@ const createItem = (input: CreateItemInput) =>
       );
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* tryAsync(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
-      );
+      const encrypted = yield* tryAsync(() => serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1));
 
       yield* tryAsync(() =>
         ctx.db.insert(items).values({
@@ -300,9 +298,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* tryAsync(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
-      );
+      const encrypted = yield* tryAsync(() => serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1));
 
       const updated = yield* tryAsync(() =>
         ctx.db

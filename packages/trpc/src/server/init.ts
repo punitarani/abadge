@@ -2,7 +2,7 @@ import { ForbiddenError, NotFoundError } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
 import { agents, member } from "@abadge/db/schema";
-import { TRPCError, initTRPC } from "@trpc/server";
+import { initTRPC, type TRPCError } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
 import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
