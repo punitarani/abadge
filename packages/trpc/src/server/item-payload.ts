@@ -1,4 +1,14 @@
+import { ItemPayloadSchema } from "@abadge/core";
 import type { ItemPayload } from "@abadge/core";
+import { Either, Schema } from "effect";
+
+const migrationFallback = (itemId: string, text: string): ItemPayload & { label: string } => ({
+  v: 1,
+  label: `migrated-${itemId.slice(0, 8)}`,
+  kind: "opaque",
+  tags: ["migrated"],
+  fields: { value: text },
+});
 
 export function decodeServerManagedPayload(
   itemId: string,
@@ -6,36 +16,26 @@ export function decodeServerManagedPayload(
 ): ItemPayload & { label: string } {
   const text = new TextDecoder().decode(decrypted);
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text);
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      "v" in parsed &&
-      typeof parsed.v === "number" &&
-      "label" in parsed &&
-      typeof parsed.label === "string" &&
-      "kind" in parsed &&
-      parsed.kind === "opaque" &&
-      "tags" in parsed &&
-      Array.isArray(parsed.tags) &&
-      parsed.tags.every((tag: unknown) => typeof tag === "string") &&
-      "fields" in parsed &&
-      parsed.fields &&
-      typeof parsed.fields === "object" &&
-      !Array.isArray(parsed.fields)
-    ) {
-      return parsed as ItemPayload & { label: string };
-    }
+    parsed = JSON.parse(text);
   } catch {
     // Migrated items were stored as raw strings rather than structured payloads.
+    return migrationFallback(itemId, text);
   }
 
+  const result = Schema.decodeUnknownEither(ItemPayloadSchema)(parsed);
+  if (Either.isLeft(result)) {
+    return migrationFallback(itemId, text);
+  }
+
+  const decoded = result.right;
   return {
-    v: 1,
-    label: `migrated-${itemId.slice(0, 8)}`,
-    kind: "opaque",
-    tags: ["migrated"],
-    fields: { value: text },
-  };
+    ...decoded,
+    label: decoded.label ?? `migrated-${itemId.slice(0, 8)}`,
+    kind: decoded.kind ?? "opaque",
+  } as ItemPayload & { label: string };
 }
+
+// Alias export matching the single public helper contract.
+export const decodePayload = decodeServerManagedPayload;
