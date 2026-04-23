@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
+  buildInviteAcceptAuditRow,
   buildInviteCancelAuditRow,
   buildInviteCreateAuditRow,
   buildInviteRejectAuditRow,
@@ -79,6 +80,12 @@ function createHookedTestAuth(db: Database): any {
             await safeAuditInsert(
               db,
               buildInviteCreateAuditRow({ invitation, organization: org, inviter }),
+            );
+          },
+          afterAcceptInvitation: async ({ invitation, user, organization: org }) => {
+            await safeAuditInsert(
+              db,
+              buildInviteAcceptAuditRow({ invitation, organization: org, user }),
             );
           },
           afterRejectInvitation: async ({ invitation, user, organization: org }) => {
