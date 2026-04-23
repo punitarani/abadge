@@ -2,7 +2,58 @@ import type { Database } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
 import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow, safeAuditInsert } from "./audit-hooks";
+
+// Custom access-control for the organization plugin.
+// Admin loses member:"update" so the Better Auth HTTP endpoint
+// /api/auth/organization/update-member-role rejects admin callers.
+// All role mutations must go through abadge's tRPC updateMemberRole
+// (owner-only, guarded by assertOwnersRemainAfterChange).
+const _orgAc = createAccessControl({
+  organization: ["update", "delete"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+  team: ["create", "update", "delete"],
+  ac: ["create", "read", "update", "delete"],
+} as const);
+
+/**
+ * Shared organization plugin access-control options.
+ * Use by spreading into `organization({...})` in both production and test auth.
+ * Typed as `{ ac: any; roles: any }` to avoid cross-package type incompatibility:
+ * bun may resolve different `better-auth` cache entries for each workspace
+ * package, causing the concrete AccessControl/Role types to be structurally
+ * incompatible across the package boundary even at the same semver.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: Better Auth AccessControl type is not portable across package boundaries
+export const orgPluginAcOptions: { ac: any; roles: any } = {
+  // biome-ignore lint/suspicious/noExplicitAny: see above
+  ac: _orgAc as any,
+  roles: {
+    admin: _orgAc.newRole({
+      organization: ["update"],
+      invitation: ["create", "cancel"],
+      member: ["create", "delete"], // NO "update" — blocks role promotion via Better Auth plugin route
+      team: ["create", "update", "delete"],
+      ac: ["create", "read", "update", "delete"],
+    }),
+    owner: _orgAc.newRole({
+      organization: ["update", "delete"],
+      member: ["create", "update", "delete"],
+      invitation: ["create", "cancel"],
+      team: ["create", "update", "delete"],
+      ac: ["create", "read", "update", "delete"],
+    }),
+    member: _orgAc.newRole({
+      organization: [],
+      member: [],
+      invitation: [],
+      team: [],
+      ac: ["read"],
+    }),
+  },
+};
 
 export interface AuthEnv {
   ABADGE_API_URL: string;
@@ -79,6 +130,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       organization({
         allowUserToCreateOrganization: true,
         creatorRole: "owner",
+        ...orgPluginAcOptions,
         organizationHooks: {
           // The tRPC organizations.create handler writes its own audit row with
           // surface: "api". This hook fires on every org creation through the
