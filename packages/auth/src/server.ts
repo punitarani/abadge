@@ -1,9 +1,21 @@
-import type { Database } from "@abadge/db";
+import { type Database, onMemberRemoved } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
-import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow, safeAuditInsert } from "./audit-hooks";
+import {
+  buildInviteAcceptAuditRow,
+  buildInviteCancelAuditRow,
+  buildInviteCreateAuditRow,
+  buildInviteRejectAuditRow,
+  buildMemberAddAuditRow,
+  buildMemberRemoveAuditRow,
+  buildMemberRoleUpdateAuditRow,
+  buildOrgCreateAuditRow,
+  buildOrgDeleteAuditRow,
+  buildOrgUpdateAuditRow,
+  safeAuditInsert,
+} from "./audit-hooks";
 import { createPersonalOrgForUser } from "./personal-org";
 
 // Custom access-control for the organization plugin.
@@ -161,6 +173,107 @@ export function createAuth(db: Database, env: AuthEnv): any {
           },
           afterDeleteOrganization: async ({ organization, user }) => {
             await safeAuditInsert(db, buildOrgDeleteAuditRow({ organization, user }));
+          },
+          afterUpdateOrganization: async ({ organization, user, member }) => {
+            // `organization` may be null when the adapter doesn't return the row.
+            // Fall back to the member's organizationId for the audit record.
+            await safeAuditInsert(
+              db,
+              buildOrgUpdateAuditRow({
+                organization,
+                orgId: member.organizationId,
+                user,
+              }),
+            );
+          },
+          afterAddMember: async ({ member, user, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildMemberAddAuditRow({
+                organization,
+                member: { userId: member.userId, role: member.role },
+                user,
+              }),
+            );
+          },
+          afterRemoveMember: async ({ member, user, organization }) => {
+            // Audit first, then cascade. Both use safeAuditInsert / try-catch so
+            // a failure in either doesn't reject the HTTP response.
+            //
+            // Note: Better Auth's hook passes `user` = the REMOVED user, not the
+            // caller. So removedBy and removedUserId are the same value here.
+            // This is a limitation of the hook contract.
+            await safeAuditInsert(
+              db,
+              buildMemberRemoveAuditRow({
+                organization,
+                member,
+                user,
+              }),
+            );
+
+            // Run the full cascade (revoke agents, sessions, grants) so the
+            // plugin path is consistent with the tRPC removeMember path.
+            try {
+              await db.transaction((tx) =>
+                onMemberRemoved(tx, organization.id, member.userId, user.id),
+              );
+            } catch (err) {
+              console.warn(
+                `auth_hook_cascade_failed org=${organization.id} removedUser=${member.userId} err=${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          },
+          afterUpdateMemberRole: async ({ member, previousRole, user, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildMemberRoleUpdateAuditRow({
+                organization,
+                member: { userId: member.userId, role: member.role },
+                previousRole,
+                user,
+              }),
+            );
+          },
+          afterCreateInvitation: async ({ invitation, inviter, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildInviteCreateAuditRow({
+                invitation,
+                organization,
+                inviter,
+              }),
+            );
+          },
+          afterAcceptInvitation: async ({ invitation, user, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildInviteAcceptAuditRow({
+                invitation,
+                organization,
+                user,
+              }),
+            );
+          },
+          afterRejectInvitation: async ({ invitation, user, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildInviteRejectAuditRow({
+                invitation,
+                organization,
+                user,
+              }),
+            );
+          },
+          afterCancelInvitation: async ({ invitation, cancelledBy, organization }) => {
+            await safeAuditInsert(
+              db,
+              buildInviteCancelAuditRow({
+                invitation,
+                organization,
+                cancelledBy,
+              }),
+            );
           },
         },
       }),

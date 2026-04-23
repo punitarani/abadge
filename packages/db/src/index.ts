@@ -19,6 +19,7 @@ export {
   sql,
 } from "drizzle-orm";
 export { migrate } from "drizzle-orm/postgres-js/migrator";
+export { onMemberRemoved } from "./cascades";
 export { createDb, type Database, type Transaction } from "./client";
 export * from "./roadmap-backfill";
 export * from "./schema";
