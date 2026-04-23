@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { buildOrgCreateAuditRow, buildOrgDeleteAuditRow, safeAuditInsert } from "./audit-hooks";
+import { createPersonalOrgForUser } from "./personal-org";
 
 // Custom access-control for the organization plugin.
 // Admin loses member:"update" so the Better Auth HTTP endpoint
@@ -122,6 +123,23 @@ export function createAuth(db: Database, env: AuthEnv): any {
               surface: "auth",
               meta: {},
             });
+          },
+        },
+      },
+      user: {
+        create: {
+          // §ON6 — auto-create a personal org on signup so every user starts
+          // with exactly 1 org. Errors are swallowed: a failed auto-org must
+          // never reject the signup (losing the user is strictly worse than
+          // landing with 0 orgs, which is the pre-fix status quo).
+          after: async (user) => {
+            try {
+              await createPersonalOrgForUser(db, user);
+            } catch (err) {
+              console.warn(
+                `auto_org_create_failed user=${user.id} err=${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
           },
         },
       },

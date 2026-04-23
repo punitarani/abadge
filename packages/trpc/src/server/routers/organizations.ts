@@ -3,8 +3,11 @@ import {
   ForbiddenError,
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
+  type KdfParams,
+  KdfParamsSchema,
   NotFoundError,
   RateLimitError,
+  StorageModeSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
@@ -47,7 +50,24 @@ const CreateOrganizationSchema = Schema.Struct({
     ),
   ),
   logo: Schema.optional(Schema.String),
-});
+  // §ON5 — pass through the storage mode chosen in onboarding.
+  // Defaults to server_managed in the router (safe default).
+  storageMode: Schema.optional(StorageModeSchema),
+  // §ON5b — ZK bundles; required when storageMode === "zero_knowledge".
+  wrappedRootKey: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  kdfSalt: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  kdfParams: Schema.optional(KdfParamsSchema),
+  recoveryWrappedRootKey: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+}).pipe(
+  Schema.filter((input) => {
+    if (input.storageMode === "zero_knowledge") {
+      if (!input.wrappedRootKey || !input.kdfSalt || !input.kdfParams) {
+        return "zero_knowledge profile requires wrappedRootKey, kdfSalt, and kdfParams";
+      }
+    }
+    return true;
+  }),
+);
 
 const UpdateOrganizationSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -280,14 +300,32 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
         // instead of creating a second profile. Before this name alignment,
         // every fresh signup ended up with two profiles: the "default" seed
         // here and the "internal" one from Step 2.
-        await tx.insert(profiles).values({
+        //
+        // §ON5 — use the caller-supplied storageMode (default: server_managed).
+        // §ON5b — thread KDF fields through for zero_knowledge profiles.
+        // The Schema.filter above guarantees KDF fields are present when ZK.
+        const storageMode = input.storageMode ?? "server_managed";
+        const profileValues: typeof profiles.$inferInsert = {
           id: profileId,
           organizationId: orgId,
           name: "internal",
-          storageMode: "zero_knowledge",
+          storageMode,
           createdAt: now,
           updatedAt: now,
-        });
+        };
+        if (storageMode === "zero_knowledge") {
+          // Schema.filter guarantees these are present when storageMode === "zero_knowledge".
+          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
+          profileValues.wrappedRootKey = input.wrappedRootKey!;
+          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
+          profileValues.kdfSalt = input.kdfSalt!;
+          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
+          profileValues.kdfParams = input.kdfParams! as unknown as KdfParams;
+          if (input.recoveryWrappedRootKey) {
+            profileValues.recoveryWrappedRootKey = input.recoveryWrappedRootKey;
+          }
+        }
+        await tx.insert(profiles).values(profileValues);
       }),
     ).pipe(
       Effect.catchIf(
