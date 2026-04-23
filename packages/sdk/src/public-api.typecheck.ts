@@ -95,6 +95,13 @@ type _AgentHasDisconnect = Assert<
 // -- ErrorCode typing assertions -------------------------------------------
 
 type _ErrorCodeIsTyped = Assert<AbadgeApiError["code"] extends ErrorCode | string ? true : false>;
+type _IssuesIsReadonlyArray = Assert<
+  AbadgeApiError["issues"] extends
+    | ReadonlyArray<{ path: ReadonlyArray<string | number>; message: string }>
+    | undefined
+    ? true
+    : false
+>;
 type _ErrorCodeIncludesKnown = Assert<"VAULT_NOT_FOUND" extends ErrorCode ? true : false>;
 type _ErrorCodeIncludesForbidden = Assert<"FORBIDDEN" extends ErrorCode ? true : false>;
 type _SecretValueExpose = Assert<ReturnType<SecretValue["expose"]> extends string ? true : false>;

@@ -1,6 +1,8 @@
 import type { TRPCClientErrorLike } from "@trpc/client";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AnyTRPCRouter } from "@trpc/server";
+import type { ValidationIssue } from "./validation-issue";
+import { toValidationIssues } from "./validation-issue";
 
 interface NodeTrpcClientOptions {
   baseUrl: string;
@@ -16,6 +18,10 @@ interface NodeTrpcClientOptions {
  * so a direct import would force the private package into the public
  * dependency graph. Keep the two copies field-for-field identical; any change
  * to hint/meta or new fields must be mirrored in both files.
+ *
+ * Note: this SDK copy types `issues` as `ReadonlyArray<ValidationIssue> | undefined`
+ * (shape-guarded at normalization time); the trpc-package mirror may still carry
+ * `unknown` until it is updated independently.
  */
 interface NormalizedTrpcError {
   message: string;
@@ -24,7 +30,7 @@ interface NormalizedTrpcError {
   code?: string;
   hint?: string;
   meta?: Readonly<Record<string, unknown>>;
-  issues?: unknown;
+  issues?: ReadonlyArray<ValidationIssue>;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -116,6 +122,6 @@ export function normalizeTrpcError(error: unknown): NormalizedTrpcError {
       data?.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
         ? (data.meta as Record<string, unknown>)
         : undefined,
-    issues: data?.issues,
+    issues: toValidationIssues(data?.issues),
   };
 }

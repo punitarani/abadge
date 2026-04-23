@@ -29,6 +29,75 @@ describe("AbadgeApiError", () => {
     });
   });
 
+  test("fromResponse preserves valid issues", async () => {
+    const res = new Response(
+      JSON.stringify({
+        error: "bad input",
+        code: "VALIDATION_ERROR",
+        hint: "check the fields",
+        issues: [
+          { path: ["body", "email"], message: "must be valid email" },
+          { path: ["body", "age"], message: "must be positive" },
+        ],
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.issues).toBeDefined();
+    expect(err.issues).toHaveLength(2);
+    expect(err.issues?.[0]).toEqual({ path: ["body", "email"], message: "must be valid email" });
+    expect(err.issues?.[1]).toEqual({ path: ["body", "age"], message: "must be positive" });
+  });
+
+  test("fromResponse drops malformed issues array", async () => {
+    const res = new Response(
+      JSON.stringify({
+        error: "x",
+        code: "VALIDATION_ERROR",
+        issues: [{ path: "not-array", message: 123 }],
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.issues).toBeUndefined();
+  });
+
+  test("fromResponse handles missing issues", async () => {
+    const res = new Response(
+      JSON.stringify({ error: "x", code: "UNAUTHORIZED" }),
+      { status: 401, headers: { "content-type": "application/json" } },
+    );
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.issues).toBeUndefined();
+  });
+
+  test("fromUnknown preserves valid issues via tRPC error shape", () => {
+    const trpcLike = {
+      message: "validation failed",
+      data: {
+        httpStatus: 400,
+        code: "VALIDATION_ERROR",
+        hint: "fix the fields",
+        issues: [
+          { path: ["input", "name"], message: "required" },
+        ],
+      },
+    };
+    const err = AbadgeApiError.fromUnknown(trpcLike, "fallback");
+    expect(err.issues).toBeDefined();
+    expect(err.issues?.[0]?.path).toEqual(["input", "name"]);
+    expect(err.issues?.[0]?.message).toBe("required");
+  });
+
+  test("fromUnknown drops non-array issues", () => {
+    const trpcLike = {
+      message: "x",
+      data: { code: "VALIDATION_ERROR", issues: "not-an-array" },
+    };
+    const err = AbadgeApiError.fromUnknown(trpcLike, "fallback");
+    expect(err.issues).toBeUndefined();
+  });
+
   test("preserves hint and meta from raw HTTP responses", async () => {
     const error = await AbadgeApiError.fromResponse(
       new Response(
