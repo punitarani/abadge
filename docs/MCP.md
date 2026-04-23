@@ -86,7 +86,8 @@ Output: JSON array of item summaries.
 
 Runs a command with a secret injected as an environment variable. Returns the exit code, captured
 output lines (redacted and truncated to 4 KB total), and a truncation flag. The secret plaintext is
-never returned to the model.
+never returned to the model. Secrets larger than 4 KB are rejected before spawn — use
+`mount_secret` instead for large secrets (PEMs, kubeconfigs, SSH keys, TLS certificates).
 
 | Input field | Type | Required | Description |
 |------|------|----------|-------------|
@@ -109,12 +110,15 @@ Output:
 ```
 
 Security:
+- Secrets larger than 4 KB (`MAX_OUTPUT_BYTES`) are refused before spawn; the handler throws with a redirect to `mount_secret`. This guarantees the redactor's correctness assumption (`secret fully in capture window`) is never violated.
 - Secret value is replaced with `[REDACTED]` throughout stdout and stderr before returning
 - Each stream is bounded to 8 KB (`MAX_OUTPUT_BYTES * 2`) pre-redaction to prevent OOM from a misbehaving subprocess; the combined post-redaction output is then capped at 4 KB (stdout gets priority; stderr gets remaining budget)
 - `truncated: true` is set when the pre-redaction cap dropped chunks or the post-redaction truncation cut output
 - No file paths or secret content are returned to the model
 
 #### Redaction limitations
+
+These limitations apply to secrets ≤ 4 KB (the maximum `run_with_secret` accepts). Secrets over 4 KB are refused entirely — the handler throws before spawn, so the redactor is never called.
 
 Output redaction uses exact substring replacement — it scans stdout/stderr for the secret's literal bytes and replaces each occurrence with `[REDACTED]`. It does NOT catch transformed forms:
 

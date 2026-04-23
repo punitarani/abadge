@@ -8,7 +8,7 @@ import { resolveSecret } from "../resolve-secret.js";
 export const toolName = "run_with_secret";
 
 export const toolDescription =
-  "Run a command with a secret injected as an environment variable. Returns the exit code, captured output lines (truncated to 4KB total, with secret values replaced by [REDACTED]), and a truncation flag. No file paths or secret content are returned to the model.";
+  "Run a command with a secret injected as an environment variable. Returns the exit code, captured output lines (truncated to 4KB total, with secret values replaced by [REDACTED]), and a truncation flag. Secrets larger than 4KB are rejected — use mount_secret instead for large secrets (PEMs, kubeconfigs, etc.). No file paths or secret content are returned to the model.";
 
 export const toolInputSchema = z.object({
   itemId: z.string().describe("ID of the item to inject"),
@@ -132,6 +132,25 @@ export async function handler(
 ): Promise<string> {
   const client = await getApiClient(config);
   const secret = await resolveSecret(client, input.itemId, "env", input.field, input.purpose);
+
+  // Reject secrets that exceed the redaction window. The in-process redactor
+  // (redactSecret + BoundedCapture) guarantees scrubbing only when the full
+  // secret fits inside the PRE_REDACT_CAP_BYTES capture window. For any secret
+  // whose byte length exceeds MAX_OUTPUT_BYTES, even trivial subprocess padding
+  // (a wrapper line, date prefix, debug output) before the secret pushes the
+  // secret past the 8KB window, causing text.split(secret) to return the
+  // original bytes unchanged, and up to 4KB of raw plaintext lands in
+  // stdoutLines returned to the LLM. Large secrets must use mount_secret
+  // (filesystem delivery; no redaction required — the file path, not bytes,
+  // is handed to the subprocess).
+  const secretByteLength = Buffer.byteLength(secret, "utf8");
+  if (secretByteLength > MAX_OUTPUT_BYTES) {
+    throw new Error(
+      `Secret is ${secretByteLength} bytes but run_with_secret can only safely handle secrets ≤ ${MAX_OUTPUT_BYTES} bytes. ` +
+        `The in-process redactor cannot guarantee the full secret fits in the ${PRE_REDACT_CAP_BYTES}-byte capture window. ` +
+        `Use mount_secret (filesystem delivery) for large secrets instead.`,
+    );
+  }
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
 

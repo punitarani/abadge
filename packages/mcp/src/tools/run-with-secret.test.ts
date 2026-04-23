@@ -126,6 +126,105 @@ describe("run_with_secret envVarName validation (W3P10-001)", () => {
 });
 
 /**
+ * Tests for W3P4-001 (Task B1, Critical C-1): run_with_secret must refuse
+ * secrets whose byte length exceeds MAX_OUTPUT_BYTES. The in-process redactor
+ * can only guarantee scrubbing when the full secret fits in the 8KB
+ * PRE_REDACT_CAP_BYTES capture window; large secrets must route to
+ * mount_secret (filesystem delivery, no redaction required).
+ */
+describe("handler secret size guard — W3P4-001", () => {
+  const fakeClient = {} as never;
+  const fakeConfig = {
+    apiUrl: "http://localhost",
+    agentId: "agent_test",
+    privateKey: "{}",
+  } as never;
+
+  test("rejects secret larger than MAX_OUTPUT_BYTES (9KB)", async () => {
+    const largeSecret = "A".repeat(9000);
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(largeSecret);
+
+    await expect(
+      handler({ itemId: "item_test", command: "echo", envVarName: "ABADGE_SECRET" }, fakeConfig),
+    ).rejects.toThrow(/Secret is 9000 bytes|can only safely handle secrets/);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("rejects secret at MAX_OUTPUT_BYTES + 1 (boundary: just over)", async () => {
+    const justOverSecret = "A".repeat(MAX_OUTPUT_BYTES + 1);
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy =
+      spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(justOverSecret);
+
+    await expect(
+      handler({ itemId: "item_test", command: "echo" }, fakeConfig),
+    ).rejects.toThrow(/Secret is \d+ bytes/);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("accepts secret at exactly MAX_OUTPUT_BYTES (boundary: at limit)", async () => {
+    const boundarySecret = "A".repeat(MAX_OUTPUT_BYTES);
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy =
+      spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(boundarySecret);
+
+    // handler should NOT throw — it should proceed to spawn. The spawn call will
+    // run /usr/bin/true (or equivalent) which exits cleanly with no output.
+    const result = await handler(
+      { itemId: "item_test", command: process.execPath, args: ["-e", "process.exit(0)"] },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.exitCode).toBe(0);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  /**
+   * Critical discrimination test: simulate the actual exploit.
+   * A PEM-shaped 9KB secret — exactly the class of credential that matters
+   * operationally (SSH keys, kubeconfigs, TLS certs). Without the guard,
+   * the subprocess would be spawned and up to 4KB of raw plaintext would
+   * land in stdoutLines returned to the LLM. With the guard, the handler
+   * throws BEFORE spawn — no subprocess runs, no plaintext is captured.
+   *
+   * The throw IS the proof: if the handler returned a value instead of
+   * throwing, this test would fail, exposing the original vulnerability.
+   */
+  test("9KB PEM-shaped secret rejected before spawn — no plaintext reaches LLM (W3P4-001 discrimination)", async () => {
+    const pemLikeSecret =
+      "-----BEGIN PRIVATE KEY-----\n" + "A".repeat(8500) + "\n-----END PRIVATE KEY-----\n";
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy =
+      spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(pemLikeSecret);
+
+    // The handler must throw before spawn. If it returns a JSON string
+    // (success path), the original exploit is still present.
+    await expect(
+      handler(
+        {
+          itemId: "item_test",
+          command: process.execPath,
+          args: ["-e", 'process.stdout.write(process.env.ABADGE_SECRET ?? "")'],
+        },
+        fakeConfig,
+      ),
+    ).rejects.toThrow(/Secret is \d+ bytes|can only safely handle secrets/);
+
+    // Since the handler threw, no subprocess was spawned and no plaintext
+    // was captured. The throw is the security guarantee.
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+});
+
+/**
  * Integration tests that call handler() directly with mocked dependencies.
  * These tests prove the guard inside handler() is exercised — stashing the
  * validateEnvVarName call in run-with-secret.ts makes these tests fail even
