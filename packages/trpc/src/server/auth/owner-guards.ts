@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError } from "@abadge/core";
 import type { Database } from "@abadge/db";
-import { and, eq } from "@abadge/db";
+import { and, count, eq, ne } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { roleRank } from "../init";
 
@@ -13,12 +13,12 @@ export async function countOwners(
   orgId: string,
   excludeMemberId?: string,
 ): Promise<number> {
-  const rows = await db
-    .select({ id: member.id })
-    .from(member)
-    .where(and(eq(member.organizationId, orgId), eq(member.role, "owner")));
-  if (excludeMemberId === undefined) return rows.length;
-  return rows.filter((r) => r.id !== excludeMemberId).length;
+  const conditions = excludeMemberId
+    ? and(eq(member.organizationId, orgId), eq(member.role, "owner"), ne(member.id, excludeMemberId))
+    : and(eq(member.organizationId, orgId), eq(member.role, "owner"));
+
+  const [result] = await db.select({ count: count() }).from(member).where(conditions);
+  return result?.count ?? 0;
 }
 
 /**
