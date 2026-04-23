@@ -213,6 +213,9 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
     const userId = ctx.identity.userId;
 
+    // Ownership gate: throws PROFILE_NOT_FOUND if the profile does not exist
+    // or the caller is not an admin of its org. Must run before the UPDATE so
+    // an un-bootstrapped profile in a foreign org cannot be hijacked.
     const profile = yield* loadProfileForWrite(profileId, userId);
 
     if (profile.wrappedRootKey) {
@@ -225,7 +228,10 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
       );
     }
 
-    yield* tryAsync(() =>
+    // Atomic UPDATE: the `isNull(wrappedRootKey)` guard closes the race between
+    // two concurrent bootstrap calls that both passed the SELECT above. The loser
+    // sees 0 rows in RETURNING and gets PROFILE_ALREADY_EXISTS; no silent overwrite.
+    const updated = yield* tryAsync(() =>
       ctx.db
         .update(profiles)
         .set({
@@ -234,8 +240,20 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
           kdfParams: kdfParams as unknown as KdfParams,
           updatedAt: new Date(),
         })
-        .where(eq(profiles.id, profileId)),
+        .where(and(eq(profiles.id, profileId), isNull(profiles.wrappedRootKey)))
+        .returning({ id: profiles.id }),
     );
+
+    if (updated.length === 0) {
+      // A concurrent bootstrap completed between our SELECT and UPDATE.
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "PROFILE_ALREADY_EXISTS",
+          message: "Profile bootstrap conflict",
+          hint: "A concurrent bootstrap completed first. Refresh and retry.",
+        }),
+      );
+    }
 
     yield* logSessionAudit({
       organizationId: profile.organizationId,
