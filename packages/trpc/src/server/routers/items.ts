@@ -35,7 +35,7 @@ import { serializeItemDetail, serializeItemSummary } from "../serialize";
 const loadOwnedItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
@@ -173,11 +173,11 @@ const createItem = (input: CreateItemInput) =>
       );
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* Effect.tryPromise(() =>
+      const encrypted = yield* tryAsync(() =>
         serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
       );
 
-      yield* Effect.tryPromise(() =>
+      yield* tryAsync(() =>
         ctx.db.insert(items).values({
           id,
           userId,
@@ -205,7 +205,7 @@ const createItem = (input: CreateItemInput) =>
 
 const listItems = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .select({
         id: items.id,
@@ -226,7 +226,7 @@ const listItems = Effect.gen(function* () {
 
 const listItemsForAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .selectDistinct({
         id: items.id,
@@ -275,7 +275,7 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     const item = yield* loadOwnedItem(itemId);
 
     if (input.storageMode === "zero_knowledge") {
-      const updated = yield* Effect.tryPromise(() =>
+      const updated = yield* tryAsync(() =>
         ctx.db
           .update(items)
           .set({
@@ -300,11 +300,11 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* Effect.tryPromise(() =>
+      const encrypted = yield* tryAsync(() =>
         serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
       );
 
-      const updated = yield* Effect.tryPromise(() =>
+      const updated = yield* tryAsync(() =>
         ctx.db
           .update(items)
           .set({
@@ -371,7 +371,7 @@ const ownerReveal = (itemId: string) =>
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    const decrypted = yield* Effect.tryPromise(() =>
+    const decrypted = yield* tryAsync(() =>
       serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY),
     );
 
@@ -399,7 +399,7 @@ const deleteItem = (itemId: string) =>
     // sequential tryAsync steps; a mid-flight failure could leave the
     // item deleted but its permissions still active.
     const now = new Date();
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
 

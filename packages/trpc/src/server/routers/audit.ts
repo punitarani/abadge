@@ -13,6 +13,7 @@ import {
   runSessionEffect,
   SessionRequestContextTag,
   strictSchema,
+  tryAsync,
 } from "../effect";
 import {
   agentProcedure,
@@ -120,7 +121,7 @@ const listAuditEntries = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const role = yield* Effect.tryPromise(() =>
+    const role = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
     );
     const conditions = buildAuditConditions(input, {
@@ -133,7 +134,7 @@ const listAuditEntries = (
     });
 
     const limit = input.limit ?? 50;
-    const result = yield* Effect.tryPromise(() =>
+    const result = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(auditLogs)
@@ -165,7 +166,7 @@ const listAuditEntriesForAgent = (
     });
 
     const limit = input.limit ?? 50;
-    const result = yield* Effect.tryPromise(() =>
+    const result = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(auditLogs)

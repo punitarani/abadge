@@ -59,7 +59,7 @@ const createAgent = (input: CreateAgentInput) =>
 
     if (authMethod === "legacy_api_key") {
       const prefix = API_KEY_PREFIX[locality];
-      const generated = yield* Effect.tryPromise(() => generateApiKey(prefix));
+      const generated = yield* tryAsync(() => generateApiKey(prefix));
       secretHash = generated.hash;
       secretPrefix = generated.prefix;
       apiKey = generated.key;
@@ -67,7 +67,7 @@ const createAgent = (input: CreateAgentInput) =>
       publicKey = input.publicKey;
     } else if (input.issueBootstrapToken) {
       bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
-      bootstrapTokenHash = yield* Effect.tryPromise(() => hashApiKey(bootstrapToken as string));
+      bootstrapTokenHash = yield* tryAsync(() => hashApiKey(bootstrapToken as string));
       bootstrapExpiresAt = new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS).toISOString();
     } else {
       return yield* Effect.fail(
@@ -80,7 +80,7 @@ const createAgent = (input: CreateAgentInput) =>
       );
     }
 
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.insert(agentRecords).values({
         id,
         organizationId: ctx.identity.organizationId,
@@ -97,7 +97,7 @@ const createAgent = (input: CreateAgentInput) =>
     );
 
     if (bootstrapToken && bootstrapTokenHash && bootstrapExpiresAt) {
-      yield* Effect.tryPromise(() =>
+      yield* tryAsync(() =>
         ctx.db.insert(agentEnrollmentTokens).values({
           id: crypto.randomUUID(),
           agentId: id,
@@ -145,7 +145,7 @@ const createAgent = (input: CreateAgentInput) =>
 
 const listAgents = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .select()
       .from(agentRecords)
@@ -158,7 +158,7 @@ const listAgents = Effect.gen(function* () {
 const getAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -186,7 +186,7 @@ const getAgent = (agentId: string) =>
 
 const getCurrentAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
-  const [agent] = yield* Effect.tryPromise(() =>
+  const [agent] = yield* tryAsync(() =>
     ctx.db.select().from(agentRecords).where(eq(agentRecords.id, ctx.identity.agentId)).limit(1),
   );
 
@@ -206,7 +206,7 @@ const getCurrentAgent = Effect.gen(function* () {
 const rotateAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -254,9 +254,9 @@ const rotateAgent = (agentId: string) =>
     }
 
     const prefix = API_KEY_PREFIX[agent.locality as "local" | "remote"];
-    const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
+    const { key, hash, prefix: keyPrefix } = yield* tryAsync(() => generateApiKey(prefix));
 
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db
         .update(agentRecords)
         .set({
@@ -284,7 +284,7 @@ const rotateAgent = (agentId: string) =>
 const revokeAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -327,7 +327,7 @@ const revokeAgent = (agentId: string) =>
     // mid-flight failure could leave the agent disabled but still holding
     // live session tokens.
     const now = new Date();
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx
           .update(agentRecords)

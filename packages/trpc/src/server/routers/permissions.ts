@@ -43,7 +43,7 @@ const PermissionListQuerySchema = Schema.Struct({
 const createPermission = (input: CreatePermissionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -79,7 +79,7 @@ const createPermission = (input: CreatePermissionInput) =>
       ),
     );
 
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
@@ -187,7 +187,7 @@ const createPermission = (input: CreatePermissionInput) =>
 const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const userAgents = yield* Effect.tryPromise(() =>
+    const userAgents = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -205,12 +205,12 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       if (!agentIds.includes(agentId)) {
         return { permissions: [] };
       }
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db.select().from(permissionRecords).where(eq(permissionRecords.agentId, agentId)),
       );
     } else if (input.itemId) {
       const itemId = input.itemId;
-      const [item] = yield* Effect.tryPromise(() =>
+      const [item] = yield* tryAsync(() =>
         ctx.db
           .select({ id: items.id })
           .from(items)
@@ -222,11 +222,11 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         return { permissions: [] };
       }
 
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db.select().from(permissionRecords).where(eq(permissionRecords.itemId, itemId)),
       );
     } else {
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db
           .select()
           .from(permissionRecords)
@@ -240,7 +240,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
 const revokePermission = (permissionId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [permission] = yield* Effect.tryPromise(() =>
+    const [permission] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(permissionRecords)
@@ -258,7 +258,7 @@ const revokePermission = (permissionId: string) =>
       );
     }
 
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -294,7 +294,7 @@ const revokePermission = (permissionId: string) =>
       ),
     );
 
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.delete(permissionRecords).where(eq(permissionRecords.id, permissionId)),
     );
 

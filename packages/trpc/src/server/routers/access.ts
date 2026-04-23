@@ -25,7 +25,7 @@ import { and, eq, isNull } from "@abadge/db";
 import { items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Cause, Effect } from "effect";
 import { logAgentAudit } from "../audit";
-import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
+import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 
@@ -87,7 +87,7 @@ const decryptServerManagedItem = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    return yield* Effect.tryPromise(() =>
+    return yield* tryAsync(() =>
       serverDecrypt(
         {
           ciphertext,
@@ -102,7 +102,7 @@ const decryptServerManagedItem = (
 const checkPermission = (agentId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [permission] = yield* Effect.tryPromise(() =>
+    const [permission] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(permissionRecords)
@@ -130,7 +130,7 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
 const loadAccessibleItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
