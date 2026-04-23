@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { validateEnvVarName } from "@abadge/core";
-import { MAX_OUTPUT_BYTES, PRE_REDACT_CAP_BYTES, runCommand } from "./run-with-secret";
+import * as apiClientModule from "../api-client.js";
+import * as resolveSecretModule from "../resolve-secret.js";
+import { handler, MAX_OUTPUT_BYTES, PRE_REDACT_CAP_BYTES, runCommand } from "./run-with-secret";
 
 const nodeBinary = process.execPath; // bun or node — either can run a -e script
 
@@ -120,5 +122,69 @@ describe("run_with_secret envVarName validation (W3P10-001)", () => {
     const result = validateEnvVarName("1SECRET");
     expect(result.ok).toBe(false);
     expect((result as { ok: false; reason: string }).reason).toBe("invalid_format");
+  });
+});
+
+/**
+ * Integration tests that call handler() directly with mocked dependencies.
+ * These tests prove the guard inside handler() is exercised — stashing the
+ * validateEnvVarName call in run-with-secret.ts makes these tests fail even
+ * though the pure-function tests above would still pass (W3P10-001 regression
+ * proof).
+ */
+describe("handler envVarName guard — integration (W3P10-001)", () => {
+  // Stub getApiClient and resolveSecret so handler reaches the validation code
+  // without needing a live API server or daemon.
+  const fakeClient = {} as never;
+  const fakeConfig = {
+    apiUrl: "http://localhost",
+    agentId: "agent_test",
+    privateKey: "{}",
+  } as never;
+
+  afterEach(() => {
+    // Restore spies to avoid bleeding between tests
+  });
+
+  test("handler rejects LD_PRELOAD before spawning (reserved key)", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue("mysecret");
+
+    await expect(
+      handler(
+        { itemId: "item_1", command: "echo", args: [], envVarName: "LD_PRELOAD" },
+        fakeConfig,
+      ),
+    ).rejects.toThrow(/reserved env var/i);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("handler rejects NODE_OPTIONS before spawning (reserved key)", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue("mysecret");
+
+    await expect(
+      handler(
+        { itemId: "item_1", command: "echo", args: [], envVarName: "NODE_OPTIONS" },
+        fakeConfig,
+      ),
+    ).rejects.toThrow(/reserved env var/i);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("handler rejects invalid format (lowercase key)", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue("mysecret");
+
+    await expect(
+      handler({ itemId: "item_1", command: "echo", args: [], envVarName: "bad_key" }, fakeConfig),
+    ).rejects.toThrow(/Invalid env var name/i);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
   });
 });
