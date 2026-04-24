@@ -26,6 +26,7 @@ import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
 import {
   AgentRequestContextTag,
+  isUniqueViolation,
   runAgentEffect,
   runSessionEffect,
   SessionRequestContextTag,
@@ -168,7 +169,11 @@ const createItem = (input: CreateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
-    const id = crypto.randomUUID();
+
+    // §W1S7-001 — ZK branch: client supplies `id` because it is bound into the
+    // XChaCha20-Poly1305 AAD at encrypt time. Server-managed items still mint
+    // the id here (the AAD for AES-GCM is derived server-side).
+    const id = input.storageMode === "zero_knowledge" ? input.id : crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
       // tryAsync (not Effect.tryPromise) preserves the domain Error instance
@@ -185,6 +190,22 @@ const createItem = (input: CreateItemInput) =>
             ciphertext: input.ciphertext,
             expectedKeyVersion: input.expectedKeyVersion,
           }),
+        ),
+      ).pipe(
+        // §W1S7-001 — a client-provided id that collides with an existing row
+        // must surface as ConflictError, not a 500. The unique-violation is
+        // the only domain-neutral DB error this insert can raise.
+        Effect.catchIf(
+          (e) => isUniqueViolation(e),
+          () =>
+            Effect.fail(
+              new ConflictError({
+                code: "ITEM_ALREADY_EXISTS",
+                message: "An item with this id already exists",
+                hint: "Generate a new UUID for the item id and retry.",
+                meta: { itemId: id },
+              }),
+            ),
         ),
       );
     } else {

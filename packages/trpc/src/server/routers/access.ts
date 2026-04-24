@@ -246,6 +246,31 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       );
     }
 
+    // §W1S7-001 — local decrypt needs (itemId, profileId, contentVersion) to
+    // rebuild the XChaCha20-Poly1305 AAD. Every ZK item must live inside a
+    // ZK profile (insertZeroKnowledgeItem enforces this); a null profileId
+    // here would mean a schema-level orphan, which would be undecryptable.
+    if (!item.profileId) {
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: input.itemId,
+        eventType: "access.ciphertext",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason: "zk item missing profileId" },
+      });
+      return yield* Effect.fail(
+        new IntegrityError({
+          code: "INTEGRITY_ERROR",
+          message: "Zero-knowledge item is missing its profile binding",
+          hint: "This indicates data corruption; contact support.",
+          meta: { itemId: input.itemId },
+        }),
+      );
+    }
+
     yield* logAgentAudit({
       organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
@@ -260,6 +285,9 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       encryptedItemKey: item.encryptedItemKey ?? "",
       ciphertext: item.ciphertext ?? "",
       cryptoVersion: item.cryptoVersion,
+      itemId: item.id,
+      profileId: item.profileId,
+      contentVersion: item.contentVersion,
     };
   });
 
@@ -447,6 +475,30 @@ const accessMount = (input: MountAccessInput) =>
     }
 
     if (item.storageMode === "zero_knowledge") {
+      // §W1S7-001 — see `accessCiphertext`; the mount path needs the same
+      // AAD meta (itemId, profileId, contentVersion) forwarded to the
+      // daemon so local XChaCha20-Poly1305 decrypt can rebuild the AAD.
+      if (!item.profileId) {
+        yield* logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: input.itemId,
+          eventType,
+          result: "denied",
+          ipAddress: ctx.ipAddress,
+          meta: { reason: "zk item missing profileId" },
+        });
+        return yield* Effect.fail(
+          new IntegrityError({
+            code: "INTEGRITY_ERROR",
+            message: "Zero-knowledge item is missing its profile binding",
+            hint: "This indicates data corruption; contact support.",
+            meta: { itemId: input.itemId },
+          }),
+        );
+      }
+
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
@@ -465,6 +517,9 @@ const accessMount = (input: MountAccessInput) =>
         encryptedItemKey: item.encryptedItemKey ?? "",
         ciphertext: item.ciphertext ?? "",
         cryptoVersion: item.cryptoVersion,
+        itemId: item.id,
+        profileId: item.profileId,
+        contentVersion: item.contentVersion,
       };
     }
 

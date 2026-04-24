@@ -5,10 +5,11 @@ import { daemonDecrypt } from "./daemon";
 async function decryptMountedPayload(
   encryptedItemKey: string,
   ciphertext: string,
+  meta: { profileId: string; itemId: string; contentVersion: number },
   field?: string,
 ): Promise<string> {
   try {
-    const result = await daemonDecrypt(encryptedItemKey, ciphertext);
+    const result = await daemonDecrypt(encryptedItemKey, ciphertext, meta);
     return payloadToSecret(result.payload, field);
   } catch {
     throw new Error(
@@ -27,7 +28,16 @@ async function resolveMountedSecret(
 ): Promise<string> {
   const mounted = await client.accessMount(itemId, mountType, field);
   if (mounted.storageMode === "zero_knowledge") {
-    return decryptMountedPayload(mounted.encryptedItemKey, mounted.ciphertext, field);
+    return decryptMountedPayload(
+      mounted.encryptedItemKey,
+      mounted.ciphertext,
+      {
+        profileId: mounted.profileId,
+        itemId: mounted.itemId,
+        contentVersion: mounted.contentVersion,
+      },
+      field,
+    );
   }
 
   return payloadToSecret(mounted.payload, field);

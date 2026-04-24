@@ -121,10 +121,13 @@ describe("ItemSummarySchema", () => {
 });
 
 describe("item write schemas", () => {
+  const VALID_UUID = "11111111-2222-3333-4444-555555555555";
+
   test("require a cleartext label for zero-knowledge item creation", () => {
     expect(
       decodeSucceeds(CreateItemSchema, {
         storageMode: "zero_knowledge",
+        id: VALID_UUID,
         label: "Production API key",
         encryptedItemKey: "wrapped-item-key",
         ciphertext: "ciphertext",
@@ -134,10 +137,50 @@ describe("item write schemas", () => {
     expect(
       decodeSucceeds(CreateItemSchema, {
         storageMode: "zero_knowledge",
+        id: VALID_UUID,
         encryptedItemKey: "wrapped-item-key",
         ciphertext: "ciphertext",
       }),
     ).toBe(false);
+  });
+
+  // §W1S7-001 — client-provided id is required for ZK create and must be a UUID.
+  test("require a client-provided UUID on zero-knowledge creates", () => {
+    // Missing id: reject.
+    expect(
+      decodeSucceeds(CreateItemSchema, {
+        storageMode: "zero_knowledge",
+        label: "any",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+      }),
+    ).toBe(false);
+
+    // Non-UUID id: reject (guards against server blindly trusting arbitrary strings).
+    expect(
+      decodeSucceeds(CreateItemSchema, {
+        storageMode: "zero_knowledge",
+        id: "not-a-uuid",
+        label: "any",
+        encryptedItemKey: "wrapped-item-key",
+        ciphertext: "ciphertext",
+      }),
+    ).toBe(false);
+  });
+
+  test("server-managed creates are unaffected (no id field)", () => {
+    expect(
+      decodeSucceeds(CreateItemSchema, {
+        storageMode: "server_managed",
+        payload: {
+          v: 1,
+          label: "any",
+          kind: "opaque",
+          tags: [],
+          fields: { value: "x" },
+        },
+      }),
+    ).toBe(true);
   });
 
   test("require a cleartext label for zero-knowledge item updates", () => {

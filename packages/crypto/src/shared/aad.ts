@@ -1,27 +1,55 @@
 /**
- * AAD (additionalData) construction for AES-GCM server-managed items.
+ * AAD (additionalData) construction for AES-GCM and XChaCha20-Poly1305.
  *
- * Server-managed items share a single global ENCRYPTION_KEY. Without AAD
- * binding, a DB-write-capable adversary could swap (server_ciphertext,
- * server_iv) between any two server-managed items — even across
- * organizations — and AES-GCM decrypt would succeed silently, returning
- * the wrong item's plaintext.
+ * Server-managed items share a single global ENCRYPTION_KEY. Zero-knowledge
+ * items share a per-profile root key. Without AAD binding, a DB-write-capable
+ * adversary could swap ciphertext rows between items and AEAD decrypt would
+ * succeed silently, returning the wrong item's plaintext.
  *
- * `buildServerAad` binds each ciphertext to its logical identity
- * (org, profile, item, keyVersion). Any substitution after encrypt will
- * cause AES-GCM tag verification to reject the ciphertext on decrypt.
+ * Each AEAD call site binds its ciphertext to the smallest logical identity
+ * that uniquely names it, using a distinct domain-separation prefix so AAD
+ * values never collide between subsystems:
  *
- * Wire format:
- *   "abadge-sm-v1\0" || orgId \0 || profileId \0 || itemId \0 || u32be(keyVersion)
+ *   AES-GCM (server-managed content) → `buildServerAad`       ("abadge-sm-v1")
+ *   ZK content cipher                → `buildZkContentAad`    ("abadge-zk-content-v1")
+ *   ZK DEK-wrap cipher               → `buildZkDekWrapAad`    ("abadge-zk-dek-v1")
+ *   ZK root-key wrap cipher          → `buildZkRootWrapAad`   ("abadge-zk-root-v1")
  *
  * Notes:
  * - Null byte separators prevent boundary-ambiguity attacks
- *   (abc|def|ghi vs abcd|ef|ghi would otherwise collide).
- * - The "abadge-sm-v1" domain-separation prefix reserves this AAD
- *   namespace; future variants (ZK wrap, root-key wrap) get distinct
- *   prefixes so AAD values never collide between subsystems.
- * - keyVersion is encoded big-endian for byte-order determinism.
+ *   ("ab"|"cd" vs "a"|"bcd" would otherwise collide).
+ * - Integer fields are encoded big-endian for byte-order determinism.
  */
+
+// -----------------------------------------------------------------------------
+// Shared encoding helpers
+// -----------------------------------------------------------------------------
+
+function encode(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+
+function u32be(n: number): Uint8Array {
+  const a = new Uint8Array(4);
+  new DataView(a.buffer).setUint32(0, n, false);
+  return a;
+}
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
+  }
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// Server-managed (AES-GCM) AAD
+// -----------------------------------------------------------------------------
 
 export interface ServerAadMeta {
   orgId: string;
@@ -68,28 +96,88 @@ export function profileIdForServerAad(profileId: string | null | undefined): str
 }
 
 export function buildServerAad(meta: ServerAadMeta): Uint8Array {
-  const enc = new TextEncoder();
-  const prefix = enc.encode("abadge-sm-v1\0");
-  const orgBytes = enc.encode(`${meta.orgId}\0`);
-  const profileBytes = enc.encode(`${meta.profileId}\0`);
-  const itemBytes = enc.encode(`${meta.itemId}\0`);
+  return concat([
+    encode("abadge-sm-v1\0"),
+    encode(`${meta.orgId}\0`),
+    encode(`${meta.profileId}\0`),
+    encode(`${meta.itemId}\0`),
+    u32be(meta.keyVersion),
+  ]);
+}
 
-  const kv = new Uint8Array(4);
-  new DataView(kv.buffer).setUint32(0, meta.keyVersion, false);
+// -----------------------------------------------------------------------------
+// Zero-knowledge (XChaCha20-Poly1305) AAD — W1S7-001
+// -----------------------------------------------------------------------------
 
-  const total =
-    prefix.length + orgBytes.length + profileBytes.length + itemBytes.length + kv.length;
-  const out = new Uint8Array(total);
-  let offset = 0;
-  out.set(prefix, offset);
-  offset += prefix.length;
-  out.set(orgBytes, offset);
-  offset += orgBytes.length;
-  out.set(profileBytes, offset);
-  offset += profileBytes.length;
-  out.set(itemBytes, offset);
-  offset += itemBytes.length;
-  out.set(kv, offset);
+export interface ZkContentAadMeta {
+  profileId: string;
+  itemId: string;
+  contentVersion: number;
+}
 
-  return out;
+export interface ZkDekWrapAadMeta {
+  profileId: string;
+  itemId: string;
+}
+
+export interface ZkRootWrapAadMeta {
+  profileId: string;
+  keyVersion: number;
+}
+
+/**
+ * AAD for ZK item content (payload ciphertext). Binds to
+ * profile × item × contentVersion so a DB-row swap of ciphertext between
+ * items — or a rollback to a stale `contentVersion` — is detected on decrypt.
+ *
+ * Wire format:
+ *   "abadge-zk-content-v1\0" || profileId \0 || itemId \0 || u32be(contentVersion)
+ */
+export function buildZkContentAad(meta: ZkContentAadMeta): Uint8Array {
+  return concat([
+    encode("abadge-zk-content-v1\0"),
+    encode(`${meta.profileId}\0`),
+    encode(`${meta.itemId}\0`),
+    u32be(meta.contentVersion),
+  ]);
+}
+
+/**
+ * AAD for ZK item DEK wrap (encryptedItemKey). Binds to profile × item so a
+ * DEK-wrap swap between items within the same profile is detected.
+ *
+ * No `contentVersion` field: the DEK-wrap is rewritten alongside the content
+ * ciphertext on every item update (both `encryptedItemKey` and `ciphertext`
+ * columns are repopulated in the ZK update branch). Binding the DEK-wrap to
+ * `contentVersion` would therefore duplicate the content-AAD check with no
+ * additional coverage; binding to (profile, item) alone is sufficient to
+ * prevent cross-item DEK-wrap substitution.
+ *
+ * Wire format:
+ *   "abadge-zk-dek-v1\0" || profileId \0 || itemId \0
+ */
+export function buildZkDekWrapAad(meta: ZkDekWrapAadMeta): Uint8Array {
+  return concat([
+    encode("abadge-zk-dek-v1\0"),
+    encode(`${meta.profileId}\0`),
+    encode(`${meta.itemId}\0`),
+  ]);
+}
+
+/**
+ * AAD for ZK root-key wrap (`profiles.wrappedRootKey` and
+ * `profiles.recoveryWrappedRootKey`). Binds to profile × keyVersion so a
+ * profile's wrapped root key can't be swapped with another profile's
+ * wrapped root key, and so a stale pre-rotation root-key wrap cannot be
+ * replayed onto a profile that has since advanced its `keyVersion`.
+ *
+ * Wire format:
+ *   "abadge-zk-root-v1\0" || profileId \0 || u32be(keyVersion)
+ */
+export function buildZkRootWrapAad(meta: ZkRootWrapAadMeta): Uint8Array {
+  return concat([
+    encode("abadge-zk-root-v1\0"),
+    encode(`${meta.profileId}\0`),
+    u32be(meta.keyVersion),
+  ]);
 }

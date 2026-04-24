@@ -253,22 +253,48 @@ export class DaemonClient {
     };
   }
 
-  /** Encrypt a plaintext value. */
-  async encrypt(payload: unknown): Promise<EncryptResult> {
-    return (await this.send("item.encrypt", { payload })) as EncryptResult;
+  /**
+   * Encrypt a plaintext value. §W1S7-001: the caller MUST pre-generate the
+   * itemId and know the target profileId so both can be bound into the
+   * XChaCha20-Poly1305 AAD.
+   */
+  async encrypt(
+    payload: unknown,
+    meta: { profileId: string; itemId: string; contentVersion?: number },
+  ): Promise<EncryptResult> {
+    return (await this.send("item.encrypt", { payload, ...meta })) as EncryptResult;
   }
 
-  /** Decrypt an encrypted item. */
-  async decrypt(encryptedItemKey: string, ciphertext: string): Promise<DecryptResult> {
-    return (await this.send("item.decrypt", { encryptedItemKey, ciphertext })) as DecryptResult;
+  /**
+   * Decrypt an encrypted item. §W1S7-001: `meta` MUST exactly match the values
+   * bound at encrypt time, otherwise the AEAD tag verification fails.
+   */
+  async decrypt(
+    encryptedItemKey: string,
+    ciphertext: string,
+    meta: { profileId: string; itemId: string; contentVersion?: number },
+  ): Promise<DecryptResult> {
+    return (await this.send("item.decrypt", {
+      encryptedItemKey,
+      ciphertext,
+      ...meta,
+    })) as DecryptResult;
   }
 
-  /** Re-wrap item DEKs with a new root key. */
+  /**
+   * Re-wrap item DEKs with a new root key. §W1S7-001: profileId is carried
+   * alongside the items so the daemon can bind the DEK-wrap AAD for each item.
+   */
   async rekey(
     items: Array<{ id: string; encryptedItemKey: string }>,
     oldRootKey: string,
+    meta: { profileId: string },
   ): Promise<RekeyItemResult[]> {
-    return (await this.send("item.rekey", { items, oldRootKey })) as RekeyItemResult[];
+    return (await this.send("item.rekey", {
+      items,
+      oldRootKey,
+      ...meta,
+    })) as RekeyItemResult[];
   }
 
   /** Spawn a subprocess with a secret injected as an environment variable. */
@@ -304,6 +330,10 @@ export class DaemonClient {
    * Spawn a subprocess with all item fields injected as environment variables.
    * Decrypts the item if encryptedItemKey+ciphertext are provided, or uses
    * serverPayload directly if the caller already has the decrypted payload.
+   *
+   * §W1S7-001: when encryptedItemKey+ciphertext are provided, `zkMeta` MUST
+   * also be provided so the daemon can rebuild the XChaCha20-Poly1305 AAD.
+   * Pass `null` in the server-managed (serverPayload) case.
    */
   async expandEnv(
     encryptedItemKey: string | null,
@@ -311,6 +341,7 @@ export class DaemonClient {
     serverPayload: unknown,
     command: string,
     args?: string[],
+    zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
   ): Promise<EnvExecResult> {
     return (await this.send("exec.expandEnv", {
       encryptedItemKey: encryptedItemKey ?? undefined,
@@ -318,6 +349,9 @@ export class DaemonClient {
       serverPayload,
       command,
       args,
+      profileId: zkMeta?.profileId,
+      itemId: zkMeta?.itemId,
+      contentVersion: zkMeta?.contentVersion,
     })) as EnvExecResult;
   }
 }
@@ -330,7 +364,8 @@ export async function daemonExpandEnv(
   command: string,
   args: string[],
   options?: DaemonIdentityCallbacks,
+  zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
 ): Promise<{ exitCode: number }> {
   const client = new DaemonClient({ ...(options ?? {}) });
-  return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args);
+  return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta);
 }

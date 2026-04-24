@@ -83,15 +83,17 @@ async function startTestServerUnlocked(): Promise<{
   password: string;
 }> {
   const password = "test-master-password";
+  const profileId = "test-profile";
   const salt = generateSalt();
   const kek = deriveKEK(password, salt, TEST_KDF_PARAMS);
   const rootKey = generateRootKey();
-  const wrapped = wrapRootKey(rootKey, kek);
+  // §W1S7-001 — daemon unlock rebuilds this same AAD; must stay in sync.
+  const wrapped = wrapRootKey(rootKey, kek, { profileId, keyVersion: 1 });
   zeroKey(kek);
   zeroKey(rootKey);
 
   const meta: VaultMeta = {
-    id: "test-profile",
+    id: profileId,
     wrappedRootKey: wrapped.wrapped,
     kdfSalt: toBase64(salt),
     keyVersion: 1,

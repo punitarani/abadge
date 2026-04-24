@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildServerAad,
+  buildZkContentAad,
+  buildZkDekWrapAad,
+  buildZkRootWrapAad,
   NO_PROFILE_AAD_SENTINEL,
   profileIdForServerAad,
   SERVER_AAD_MIN_VERSION,
@@ -103,5 +106,128 @@ describe("profileIdForServerAad", () => {
   test("empty string profileId is returned unchanged (distinct from null)", () => {
     // Empty-string is a real value and must not be conflated with null.
     expect(profileIdForServerAad("")).toBe("");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// §W1S7-001 — zero-knowledge AAD helpers (content, DEK-wrap, root-wrap).
+// -----------------------------------------------------------------------------
+
+describe("buildZkContentAad", () => {
+  const BASE = { profileId: "prof_zk", itemId: "item_zk", contentVersion: 1 };
+
+  test("is deterministic for identical input", () => {
+    expect(buildZkContentAad(BASE)).toEqual(buildZkContentAad(BASE));
+  });
+
+  test("carries the 'abadge-zk-content-v1' domain separator prefix", () => {
+    const aad = buildZkContentAad(BASE);
+    const prefix = new TextEncoder().encode("abadge-zk-content-v1\0");
+    expect(aad.slice(0, prefix.length)).toEqual(prefix);
+  });
+
+  test("does not collide with any other ZK or server AAD namespace", () => {
+    // Pin the domain separator boundaries — if a future refactor accidentally
+    // dropped the prefix or reused the server prefix, this flags it.
+    const content = buildZkContentAad(BASE);
+    const dek = buildZkDekWrapAad({ profileId: BASE.profileId, itemId: BASE.itemId });
+    const root = buildZkRootWrapAad({ profileId: BASE.profileId, keyVersion: 1 });
+    const server = buildServerAad({
+      orgId: "org",
+      profileId: BASE.profileId,
+      itemId: BASE.itemId,
+      keyVersion: 1,
+    });
+    expect(content).not.toEqual(dek);
+    expect(content).not.toEqual(root);
+    expect(content).not.toEqual(server);
+  });
+
+  test("different profileId produces different AAD", () => {
+    expect(buildZkContentAad(BASE)).not.toEqual(
+      buildZkContentAad({ ...BASE, profileId: "prof_other" }),
+    );
+  });
+
+  test("different itemId produces different AAD", () => {
+    expect(buildZkContentAad(BASE)).not.toEqual(
+      buildZkContentAad({ ...BASE, itemId: "item_other" }),
+    );
+  });
+
+  test("different contentVersion produces different AAD", () => {
+    expect(buildZkContentAad({ ...BASE, contentVersion: 1 })).not.toEqual(
+      buildZkContentAad({ ...BASE, contentVersion: 2 }),
+    );
+  });
+
+  test("contentVersion is encoded big-endian (u32be)", () => {
+    const aad = buildZkContentAad({ ...BASE, contentVersion: 0x01020304 });
+    const tail = aad.slice(aad.length - 4);
+    expect(tail).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04]));
+  });
+
+  test("null separators prevent boundary ambiguity", () => {
+    const a = buildZkContentAad({ profileId: "ab", itemId: "cd", contentVersion: 1 });
+    const b = buildZkContentAad({ profileId: "a", itemId: "bcd", contentVersion: 1 });
+    expect(a).not.toEqual(b);
+  });
+});
+
+describe("buildZkDekWrapAad", () => {
+  const BASE = { profileId: "prof_zk", itemId: "item_zk" };
+
+  test("is deterministic for identical input", () => {
+    expect(buildZkDekWrapAad(BASE)).toEqual(buildZkDekWrapAad(BASE));
+  });
+
+  test("carries the 'abadge-zk-dek-v1' domain separator prefix", () => {
+    const aad = buildZkDekWrapAad(BASE);
+    const prefix = new TextEncoder().encode("abadge-zk-dek-v1\0");
+    expect(aad.slice(0, prefix.length)).toEqual(prefix);
+  });
+
+  test("different profileId produces different AAD", () => {
+    expect(buildZkDekWrapAad(BASE)).not.toEqual(
+      buildZkDekWrapAad({ ...BASE, profileId: "prof_other" }),
+    );
+  });
+
+  test("different itemId produces different AAD", () => {
+    expect(buildZkDekWrapAad(BASE)).not.toEqual(
+      buildZkDekWrapAad({ ...BASE, itemId: "item_other" }),
+    );
+  });
+});
+
+describe("buildZkRootWrapAad", () => {
+  const BASE = { profileId: "prof_zk", keyVersion: 1 };
+
+  test("is deterministic for identical input", () => {
+    expect(buildZkRootWrapAad(BASE)).toEqual(buildZkRootWrapAad(BASE));
+  });
+
+  test("carries the 'abadge-zk-root-v1' domain separator prefix", () => {
+    const aad = buildZkRootWrapAad(BASE);
+    const prefix = new TextEncoder().encode("abadge-zk-root-v1\0");
+    expect(aad.slice(0, prefix.length)).toEqual(prefix);
+  });
+
+  test("different profileId produces different AAD", () => {
+    expect(buildZkRootWrapAad(BASE)).not.toEqual(
+      buildZkRootWrapAad({ ...BASE, profileId: "prof_other" }),
+    );
+  });
+
+  test("different keyVersion produces different AAD", () => {
+    expect(buildZkRootWrapAad({ ...BASE, keyVersion: 1 })).not.toEqual(
+      buildZkRootWrapAad({ ...BASE, keyVersion: 2 }),
+    );
+  });
+
+  test("keyVersion is encoded big-endian (u32be)", () => {
+    const aad = buildZkRootWrapAad({ ...BASE, keyVersion: 0x01020304 });
+    const tail = aad.slice(aad.length - 4);
+    expect(tail).toEqual(new Uint8Array([0x01, 0x02, 0x03, 0x04]));
   });
 });

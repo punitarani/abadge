@@ -27,6 +27,9 @@ export type {
 // Shared utilities — safe for all environments
 export {
   buildServerAad,
+  buildZkContentAad,
+  buildZkDekWrapAad,
+  buildZkRootWrapAad,
   CRYPTO_VERSION,
   DEFAULT_KDF_PARAMS,
   formatRecoveryKey,
@@ -47,4 +50,7 @@ export {
   toBase64,
   verifyApiKey,
   verifyEd25519,
+  type ZkContentAadMeta,
+  type ZkDekWrapAadMeta,
+  type ZkRootWrapAadMeta,
 } from "./shared/index";

@@ -99,15 +99,19 @@ export async function daemonChangePassword(
   return withDaemonClient((client) => client.changePassword(profileId, oldPassword, newPassword));
 }
 
-export async function daemonEncrypt(payload: unknown): Promise<EncryptResult> {
-  return withDaemonClient((client) => client.encrypt(payload));
+export async function daemonEncrypt(
+  payload: unknown,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
+): Promise<EncryptResult> {
+  return withDaemonClient((client) => client.encrypt(payload, meta));
 }
 
 export async function daemonDecrypt(
   encryptedItemKey: string,
   ciphertext: string,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
 ): Promise<DecryptResult> {
-  return withDaemonClient((client) => client.decrypt(encryptedItemKey, ciphertext));
+  return withDaemonClient((client) => client.decrypt(encryptedItemKey, ciphertext, meta));
 }
 
 export async function daemonExecEnv(
@@ -125,9 +129,10 @@ export async function daemonExpandEnv(
   serverPayload: unknown,
   command: string,
   args: string[],
+  zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
 ): Promise<EnvExecResult> {
   return withDaemonClient((client) =>
-    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args),
+    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta),
   );
 }
 

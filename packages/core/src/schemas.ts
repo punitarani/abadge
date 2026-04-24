@@ -13,6 +13,17 @@ import {
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
 
+/**
+ * §W1S7-001 — Client-provided UUIDs for ZK item create. The itemId is bound
+ * into the XChaCha20-Poly1305 AAD at encrypt time, so the client must choose
+ * the id before wrapping the payload. The server validates this pattern and
+ * maps the insert-time unique-violation to a ConflictError so two clients
+ * racing with the same UUID see a domain error rather than a 500.
+ */
+const UuidString = Schema.String.pipe(
+  Schema.pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+);
+
 // §AGC1b — iterative depth check: avoids stack-overflow on adversarial input.
 function jsonDepth(root: unknown): number {
   let maxDepth = 0;
@@ -137,6 +148,11 @@ export const RotateKeySchema = Schema.Struct({
 
 export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
+  // §W1S7-001 — Client-provided id. The id is bound into the XChaCha20-Poly1305
+  // AAD at encrypt time (see `buildZkContentAad` / `buildZkDekWrapAad`), so the
+  // server MUST use this value verbatim when inserting the row. Any server-side
+  // replacement would break the AAD binding and make the item undecryptable.
+  id: UuidString,
   label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
@@ -480,6 +496,12 @@ export const CiphertextAccessResponseSchema = Schema.Struct({
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   cryptoVersion: Schema.Int,
+  // §W1S7-001 — local agents need these to rebuild the XChaCha20-Poly1305
+  // AAD for ZK decryption. The server computes them from the row and returns
+  // them verbatim; clients MUST pass them through to the daemon unchanged.
+  itemId: NonEmptyString,
+  profileId: NonEmptyString,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
 });
 
 export const RevealAccessResponseSchema = Schema.Struct({
@@ -491,6 +513,10 @@ export const ZeroKnowledgeMountAccessResponseSchema = Schema.Struct({
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   cryptoVersion: Schema.Int,
+  // §W1S7-001 — see CiphertextAccessResponseSchema. AAD meta for local decrypt.
+  itemId: NonEmptyString,
+  profileId: NonEmptyString,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
 });
 
 export const ServerManagedMountAccessResponseSchema = Schema.Struct({

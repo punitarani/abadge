@@ -1,10 +1,32 @@
 import { ITEM_KINDS, type ItemKind } from "@abadge/core";
-import type { CreateItemInput } from "@abadge/sdk";
+import type { AbadgeUserClient, CreateItemInput } from "@abadge/sdk";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
+import { loadConfig } from "../config";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
+
+/**
+ * §W1S7-001 — Resolve the ZK profile id the server will insert into. The
+ * server picks the first ZK profile in the active org (see
+ * `insertZeroKnowledgeItem` in the items router); we match that here so the
+ * AAD we bind at encrypt time matches the row the server persists.
+ */
+async function resolveZkProfileId(client: AbadgeUserClient): Promise<string> {
+  const config = loadConfig();
+  if (!config?.activeOrgId) {
+    throw new Error("No active organization configured. Run `abadge org use <orgId>` first.");
+  }
+  const result = await client.listProfiles(config.activeOrgId);
+  const zkProfile = result.profiles.find((p) => p.storageMode === "zero_knowledge");
+  if (!zkProfile) {
+    throw new Error(
+      "No zero-knowledge profile in this organization. Create one with `abadge profile create --storage-mode zero_knowledge`.",
+    );
+  }
+  return zkProfile.id;
+}
 
 type ItemPayload = Extract<CreateItemInput, { storageMode: "server_managed" }>["payload"];
 type CreateItemOptions = {
@@ -63,7 +85,10 @@ async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItem
   return { label, kind, value, storageMode };
 }
 
-async function buildCreateItemInput(values: CreateItemValues): Promise<CreateItemInput> {
+async function buildCreateItemInput(
+  values: CreateItemValues,
+  resolveZkProfileId: () => Promise<string>,
+): Promise<CreateItemInput> {
   const payload = buildPayload(values.label, values.value, values.kind);
   if (values.storageMode === "server_managed") {
     return {
@@ -72,9 +97,15 @@ async function buildCreateItemInput(values: CreateItemValues): Promise<CreateIte
     };
   }
 
-  const encrypted = await daemonEncrypt(payload);
+  // §W1S7-001 — ZK path: itemId is bound into the XChaCha20-Poly1305 AAD at
+  // encrypt time, so we mint the UUID here and pass the same value to both
+  // the daemon (for the AAD) and the server insert (for the row id).
+  const profileId = await resolveZkProfileId();
+  const itemId = crypto.randomUUID();
+  const encrypted = await daemonEncrypt(payload, { profileId, itemId });
   return {
     storageMode: "zero_knowledge",
+    id: itemId,
     label: values.label,
     encryptedItemKey: encrypted.encryptedItemKey,
     ciphertext: encrypted.ciphertext,
@@ -97,7 +128,9 @@ export function createItemCommand(): Command {
       try {
         const client = await createUserApiClient();
         const values = await readCreateItemValues(opts);
-        const result = await client.createItem(await buildCreateItemInput(values));
+        const result = await client.createItem(
+          await buildCreateItemInput(values, () => resolveZkProfileId(client)),
+        );
         if (opts.json) {
           json(result);
           return;
@@ -167,7 +200,15 @@ export function createItemCommand(): Command {
           return;
         }
 
-        const decrypted = await daemonDecrypt(item.encryptedItemKey, item.ciphertext);
+        // §W1S7-001 — reveal needs profileId + contentVersion to rebuild AAD.
+        if (!item.profileId) {
+          throw new Error("Item is missing a profile binding; cannot decrypt.");
+        }
+        const decrypted = await daemonDecrypt(item.encryptedItemKey, item.ciphertext, {
+          profileId: item.profileId,
+          itemId: item.id,
+          contentVersion: item.contentVersion,
+        });
         json({
           ...item,
           payload: decrypted.payload,
@@ -205,7 +246,18 @@ export function createItemCommand(): Command {
         let result: { ok: boolean; contentVersion: number };
 
         if (currentItem.storageMode === "zero_knowledge") {
-          const encrypted = await daemonEncrypt(payload);
+          // §W1S7-001 — the update will land as contentVersion = current + 1;
+          // bind that NEW version into the AAD so the refreshed row decrypts
+          // with the same contentVersion the server persists.
+          if (!currentItem.profileId) {
+            throw new Error("Item is missing a profile binding; cannot update.");
+          }
+          const nextContentVersion = currentItem.contentVersion + 1;
+          const encrypted = await daemonEncrypt(payload, {
+            profileId: currentItem.profileId,
+            itemId: currentItem.id,
+            contentVersion: nextContentVersion,
+          });
           result = await client.updateItem(id, {
             storageMode: "zero_knowledge",
             label,

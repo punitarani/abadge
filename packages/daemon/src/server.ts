@@ -331,16 +331,39 @@ function buildHandlers(
 
     "item.encrypt": async (params): Promise<EncryptResult> => {
       const payload = params.payload;
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       if (payload === undefined) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
       }
+      // §W1S7-001 — profileId + itemId are bound into the XChaCha20-Poly1305
+      // AAD. CLI callers MUST pre-generate the itemId (UUID) before calling
+      // item.encrypt and pass the same value to items.create.
+      if (!profileId || !itemId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId and itemId are required",
+        };
+      }
       requireUnlocked(vault);
-      return vault.encrypt(payload);
+      return vault.encrypt(payload, { profileId, itemId, contentVersion });
     },
 
     "item.decrypt": async (params) => {
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       const field = params.field as string | undefined;
       if (!encryptedItemKey || !ciphertext) {
         throw {
@@ -348,8 +371,20 @@ function buildHandlers(
           message: "encryptedItemKey and ciphertext are required",
         };
       }
+      // §W1S7-001 — AAD meta is mandatory on decrypt; a missing param would
+      // otherwise mask the row-swap detection the AAD is designed to provide.
+      if (!profileId || !itemId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId and itemId are required",
+        };
+      }
       requireUnlocked(vault);
-      const payload = vault.decrypt(encryptedItemKey, ciphertext);
+      const payload = vault.decrypt(encryptedItemKey, ciphertext, {
+        profileId,
+        itemId,
+        contentVersion,
+      });
       if (field !== undefined) {
         // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
         const resolved = resolveFieldValue(payload as any, field);
@@ -361,12 +396,24 @@ function buildHandlers(
     "item.rekey": async (params): Promise<RekeyItemResult[]> => {
       const items = params.items as Array<{ id: string; encryptedItemKey: string }> | undefined;
       const oldRootKeyB64 = params.oldRootKey as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!items || !oldRootKeyB64) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items and oldRootKey are required" };
       }
+      // §W1S7-001 — rekey re-wraps each DEK under the new root key with the
+      // DEK-wrap AAD bound to (profileId, itemId). profileId MUST come from
+      // the caller, not the currently-unlocked vault meta: during rotation
+      // the unlocked vault may represent a different profile than the items
+      // being rewrapped (e.g. password-change flows on a staged keyVersion).
+      if (!profileId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId is required",
+        };
+      }
       requireUnlocked(vault);
       const oldRootKey = fromBase64(oldRootKeyB64);
-      const results = vault.rekey(items, oldRootKey);
+      const results = vault.rekey(items, oldRootKey, { profileId });
       oldRootKey.fill(0);
       return results;
     },
@@ -412,13 +459,33 @@ function buildHandlers(
       const serverPayload = params.serverPayload;
       const command = params.command as string | undefined;
       const args = (params.args as string[]) ?? [];
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       if (!command) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "command is required" };
       }
 
       let payload: unknown;
       if (encryptedItemKey && ciphertext) {
-        payload = vault.decrypt(encryptedItemKey, ciphertext);
+        // §W1S7-001 — ZK decrypt requires the AAD meta so the XChaCha20-Poly1305
+        // tag check binds to the same (profile, item, contentVersion) the row
+        // was stored under.
+        if (!profileId || !itemId) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "profileId and itemId are required for ZK expandEnv",
+          };
+        }
+        payload = vault.decrypt(encryptedItemKey, ciphertext, {
+          profileId,
+          itemId,
+          contentVersion,
+        });
       } else if (serverPayload !== undefined) {
         payload = serverPayload;
       } else {

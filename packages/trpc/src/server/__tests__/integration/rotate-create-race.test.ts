@@ -95,6 +95,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     });
     const createPromise = callerB.items.create({
       storageMode: "zero_knowledge",
+      id: crypto.randomUUID(),
       label: "new item",
       encryptedItemKey: "ek-new",
       ciphertext: "ct-new",
@@ -184,6 +185,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     try {
       await caller.items.create({
         storageMode: "zero_knowledge",
+        id: crypto.randomUUID(),
         label: "stale wrap",
         encryptedItemKey: "ek-stale",
         ciphertext: "ct-stale",
@@ -222,6 +224,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
 
     const created = await caller.items.create({
       storageMode: "zero_knowledge",
+      id: crypto.randomUUID(),
       label: "compat item",
       encryptedItemKey: "ek-compat",
       ciphertext: "ct-compat",

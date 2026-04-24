@@ -321,6 +321,12 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
   });
 
 const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePasswordSchema>) =>
+  // TODO(§W1S7-001-followup): changePassword does NOT advance profile.keyVersion,
+  // but a concurrent rotateKey could commit between the client's `profiles.get`
+  // (which reads keyVersion for the AAD bind) and this UPDATE. Post-AAD the
+  // mismatch fails loudly on the next unlock rather than silently. Adding a
+  // CAS on profile.keyVersion here would tighten that to a synchronous
+  // CONFLICT — out of scope for the AAD fix itself.
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
