@@ -127,7 +127,6 @@ export const RecoverySetupSchema = Schema.Struct({
 export const RekeyedItemSchema = Schema.Struct({
   itemId: NonEmptyString,
   encryptedItemKey: NonEmptyString,
-  keyNonce: NonEmptyString,
 });
 
 export const RotateKeySchema = Schema.Struct({

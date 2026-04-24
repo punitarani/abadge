@@ -22,7 +22,6 @@ export const items = pgTable(
 
     // ZK fields (null for server_managed)
     encryptedItemKey: text("encrypted_item_key"),
-    keyNonce: text("key_nonce"),
     ciphertext: text("ciphertext"),
     contentNonce: text("content_nonce"),
 

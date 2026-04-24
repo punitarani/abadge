@@ -135,7 +135,7 @@ Items continue to support two storage modes:
 - **Zero-knowledge** — encrypted client-side with XChaCha20-Poly1305
 - **Server-managed** — encrypted server-side with AES-256-GCM
 
-Fields: `id`, `profileId`, `organizationId`, `label` (**NEW — required, in the clear**), `kind`, `tags`, `storageMode`, and the existing encryption columns (`encryptedItemKey`, `keyNonce`, `ciphertext`, `contentNonce`, `serverCiphertext`, `serverIv`, `serverKeyVersion`, `cryptoVersion`, `contentVersion`, `deletedAt`, `createdAt`, `updatedAt`).
+Fields: `id`, `profileId`, `organizationId`, `label` (**NEW — required, in the clear**), `kind`, `tags`, `storageMode`, and the existing encryption columns (`encryptedItemKey`, `ciphertext`, `contentNonce`, `serverCiphertext`, `serverIv`, `serverKeyVersion`, `cryptoVersion`, `contentVersion`, `deletedAt`, `createdAt`, `updatedAt`).
 
 The `label` field moves into the database row (currently inside the encrypted payload, making it invisible to the list API). Users can see which item is which without decrypting.
 

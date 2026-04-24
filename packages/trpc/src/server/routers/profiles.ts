@@ -499,7 +499,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
           });
         }
 
-        // Persist BOTH encryptedItemKey AND keyNonce — the nonce is paired with the wrapped DEK.
+        // Persist encryptedItemKey — the nonce is prepended inside the combined blob.
         // Extra ids not in the profile are filtered by the WHERE clause (no-op) rather than rejected,
         // so concurrent deletes don't race the rotate.
         for (const r of rekeyedItems) {
@@ -507,7 +507,6 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
             .update(items)
             .set({
               encryptedItemKey: r.encryptedItemKey,
-              keyNonce: r.keyNonce,
               cryptoVersion: txNextKeyVersion,
               updatedAt: new Date(),
             })

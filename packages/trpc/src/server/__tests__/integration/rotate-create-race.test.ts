@@ -77,7 +77,6 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
       label: "existing item",
       storageMode: "zero_knowledge",
       encryptedItemKey: "ek-v1",
-      keyNonce: "nonce-v1",
       ciphertext: "ct-v1",
       contentNonce: "content-nonce-v1",
       cryptoVersion: 1,
@@ -92,7 +91,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     const rotatePromise = callerA.profiles.rotateKey({
       profileId: profile.profileId,
       wrappedRootKey: "wrap-v2",
-      rekeyedItems: [{ itemId: existingItemId, encryptedItemKey: "ek-v2", keyNonce: "nonce-v2" }],
+      rekeyedItems: [{ itemId: existingItemId, encryptedItemKey: "ek-v2" }],
     });
     const createPromise = callerB.items.create({
       storageMode: "zero_knowledge",

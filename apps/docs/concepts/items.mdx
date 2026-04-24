@@ -16,8 +16,7 @@ An **item** is a stored credential. Every item belongs to a profile, inherits it
 | `kind` | text | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
 | `tags` | jsonb | Array of strings |
 | `storageMode` | text | `zero_knowledge` or `server_managed` (inherited from profile) |
-| `encryptedItemKey` | text | DEK wrapped by root key (ZK only) |
-| `keyNonce` | text | Nonce for key wrapping (ZK only) |
+| `encryptedItemKey` | text | DEK wrapped by root key, nonce prepended (ZK only) |
 | `ciphertext` | text | Payload encrypted by DEK (ZK only) |
 | `contentNonce` | text | Nonce for content encryption (ZK only) |
 | `serverCiphertext` | text | AES-256-GCM ciphertext (server-managed only) |

@@ -42,7 +42,7 @@ describe("profiles.rotateKey", () => {
     await truncateAll();
   });
 
-  test("rotates every ZK item's encryptedItemKey AND keyNonce and bumps cryptoVersion", async () => {
+  test("rotates every ZK item's encryptedItemKey and bumps cryptoVersion", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -70,12 +70,10 @@ describe("profiles.rotateKey", () => {
         {
           itemId: zk1.itemId,
           encryptedItemKey: "new-eik-1",
-          keyNonce: "new-nonce-1",
         },
         {
           itemId: zk2.itemId,
           encryptedItemKey: "new-eik-2",
-          keyNonce: "new-nonce-2",
         },
       ],
     });
@@ -85,12 +83,10 @@ describe("profiles.rotateKey", () => {
 
     const [row1] = await db.select().from(items).where(eq(items.id, zk1.itemId)).limit(1);
     expect(row1?.encryptedItemKey).toBe("new-eik-1");
-    expect(row1?.keyNonce).toBe("new-nonce-1");
     expect(row1?.cryptoVersion).toBe(2);
 
     const [row2] = await db.select().from(items).where(eq(items.id, zk2.itemId)).limit(1);
     expect(row2?.encryptedItemKey).toBe("new-eik-2");
-    expect(row2?.keyNonce).toBe("new-nonce-2");
     expect(row2?.cryptoVersion).toBe(2);
 
     const [profileRow] = await db
@@ -136,7 +132,6 @@ describe("profiles.rotateKey", () => {
           {
             itemId: zk1.itemId,
             encryptedItemKey: "new-eik-1",
-            keyNonce: "new-nonce-1",
           },
         ],
       });
@@ -166,10 +161,8 @@ describe("profiles.rotateKey", () => {
     const [zk1After] = await db.select().from(items).where(eq(items.id, zk1.itemId)).limit(1);
     const [zk2After] = await db.select().from(items).where(eq(items.id, zk2.itemId)).limit(1);
     expect(zk1After?.encryptedItemKey).toBe(zk1Initial?.encryptedItemKey ?? null);
-    expect(zk1After?.keyNonce).toBe(zk1Initial?.keyNonce ?? null);
     expect(zk1After?.cryptoVersion).toBe(zk1Initial?.cryptoVersion ?? 1);
     expect(zk2After?.encryptedItemKey).toBe(zk2Initial?.encryptedItemKey ?? null);
-    expect(zk2After?.keyNonce).toBe(zk2Initial?.keyNonce ?? null);
     expect(zk2After?.cryptoVersion).toBe(zk2Initial?.cryptoVersion ?? 1);
   });
 
@@ -220,7 +213,6 @@ describe("profiles.rotateKey", () => {
         {
           itemId: live.itemId,
           encryptedItemKey: "new-eik-live",
-          keyNonce: "new-nonce-live",
         },
       ],
     });
@@ -230,7 +222,6 @@ describe("profiles.rotateKey", () => {
 
     const [liveRow] = await db.select().from(items).where(eq(items.id, live.itemId)).limit(1);
     expect(liveRow?.encryptedItemKey).toBe("new-eik-live");
-    expect(liveRow?.keyNonce).toBe("new-nonce-live");
   });
 
   test("server_managed items in the profile are ignored by the coverage check", async () => {
@@ -262,7 +253,6 @@ describe("profiles.rotateKey", () => {
         {
           itemId: zk.itemId,
           encryptedItemKey: "new-eik",
-          keyNonce: "new-nonce",
         },
       ],
     });

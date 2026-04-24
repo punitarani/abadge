@@ -78,6 +78,13 @@
       "when": 1776313739777,
       "tag": "0010_drop_vaults",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776988947437,
+      "tag": "0011_drop_items_key_nonce",
+      "breakpoints": true
     }
   ]
 }
