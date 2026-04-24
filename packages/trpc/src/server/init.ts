@@ -13,6 +13,7 @@ import type {
   SessionRequestContext,
 } from "./context";
 import { getTrpcErrorData, toTrpcError } from "./errors";
+import { assertOrgOnboardingComplete } from "./onboarding-gate";
 
 const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
 
@@ -128,20 +129,39 @@ export const userProcedure = publicProcedure.use(async ({ ctx, next }) => {
 
 export const scopedSessionProcedure = (_scope: string) =>
   sessionProcedure.use(async ({ ctx, next }) => {
-    if (!ctx.identity.organizationId) {
-      throw new ForbiddenError({
-        code: "FORBIDDEN",
-        message: "Organization context required",
-        hint: "Complete onboarding to create or join an organization.",
-      });
+    try {
+      if (!ctx.identity.organizationId) {
+        throw new ForbiddenError({
+          code: "FORBIDDEN",
+          message: "Organization context required",
+          hint: "Complete onboarding to create or join an organization.",
+        });
+      }
+      await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
+      // Onboarding-complete gate: any org-scoped call requires the org to
+      // have at least one bootstrapped profile. At-use (not just at-issuance)
+      // so a later profile deletion revokes downstream access immediately.
+      // Safe here because profiles.create / profiles.bootstrap use
+      // `sessionProcedure`, not `scopedSessionProcedure` — no chicken-and-egg.
+      await assertOrgOnboardingComplete(ctx.db, ctx.identity.organizationId);
+      return await next({ ctx });
+    } catch (error) {
+      // Convert domain errors (ForbiddenError, etc.) into TRPCError with the
+      // proper status and domain code preserved in `data`. Without this, any
+      // ForbiddenError thrown above would surface as INTERNAL_SERVER_ERROR
+      // (pre-existing bug for the "not a member" path as well).
+      throw toTrpcError(error);
     }
-    await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
-    return next({ ctx });
   });
 
 export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
     const identity = await Effect.runPromise(resolveAgentIdentity(ctx));
+    // Same onboarding-complete gate for agents — keyed off the agent's own
+    // org. If the org loses its last bootstrapped profile, active `abs_`
+    // sessions stop working on their next request rather than waiting for
+    // the 15-minute TTL.
+    await assertOrgOnboardingComplete(ctx.db, identity.agentOrganizationId);
     return next({
       ctx: {
         ...ctx,

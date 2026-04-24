@@ -48,6 +48,7 @@ import {
   scopedSessionProcedure,
   sessionProcedure,
 } from "../init";
+import { assertOrgOnboardingComplete } from "../onboarding-gate";
 import { serializeAgent } from "../serialize";
 
 type OwnedAgentRow = Pick<
@@ -595,6 +596,14 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
       return yield* Effect.fail(notFound());
     }
     yield* ensureAgentEligibleForSessionExchange(agent);
+
+    // At-issuance onboarding-complete gate: refuse to mint an `abs_` session
+    // for an agent whose org has no bootstrapped profile. The matching
+    // at-use gate lives in `agentProcedure` (init.ts), so a degraded org
+    // also stops serving existing sessions on next request — this early
+    // failure just gives clients a faster, more specific error instead of
+    // letting them succeed here and fail later.
+    yield* tryAsync(() => assertOrgOnboardingComplete(ctx.db, agent.organizationId));
 
     const challengeHash = yield* tryAsync(() => hashApiKey(input.challenge));
     const [challengeRecord] = (yield* tryAsync(() =>

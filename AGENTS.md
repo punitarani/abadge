@@ -234,6 +234,7 @@ Does not own:
 * `AbadgeAgentClient` keypair-backed sessions auto-refresh at T-2 minutes before expiry; no long-lived secret is stored on disk.
 * Error envelopes use `{ code, message, hint, meta? }` — all four fields on every domain error.
 * The `field` parameter on `access.reveal` and `access.mount` is resolved by `resolveFieldValue` in `@abadge/core/secret-delivery`; never duplicated in routers.
+* **Onboarding-complete gate.** No org-scoped or agent-scoped API call succeeds unless the target organization has at least one bootstrapped profile. A profile is bootstrapped when `storageMode='server_managed'` OR `wrappedRootKey IS NOT NULL`. Enforced at-use in `scopedSessionProcedure` and `agentProcedure`, and at-issuance in `exchangeAgentSession`. Exposed to the web via `onboarding.status`. The CLI cannot be approved from `/device/approve` until the user has a usable org. See `packages/trpc/src/server/onboarding-gate.ts`. Error code: `ONBOARDING_INCOMPLETE` (HTTP 403).
 
 ## Data model summary
 
