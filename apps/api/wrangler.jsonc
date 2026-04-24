@@ -30,6 +30,14 @@
   "placement": {
     "mode": "smart"
   },
+  "send_email": [
+    {
+      // CF Email Workers binding. Domain: notifications.abadge.io
+      // SPF/DKIM/DMARC configured on cf-bounce.notifications.abadge.io.
+      // From-address: notifications@notifications.abadge.io
+      "name": "SEND_EMAIL"
+    }
+  ],
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

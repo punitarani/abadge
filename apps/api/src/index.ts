@@ -55,7 +55,12 @@ app.use("/api/auth/*", authEnvelopeMiddleware);
 // Better Auth catch-all route
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   const db = getDb(getConnectionString(c.env));
-  const auth = createAuth(db, validateWorkerEnv(c.env as unknown as Record<string, unknown>));
+  // SEND_EMAIL is a CF runtime binding (not a string env var), so it cannot go
+  // through validateWorkerEnv's zod schema. Merge it in after validation.
+  const auth = createAuth(db, {
+    ...validateWorkerEnv(c.env as unknown as Record<string, unknown>),
+    SEND_EMAIL: c.env.SEND_EMAIL,
+  });
   return auth.handler(c.req.raw);
 });
 

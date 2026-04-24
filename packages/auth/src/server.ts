@@ -16,7 +16,7 @@ import {
   buildOrgUpdateAuditRow,
   safeAuditInsert,
 } from "./audit-hooks";
-import { sendEmail } from "./mailer";
+import { type CloudflareEmailBinding, sendEmail } from "./mailer";
 import { createPersonalOrgForUser } from "./personal-org";
 
 // Custom access-control for the organization plugin.
@@ -77,6 +77,8 @@ export interface AuthEnv {
   GOOGLE_CLIENT_SECRET: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  /** Cloudflare Email Workers send_email binding. */
+  SEND_EMAIL: CloudflareEmailBinding;
 }
 
 type AuthOriginsEnv = Partial<Pick<AuthEnv, "ABADGE_API_URL" | "ABADGE_APP_URL">> & {
@@ -112,7 +114,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       // to silently absorb incoming OAuth logins.
       requireEmailVerification: true,
       sendResetPassword: async ({ user, token }) => {
-        await sendEmail({
+        await sendEmail(env, {
           to: user.email,
           subject: "Reset your abadge password",
           text: `Reset your password:\n\n${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}\n\nThis link expires in 1 hour.`,
@@ -122,7 +124,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
     },
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
-        await sendEmail({
+        await sendEmail(env, {
           to: user.email,
           subject: "Verify your abadge email",
           text: `Confirm your email address:\n\n${url}`,

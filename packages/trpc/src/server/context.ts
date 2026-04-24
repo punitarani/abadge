@@ -1,4 +1,4 @@
-import { createAuth } from "@abadge/auth";
+import { type CloudflareEmailBinding, createAuth } from "@abadge/auth";
 import type { Database } from "@abadge/db";
 import { createDb } from "@abadge/db";
 import { validateWorkerEnv, type WorkerEnv } from "@abadge/env/worker";
@@ -9,6 +9,7 @@ export interface HyperdriveBindingLike {
 export interface AppBindings extends WorkerEnv {
   DATABASE_URL?: string;
   HYPERDRIVE?: HyperdriveBindingLike;
+  SEND_EMAIL: CloudflareEmailBinding;
 }
 
 export interface BaseRequestContext {
@@ -80,7 +81,7 @@ export function createRequestContext(options: {
     env,
     validatedEnv,
     db,
-    auth: createAuth(db, validatedEnv),
+    auth: createAuth(db, { ...validatedEnv, SEND_EMAIL: options.env.SEND_EMAIL }),
     ipAddress:
       options.req.headers.get("cf-connecting-ip") ??
       options.req.headers.get("x-forwarded-for") ??

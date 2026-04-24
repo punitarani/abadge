@@ -43,6 +43,8 @@ describe("createAuth", () => {
     GOOGLE_CLIENT_SECRET: "google-client-secret",
     GITHUB_CLIENT_ID: "github-client-id",
     GITHUB_CLIENT_SECRET: "github-client-secret",
+    // Stub the CF Email binding — tests never actually send email.
+    SEND_EMAIL: { send: async () => {} },
   } as const;
 
   it("configures both required social providers", () => {
@@ -82,13 +84,13 @@ describe("createAuth", () => {
     expect(auth.options.emailAndPassword.requireEmailVerification).toBe(true);
   });
 
-  // §AU1: password reset callback must be wired to MailChannels.
+  // §AU1: password reset callback must be wired to email send.
   it("has sendResetPassword configured", () => {
     const auth = createAuth({} as Database, TEST_ENV);
     expect(typeof auth.options.emailAndPassword.sendResetPassword).toBe("function");
   });
 
-  // §AU1: email verification callback must be wired to MailChannels.
+  // §AU1: email verification callback must be wired to email send.
   it("has sendVerificationEmail configured", () => {
     const auth = createAuth({} as Database, TEST_ENV);
     expect(typeof auth.options.emailVerification?.sendVerificationEmail).toBe("function");

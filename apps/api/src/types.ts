@@ -17,6 +17,11 @@ export type Bindings = {
    * One DO instance per `path:ip` key.
    */
   RATE_LIMIT: DurableObjectNamespace;
+  /**
+   * Cloudflare Email Workers send_email binding.
+   * Configured in wrangler.jsonc as send_email: [{ name: "SEND_EMAIL" }].
+   */
+  SEND_EMAIL: SendEmail;
 };
 
 /** Environment for session-authenticated routes (human users). */

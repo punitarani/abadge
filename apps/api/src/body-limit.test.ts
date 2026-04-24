@@ -18,6 +18,7 @@ const testEnv: Bindings = {
   GITHUB_CLIENT_ID: "test-github-client-id",
   GITHUB_CLIENT_SECRET: "test-github-client-secret",
   RATE_LIMIT: makeAllowAllRateLimitStub(),
+  SEND_EMAIL: { send: async () => {} } as unknown as SendEmail,
 };
 
 // §DoS2: bodyLimit middleware must reject oversized requests before auth/rate-limit
