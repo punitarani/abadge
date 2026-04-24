@@ -69,8 +69,7 @@ Stored credential within a profile. Two storage modes: zero_knowledge (client-si
 | `kind` | text | NOT NULL | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
 | `tags` | jsonb | NOT NULL, default `[]` | Categorization tags |
 | `storageMode` | text | NOT NULL | `zero_knowledge` or `server_managed` |
-| `encryptedItemKey` | text | nullable | DEK wrapped by root key (ZK only) |
-| `keyNonce` | text | nullable | Nonce for key wrapping (ZK only) |
+| `encryptedItemKey` | text | nullable | DEK wrapped by root key, nonce prepended (ZK only) |
 | `ciphertext` | text | nullable | Payload encrypted by DEK (ZK only) |
 | `contentNonce` | text | nullable | Nonce for content encryption (ZK only) |
 | `serverCiphertext` | text | nullable | AES-256-GCM ciphertext (server-managed only) |

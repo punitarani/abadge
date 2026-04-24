@@ -14,7 +14,11 @@ export async function resolveSecret(
 
   if (result.storageMode === "zero_knowledge") {
     try {
-      const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext);
+      const decrypted = await daemonDecrypt(result.encryptedItemKey, result.ciphertext, {
+        profileId: result.profileId,
+        itemId: result.itemId,
+        contentVersion: result.contentVersion,
+      });
       return payloadToSecret(decrypted.payload, field);
     } catch {
       throw new Error(

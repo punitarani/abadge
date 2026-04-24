@@ -1,0 +1,135 @@
+---
+title: "items.*"
+description: "Create, list, read, update, and delete credentials."
+---
+
+The `items` router is where credentials live. Most procedures are session-scoped; `items.listForAgent` is the agent-scoped listing.
+
+## `items.create`
+
+**Tier:** `sessionProcedure` (scoped to the active organization — items inherit the caller's active profile).
+
+Input is a **discriminated union** on `storageMode`. The two shapes are:
+
+<Tabs>
+  <Tab title="Zero-knowledge">
+    <ParamField path="storageMode" type='"zero_knowledge"' required />
+    <ParamField path="label" type="string" required>
+      Cleartext display name. Stored in cleartext for listing.
+    </ParamField>
+    <ParamField path="encryptedItemKey" type="string" required>
+      DEK wrapped with the profile root key (XChaCha20-Poly1305). Base64, `nonce || ciphertext+tag`.
+    </ParamField>
+    <ParamField path="ciphertext" type="string" required>
+      Payload encrypted with the DEK (XChaCha20-Poly1305). Base64, `nonce || ciphertext+tag`. The plaintext envelope is `{ v, label, kind, tags, notes?, fields }` — see [the envelope spec](/security/zero-knowledge#zk-item-plaintext-envelope).
+    </ParamField>
+  </Tab>
+  <Tab title="Server-managed">
+    <ParamField path="storageMode" type='"server_managed"' required />
+    <ParamField path="label" type="string" required />
+    <ParamField path="payload" type="ItemPayload" required>
+      `{ v?, label?, kind?, tags?, notes?, fields }`. The API encrypts the payload with AES-256-GCM using the Worker's `ENCRYPTION_KEY`.
+    </ParamField>
+  </Tab>
+</Tabs>
+
+`profileId` is not a request field. The server routes the item automatically:
+
+- **Zero-knowledge items** land in the active organization's first `zero_knowledge` profile. If none exists, the API returns `NOT_FOUND` with a hint to create one.
+- **Server-managed items** are scoped to the organization and carry no profile association at the row level.
+
+**Returns:** `{ id }`.
+
+## `items.list`
+
+**Tier:** `sessionProcedure` (scoped to the active organization).
+
+**Input:** none.
+
+**Returns:**
+
+```ts
+{
+  items: Array<{
+    id: string;
+    label: string;
+    storageMode: "zero_knowledge" | "server_managed";
+    cryptoVersion: number;
+    contentVersion: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+```
+
+Metadata only — never returns ciphertext or payload. `kind`, `tags`, and `notes` live inside the item's encrypted payload (ZK) or server-managed ciphertext and are not exposed by the list endpoint.
+
+## `items.get`
+
+**Tier:** `sessionProcedure` (scoped to the active organization).
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:** `{ item }` as a discriminated union on `storageMode`:
+
+- `zero_knowledge` items include `encryptedItemKey` and `ciphertext` for client-side decryption.
+- `server_managed` items return metadata only — call [`items.ownerReveal`](#items-ownerreveal) to decrypt.
+
+## `items.update`
+
+**Tier:** `sessionProcedure` (scoped to the active organization).
+
+<ParamField path="itemId" type="string" required />
+<ParamField path="data" type="object" required>
+  A discriminated union on `storageMode`, matching the original item:
+
+  - **Zero-knowledge:** `{ storageMode: "zero_knowledge", label, encryptedItemKey, ciphertext, contentVersion }`
+  - **Server-managed:** `{ storageMode: "server_managed", payload, contentVersion }`
+
+  The `contentVersion` must match the current version on the server — it's the optimistic-concurrency guard.
+</ParamField>
+
+**Returns:** `{ ok: true, contentVersion }`.
+
+Errors: `STALE_VERSION` if the version mismatches — re-fetch with `items.get` and retry.
+
+## `items.ownerReveal`
+
+**Tier:** `sessionProcedure` (scoped to the active organization).
+
+Decrypt and return a **server-managed** item the current user owns. Zero-knowledge items cannot be revealed by the server — use the daemon locally instead.
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:** `{ payload }` — the full `ItemPayload` envelope.
+
+The owner reveal endpoint does not take a `field` parameter. Callers that want a single field should pick it from the returned payload; the `field` parameter is specific to the agent access path ([`access.reveal`](/api/procedures/access)).
+
+Errors: fails on zero-knowledge items.
+
+## `items.delete`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="itemId" type="string" required />
+
+**Returns:** `{ ok: true }`. Soft-delete — sets `deletedAt`, retains ciphertext.
+
+## `items.listForAgent`
+
+**Tier:** `agentProcedure`
+
+Lists items the calling agent has at least one permission row on. Metadata only — no secret data, no per-call audit row (the audited boundary is `access.*`).
+
+**Returns:** same shape as `items.list`.
+
+Agents without any grant receive an empty list.
+
+## Audit events
+
+- `item.create`
+- `item.read` (issued by `items.get` and `items.ownerReveal`)
+- `item.update`
+- `item.delete`
+- `item.delete_cascade`
+- `item.export`

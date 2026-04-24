@@ -190,7 +190,7 @@ Owns:
 * MCP server setup and tool registration (stdio transport)
 * tools: `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`
 * auth: keypair-backed (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`) or legacy API key (`ABADGE_AUTH_TOKEN`)
-* `run_with_secret`: in-process capture + secret redaction + 4 KB output cap
+* `run_with_secret`: spawns subprocess with secret in env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
 * `mount_secret`: returns opaque `mountId` (file path never returned to model); auto-cleanup after 5 min
 * orphan cleanup on startup (removes `abadge-*` temp dirs older than 10 minutes)
 * daemon client integration for local decryption of ZK items
@@ -225,7 +225,7 @@ Does not own:
 * No cross-org item access. Items and agents are scoped to their owning organization.
 * Every allowed and denied agent access attempt must be logged in audit\_log.
 * No wildcard permissions for v1. Each permission is (agent, item, capability).
-* No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed.
+* No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed. **Documented exception:** `RateLimitCounter` (a single DO in `apps/api/src/durable-objects/`) backs the rate-limit middleware. Cross-isolate-consistent counters are a correctness requirement for rate limiting on Workers; no simpler primitive provides it. New DOs require the same threshold — a correctness/security necessity that cannot be met by Postgres or in-memory state.
 * No raw SQL unless Drizzle cannot express the query and the reason is documented inline.
 * Audit log is append-only with no foreign key constraints.
 * The server never sees root keys or plaintext for zero\_knowledge items. KDF and unwrapping happen client-side only (browser, CLI, daemon).
@@ -239,7 +239,7 @@ Does not own:
 
 * `organization` — org-scoped isolation boundary (Better Auth table). Every user gets a personal org on first login. Agents and permissions are scoped to an org.
 * `profiles` — encryption boundaries within an org. Fields: orgId, name, storageMode (zero\_knowledge or server\_managed), wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion. One profile can hold many items.
-* `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, keyNonce, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt.
+* `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt. Note: `encryptedItemKey` carries the XChaCha20-Poly1305 key-wrap nonce prepended in its first 24 bytes; there is no separate `keyNonce` column.
 * `agents` — service accounts scoped to an org. Fields: orgId, kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
 * `permissions` — explicit capability grants. Fields: agentId, itemId, capability (read\_ciphertext, reveal\_plaintext, mount\_env, mount\_file), expiresAt, grantedBy. Composite unique index on (agentId, itemId, capability).
 * `audit_logs` — append-only. Fields: userId, agentId, itemId, eventType, result (allowed/denied/expired/revoked/cascade), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
@@ -393,17 +393,18 @@ bun test                      # Run test suite
 
 ## Documentation rules
 
-Documentation lives in `docs/` and must stay accurate with the code.
+Internal contributor docs live in `docs/`. The public documentation site lives in `apps/docs/` (Mintlify). Both must stay accurate with the code; when they disagree, `docs/*.md` is the source of truth and `apps/docs/` follows.
 
 ### When to update docs
 
-* **New API route** -> update `docs/API.md` with method, path, auth, request/response schema
-* **Changed API route** (new field, changed behavior, removed endpoint) -> update `docs/API.md`
-* **New CLI command or changed flags** -> update `docs/CLI.md`
-* **New MCP tool or changed tool behavior** -> update `docs/MCP.md`
-* **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md`
-* **Security model change** (new auth method, changed encryption, new permission type) -> update `docs/SECURITY.md`
-* **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md`
+* **New API route** -> update `docs/API.md` with method, path, auth, request/response schema, then mirror in `apps/docs/api/procedures/*.mdx`
+* **Changed API route** (new field, changed behavior, removed endpoint) -> update `docs/API.md` and the corresponding `apps/docs/api/procedures/*.mdx`
+* **New CLI command or changed flags** -> update `docs/CLI.md` and `apps/docs/cli/*.mdx`
+* **New MCP tool or changed tool behavior** -> update `docs/MCP.md` and `apps/docs/mcp/tools/*.mdx`
+* **New dashboard page or changed flow** -> update `apps/docs/dashboard/*.mdx`
+* **Architecture change** (new package, new system boundary, changed trust model) -> update `docs/ARCHITECTURE.md` and `apps/docs/architecture.mdx`
+* **Security model change** (new auth method, changed encryption, new permission type) -> update `docs/SECURITY.md` and `apps/docs/security/*.mdx`
+* **New dev setup step or changed command** -> update `docs/DEVELOPMENT.md` (internal only; not on Mintlify)
 * **Changed invariant or working rule** -> update this file (`AGENTS.md`)
 
 ### How to update docs
@@ -419,6 +420,7 @@ Documentation lives in `docs/` and must stay accurate with the code.
 | File | Audience | Purpose |
 |------|----------|---------|
 | `AGENTS.md` | Devs and AI agents working in the repo | Product model, invariants, working rules, code conventions |
+| `apps/docs/` | External integrators, operators, agent builders | Public Mintlify documentation site (Company, App, API, CLI, MCP). User-facing reference: when content here disagrees with `docs/*.md`, the `docs/*.md` source wins, then update Mintlify. |
 | `docs/ARCHITECTURE.md` | Devs and agents | System design, entity model, trust boundaries, request flows |
 | `docs/API.md` | API consumers (CLI, SDK, integrations) | Every endpoint with method, path, auth, request/response |
 | `docs/CLI.md` | Developers using the CLI | Command reference with examples |

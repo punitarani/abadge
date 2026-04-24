@@ -26,6 +26,10 @@ export type {
 } from "./shared/index";
 // Shared utilities — safe for all environments
 export {
+  buildServerAad,
+  buildZkContentAad,
+  buildZkDekWrapAad,
+  buildZkRootWrapAad,
   CRYPTO_VERSION,
   DEFAULT_KDF_PARAMS,
   formatRecoveryKey,
@@ -36,10 +40,17 @@ export {
   generateOpaqueToken,
   generateSalt,
   hashApiKey,
+  NO_PROFILE_AAD_SENTINEL,
+  profileIdForServerAad,
   randomBytes,
+  SERVER_AAD_MIN_VERSION,
+  type ServerAadMeta,
   signEd25519,
   toBase32,
   toBase64,
   verifyApiKey,
   verifyEd25519,
+  type ZkContentAadMeta,
+  type ZkDekWrapAadMeta,
+  type ZkRootWrapAadMeta,
 } from "./shared/index";

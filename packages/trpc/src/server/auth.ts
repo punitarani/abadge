@@ -1,4 +1,9 @@
-import { AGENT_SESSION_PREFIX, BadRequestError, UnauthorizedError } from "@abadge/core";
+import {
+  AGENT_SESSION_PREFIX,
+  BadRequestError,
+  ForbiddenError,
+  UnauthorizedError,
+} from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNull, or } from "@abadge/db";
 import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
@@ -119,6 +124,73 @@ function auditAgentSessionReject(
   );
 }
 
+// Rate-limit audit writes for unrecognized bearers to prevent attacker-driven
+// audit-log amplification. 1 write per IP per 10s window.
+const UNAUTH_AUDIT_WINDOW_MS = 10_000;
+// Hard cap on map entries. Under a scattered-source attack the map would grow
+// unbounded (one entry per unique probe IP) — the cap bounds memory to
+// ~2.4MB (10k entries × ~240 bytes/entry). When the cap is hit the map is
+// cleared wholesale; attacker can't amplify audit writes because they're
+// still gated per-IP per-window, and legitimate IPs re-populate naturally.
+const UNAUTH_AUDIT_MAX_ENTRIES = 10_000;
+const unauthBearerAuditCounters = new Map<string, { resetAt: number }>();
+
+export function shouldWriteUnauthBearerAudit(ipAddress: string | undefined): boolean {
+  const key = ipAddress ?? "__unknown_ip__";
+  const now = Date.now();
+  const entry = unauthBearerAuditCounters.get(key);
+  if (!entry || entry.resetAt < now) {
+    if (unauthBearerAuditCounters.size >= UNAUTH_AUDIT_MAX_ENTRIES) {
+      unauthBearerAuditCounters.clear();
+    }
+    unauthBearerAuditCounters.set(key, { resetAt: now + UNAUTH_AUDIT_WINDOW_MS });
+    return true;
+  }
+  return false;
+}
+
+/** Exported for tests only. */
+export function _resetUnauthBearerAuditCounters(): void {
+  unauthBearerAuditCounters.clear();
+}
+
+/** Exported for tests only. */
+export function _unauthBearerAuditMapSize(): number {
+  return unauthBearerAuditCounters.size;
+}
+
+function auditUnrecognizedBearer(
+  ctx: BaseRequestContext,
+  token: string,
+): Effect.Effect<void, never> {
+  if (!shouldWriteUnauthBearerAudit(ctx.ipAddress)) {
+    return Effect.void;
+  }
+  return tryAsync(() =>
+    ctx.db
+      .insert(auditLogs)
+      .values({
+        organizationId: "__unauth__",
+        userId: "__unauth__",
+        agentId: null,
+        eventType: "agent.session_reject",
+        result: "denied",
+        // Short prefix only — never log the full token bytes.
+        meta: { reason: "unknown_credential", tokenPrefix: token.slice(0, 4) },
+        ipAddress: ctx.ipAddress ?? null,
+      })
+      .then(() => undefined),
+  ).pipe(
+    // Audit-write failures must never invert the underlying auth-fail response.
+    Effect.catchAll((err) => {
+      console.warn(
+        `audit_write_failed (unauth_bearer) err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      return Effect.void;
+    }),
+  );
+}
+
 const verifyLocalAgentIdentity = (
   ctx: BaseRequestContext,
   token: string,
@@ -171,7 +243,7 @@ const verifyLocalAgentIdentity = (
 const verifyAgentSessionIdentity = (
   ctx: BaseRequestContext,
   token: string,
-): Effect.Effect<AgentIdentity | null, Error | UnauthorizedError> =>
+): Effect.Effect<AgentIdentity | null, Error> =>
   Effect.gen(function* () {
     if (!token.startsWith(AGENT_SESSION_PREFIX)) {
       return null;
@@ -192,7 +264,9 @@ const verifyAgentSessionIdentity = (
     )) as Array<ActiveAgentSession>;
 
     if (!sessionRecord) {
-      return yield* Effect.fail(unauthorized("Invalid agent session"));
+      // Fall through to verifyLocalAgentIdentity and the unrecognized-bearer audit path.
+      // Throwing here would short-circuit the audit for abs_-prefixed probes.
+      return null;
     }
 
     if (sessionRecord.expiresAt <= new Date()) {
@@ -298,7 +372,7 @@ export async function resolveUserOrgId(ctx: BaseRequestContext, userId: string):
       .limit(1);
 
     if (!membership) {
-      throw new UnauthorizedError({
+      throw new ForbiddenError({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",
         hint: "Switch to an organization you belong to.",
@@ -409,5 +483,9 @@ export const resolveAgentIdentity = (
       return agentIdentity;
     }
 
+    // Audit the unrecognized-bearer rejection. Covers both abs_-prefixed session
+    // tokens that matched no row and legacy-shaped tokens that matched no agent.
+    // This satisfies the invariant "every denied attempt is logged" (W2T12-001).
+    yield* auditUnrecognizedBearer(ctx, token);
     return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

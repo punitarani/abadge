@@ -1,0 +1,132 @@
+---
+title: "profiles.*"
+description: "Encryption boundaries, ZK bootstrap, recovery, key rotation."
+---
+
+The `profiles` router manages credential namespaces. Each profile carries its own encryption root.
+
+## `profiles.create`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required>
+  Owning organization.
+</ParamField>
+<ParamField path="name" type="string" required>
+  Profile display name. Unique within the org.
+</ParamField>
+<ParamField path="description" type="string" />
+<ParamField path="storageMode" type="string" required>
+  `zero_knowledge` or `server_managed`. No default — must be explicit at the API level.
+</ParamField>
+
+**Returns:** `{ profile }` with the full [profile record](/concepts/profiles).
+
+Errors: `PROFILE_ALREADY_EXISTS` if `(orgId, name)` collides.
+
+## `profiles.list`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="orgId" type="string" required />
+
+**Returns:** profiles for the organization.
+
+## `profiles.get`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="profileId" type="string" required />
+
+**Returns:** `{ profile }`. Includes `wrappedRootKey`, `kdfSalt`, and `kdfParams` so the client can derive the KEK for zero-knowledge profiles.
+
+## `profiles.bootstrap`
+
+**Tier:** `sessionProcedure`
+
+Initialize encryption state for a zero-knowledge profile.
+
+<ParamField path="profileId" type="string" required />
+<ParamField path="wrappedRootKey" type="string" required>
+  XChaCha20-Poly1305 ciphertext of the root key under the KEK. `nonce || ciphertext+tag`, base64.
+</ParamField>
+<ParamField path="kdfSalt" type="string" required>
+  16 random bytes, base64.
+</ParamField>
+<ParamField path="kdfParams" type="object" required>
+  `{ algorithm: "argon2id", memory, iterations, parallelism, hashLength }`.
+</ParamField>
+
+**Returns:** `{ ok: true }`.
+
+Errors: `PROFILE_ALREADY_EXISTS` if the profile is already bootstrapped.
+
+## `profiles.changePassword`
+
+**Tier:** `sessionProcedure`
+
+Re-wrap the root key under a new KEK. Root key unchanged, `keyVersion` unchanged.
+
+<ParamField path="profileId" type="string" required />
+<ParamField path="wrappedRootKey" type="string" required>
+  Root key wrapped with the new KEK.
+</ParamField>
+<ParamField path="kdfSalt" type="string" required>
+  New 16-byte salt, base64.
+</ParamField>
+<ParamField path="kdfParams" type="object" required>
+  `{ algorithm: "argon2id", memory, iterations, parallelism, hashLength }`.
+</ParamField>
+
+**Returns:** `{ ok: true }`.
+
+## `profiles.setupRecovery`
+
+**Tier:** `sessionProcedure`
+
+Add a recovery-key-wrapped copy of the root key.
+
+<ParamField path="profileId" type="string" required />
+<ParamField path="recoveryWrappedRootKey" type="string" required>
+  XChaCha20-Poly1305 ciphertext of the root key under the recovery key.
+</ParamField>
+
+**Returns:** `{ ok: true }`.
+
+## `profiles.rotateKey`
+
+**Tier:** `sessionProcedure`
+
+Generate a new root key and re-wrap every item DEK in a single transaction. Increments `keyVersion`.
+
+<ParamField path="profileId" type="string" required />
+<ParamField path="wrappedRootKey" type="string" required>
+  New root key wrapped with the current KEK.
+</ParamField>
+<ParamField path="recoveryWrappedRootKey" type="string">
+  New root key wrapped with the recovery key. Pass if recovery is set up; otherwise omit.
+</ParamField>
+<ParamField path="rekeyedItems" type="Array<{ itemId, encryptedItemKey }>" required>
+  Array of rewrapped items. Must include every zero-knowledge item in the profile.
+</ParamField>
+
+**Returns:** `{ ok: true, keyVersion }`.
+
+Errors: `ROTATE_KEY_INCOMPLETE` if any item is missing from `rekeyedItems`. `meta.missingItemIds` lists the omissions.
+
+## `profiles.delete`
+
+**Tier:** `sessionProcedure`
+
+<ParamField path="profileId" type="string" required />
+
+**Returns:** `{ ok: true }`.
+
+Errors: `PROFILE_NOT_EMPTY` if any items remain.
+
+## Audit events
+
+- `profile.create`
+- `profile.rotate`
+- `profile.delete`
+- `profile.delete_cascade`

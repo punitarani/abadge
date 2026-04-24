@@ -21,11 +21,16 @@ import {
   resolveFieldValue,
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
+import {
+  profileIdForServerAad,
+  SERVER_AAD_MIN_VERSION,
+  type ServerAadMeta,
+} from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
 import { items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Cause, Effect } from "effect";
 import { logAgentAudit } from "../audit";
-import { AgentRequestContextTag, runAgentEffect, strictSchema } from "../effect";
+import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
 
@@ -87,7 +92,20 @@ const decryptServerManagedItem = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    return yield* Effect.tryPromise(() =>
+    // v1 rows predate AAD binding and MUST be decrypted without AAD.
+    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion),
+    // so a DB-write adversary cannot substitute rows across items.
+    const aadMeta: ServerAadMeta | undefined =
+      keyVersion >= SERVER_AAD_MIN_VERSION
+        ? {
+            orgId: ctx.identity.agentOrganizationId,
+            profileId: profileIdForServerAad(item.profileId),
+            itemId: item.id,
+            keyVersion,
+          }
+        : undefined;
+
+    return yield* tryAsync(() =>
       serverDecrypt(
         {
           ciphertext,
@@ -95,6 +113,7 @@ const decryptServerManagedItem = (
           keyVersion,
         },
         ctx.env.ENCRYPTION_KEY,
+        aadMeta,
       ),
     );
   });
@@ -102,7 +121,7 @@ const decryptServerManagedItem = (
 const checkPermission = (agentId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [permission] = yield* Effect.tryPromise(() =>
+    const [permission] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(permissionRecords)
@@ -130,7 +149,7 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
 const loadAccessibleItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
@@ -227,6 +246,31 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       );
     }
 
+    // §W1S7-001 — local decrypt needs (itemId, profileId, contentVersion) to
+    // rebuild the XChaCha20-Poly1305 AAD. Every ZK item must live inside a
+    // ZK profile (insertZeroKnowledgeItem enforces this); a null profileId
+    // here would mean a schema-level orphan, which would be undecryptable.
+    if (!item.profileId) {
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: input.itemId,
+        eventType: "access.ciphertext",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason: "zk item missing profileId" },
+      });
+      return yield* Effect.fail(
+        new IntegrityError({
+          code: "INTEGRITY_ERROR",
+          message: "Zero-knowledge item is missing its profile binding",
+          hint: "This indicates data corruption; contact support.",
+          meta: { itemId: input.itemId },
+        }),
+      );
+    }
+
     yield* logAgentAudit({
       organizationId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
@@ -241,6 +285,9 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       encryptedItemKey: item.encryptedItemKey ?? "",
       ciphertext: item.ciphertext ?? "",
       cryptoVersion: item.cryptoVersion,
+      itemId: item.id,
+      profileId: item.profileId,
+      contentVersion: item.contentVersion,
     };
   });
 
@@ -428,6 +475,30 @@ const accessMount = (input: MountAccessInput) =>
     }
 
     if (item.storageMode === "zero_knowledge") {
+      // §W1S7-001 — see `accessCiphertext`; the mount path needs the same
+      // AAD meta (itemId, profileId, contentVersion) forwarded to the
+      // daemon so local XChaCha20-Poly1305 decrypt can rebuild the AAD.
+      if (!item.profileId) {
+        yield* logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: input.itemId,
+          eventType,
+          result: "denied",
+          ipAddress: ctx.ipAddress,
+          meta: { reason: "zk item missing profileId" },
+        });
+        return yield* Effect.fail(
+          new IntegrityError({
+            code: "INTEGRITY_ERROR",
+            message: "Zero-knowledge item is missing its profile binding",
+            hint: "This indicates data corruption; contact support.",
+            meta: { itemId: input.itemId },
+          }),
+        );
+      }
+
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
@@ -446,6 +517,9 @@ const accessMount = (input: MountAccessInput) =>
         encryptedItemKey: item.encryptedItemKey ?? "",
         ciphertext: item.ciphertext ?? "",
         cryptoVersion: item.cryptoVersion,
+        itemId: item.id,
+        profileId: item.profileId,
+        contentVersion: item.contentVersion,
       };
     }
 

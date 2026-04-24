@@ -1,0 +1,172 @@
+---
+title: "Security model"
+description: "How abadge protects credentials across every surface."
+---
+
+## Principles
+
+<Steps>
+  <Step title="No plaintext at rest">
+    Credentials are always encrypted in the database — XChaCha20-Poly1305 for zero-knowledge items, AES-256-GCM for server-managed items.
+  </Step>
+  <Step title="No decrypt before auth">
+    Authentication, permission, expiry, locality, and storage-mode checks all run before any decryption.
+  </Step>
+  <Step title="No implicit access">
+    Every agent–credential pair requires an explicit permission row. There are no wildcards, no roles, no inheritance.
+  </Step>
+  <Step title="No silent access">
+    Every attempt — allowed, denied, expired, revoked — is appended to the audit log before the response is returned.
+  </Step>
+  <Step title="No secret exposure to LLMs">
+    MCP tools inject secrets into subprocesses, never into model context.
+  </Step>
+</Steps>
+
+## Encryption modes
+
+abadge supports two storage modes with distinct trust models.
+
+<Tabs>
+  <Tab title="Zero-knowledge">
+    The server never sees plaintext. All cryptographic operations happen in the browser or the local CLI daemon.
+
+    | Operation | Algorithm | Key size | Nonce size |
+    |---|---|---|---|
+    | Password → KEK | Argon2id (64 MiB, 3 iterations) | 32 bytes | N/A |
+    | Key wrapping | XChaCha20-Poly1305 | 32 bytes | 24 bytes |
+    | Item encryption | XChaCha20-Poly1305 | 32 bytes | 24 bytes |
+
+    The server stores: wrapped root key, KDF salt + parameters, wrapped DEKs, and ciphertext. None of these is enough to decrypt without the master password (or recovery key).
+
+    Recovery: a 256-bit recovery key (base32, shown once) independently wraps the root key. There is no server-side recovery.
+
+    See [Zero-knowledge encryption](/security/zero-knowledge) for the full hierarchy.
+  </Tab>
+  <Tab title="Server-managed">
+    The API encrypts and decrypts with the Worker's `ENCRYPTION_KEY`.
+
+    | Operation | Algorithm | Key size | Nonce size |
+    |---|---|---|---|
+    | Item encryption | AES-256-GCM | 32 bytes | 12 bytes (random) |
+
+    Decryption only happens after every authorization check passes.
+  </Tab>
+</Tabs>
+
+### Comparison
+
+| Property | Zero-knowledge | Server-managed |
+|---|---|---|
+| Server sees plaintext | Never | During decrypt |
+| Server breach exposure | Ciphertext only | Plaintext if `ENCRYPTION_KEY` also leaks |
+| Remote agent access | Not supported | `reveal_plaintext` only |
+| Local agent access | `read_ciphertext`, `mount_env`, `mount_file` | `reveal_plaintext`, `mount_env`, `mount_file` |
+| Setup complexity | Master password + profile bootstrap | Just create the item |
+
+## Authentication
+
+### Human operators
+
+| Surface | Method | Session duration |
+|---|---|---|
+| Dashboard | Better Auth session cookie (email/password or OAuth) | 7 days |
+| CLI | Better Auth device authorization flow | Bearer token in daemon memory |
+
+The CLI never persists a human bearer token to disk.
+
+### Agents
+
+Agents use one of two methods.
+
+**Public-key sessions (default).** The agent generates an Ed25519 keypair locally; the server stores only the public key. For each session: `auth.createChallenge` → sign → `auth.exchangeSession` → receive `abs_...` token (15-minute TTL). The SDK refreshes at T-2 minutes.
+
+**Legacy API keys.** Token shown once, prefixed `abl_` (local) or `abg_` (remote). The server stores SHA-256 hash + lookup prefix. Use only for migrating existing integrations.
+
+Auth resolution order on every agent request:
+1. `abs_` prefix → session token (hash lookup, TTL check)
+2. `abl_/abg_` prefix → API key (prefix lookup, hash match)
+3. Legacy Better Auth API key fallback
+
+## Authorization
+
+Access requires an explicit `(agent, item, capability)` permission row. There are no wildcards, no role-based inheritance, and no implicit grants.
+
+The full decision flow is in [Permissions and capabilities](/concepts/permissions-and-capabilities).
+
+## Delivery modes
+
+<Tabs>
+  <Tab title="Environment injection">
+    `mount_env`. The CLI or daemon spawns a subprocess with the secret in an env var. The secret lives only in process memory; the parent process drops the value after spawn.
+  </Tab>
+  <Tab title="File mounting">
+    `mount_file`. The daemon writes the secret to a temp file with `0600` permissions inside a `0700` temp directory. The MCP server auto-deletes after 5 minutes.
+  </Tab>
+  <Tab title="Direct reveal">
+    `reveal_plaintext`. Returns the value over HTTPS. Used by remote agents that cannot use local injection. Server-managed items only.
+  </Tab>
+  <Tab title="MCP tools">
+    Secrets are injected into subprocesses, never returned to the model. `mount_secret` returns an opaque `mountId` (never the file path). `run_with_secret` redacts the secret from output and caps it at 4 KB.
+  </Tab>
+</Tabs>
+
+## Network security
+
+| Control | Implementation |
+|---|---|
+| Transport | HTTPS via Cloudflare edge TLS |
+| Local IPC | Unix domain socket with `0600` permissions |
+| Rate limiting | Per-IP counters: 60/min on `/api/auth/*`, 100/min on `/trpc/*` |
+| CORS | Restricted to trusted origins via Better Auth |
+| Secure headers | Hono `secureHeaders()` middleware |
+| CSRF | Better Auth built-in protection |
+| Input validation | Effect Schema on all external input |
+| SQL safety | Drizzle ORM parameterized queries (no raw SQL) |
+| Audit ordering | Audit writes are awaited before responses return |
+
+## Credential handling on disk
+
+| Data | Location | Permissions |
+|---|---|---|
+| CLI config directory | `~/.abadge/` | `0700` |
+| CLI config file | `~/.abadge/config.json` | `0600` |
+| Agent private keys | `~/.abadge/agents/*.jwk` | `0600` |
+| Daemon socket | `~/.abadge/vaultd.sock` | `0600` |
+| Mounted secret files | OS tmpdir | `0600` |
+
+## Server breach impact
+
+| What's exposed | Zero-knowledge items | Server-managed items |
+|---|---|---|
+| Ciphertext | Yes (useless without root key) | Yes |
+| Plaintext | **No** (requires Argon2id brute-force on master password) | **Yes** if `ENCRYPTION_KEY` also leaks |
+| KDF parameters | Yes (enables offline attack on weak passwords) | N/A |
+| Access patterns | Yes | Yes |
+
+ZK items remain protected after a full server breach, assuming a strong master password. Server-managed items are exposed if the attacker also obtains the Worker's `ENCRYPTION_KEY`.
+
+## Stored data summary
+
+| Data | Stored form | Retrievable? |
+|---|---|---|
+| Profile root key | KEK-wrapped ciphertext | Only by master-password holder |
+| Recovery key | Wraps root key (shown once) | Never stored in plaintext |
+| ZK item value | XChaCha20-Poly1305 ciphertext | Only by profile owner |
+| Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
+| Agent API key | SHA-256 hash + prefix | Shown once at creation |
+| Agent session token | SHA-256 hash | Shown once at exchange |
+| Bootstrap token | SHA-256 hash | Shown once at issuance |
+| Challenge token | SHA-256 hash | Used once, 60-second TTL |
+| Audit entries | Metadata only | Via audit API (no secrets) |
+
+## Explicit non-goals (v1)
+
+These are **not** protected against:
+
+- Local root/admin attackers reading process memory
+- HSM or hardware-key integration
+- Secure multi-party computation for shared secrets
+- Tamper-evident audit log chaining
+- Compromised build/deploy pipelines serving malicious JS
+- Organization-level vault cryptography (each profile has its own root)

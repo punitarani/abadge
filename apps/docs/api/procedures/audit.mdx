@@ -1,0 +1,96 @@
+---
+title: "audit.*"
+description: "Query the immutable audit log."
+---
+
+## `audit.list`
+
+**Tier:** `sessionProcedure`
+
+Page through audit entries scoped to the current organization. Newest first.
+
+<ParamField path="eventType" type="string">
+  Filter by event type. See the full catalog in [Audit log](/concepts/audit-log#event-categories).
+</ParamField>
+<ParamField path="result" type="string">
+  `allowed`, `denied`, `expired`, `revoked`, or `cascade`.
+</ParamField>
+<ParamField path="agentId" type="string">
+  Filter to one agent.
+</ParamField>
+<ParamField path="itemId" type="string">
+  Filter to one item.
+</ParamField>
+<ParamField path="profileId" type="string">
+  Filter to one profile.
+</ParamField>
+<ParamField path="surface" type="string">
+  `cli`, `mcp`, `api`, or `sdk`.
+</ParamField>
+<ParamField path="field" type="string">
+  Specific field name accessed.
+</ParamField>
+<ParamField path="cursor" type="string">
+  Pagination cursor (numeric string returned as `nextCursor`).
+</ParamField>
+<ParamField path="limit" type="integer">
+  1–100. Defaults to 50.
+</ParamField>
+
+**Returns:**
+
+```ts
+{
+  entries: AuditEntry[];
+  nextCursor: string | null;
+}
+```
+
+Each entry shape:
+
+```ts
+{
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  agentId: string | null;
+  itemId: string | null;
+  profileId: string | null;
+  surface: "cli" | "mcp" | "api" | "sdk" | null;
+  eventType: AuditEventType;
+  result: "allowed" | "denied" | "expired" | "revoked" | "cascade";
+  deliveryMode: string | null;
+  field: string | null;
+  purpose: string | null;
+  meta: Record<string, unknown>;
+  ipAddress: string | null;
+  occurredAt: string;
+}
+```
+
+## Pagination
+
+Pass `nextCursor` from the previous response as the next request's `cursor`. A `null` `nextCursor` means you've reached the end of the result set.
+
+## Filters compose
+
+Filters are combined with `AND`. Empty results are returned as an empty `entries` array, not an error.
+
+## What audit captures
+
+- Authentication: `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke`
+- Profiles: `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade`
+- Items: `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export`
+- Agents: `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke`
+- Permissions: `permission.create`, `permission.revoke`, `permission.revoke_cascade`
+- Access: `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file`
+
+See [Audit log](/concepts/audit-log) for the full reference.
+
+## What audit does not capture
+
+- Secret values or encryption material
+- The plaintext output of subprocesses spawned by `mount_env`
+- Bytes that flowed through `reveal_plaintext` responses
+
+audit captures the **decision**, not the payload.

@@ -1,0 +1,88 @@
+---
+title: "Profiles"
+description: "Encryption namespaces inside an organization. Each profile carries its own root key."
+---
+
+A **profile** is a named credential namespace within an organization. Each profile has its own encryption root, so credentials can be partitioned by environment (`production`, `staging`), team, or sensitivity tier without sharing keys.
+
+## Storage modes
+
+A profile is created with one of two storage modes, fixed for the lifetime of the profile.
+
+<Tabs>
+  <Tab title="Zero-knowledge">
+    Encryption happens client-side (browser or local daemon). The server never sees plaintext or root keys. Items inside the profile are encrypted with per-item DEKs wrapped by the profile's root key.
+
+    Use when: you need maximum confidentiality, all consumers run locally, and remote agents do not need access.
+  </Tab>
+  <Tab title="Server-managed">
+    The API encrypts items with AES-256-GCM using the Worker's `ENCRYPTION_KEY`. The server can decrypt on authorized requests.
+
+    Use when: remote agents need access (`reveal_plaintext`), or you want simpler onboarding without master-password management.
+  </Tab>
+</Tabs>
+
+## Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | text (PK) | Profile ID |
+| `organizationId` | text | Owning organization |
+| `name` | text | Display name (unique within org) |
+| `description` | text | Optional |
+| `storageMode` | text | `zero_knowledge` or `server_managed` |
+| `wrappedRootKey` | text | Root key encrypted by KEK (ZK only) |
+| `kdfSalt` | text | Argon2id salt (16 bytes, base64) |
+| `kdfParams` | jsonb | `{ algorithm, memory, iterations, parallelism, hashLength }` |
+| `recoveryWrappedRootKey` | text | Root key encrypted by recovery key |
+| `keyVersion` | integer | Incremented on root-key rotation |
+
+The unique constraint `(organizationId, name)` enforces one profile name per organization.
+
+## Bootstrapping a zero-knowledge profile
+
+A ZK profile starts empty after creation. Before items can be added, the client must generate the encryption material and call `profiles.bootstrap`.
+
+<Steps>
+  <Step title="Pick a master password">
+    Strong, unique, never written to disk. Argon2id makes brute-force expensive but not impossible against weak passwords.
+  </Step>
+  <Step title="Derive the KEK">
+    Argon2id with 64 MiB memory and 3 iterations produces a 32-byte KEK from the password and a fresh 16-byte salt.
+  </Step>
+  <Step title="Generate the root key">
+    32 random bytes. The root key never leaves the client; only its KEK-wrapped form is sent to the server.
+  </Step>
+  <Step title="Wrap and ship">
+    `profiles.bootstrap` accepts `{ wrappedRootKey, kdfSalt, kdfParams }` and persists the profile envelope.
+  </Step>
+  <Step title="Set up recovery">
+    `profiles.setupRecovery` accepts a `recoveryWrappedRootKey` (root key encrypted by a 256-bit recovery key shown to the user once). Without it, losing the master password is unrecoverable.
+  </Step>
+</Steps>
+
+See [Zero-knowledge encryption](/security/zero-knowledge) for the full key hierarchy.
+
+## Operations
+
+| Operation | Notes |
+|---|---|
+| `profiles.create` | Creates the profile shell. ZK profiles still need bootstrap. |
+| `profiles.bootstrap` | Initializes encryption state for ZK profiles. |
+| `profiles.changePassword` | Re-wraps the root key under a new KEK. The root key itself is unchanged. |
+| `profiles.setupRecovery` | Adds a recovery-key-wrapped copy of the root key. |
+| `profiles.rotateKey` | Generates a new root key and re-wraps every item DEK. Atomic transaction. |
+| `profiles.delete` | Fails with `PROFILE_NOT_EMPTY` if items remain. |
+
+## Cascades
+
+Deleting a profile is blocked if it contains items. Delete the items first or use the dashboard to soft-delete. Audit entries persist.
+
+Rotating a profile root key requires the client to rewrap **every** item DEK in the profile. Partial payloads return `ROTATE_KEY_INCOMPLETE` with the missing item IDs in `meta.missingItemIds`.
+
+## Related
+
+- [API: profiles procedures](/api/procedures/profiles)
+- [CLI: profile commands](/cli/profile)
+- [Dashboard: profiles](/dashboard/profiles)
+- [Security: zero-knowledge](/security/zero-knowledge)

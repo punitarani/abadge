@@ -1,0 +1,87 @@
+---
+title: "abadge import"
+description: "Bulk-create server-managed items from a .env file."
+---
+
+`abadge import` reads an `.env` file and creates one server-managed item per variable in the active profile.
+
+## Usage
+
+```bash
+abadge import .env
+abadge import secrets.env --kind api_key --overwrite
+abadge import .env --dry-run
+```
+
+## Flags
+
+| Flag | Description |
+|---|---|
+| `--kind` | Item kind to assign to every imported variable. Defaults to `opaque`. |
+| `--overwrite` | Update existing items (matched by label). Refuses zero-knowledge items. |
+| `--dry-run` | Print what would change without calling the API |
+| `--json` | Print the summary as JSON |
+
+## Behavior
+
+<Steps>
+  <Step title="Parse the .env file">
+    Standard dotenv syntax. `KEY=value` per line. Comments (`#`) and blank lines are skipped.
+  </Step>
+  <Step title="Match existing items by label">
+    The label is the env-var key. Existing items with the same label in the active profile are matched.
+  </Step>
+  <Step title="Apply">
+    For new labels: `items.create` (server-managed only). For existing labels: skip without `--overwrite`, update with `--overwrite`.
+  </Step>
+  <Step title="Print a summary">
+    Five buckets: `created`, `updated`, `skipped`, `refused`, `failed`.
+  </Step>
+</Steps>
+
+## Summary buckets
+
+| Bucket | Meaning |
+|---|---|
+| `created` | New items created |
+| `updated` | Existing items updated under `--overwrite` |
+| `skipped` | Existing items left alone (no `--overwrite`) |
+| `refused` | Zero-knowledge items refused under `--overwrite` |
+| `failed` | API errors during write |
+
+## Exit codes
+
+| `failed` | Exit code |
+|---|---|
+| `0` | `0` |
+| `> 0` | `1` |
+
+`skipped` and `refused` are intentional outcomes and do **not** flip the exit code.
+
+## Constraints
+
+- Only **server-managed** items are written. The active profile must be `server_managed`.
+- Zero-knowledge items can never be overwritten by import. Delete and re-import, or use `abadge item update`.
+- Values longer than the standard env-var size limit may be rejected by the platform.
+
+## Example
+
+```dotenv
+# secrets.env
+DATABASE_URL=postgres://app:s3cret@db.example.com/prod
+REDIS_URL=redis://red.example.com
+SENTRY_DSN=https://abc@sentry.io/123
+```
+
+```bash
+abadge import secrets.env --kind opaque --dry-run
+# created: 3, updated: 0, skipped: 0, refused: 0, failed: 0
+
+abadge import secrets.env --kind opaque
+# created: 3, updated: 0, skipped: 0, refused: 0, failed: 0
+```
+
+## Related
+
+- [`abadge export`](/cli/export)
+- [Concepts: items](/concepts/items)

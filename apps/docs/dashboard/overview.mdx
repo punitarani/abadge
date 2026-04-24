@@ -1,0 +1,72 @@
+---
+title: "Dashboard overview"
+description: "Operator UI for managing organizations, profiles, items, agents, permissions, and audit."
+---
+
+The dashboard is the operator surface for abadge. It runs at [abadge.io](https://abadge.io) (or your self-hosted deployment) and is built with Next.js App Router.
+
+## Layout
+
+The dashboard is organized around the active organization:
+
+| Section | What you do there |
+|---|---|
+| Overview | Recent activity, item counts, agent counts |
+| Profiles | Create profiles, bootstrap zero-knowledge encryption, manage recovery keys |
+| Items | Browse, create, update, and delete credentials |
+| Agents | Register agents, view bootstrap tokens, revoke |
+| Permissions | Grant capabilities, set expiries, revoke |
+| Audit | Inspect every event, filter by agent / item / type |
+| Settings | Organization settings, members, vault security |
+
+The active organization is shown in the header. Switch organizations from the org switcher; every subsequent action targets the new active org.
+
+## When to use the dashboard vs the CLI
+
+| Task | Best surface |
+|---|---|
+| Initial onboarding (sign up, first profile, first item) | Dashboard |
+| Bulk import from `.env` | CLI (`abadge import`) |
+| Day-to-day item edits | Dashboard or CLI |
+| Granting and revoking permissions | Either |
+| Long-running secret injection | CLI (`abadge run`) |
+| Auditing access | Dashboard for filters; CLI for `--json` piping |
+
+The dashboard does not run the CLI's local daemon. Zero-knowledge decryption in the dashboard happens in browser memory (Tier 2 trust). For high-security operations, prefer the CLI plus daemon.
+
+## Browser trust model
+
+When you unlock a zero-knowledge profile in the dashboard, the browser derives the KEK from your master password (Argon2id) and unwraps the root key into JavaScript memory. The key is lost when the tab closes.
+
+<Warning>
+  The browser is more exposed than the CLI: a successful XSS attack can steal the unlocked root key. Use the dashboard for management, but reach for the CLI when you need maximum confidentiality.
+</Warning>
+
+## Sections
+
+<CardGroup cols={2}>
+  <Card title="Signing in" href="/dashboard/signing-in">
+    Email / password, Google, GitHub, and the device-code approval flow for the CLI.
+  </Card>
+  <Card title="Organizations" href="/dashboard/organizations">
+    Create, switch, and invite teammates.
+  </Card>
+  <Card title="Profiles" href="/dashboard/profiles">
+    Set up zero-knowledge or server-managed encryption boundaries.
+  </Card>
+  <Card title="Items" href="/dashboard/items">
+    Store credentials with named fields and tags.
+  </Card>
+  <Card title="Agents" href="/dashboard/agents">
+    Register and manage automated callers.
+  </Card>
+  <Card title="Permissions" href="/dashboard/permissions">
+    Grant capabilities to agents on individual items.
+  </Card>
+  <Card title="Audit" href="/dashboard/audit">
+    Inspect every action.
+  </Card>
+  <Card title="Vault security" href="/dashboard/vault-security">
+    Change the master password, set up a recovery key, rotate the root key.
+  </Card>
+</CardGroup>

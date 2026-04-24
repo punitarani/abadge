@@ -1,0 +1,106 @@
+---
+title: "Field delivery"
+description: "Items can hold multiple named fields. Pick the one you want with --field, or expand them all into the environment."
+---
+
+abadge items can carry multiple named fields. When a reader requests an item, abadge resolves which field to deliver based on the request and the item's shape.
+
+## Standard fields by kind
+
+Each item kind suggests the fields readers expect. These are conventions, not enforced — items can carry any field names.
+
+| Kind | Standard fields |
+|---|---|
+| `login` | `username`, `email`, `password`, `url`, `totp_secret` |
+| `api_key` | `value`, `key_id`, `key_secret` |
+| `token` | `value` |
+| `certificate` | `cert`, `key`, `chain`, `passphrase` |
+| `ssh_key` | `private_key`, `public_key`, `passphrase` |
+| `json` | (user-defined; no standard fields) |
+| `opaque` | `value` |
+
+Source: `STANDARD_FIELDS_BY_KIND` in `packages/core/src/constants.ts`.
+
+## Resolution rules
+
+When `field` is omitted:
+
+<Steps>
+  <Step title="One string field?">
+    Return it.
+  </Step>
+  <Step title="One standard field present?">
+    Return it.
+  </Step>
+  <Step title="Multiple candidates?">
+    Return `MULTI_FIELD_ITEM` with available field names in `meta.availableFields`.
+  </Step>
+</Steps>
+
+When `field` is specified:
+
+- The named field is looked up in the payload.
+- If the field is not a string or does not exist, return `FIELD_NOT_FOUND` with available fields in `meta.availableFields`.
+
+Resolution is centralised in `resolveFieldValue` from `@abadge/core/secret-delivery` and re-exported from the SDK.
+
+## Using fields in the CLI
+
+```bash
+# Run with just the password field from a login item
+abadge run --item <id> --field password -- psql "$DB_HOST"
+
+# Mount the private key field from an SSH key item
+abadge mount --item <id> --field private_key
+
+# Multiple fields from one item (stacked triples)
+abadge run --item prod-db \
+  --field username --env-var DB_USER \
+  --field password --env-var DB_PASSWORD \
+  -- ./migrate.sh
+
+# Expand every field as a separate env var (field name = var name)
+abadge run --item my-service-env --expand-env -- ./server
+```
+
+## Using fields in MCP
+
+Pass `field` to `run_with_secret` or `mount_secret`:
+
+```json
+{
+  "itemId": "item_abc123",
+  "field": "password",
+  "command": "psql",
+  "args": ["$DB_HOST"]
+}
+```
+
+## Using fields in the SDK
+
+```typescript
+const { payload } = await agent.accessReveal(itemId, "password");
+
+const data = await agent.accessMount(itemId, "file", "private_key");
+```
+
+## Multi-field item error
+
+When a field is required but not specified for a multi-field item, the API returns:
+
+```json
+{
+  "code": "MULTI_FIELD_ITEM",
+  "message": "This item has multiple fields. Specify which field to deliver.",
+  "hint": "Available fields: username, password, url.",
+  "meta": {
+    "availableFields": ["username", "password", "url"]
+  }
+}
+```
+
+Inspect `meta.availableFields` to choose which name to pass.
+
+## Single-field auto-delivery
+
+For `opaque` and `token` items with a single `value` field, omitting `field` is safe — the value is returned automatically.

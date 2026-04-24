@@ -1,0 +1,91 @@
+---
+title: "SDK installation"
+description: "Install @abadge/sdk for typed API access from Node, Bun, or the browser."
+---
+
+`@abadge/sdk` is the official TypeScript client for the abadge API. It wraps the tRPC surface and exposes two clients: `AbadgeUserClient` for operator-scoped procedures and `AbadgeAgentClient` for agent-scoped access.
+
+## Install
+
+<CodeGroup>
+```bash bun
+bun add @abadge/sdk
+```
+
+```bash npm
+npm install @abadge/sdk
+```
+
+```bash pnpm
+pnpm add @abadge/sdk
+```
+
+```bash yarn
+yarn add @abadge/sdk
+```
+</CodeGroup>
+
+## Quick reference
+
+| Client | Auth | Use for |
+|---|---|---|
+| `AbadgeUserClient` | Operator session token | Manage organizations, profiles, items, agents, permissions, audit |
+| `AbadgeAgentClient` | Ed25519 keypair (preferred) or legacy API key | Read secrets via `access.*` |
+
+```ts
+import { AbadgeUserClient, AbadgeAgentClient } from "@abadge/sdk";
+```
+
+## Type exports
+
+The SDK re-exports every domain type from `@abadge/core`:
+
+```ts
+import type {
+  ItemKind,
+  StorageMode,
+  AgentKind,
+  AgentLocality,
+  Capability,
+  AuditEventType,
+  AuditResult,
+  ItemPayload,
+} from "@abadge/sdk";
+```
+
+Helpers:
+
+```ts
+import { resolveFieldValue } from "@abadge/sdk";
+import { AbadgeApiError } from "@abadge/sdk";
+```
+
+## What the SDK does for you
+
+- Builds the request shape tRPC expects
+- Adds the right `Authorization` header
+- Surfaces typed responses (no `any`)
+- Wraps every API error in `AbadgeApiError` (with `code`, `message`, `hint`, `meta`)
+- For `AbadgeAgentClient`: handles the keypair challenge / session exchange and refreshes the session at T-2 minutes before expiry
+
+## What the SDK does not do
+
+- Not a daemon. The SDK is a pure HTTP client. Local zero-knowledge decryption is the daemon's job.
+- Not a CLI. For human operator workflows, use the dashboard or the `abadge` CLI.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="AbadgeUserClient" href="/api/sdk/user-client">
+    Session-scoped client for organizations, profiles, items, agents, permissions, audit.
+  </Card>
+  <Card title="AbadgeAgentClient" href="/api/sdk/agent-client">
+    Agent-scoped client for `access.*` with keypair sessions or legacy API keys.
+  </Card>
+  <Card title="Error handling" href="/api/sdk/error-handling">
+    `AbadgeApiError` shape, common codes, retry strategy.
+  </Card>
+  <Card title="Errors reference" href="/api/errors">
+    Every error code with HTTP status and remediation.
+  </Card>
+</CardGroup>

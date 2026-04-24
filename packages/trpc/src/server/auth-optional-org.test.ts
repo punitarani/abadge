@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BadRequestError, UnauthorizedError } from "@abadge/core";
+import { ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
 import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
 import type { BaseRequestContext } from "./context";
@@ -109,7 +109,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
     });
   });
 
-  test("2+ memberships without header → rejects with ORG_HEADER_REQUIRED", async () => {
+  test("2+ memberships without header → organizationId is null (no longer throws)", async () => {
     const ctx = createOptionalOrgContext({
       fallbackMemberships: [{ organizationId: "org_a" }, { organizationId: "org_b" }],
     });
@@ -125,16 +125,16 @@ describe("resolveSessionIdentityOptionalOrg", () => {
       }),
     } as BaseRequestContext["auth"];
 
-    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
+    // §ORG2 fix: multi-org users without a header get null org context instead
+    // of ORG_HEADER_REQUIRED. Bootstrap-safe routes (userProcedure) handle null.
+    const identity = await Effect.runPromise(resolveSessionIdentityOptionalOrg(ctx));
 
-    expect(error).toBeInstanceOf(BadRequestError);
-    expect(error).toMatchObject({
-      code: "ORG_HEADER_REQUIRED",
-      message: "X-Abadge-Org-Id header required for multi-org users",
+    expect(identity).toEqual({
+      kind: "session",
+      userId: "user_multi",
+      organizationId: null,
+      authMethod: "browser_session",
     });
-    const meta = (error as BadRequestError).meta as { availableOrgIds: string[] } | undefined;
-    expect(meta?.availableOrgIds).toEqual(expect.arrayContaining(["org_a", "org_b"]));
-    expect(meta?.availableOrgIds).toHaveLength(2);
   });
 
   test("no session → rejects with UNAUTHORIZED", async () => {
@@ -196,7 +196,7 @@ describe("resolveSessionIdentityOptionalOrg", () => {
 
     const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
 
-    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(error).toBeInstanceOf(ForbiddenError);
     expect(error).toMatchObject({
       code: "ORG_MEMBERSHIP_REQUIRED",
     });

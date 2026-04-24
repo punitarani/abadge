@@ -1,0 +1,74 @@
+---
+title: "abadge permission"
+description: "Grant, list, and revoke capabilities."
+---
+
+## `abadge permission create`
+
+Grant an explicit capability for an agent on an item.
+
+```bash
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability reveal_plaintext
+
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability mount_env
+
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability mount_env \
+  --expires-at 2026-12-31T00:00:00Z
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--agent-id <id>` | yes | Target agent |
+| `--item-id <id>` | yes | Target item |
+| `--capability <cap>` | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file` |
+| `--expires-at <ts>` | no | ISO timestamp expiry |
+| `--json` | no | Print raw JSON |
+
+The CLI rejects invalid combinations at create time. The capability matrix:
+
+| Capability | Local + ZK | Local + SM | Remote + ZK | Remote + SM |
+|---|---|---|---|---|
+| `read_ciphertext` | ✓ | – | ✗ | – |
+| `reveal_plaintext` | – | ✓ | – | ✓ |
+| `mount_env` | ✓ | ✓ | ✗ | ✗ |
+| `mount_file` | ✓ | ✓ | ✗ | ✗ |
+
+## `abadge permission list`
+
+```bash
+abadge permission list
+abadge permission list --agent-id <agent-id>
+abadge permission list --item-id <item-id>
+abadge permission list --json
+```
+
+| Flag | Description |
+|---|---|
+| `--agent-id <id>` | Filter to one agent |
+| `--item-id <id>` | Filter to one item |
+| `--json` | Print raw JSON |
+
+Output columns: `ID`, `Agent`, `Item`, `Capability`, `Expires`, `Created`.
+
+## `abadge permission revoke <permission-id>`
+
+Revoke a permission immediately. In-flight access attempts that haven't yet checked the row see the deletion and are denied.
+
+```bash
+abadge permission revoke <permission-id>
+```
+
+## Related
+
+- [Concepts: permissions and capabilities](/concepts/permissions-and-capabilities)
+- [Dashboard: permissions](/dashboard/permissions)
+- [API: permissions procedures](/api/procedures/permissions)

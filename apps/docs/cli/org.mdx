@@ -1,0 +1,58 @@
+---
+title: "abadge org"
+description: "Create, list, switch, and inspect members of organizations."
+---
+
+## `abadge org create`
+
+```bash
+abadge org create --name "Acme"
+abadge org create --name "Acme" --slug acme
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--name <name>` | yes | Display name |
+| `--slug <slug>` | no | URL-safe identifier. Auto-generated if omitted. |
+
+Calls `organizations.create` and prints the new org name and ID.
+
+## `abadge org list`
+
+Lists every organization the current operator belongs to, with role and active state.
+
+```bash
+abadge org list
+abadge org list --json
+```
+
+Output columns: `ID`, `Name`, `Slug`, `Role`, `Active` (checkmark for the active org).
+
+## `abadge org use <id-or-slug>`
+
+Set the active organization for subsequent commands. Persisted to `~/.abadge/config.json` as `activeOrgId`. Clearing `activeProfileId` at the same time is automatic so you don't accidentally target a stale profile.
+
+```bash
+abadge org use org_...
+abadge org use acme
+```
+
+Accepts either the organization ID or slug. Subsequent `item`, `agent`, `permission`, `audit`, and `profile` commands act on this org.
+
+## `abadge org members`
+
+Lists members of the active organization.
+
+```bash
+abadge org members
+```
+
+Output columns: `User` (name, email, or user ID — whichever is populated), `Role` (`owner`, `admin`, `member`).
+
+For the full member record (including `memberId`, `email`, `createdAt`), call [`organizations.members.list`](/api/procedures/organizations) via the SDK.
+
+## Related
+
+- [Concepts: organizations](/concepts/organizations)
+- [Dashboard: organizations](/dashboard/organizations)
+- [API: organizations procedures](/api/procedures/organizations)

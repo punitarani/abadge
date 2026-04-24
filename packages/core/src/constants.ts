@@ -32,6 +32,8 @@ export type Capability = (typeof CAPABILITIES)[number];
 export const AUDIT_EVENT_TYPES = [
   // profile events
   "profile.create",
+  "profile.read",
+  "profile.bootstrap",
   "profile.rotate",
   "profile.delete",
   "profile.delete_cascade",
@@ -51,13 +53,17 @@ export const AUDIT_EVENT_TYPES = [
   "auth.token_revoke",
   // org events
   "org.create",
+  "org.read",
   "org.update",
   "org.delete",
-  "org.invite",
-  "org.invite_accept",
-  "org.invite_revoke",
+  "org.member_add",
+  "org.member_list",
   "org.member_remove",
   "org.member_role_change",
+  "org.invite",
+  "org.invite_accept",
+  "org.invite_reject",
+  "org.invite_revoke",
   // agent events
   "agent.create",
   "agent.bootstrap_issue",
@@ -136,6 +142,15 @@ export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+/** §AGC1a — Maximum agents per organization. */
+export const MAX_AGENTS_PER_ORG = 500;
+
+/** §AGC1b — Maximum serialized JSON bytes for agent metadata. */
+export const MAX_AGENT_METADATA_JSON_BYTES = 16 * 1024; // 16 KB
+
+/** §AGC1b — Maximum nesting depth for agent metadata JSON. */
+export const MAX_AGENT_METADATA_DEPTH = 8;
+
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"): AgentLocality {
   switch (kind) {
@@ -159,6 +174,7 @@ export type ErrorCode =
   | "VAULT_NOT_FOUND"
   | "VAULT_ALREADY_EXISTS"
   | "ITEM_NOT_FOUND"
+  | "ITEM_ALREADY_EXISTS"
   | "AGENT_NOT_FOUND"
   | "AGENT_REVOKED"
   | "AGENT_NOT_ENROLLED"

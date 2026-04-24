@@ -1,0 +1,88 @@
+---
+title: "Claude Desktop"
+description: "Drop-in mcpServers JSON snippet for Claude Desktop and other MCP clients."
+---
+
+The MCP server runs as a subprocess that the host client launches over stdio. Most clients accept a JSON config that lists MCP servers and their startup commands.
+
+## Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the equivalent on your platform. Add an `mcpServers.abadge` entry:
+
+```json
+{
+  "mcpServers": {
+    "abadge": {
+      "command": "bun",
+      "args": ["packages/mcp/src/index.ts"],
+      "env": {
+        "ABADGE_API_URL": "http://localhost:8787",
+        "ABADGE_AGENT_ID": "agent_...",
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+      }
+    }
+  }
+}
+```
+
+Replace:
+
+- The `command` and `args` if you've compiled the MCP server into a standalone binary.
+- `ABADGE_API_URL` with your deployment.
+- `ABADGE_AGENT_ID` and `ABADGE_PRIVATE_KEY_PATH` with the values from `abadge login` (which provisions a `local_mcp` agent automatically).
+
+Restart Claude Desktop after editing.
+
+## Using a CLI-registered MCP agent
+
+After running `abadge agent register --kind local_mcp --name "mcp host"`, the CLI writes the agent's ID and private-key path to `~/.abadge/config.json` under `localAgents.mcp`. The MCP server does **not** read `localAgents.mcp` directly — you need to copy those values into the `env` block above.
+
+```bash
+jq '.localAgents.mcp' ~/.abadge/config.json
+```
+
+```json
+{
+  "agentId": "agent_01HZ...",
+  "privateKeyPath": "/Users/you/.abadge/agents/agent_01HZ....ed25519.jwk"
+}
+```
+
+Paste `agentId` into `ABADGE_AGENT_ID` and `privateKeyPath` into `ABADGE_PRIVATE_KEY_PATH`.
+
+<Tip>
+  If you want the MCP server to read from the config file without an `env` block, write the values at the **top level** of `~/.abadge/config.json`: `{ "apiUrl": ..., "agentId": ..., "privateKeyPath": ... }`. Env vars still take precedence.
+</Tip>
+
+## Other MCP clients
+
+Any MCP-compatible client that supports stdio transport works the same way. Provide:
+
+- A way to launch the subprocess (`bun packages/mcp/src/index.ts` from the monorepo, or the future standalone binary)
+- Environment variables to point it at the API and the agent's private key
+
+## Verifying the connection
+
+Once configured, the host client should list the abadge tools (`list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`) under the `abadge` server.
+
+If the tools don't appear:
+
+1. Check the host client's MCP server log (Claude Desktop logs to `~/Library/Logs/Claude/` on macOS).
+2. Run the server manually from a terminal to see startup errors:
+   ```bash
+   ABADGE_API_URL=... ABADGE_AGENT_ID=... ABADGE_PRIVATE_KEY_PATH=... bun packages/mcp/src/index.ts
+   ```
+3. Confirm the agent is enabled with `abadge agent list`.
+
+## Permissions
+
+The MCP server can only access items where the configured agent has an explicit permission. Grant the right capability before invoking a tool:
+
+```bash
+abadge permission create \
+  --agent <mcp-agent-id> \
+  --item <item-id> \
+  --capability mount_env
+```
+
+`mount_env` and `mount_file` are the typical capabilities for MCP — `run_with_secret` calls `access.mount` with `mountType: env`, and `mount_secret` calls it with `mountType: file`.

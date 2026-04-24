@@ -1,0 +1,92 @@
+---
+title: "Installation"
+description: "Install the abadge CLI on macOS or Linux."
+---
+
+The `abadge` CLI is a single compiled binary built with Bun. It runs on macOS and Linux (x86_64 and arm64).
+
+## Recommended: install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+The script:
+
+1. Detects your OS, architecture, and (on Linux) libc (glibc baseline or musl).
+2. Downloads the latest signed CLI release archive from GitHub.
+3. Verifies the SHA-256 checksum against the published `SHA256SUMS` file.
+4. Extracts the binary to `~/.abadge/bin/abadge`.
+5. Adds `~/.abadge/bin` to your shell profile's `PATH` if it's not already there.
+
+After install:
+
+```bash
+abadge --version
+```
+
+## Pinning a version
+
+Set `ABADGE_VERSION` to install a specific release:
+
+```bash
+ABADGE_VERSION=1.4.2 \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+## Custom install paths
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ABADGE_INSTALL_DIR` | `~/.abadge/bin` | Where the binary is installed |
+| `ABADGE_INSTALL_REPO` | `punitarani/abadge` | GitHub repo to fetch from |
+| `ABADGE_INSTALL_BASE_URL` | (GitHub releases) | Override the release archive URL |
+| `PROFILE` | (auto-detected) | Shell profile file to update |
+
+## Build from source
+
+If you've cloned the monorepo:
+
+```bash
+# Run from a TypeScript entrypoint
+bun run cli -- --help
+
+# Compile a binary into /tmp
+bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
+/tmp/abadge-cli-release/abadge --version
+```
+
+The release script ships in `scripts/releases/publish.ts`. Pass `--dry-run` to skip the publish step.
+
+## What gets installed where
+
+| Path | Purpose | Permissions |
+|---|---|---|
+| `~/.abadge/bin/abadge` | The CLI binary | `0755` |
+| `~/.abadge/config.json` | CLI config (created on first `login`) | `0600` |
+| `~/.abadge/agents/*.jwk` | Local Ed25519 private keys | `0600` |
+| `~/.abadge/vaultd.sock` | Daemon Unix socket (created on `daemon start`) | `0600` |
+| `~/.abadge/vaultd.pid` | Daemon PID file | `0644` |
+
+## Verify the installation
+
+```bash
+abadge --version
+abadge --help
+```
+
+If `abadge` isn't found, source your shell profile (`source ~/.zshrc`, `source ~/.bashrc`) or restart the shell.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" href="/cli/configuration">
+    The shape of `~/.abadge/config.json` and where state lives.
+  </Card>
+  <Card title="Login" href="/cli/login">
+    Authenticate via the device-code flow.
+  </Card>
+  <Card title="Quickstart" href="/quickstart">
+    Store a secret, register an agent, run with the secret injected.
+  </Card>
+</CardGroup>

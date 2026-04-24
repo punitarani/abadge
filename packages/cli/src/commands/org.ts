@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { loadConfig, requireActiveOrgId, updateConfig } from "../config";
+import { daemonSetAuthOrg } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createOrgCommand(): Command {
@@ -66,6 +67,10 @@ export function createOrgCommand(): Command {
           process.exit(1);
         }
         updateConfig({ activeOrgId: org.id, activeProfileId: undefined });
+        // Push the org change to the daemon so vault.unlock uses the right org
+        // scope immediately without a re-login (§O3 / multi-org CLI fix).
+        // Best-effort: if the daemon is not running, silently skip.
+        await daemonSetAuthOrg(org.id).catch(() => undefined);
         success(`Active organization set to ${org.name} (${org.id}).`);
       } catch (err) {
         error(errorMessage(err, "Failed to set active organization."));

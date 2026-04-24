@@ -1,3 +1,4 @@
+import { orgPluginAcOptions } from "@abadge/auth";
 import type { Database } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -58,6 +59,7 @@ export function createTestAuth(db: Database): any {
       organization({
         allowUserToCreateOrganization: true,
         creatorRole: "owner",
+        ...orgPluginAcOptions,
       }),
       bearer(),
       testUtils(),

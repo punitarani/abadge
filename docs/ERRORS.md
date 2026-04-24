@@ -44,7 +44,7 @@ Validation errors include an additional `issues` array:
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile key rotate payload does not rewrap every ZK item in the profile; `meta.missingItemIds` lists the omitted ones |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
 | `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
-| `ORG_MEMBERSHIP_REQUIRED` | 401 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
+| `ORG_MEMBERSHIP_REQUIRED` | 403 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
 | `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |
 | `AGENT_SESSION_NOT_FOUND` | 401 | `abs_...` session token not found or already expired |
 | `AGENT_CHALLENGE_NOT_FOUND` | 401 | Challenge ID not found or already used |

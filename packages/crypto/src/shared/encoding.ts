@@ -1,6 +1,13 @@
+// Chunk size well under V8's max spread args (~64K). 8192 is standard.
+const CHUNK_SIZE = 8192;
+
 /** Convert Uint8Array to unpadded base64url string. */
 export function toBase64(data: Uint8Array): string {
-  const binary = String.fromCharCode(...data);
+  let binary = "";
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+    const chunk = data.subarray(i, i + CHUNK_SIZE);
+    binary += String.fromCharCode(...chunk);
+  }
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 

@@ -1,0 +1,150 @@
+---
+title: "Error handling"
+description: "AbadgeApiError shape, common codes, and the SecretValue opaque type."
+---
+
+Every SDK error is an instance of `AbadgeApiError`. The class carries the same envelope as the underlying API response.
+
+## Shape
+
+```ts
+import { AbadgeApiError } from "@abadge/sdk";
+
+class AbadgeApiError extends Error {
+  readonly statusCode: number;                      // HTTP status code
+  readonly code: ErrorCode | string;                // e.g. "PERMISSION_DENIED"
+  readonly message: string;                         // Human-readable description (inherited from Error)
+  readonly hint?: string;                           // Actionable next step, if provided
+  readonly meta?: Readonly<Record<string, unknown>>; // Structured context for clients
+
+  static fromResponse(res: Response, fallback: string): Promise<AbadgeApiError>;
+  static fromUnknown(error: unknown, fallback: string): AbadgeApiError;
+}
+```
+
+For `VALIDATION_ERROR`, validation issues are delivered inside `meta.issues` as an array of `{ path, message }` objects. There is no dedicated top-level `issues` field on the SDK error class.
+
+## Basic usage
+
+```ts
+import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
+
+try {
+  const { payload } = await agent.accessReveal(itemId, "password");
+} catch (err) {
+  if (err instanceof AbadgeApiError) {
+    console.error(`${err.code}: ${err.message}`);
+    console.error(`Hint: ${err.hint}`);
+  }
+  throw err;
+}
+```
+
+## Common codes
+
+```ts
+switch (err.code) {
+  case "PERMISSION_DENIED":
+    // No matching permission for (agent, item, capability)
+    break;
+  case "PERMISSION_EXPIRED":
+    // Permission existed but has passed expiresAt
+    break;
+  case "AGENT_REVOKED":
+    // Agent has been revoked; authentication failed
+    break;
+  case "AGENT_SESSION_NOT_FOUND":
+    // abs_... token not found or expired; reconnect
+    break;
+  case "FIELD_NOT_FOUND":
+    // Named field not present; err.meta.availableFields lists valid names
+    break;
+  case "MULTI_FIELD_ITEM":
+    // Item has multiple fields; pass field
+    break;
+  case "STALE_VERSION":
+    // Optimistic-concurrency conflict; re-fetch and retry
+    break;
+  case "RATE_LIMITED":
+    // Too many requests; back off
+    break;
+  case "SESSION_REFRESH_FAILED":
+    // SDK background refresh exhausted retries; disconnect/reconnect
+    break;
+}
+```
+
+See the full code list in [Errors](/api/errors).
+
+## Recovering from multi-field errors
+
+```ts
+try {
+  await agent.accessReveal(itemId);
+} catch (err) {
+  if (err instanceof AbadgeApiError && err.code === "MULTI_FIELD_ITEM") {
+    const fields = err.meta?.availableFields as string[];
+    return await agent.accessReveal(itemId, fields[0]);
+  }
+  throw err;
+}
+```
+
+## Recovering from session refresh failures
+
+`SESSION_REFRESH_FAILED` means the background refresher couldn't mint a new `abs_...` token after bounded backoff retries. Reconnect:
+
+```ts
+try {
+  await agent.accessReveal(itemId);
+} catch (err) {
+  if (err instanceof AbadgeApiError && err.code === "SESSION_REFRESH_FAILED") {
+    agent.disconnect();
+    await agent.connect();
+    return await agent.accessReveal(itemId);
+  }
+  throw err;
+}
+```
+
+## Validation errors
+
+`VALIDATION_ERROR` carries the failing inputs under `meta.issues`:
+
+```ts
+type ValidationIssue = { path: string[]; message: string };
+
+catch (err) {
+  if (err instanceof AbadgeApiError && err.code === "VALIDATION_ERROR") {
+    const issues = (err.meta?.issues ?? []) as ValidationIssue[];
+    for (const issue of issues) {
+      console.error(`${issue.path.join(".")}: ${issue.message}`);
+    }
+  }
+}
+```
+
+## SecretValue opaque type
+
+The SDK uses a `SecretValue` opaque wrapper to discourage accidental logging or serialization of secret data. The wrapper requires an explicit `.expose()` call to access the underlying string:
+
+```ts
+const result = await agent.accessReveal(itemId);
+// result.value is a SecretValue — cannot be directly logged or serialized
+const plaintext = result.value.expose();
+```
+
+Use this when you build higher-level wrappers — never log a `SecretValue` directly.
+
+## Retry strategy
+
+| Code | Retry? |
+|---|---|
+| `RATE_LIMITED` | Yes, after `Retry-After` (or with bounded jittered backoff) |
+| `SESSION_REFRESH_FAILED` | Yes, after `disconnect()` + `connect()` |
+| `STALE_VERSION` | Yes, after re-fetching the item |
+| `AGENT_CHALLENGE_EXPIRED` | Yes, by issuing a new challenge |
+| `PERMISSION_DENIED` / `PERMISSION_EXPIRED` | No — fix the permission first |
+| `VALIDATION_ERROR` | No — fix the input |
+| `INVALID_CAPABILITY_*` | No — pick a valid capability |
+| `MULTI_FIELD_ITEM` / `FIELD_NOT_FOUND` | Yes, with the right `field` |

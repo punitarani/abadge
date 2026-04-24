@@ -1,0 +1,74 @@
+---
+title: "Items"
+description: "Browse, create, edit, and delete credentials inside the dashboard."
+---
+
+The **Items** view is where you store and manage individual credentials. Every item belongs to a profile and inherits its storage mode.
+
+## Listing items
+
+The items table shows every item in the active organization that you can see, scoped to the active profile. Each row shows:
+
+- Label and tags
+- Kind (`login`, `api_key`, `token`, `ssh_key`, etc.)
+- Storage mode badge (`zero-knowledge` or `server-managed`)
+- Last updated timestamp
+
+Filter by kind, tag, or label. The table never displays secret values.
+
+## Creating an item
+
+<Steps>
+  <Step title="Click New item">
+    Choose the target profile (defaults to the active profile).
+  </Step>
+  <Step title="Pick a kind">
+    The dashboard suggests standard fields for the kind. For example, `login` prompts for `username`, `password`, `url`, `totp_secret`. You can add or remove fields freely.
+  </Step>
+  <Step title="Fill in fields">
+    Each field is a key/value pair. Mark fields as secret to mask them in the UI.
+  </Step>
+  <Step title="Add a label and tags">
+    The label is cleartext and shown in lists. Tags help filtering and bulk operations.
+  </Step>
+  <Step title="Save">
+    For zero-knowledge profiles, the browser encrypts the payload locally before sending. For server-managed profiles, the API encrypts on receipt.
+  </Step>
+</Steps>
+
+## Viewing and editing
+
+Click any row to open the item detail panel.
+
+| Action | What it does |
+|---|---|
+| Reveal | Decrypt the payload locally (ZK) or fetch decrypted plaintext (server-managed) |
+| Edit | Update fields, label, or tags. Optimistic concurrency rejects stale edits with `STALE_VERSION`. |
+| Copy field | Copies a single field to the clipboard with a 30-second auto-clear |
+| View permissions | Lists every permission grant pointing at this item |
+| View audit | Filters the audit view to this item |
+| Delete | Soft-delete. Ciphertext is retained but inaccessible. |
+
+## Storage mode badges
+
+| Badge | Meaning |
+|---|---|
+| Zero-knowledge | Encrypted client-side. Server cannot decrypt. |
+| Server-managed | Encrypted by the API. Server can decrypt on authorized request. |
+
+## Multi-field items
+
+Items can carry multiple named fields. When you grant an agent access, the agent can request a specific field with `--field` (CLI) or the `field` parameter (API/SDK/MCP). The dashboard's reveal panel shows all fields side by side.
+
+See [Field delivery](/concepts/fields) for resolution rules.
+
+## Soft delete
+
+Deleting an item sets `deletedAt` but preserves the ciphertext. Future access attempts return `ITEM_DELETED` with `result: cascade` audit entries. There is no restore action in v1.
+
+## Related
+
+- [Concepts: items](/concepts/items)
+- [Concepts: fields](/concepts/fields)
+- [API: items procedures](/api/procedures/items)
+- [CLI: item commands](/cli/item)

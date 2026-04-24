@@ -68,3 +68,4 @@ export type {
   UpdateItemInput,
   VaultBootstrapInput,
 } from "./types";
+export type { ValidationIssue } from "./validation-issue";

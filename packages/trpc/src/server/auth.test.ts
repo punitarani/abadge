@@ -1,7 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { BadRequestError, UnauthorizedError } from "@abadge/core";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { BadRequestError, ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
-import { resolveSessionIdentity, resolveUserOrgId } from "./auth";
+import {
+  _resetUnauthBearerAuditCounters,
+  _unauthBearerAuditMapSize,
+  resolveSessionIdentity,
+  resolveUserOrgId,
+  shouldWriteUnauthBearerAudit,
+} from "./auth";
 import type { BaseRequestContext } from "./context";
 import { createTrpcCallerFactory, createTrpcRouter, scopedSessionProcedure } from "./init";
 
@@ -196,7 +202,7 @@ describe("resolveUserOrgId", () => {
       await resolveUserOrgId(ctx, "user_1");
       expect.unreachable("expected resolveUserOrgId to throw");
     } catch (err) {
-      expect(err).toBeInstanceOf(UnauthorizedError);
+      expect(err).toBeInstanceOf(ForbiddenError);
       expect(err).toMatchObject({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",
@@ -242,5 +248,39 @@ describe("resolveUserOrgId", () => {
       expect(meta?.availableOrgIds).toEqual(expect.arrayContaining(["org_a", "org_b"]));
       expect(meta?.availableOrgIds).toHaveLength(2);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldWriteUnauthBearerAudit map bounding (Issue 5)
+// ---------------------------------------------------------------------------
+
+describe("shouldWriteUnauthBearerAudit map bounding", () => {
+  beforeEach(() => _resetUnauthBearerAuditCounters());
+
+  test("first call for an IP returns true", () => {
+    expect(shouldWriteUnauthBearerAudit("1.2.3.4")).toBe(true);
+  });
+
+  test("second call for same IP within window returns false", () => {
+    shouldWriteUnauthBearerAudit("1.2.3.4");
+    expect(shouldWriteUnauthBearerAudit("1.2.3.4")).toBe(false);
+  });
+
+  test("undefined IP is deduplicated as a single bucket", () => {
+    expect(shouldWriteUnauthBearerAudit(undefined)).toBe(true);
+    expect(shouldWriteUnauthBearerAudit(undefined)).toBe(false);
+  });
+
+  test("map size stays bounded under scattered-source pressure", () => {
+    // Simulate probes from many unique IPs — map must not reach 15k entries.
+    for (let i = 0; i < 15_000; i++) {
+      shouldWriteUnauthBearerAudit(
+        `10.${Math.floor(i / 65536) % 256}.${Math.floor(i / 256) % 256}.${i % 256}`,
+      );
+    }
+    // After the hard cap fires and clears the map, new entries accumulate.
+    // The invariant is that the map never held 15k entries simultaneously.
+    expect(_unauthBearerAuditMapSize()).toBeLessThan(15_000);
   });
 });

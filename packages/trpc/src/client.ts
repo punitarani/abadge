@@ -19,10 +19,15 @@ export interface NodeTrpcClientOptions {
 }
 
 /**
- * Mirrored by `NormalizedTrpcError` in `packages/sdk/src/trpc.ts`. This
- * workspace package is `private: true`; the SDK is published, so it cannot
- * depend on this file directly. Any change to fields (hint, meta, new fields)
- * must be mirrored there.
+ * Mirrors `NormalizedTrpcError` in `@abadge/sdk` (`packages/sdk/src/trpc.ts`)
+ * field-for-field, EXCEPT `issues` which is deliberately typed differently
+ * between the two copies:
+ *   - This copy (trpc workspace-private): `issues?: unknown` — server callers
+ *     can forward the raw value without needing the SDK's ValidationIssue type.
+ *   - SDK copy (published package): `issues?: ReadonlyArray<ValidationIssue>`
+ *     with a shape guard at `normalizeTrpcError`, because the SDK surface
+ *     must be usable by external consumers.
+ * Any change to hint/meta/other fields must be mirrored in both files.
  */
 export interface NormalizedTrpcError {
   message: string;

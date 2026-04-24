@@ -26,7 +26,15 @@ function readPid(pidPath: string): number | null {
 }
 
 function writePid(pidPath: string): void {
-  mkdirSync(dirname(pidPath), { recursive: true, mode: 0o700 });
+  // W3P12-003: parent dir MUST be 0700. `mkdirSync` only applies `mode` on
+  // creation — if `~/.abadge/` already exists with wider perms, we must fail
+  // early rather than silently paper over a pre-existing permissions issue.
+  const parent = dirname(pidPath);
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const parentMode = statSync(parent).mode & 0o777;
+  if (parentMode !== 0o700) {
+    throw new Error(`[vaultd] FATAL: ${parent} has perms ${parentMode.toString(8)}, expected 700`);
+  }
   // biome-ignore lint/style/noRestrictedGlobals: daemon requires process.pid
   writeFileSync(pidPath, String(process.pid), { mode: 0o600 });
 }
@@ -65,7 +73,7 @@ export function clearDaemonState(partial: Partial<DaemonConfig> = {}): void {
  * Start the vaultd daemon.
  * Throws if another daemon is already running.
  */
-export function startDaemon(partial: Partial<DaemonConfig> = {}): DaemonServer {
+export async function startDaemon(partial: Partial<DaemonConfig> = {}): Promise<DaemonServer> {
   const config = resolveConfig(partial);
 
   const existingPid = readPid(config.pidPath);
@@ -79,7 +87,7 @@ export function startDaemon(partial: Partial<DaemonConfig> = {}): DaemonServer {
 
   let server: DaemonServer;
   try {
-    server = startServer(config);
+    server = await startServer(config);
   } catch (error) {
     clearDaemonState(config);
     throw error;

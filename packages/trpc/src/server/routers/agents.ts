@@ -8,16 +8,19 @@ import {
   API_KEY_PREFIX,
   agentLocalityForKind,
   BadRequestError,
+  ConflictError,
   type CreateAgentInput,
   CreateAgentSchema,
+  ForbiddenError,
+  MAX_AGENTS_PER_ORG,
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
+import { and, count, eq, isNull } from "@abadge/db";
 import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onAgentRevoked } from "../cascades";
 import {
   AgentRequestContextTag,
@@ -25,8 +28,15 @@ import {
   runSessionEffect,
   SessionRequestContextTag,
   strictSchema,
+  tryAsync,
 } from "../effect";
-import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
+import {
+  agentProcedure,
+  createTrpcRouter,
+  requireAgentOwnership,
+  requireOrgRole,
+  scopedSessionProcedure,
+} from "../init";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -52,7 +62,7 @@ const createAgent = (input: CreateAgentInput) =>
 
     if (authMethod === "legacy_api_key") {
       const prefix = API_KEY_PREFIX[locality];
-      const generated = yield* Effect.tryPromise(() => generateApiKey(prefix));
+      const generated = yield* tryAsync(() => generateApiKey(prefix));
       secretHash = generated.hash;
       secretPrefix = generated.prefix;
       apiKey = generated.key;
@@ -60,7 +70,7 @@ const createAgent = (input: CreateAgentInput) =>
       publicKey = input.publicKey;
     } else if (input.issueBootstrapToken) {
       bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
-      bootstrapTokenHash = yield* Effect.tryPromise(() => hashApiKey(bootstrapToken as string));
+      bootstrapTokenHash = yield* tryAsync(() => hashApiKey(bootstrapToken as string));
       bootstrapExpiresAt = new Date(Date.now() + AGENT_BOOTSTRAP_TTL_MS).toISOString();
     } else {
       return yield* Effect.fail(
@@ -73,7 +83,25 @@ const createAgent = (input: CreateAgentInput) =>
       );
     }
 
-    yield* Effect.tryPromise(() =>
+    // §AGC1a — Enforce per-org agent quota before insert.
+    const [countRow] = yield* tryAsync(() =>
+      ctx.db
+        .select({ count: count() })
+        .from(agentRecords)
+        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
+    );
+    if ((countRow?.count ?? 0) >= MAX_AGENTS_PER_ORG) {
+      return yield* Effect.fail(
+        new ConflictError({
+          code: "CONFLICT",
+          message: `Organization has reached the ${MAX_AGENTS_PER_ORG} agent limit`,
+          hint: "Delete or revoke unused agents before creating new ones.",
+          meta: { currentCount: countRow?.count ?? 0, limit: MAX_AGENTS_PER_ORG },
+        }),
+      );
+    }
+
+    yield* tryAsync(() =>
       ctx.db.insert(agentRecords).values({
         id,
         organizationId: ctx.identity.organizationId,
@@ -90,7 +118,7 @@ const createAgent = (input: CreateAgentInput) =>
     );
 
     if (bootstrapToken && bootstrapTokenHash && bootstrapExpiresAt) {
-      yield* Effect.tryPromise(() =>
+      yield* tryAsync(() =>
         ctx.db.insert(agentEnrollmentTokens).values({
           id: crypto.randomUUID(),
           agentId: id,
@@ -138,7 +166,7 @@ const createAgent = (input: CreateAgentInput) =>
 
 const listAgents = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .select()
       .from(agentRecords)
@@ -151,7 +179,7 @@ const listAgents = Effect.gen(function* () {
 const getAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -179,7 +207,7 @@ const getAgent = (agentId: string) =>
 
 const getCurrentAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
-  const [agent] = yield* Effect.tryPromise(() =>
+  const [agent] = yield* tryAsync(() =>
     ctx.db.select().from(agentRecords).where(eq(agentRecords.id, ctx.identity.agentId)).limit(1),
   );
 
@@ -199,7 +227,7 @@ const getCurrentAgent = Effect.gen(function* () {
 const rotateAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -214,7 +242,15 @@ const rotateAgent = (agentId: string) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.rotate",
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
@@ -223,8 +259,57 @@ const rotateAgent = (agentId: string) =>
       );
     }
 
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.rotate",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
+    );
+    yield* tryAsync(() =>
+      requireAgentOwnership(
+        ctx.db,
+        agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.rotate",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
+    );
+
     if (agent.authMethod !== "legacy_api_key") {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.rotate",
+          reason: "unsupported_auth_method",
+          ipAddress: ctx.ipAddress,
+        },
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only legacy API key agents support key rotation",
@@ -234,9 +319,9 @@ const rotateAgent = (agentId: string) =>
     }
 
     const prefix = API_KEY_PREFIX[agent.locality as "local" | "remote"];
-    const { key, hash, prefix: keyPrefix } = yield* Effect.tryPromise(() => generateApiKey(prefix));
+    const { key, hash, prefix: keyPrefix } = yield* tryAsync(() => generateApiKey(prefix));
 
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db
         .update(agentRecords)
         .set({
@@ -264,7 +349,7 @@ const rotateAgent = (agentId: string) =>
 const revokeAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -278,7 +363,15 @@ const revokeAgent = (agentId: string) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId,
+          eventType: "agent.revoke",
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
@@ -287,6 +380,47 @@ const revokeAgent = (agentId: string) =>
       );
     }
 
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
+    );
+    yield* tryAsync(() =>
+      requireAgentOwnership(
+        ctx.db,
+        agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId,
+              eventType: "agent.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
+    );
+
     // Atomic: flip the agent record to revoked, write the primary
     // agent.revoke audit, and run the cascade (session invalidation + one
     // cascade audit per invalidated session) all inside one transaction.
@@ -294,7 +428,7 @@ const revokeAgent = (agentId: string) =>
     // mid-flight failure could leave the agent disabled but still holding
     // live session tokens.
     const now = new Date();
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx
           .update(agentRecords)

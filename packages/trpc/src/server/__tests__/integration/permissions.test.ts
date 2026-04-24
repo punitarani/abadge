@@ -1,7 +1,9 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
   seedAgent,
+  seedMember,
   seedOrg,
+  seedPermission,
   seedProfile,
   seedServerItem,
   seedUser,
@@ -144,5 +146,74 @@ describe("permissions", () => {
 
     expect(created.permission.expiresAt).toBeDefined();
     expect(new Date(created.permission.expiresAt as string).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  // Regression tests for W1S9-001 / fix: Effect.tryPromise → tryAsync on
+  // requireOrgRole + requireAgentOwnership. Before the fix, these calls wrapped
+  // the thrown ForbiddenError in UnknownException, causing toTrpcError to fall
+  // back to INTERNAL_SERVER_ERROR (500) instead of FORBIDDEN (403).
+  test("member cannot grant permission on another member's agent (MEMBER_AGENT_OWNERSHIP, not 500)", async () => {
+    const alice = await seedUser(auth);
+    const org = await seedOrg(auth, alice.userId, { name: "PermOrg1", slug: "perm-org-1" });
+    const bob = await seedUser(auth);
+    await seedMember(auth, org.orgId, bob.userId);
+
+    // Alice owns the agent
+    const aliceCaller = createOperatorCaller(db, auth, alice.headers, org.orgId);
+    const aliceAgent = await aliceCaller.agents.create({
+      name: "alice-agent-perm",
+      authMethod: "legacy_api_key",
+      kind: "remote",
+    });
+
+    const item = await seedServerItem(db, { userId: alice.userId, orgId: org.orgId });
+
+    // Bob tries to grant a permission on alice's agent — must get FORBIDDEN, not 500
+    const bobCaller = createOperatorCaller(db, auth, bob.headers, org.orgId);
+    try {
+      await bobCaller.permissions.create({
+        agentId: aliceAgent.agent.id,
+        itemId: item.itemId,
+        capability: "reveal_plaintext",
+      });
+      expect.unreachable("should have thrown MEMBER_AGENT_OWNERSHIP on create permission");
+    } catch (error: unknown) {
+      const err = error as { code?: string; cause?: { code?: string } };
+      expect(err.code).toBe("FORBIDDEN");
+      expect(err.cause?.code).toBe("MEMBER_AGENT_OWNERSHIP");
+    }
+  });
+
+  test("member cannot revoke permission on another member's agent (FORBIDDEN, not 500)", async () => {
+    const alice = await seedUser(auth);
+    const org = await seedOrg(auth, alice.userId, { name: "PermOrg2", slug: "perm-org-2" });
+    const bob = await seedUser(auth);
+    await seedMember(auth, org.orgId, bob.userId);
+
+    // Alice owns the agent; seed an item and a permission on it
+    const aliceAgent = await seedAgent(db, {
+      userId: alice.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+    const item = await seedServerItem(db, { userId: alice.userId, orgId: org.orgId });
+    const perm = await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: aliceAgent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: alice.userId,
+    });
+
+    // Bob tries to revoke alice's permission — must get FORBIDDEN, not 500
+    const bobCaller = createOperatorCaller(db, auth, bob.headers, org.orgId);
+    try {
+      await bobCaller.permissions.revoke({ permissionId: perm.permissionId });
+      expect.unreachable("should have thrown MEMBER_AGENT_OWNERSHIP on revoke permission");
+    } catch (error: unknown) {
+      const err = error as { code?: string; cause?: { code?: string } };
+      expect(err.code).toBe("FORBIDDEN");
+      expect(err.cause?.code).toBe("MEMBER_AGENT_OWNERSHIP");
+    }
   });
 });

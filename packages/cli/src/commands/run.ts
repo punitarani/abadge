@@ -16,12 +16,24 @@ export async function runWithExpandEnv(
   // subsequent daemon call gets the daemon-availability fallback.
   const mounted = await client.accessMount(itemId, "env");
   try {
+    // §W1S7-001 — ZK path needs (profileId, itemId, contentVersion) to rebuild
+    // the XChaCha20-Poly1305 AAD in the daemon; server-managed path has nothing
+    // to decrypt here so the meta is null.
+    const zkMeta =
+      mounted.storageMode === "zero_knowledge"
+        ? {
+            profileId: mounted.profileId,
+            itemId: mounted.itemId,
+            contentVersion: mounted.contentVersion,
+          }
+        : null;
     const res = await daemonExpandEnv(
       mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
       mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
       mounted.storageMode === "server_managed" ? mounted.payload : null,
       executable,
       args,
+      zkMeta,
     );
     process.exit(res.exitCode);
   } catch (err) {

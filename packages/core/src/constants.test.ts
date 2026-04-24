@@ -153,6 +153,8 @@ describe("invite token constants", () => {
   test("includes invite audit events", () => {
     expect(AUDIT_EVENT_TYPES).toContain("org.invite_accept");
     expect(AUDIT_EVENT_TYPES).toContain("org.invite_revoke");
+    expect(AUDIT_EVENT_TYPES).toContain("org.invite_reject");
+    expect(AUDIT_EVENT_TYPES).toContain("org.member_add");
   });
 });
 

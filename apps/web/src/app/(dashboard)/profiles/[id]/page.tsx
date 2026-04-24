@@ -2,12 +2,25 @@
 
 import type { Agent, ItemSummary } from "@abadge/core";
 import { ArrowRight, Key, Lock, LockOpen, Plus, ShieldCheck, Trash } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -17,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
-import { browserTrpcClient } from "@/lib/trpc-browser";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
@@ -27,6 +40,8 @@ export default function ProfileDetailPage(): React.ReactElement {
   const profileId = params.id;
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
+  const router = useRouter();
+  const queryClient = useQueryClient();
 
   const profileQuery = useQuery({
     queryKey: dashboardQueryKeys.profile(profileId),
@@ -59,6 +74,21 @@ export default function ProfileDetailPage(): React.ReactElement {
 
   const isZK = profile?.storageMode === "zero_knowledge";
   const unlocked = profile ? isProfileUnlocked(profile.id) : false;
+
+  const deleteMutation = useMutation({
+    mutationFn: () => browserTrpcClient.profiles.delete.mutate({ profileId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
+      });
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profile(profileId) });
+      toast.success("Profile deleted.");
+      router.push("/profiles");
+    },
+    onError: (error) => {
+      toast.error(getClientErrorMessage(error, "Failed to delete profile"));
+    },
+  });
 
   /* Permission counts per agent */
   const agentPermissionCounts = useMemo(() => {
@@ -130,7 +160,11 @@ export default function ProfileDetailPage(): React.ReactElement {
       {isZK && <KeyManagementSection />}
 
       {/* Danger zone */}
-      <DangerZone profileName={profile.name} />
+      <DangerZone
+        profileName={profile.name}
+        onDelete={() => deleteMutation.mutate()}
+        isDeleting={deleteMutation.isPending}
+      />
     </div>
   );
 }
@@ -348,18 +382,39 @@ function KeyManagementSection(): React.ReactElement {
           title="Change vault password"
           description="Derive a new KEK and re-wrap the existing root key. Items are not re-encrypted."
           actionLabel="Change"
+          onClick={() =>
+            toast.info("Use the CLI: abadge profile change-password", {
+              description:
+                "Vault password changes require your local daemon. Run the command in a terminal to proceed.",
+              duration: 6000,
+            })
+          }
         />
         <KeyActionRow
           icon={<Key className="h-4 w-4" />}
           title="Rotate item keys"
           description="Generate a new root key and re-encrypt all item DEKs. Use after a suspected key compromise."
           actionLabel="Rotate"
+          onClick={() =>
+            toast.info("Key rotation is not yet available in the dashboard.", {
+              description:
+                "This operation requires your local daemon and is under active development.",
+              duration: 6000,
+            })
+          }
         />
         <KeyActionRow
           icon={<ShieldCheck className="h-4 w-4" />}
           title="Recovery key"
           description="View or regenerate the recovery key for this profile."
           actionLabel="View"
+          onClick={() =>
+            toast.info("Recovery key management is not yet available in the dashboard.", {
+              description:
+                "This operation requires your local daemon and is under active development.",
+              duration: 6000,
+            })
+          }
         />
       </div>
     </div>
@@ -371,11 +426,13 @@ function KeyActionRow({
   title,
   description,
   actionLabel,
+  onClick,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   actionLabel: string;
+  onClick: () => void;
 }): React.ReactElement {
   return (
     <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
@@ -386,14 +443,24 @@ function KeyActionRow({
           <div className="text-xs text-muted-foreground">{description}</div>
         </div>
       </div>
-      <Button variant="outline" size="sm">
+      <Button variant="outline" size="sm" onClick={onClick}>
         {actionLabel}
       </Button>
     </div>
   );
 }
 
-function DangerZone({ profileName }: { profileName: string }): React.ReactElement {
+function DangerZone({
+  profileName,
+  onDelete,
+  isDeleting,
+}: {
+  profileName: string;
+  onDelete: () => void;
+  isDeleting: boolean;
+}): React.ReactElement {
+  const [confirmInput, setConfirmInput] = useState("");
+
   return (
     <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-5 dark:border-yellow-700 dark:bg-yellow-950/20">
       <h2 className="text-sm font-semibold text-red-600 dark:text-red-400">Danger zone</h2>
@@ -412,13 +479,53 @@ function DangerZone({ profileName }: { profileName: string }): React.ReactElemen
             </div>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+        <AlertDialog
+          onOpenChange={(open) => {
+            if (!open) setConfirmInput("");
+          }}
         >
-          Delete
-        </Button>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950/30"
+            >
+              Delete
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete profile</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete &ldquo;{profileName}&rdquo; and all associated data.
+                The profile must have no items before it can be deleted. This action cannot be
+                undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground" htmlFor="confirm-profile-name">
+                Type <span className="font-mono font-semibold">{profileName}</span> to confirm
+              </label>
+              <Input
+                id="confirm-profile-name"
+                value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                placeholder={profileName}
+                autoComplete="off"
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={confirmInput !== profileName || isDeleting}
+                onClick={onDelete}
+              >
+                {isDeleting ? "Deleting…" : "Delete profile"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

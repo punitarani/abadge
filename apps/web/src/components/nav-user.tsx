@@ -1,8 +1,8 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown, Lock, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -35,8 +35,8 @@ export function NavUser(): React.ReactElement {
   const { isMobile } = useSidebar();
   const { lockAll } = useVault();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
-  const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
 
   const userName = session?.user?.name ?? "User";
   const userEmail = session?.user?.email ?? "";
@@ -44,10 +44,12 @@ export function NavUser(): React.ReactElement {
 
   async function handleSignOut(): Promise<void> {
     lockAll();
-    // Scrub the persisted org context so the next user on this browser
-    // (or the same user after a re-login) doesn't inherit a stale
-    // X-Abadge-Org-Id header on the first tRPC call.
-    clearActiveOrg();
+    // Scrub the persisted org context and React Query cache before signOut
+    // so the next user on this browser (or the same user after a re-login)
+    // does not inherit a stale X-Abadge-Org-Id header on the first tRPC
+    // call or cached data from the previous session.
+    useOrgStore.getState().clearActiveOrg();
+    queryClient.clear();
     await authClient.signOut();
     router.push("/login");
   }

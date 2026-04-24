@@ -1,5 +1,9 @@
 import type { ErrorCode } from "@abadge/core";
 import { normalizeTrpcError } from "./trpc";
+import type { ValidationIssue } from "./validation-issue";
+import { toValidationIssues } from "./validation-issue";
+
+export type { ValidationIssue } from "./validation-issue";
 
 /**
  * Error thrown by all SDK client methods when an API request fails.
@@ -40,12 +44,32 @@ export class AbadgeApiError extends Error {
   /** Structured debugging metadata for advanced callers and JSON output. */
   public readonly meta?: Readonly<Record<string, unknown>>;
 
+  /**
+   * Per-field validation errors, present when `code === "VALIDATION_ERROR"`.
+   *
+   * Each entry carries a `path` (array of string/number segments identifying the
+   * offending field, e.g. `["body", "email"]`) and a `message` describing the
+   * constraint violation. Absent when the error is not a validation error or
+   * when the server did not include field-level detail.
+   *
+   * @example
+   * ```typescript
+   * if (err instanceof AbadgeApiError && err.code === "VALIDATION_ERROR") {
+   *   for (const issue of err.issues ?? []) {
+   *     console.error(`${issue.path.join(".")}: ${issue.message}`);
+   *   }
+   * }
+   * ```
+   */
+  public readonly issues?: ReadonlyArray<ValidationIssue>;
+
   constructor(
     statusCode: number,
     code: ErrorCode | string,
     message: string,
     hint?: string,
     meta?: Readonly<Record<string, unknown>>,
+    issues?: ReadonlyArray<ValidationIssue>,
   ) {
     super(message);
     this.name = "AbadgeApiError";
@@ -53,6 +77,7 @@ export class AbadgeApiError extends Error {
     this.code = code;
     this.hint = hint;
     this.meta = meta;
+    this.issues = issues;
   }
 
   /**
@@ -66,21 +91,24 @@ export class AbadgeApiError extends Error {
     let message = fallback;
     let hint: string | undefined;
     let meta: Readonly<Record<string, unknown>> | undefined;
+    let issues: ReadonlyArray<ValidationIssue> | undefined;
     try {
       const body = (await res.json()) as {
         error?: string;
         code?: string;
         hint?: string;
         meta?: Record<string, unknown>;
+        issues?: unknown;
       };
       code = body.code ?? code;
       message = body.error ?? message;
       hint = body.hint;
       meta = body.meta;
+      issues = toValidationIssues(body.issues);
     } catch {
       // Non-JSON response body
     }
-    return new AbadgeApiError(res.status, code, message, hint, meta);
+    return new AbadgeApiError(res.status, code, message, hint, meta, issues);
   }
 
   /**
@@ -98,6 +126,7 @@ export class AbadgeApiError extends Error {
       normalized.message || fallback,
       normalized.hint,
       normalized.meta,
+      normalized.issues,
     );
   }
 }
