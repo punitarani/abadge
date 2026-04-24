@@ -48,6 +48,74 @@ describe("items CRUD", () => {
     expect(result.item.storageMode).toBe("server_managed");
   });
 
+  test("§W1S7-002: new server_managed writes land as AAD-bound v2 and round-trip", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const created = await caller.items.create({
+      storageMode: "server_managed",
+      payload: {
+        v: 1,
+        label: "aad-item",
+        kind: "opaque",
+        tags: [],
+        fields: { token: "bound-to-item" },
+      },
+    });
+
+    const [row] = await db.select().from(items).where(eq(items.id, created.id));
+    expect(row).toBeDefined();
+    // v2 is the minimum AAD-bound version (see SERVER_AAD_MIN_VERSION).
+    expect(row?.serverKeyVersion).toBe(2);
+
+    const revealed = await caller.items.ownerReveal({ itemId: created.id });
+    expect((revealed.payload.fields as Record<string, string>).token).toBe("bound-to-item");
+  });
+
+  test("§W1S7-002: updating a v1 server_managed row rewrites as AAD-bound v2", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    // seedServerItem writes legacy v1 ciphertext (no AAD, keyVersion = 1).
+    const seeded = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      label: "legacy-v1",
+      fields: { value: "pre-aad" },
+    });
+
+    const [before] = await db.select().from(items).where(eq(items.id, seeded.itemId));
+    expect(before?.serverKeyVersion).toBe(1);
+
+    // Owner reveal must still succeed against a v1 row (backward compat).
+    const revealedV1 = await caller.items.ownerReveal({ itemId: seeded.itemId });
+    expect((revealedV1.payload.fields as Record<string, string>).value).toBe("pre-aad");
+
+    // Update rewrites the row as v2 AAD-bound.
+    await caller.items.update({
+      itemId: seeded.itemId,
+      data: {
+        storageMode: "server_managed",
+        payload: {
+          v: 1,
+          label: "legacy-v1",
+          kind: "opaque",
+          tags: [],
+          fields: { value: "post-aad" },
+        },
+        contentVersion: 1,
+      },
+    });
+
+    const [after] = await db.select().from(items).where(eq(items.id, seeded.itemId));
+    expect(after?.serverKeyVersion).toBe(2);
+
+    const revealedV2 = await caller.items.ownerReveal({ itemId: seeded.itemId });
+    expect((revealedV2.payload.fields as Record<string, string>).value).toBe("post-aad");
+  });
+
   test("update item with optimistic concurrency", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);

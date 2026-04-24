@@ -28,6 +28,11 @@ export const items = pgTable(
     // Server-managed fields (null for zero_knowledge)
     serverCiphertext: text("server_ciphertext"),
     serverIv: text("server_iv"),
+    // Doubles as the AAD-epoch marker (§W1S7-002):
+    //   1     → legacy no-AAD ciphertext (pre-§W1S7-002).
+    //   >= 2  → AAD-bound (org, profile, item, keyVersion) — see
+    //           `buildServerAad` in @abadge/crypto/shared.
+    // Future AES master-key rotations bump this further.
     serverKeyVersion: integer("server_key_version"),
 
     // Common

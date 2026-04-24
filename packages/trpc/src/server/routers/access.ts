@@ -21,6 +21,11 @@ import {
   resolveFieldValue,
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
+import {
+  profileIdForServerAad,
+  SERVER_AAD_MIN_VERSION,
+  type ServerAadMeta,
+} from "@abadge/crypto/shared";
 import { and, eq, isNull } from "@abadge/db";
 import { items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Cause, Effect } from "effect";
@@ -87,6 +92,19 @@ const decryptServerManagedItem = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
+    // v1 rows predate AAD binding and MUST be decrypted without AAD.
+    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion),
+    // so a DB-write adversary cannot substitute rows across items.
+    const aadMeta: ServerAadMeta | undefined =
+      keyVersion >= SERVER_AAD_MIN_VERSION
+        ? {
+            orgId: ctx.identity.agentOrganizationId,
+            profileId: profileIdForServerAad(item.profileId),
+            itemId: item.id,
+            keyVersion,
+          }
+        : undefined;
+
     return yield* tryAsync(() =>
       serverDecrypt(
         {
@@ -95,6 +113,7 @@ const decryptServerManagedItem = (
           keyVersion,
         },
         ctx.env.ENCRYPTION_KEY,
+        aadMeta,
       ),
     );
   });

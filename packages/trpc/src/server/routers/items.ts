@@ -14,6 +14,11 @@ import {
   UpdateItemSchema,
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
+import {
+  profileIdForServerAad,
+  SERVER_AAD_MIN_VERSION,
+  type ServerAadMeta,
+} from "@abadge/crypto/shared";
 import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
@@ -184,7 +189,20 @@ const createItem = (input: CreateItemInput) =>
       );
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* tryAsync(() => serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1));
+      // New server-managed writes are v2 AAD-bound (§W1S7-002). AAD binds
+      // ciphertext to (orgId, profileId, itemId, keyVersion) so a DB-write
+      // adversary cannot substitute rows across items or organizations.
+      // `profileIdForServerAad` is shared with every decrypt site so the
+      // null-profile fallback stays symmetric across encrypt and decrypt.
+      const aadMeta: ServerAadMeta = {
+        orgId: ctx.identity.organizationId,
+        profileId: profileIdForServerAad(null),
+        itemId: id,
+        keyVersion: SERVER_AAD_MIN_VERSION,
+      };
+      const encrypted = yield* tryAsync(() =>
+        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
+      );
 
       yield* tryAsync(() =>
         ctx.db.insert(items).values({
@@ -309,7 +327,17 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* tryAsync(() => serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1));
+      // Rewrite always lands as v2 AAD-bound, even when the prior row was v1.
+      // This opportunistically migrates the row forward as it is touched.
+      const aadMeta: ServerAadMeta = {
+        orgId: ctx.identity.organizationId,
+        profileId: profileIdForServerAad(item.profileId),
+        itemId,
+        keyVersion: SERVER_AAD_MIN_VERSION,
+      };
+      const encrypted = yield* tryAsync(() =>
+        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
+      );
 
       const updated = yield* tryAsync(() =>
         ctx.db
@@ -386,8 +414,20 @@ const ownerReveal = (itemId: string) =>
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
+    // v1 rows predate AAD binding and MUST be decrypted without AAD.
+    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion).
+    const aadMeta: ServerAadMeta | undefined =
+      keyVersion >= SERVER_AAD_MIN_VERSION
+        ? {
+            orgId: ctx.identity.organizationId,
+            profileId: profileIdForServerAad(item.profileId),
+            itemId: item.id,
+            keyVersion,
+          }
+        : undefined;
+
     const decrypted = yield* tryAsync(() =>
-      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY),
+      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY, aadMeta),
     );
 
     yield* logSessionAudit({
