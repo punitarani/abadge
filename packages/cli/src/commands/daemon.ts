@@ -152,7 +152,7 @@ async function daemonStatusCmd(): Promise<void> {
 }
 
 async function daemonServe(): Promise<void> {
-  serveDaemon();
+  await serveDaemon();
 }
 
 export function createDaemonCommand(): Command {

@@ -134,7 +134,14 @@ export function ItemDetailPanel({
     }
 
     try {
-      const plaintext = decryptItemFromProfile(item.encryptedItemKey, item.ciphertext, key);
+      // §W1S7-001 — rebuild the XChaCha20-Poly1305 AAD from the row metadata
+      // so decrypt succeeds only for the specific (profile, item, version)
+      // the server persisted.
+      const plaintext = decryptItemFromProfile(item.encryptedItemKey, item.ciphertext, key, {
+        profileId: item.profileId,
+        itemId: item.id,
+        contentVersion: item.contentVersion,
+      });
       return JSON.stringify(plaintext, null, 2);
     } catch {
       toast.error("Failed to decrypt item.");

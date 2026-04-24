@@ -5,6 +5,7 @@ import {
   ConflictError,
   type CreatePermissionInput,
   CreatePermissionSchema,
+  ForbiddenError,
   getAllowedCapabilities,
   NotFoundError,
   PermissionListResultSchema,
@@ -15,7 +16,7 @@ import {
 import { and, eq, or } from "@abadge/db";
 import { agents as agentRecords, items, permissions as permissionRecords } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
   isUniqueViolation,
   runSessionEffect,
@@ -43,7 +44,7 @@ const PermissionListQuerySchema = Schema.Struct({
 const createPermission = (input: CreatePermissionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(agentRecords)
@@ -57,7 +58,15 @@ const createPermission = (input: CreatePermissionInput) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: input.agentId,
+          eventType: "permission.create",
+          reason: "agent_not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "AGENT_NOT_FOUND",
           message: "Agent not found",
@@ -66,10 +75,24 @@ const createPermission = (input: CreatePermissionInput) =>
       );
     }
 
-    const callerRole = yield* Effect.tryPromise(() =>
+    const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: input.agentId,
+              eventType: "permission.create",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
     );
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       requireAgentOwnership(
         ctx.db,
         input.agentId,
@@ -77,9 +100,23 @@ const createPermission = (input: CreatePermissionInput) =>
         ctx.identity.organizationId,
         callerRole,
       ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: input.agentId,
+              eventType: "permission.create",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
     );
 
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
@@ -90,7 +127,16 @@ const createPermission = (input: CreatePermissionInput) =>
     );
 
     if (!item) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: input.agentId,
+          itemId: input.itemId,
+          eventType: "permission.create",
+          reason: "item_not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
@@ -187,7 +233,7 @@ const createPermission = (input: CreatePermissionInput) =>
 const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const userAgents = yield* Effect.tryPromise(() =>
+    const userAgents = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -205,12 +251,12 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       if (!agentIds.includes(agentId)) {
         return { permissions: [] };
       }
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db.select().from(permissionRecords).where(eq(permissionRecords.agentId, agentId)),
       );
     } else if (input.itemId) {
       const itemId = input.itemId;
-      const [item] = yield* Effect.tryPromise(() =>
+      const [item] = yield* tryAsync(() =>
         ctx.db
           .select({ id: items.id })
           .from(items)
@@ -222,11 +268,11 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
         return { permissions: [] };
       }
 
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db.select().from(permissionRecords).where(eq(permissionRecords.itemId, itemId)),
       );
     } else {
-      result = yield* Effect.tryPromise(() =>
+      result = yield* tryAsync(() =>
         ctx.db
           .select()
           .from(permissionRecords)
@@ -240,7 +286,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
 const revokePermission = (permissionId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [permission] = yield* Effect.tryPromise(() =>
+    const [permission] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(permissionRecords)
@@ -249,7 +295,14 @@ const revokePermission = (permissionId: string) =>
     );
 
     if (!permission) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          eventType: "permission.revoke",
+          reason: "permission_not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
@@ -258,7 +311,7 @@ const revokePermission = (permissionId: string) =>
       );
     }
 
-    const [agent] = yield* Effect.tryPromise(() =>
+    const [agent] = yield* tryAsync(() =>
       ctx.db
         .select({ id: agentRecords.id })
         .from(agentRecords)
@@ -272,7 +325,15 @@ const revokePermission = (permissionId: string) =>
     );
 
     if (!agent) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          agentId: permission.agentId,
+          eventType: "permission.revoke",
+          reason: "permission_cross_org",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "PERMISSION_NOT_FOUND",
           message: "Permission not found",
@@ -281,10 +342,25 @@ const revokePermission = (permissionId: string) =>
       );
     }
 
-    const callerRole = yield* Effect.tryPromise(() =>
+    const callerRole = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: permission.agentId,
+              itemId: permission.itemId,
+              eventType: "permission.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "insufficient_role" },
+            })
+          : Effect.void,
+      ),
     );
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       requireAgentOwnership(
         ctx.db,
         permission.agentId,
@@ -292,9 +368,24 @@ const revokePermission = (permissionId: string) =>
         ctx.identity.organizationId,
         callerRole,
       ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: permission.agentId,
+              itemId: permission.itemId,
+              eventType: "permission.revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
     );
 
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.delete(permissionRecords).where(eq(permissionRecords.id, permissionId)),
     );
 

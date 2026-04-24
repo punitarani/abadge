@@ -32,6 +32,26 @@ describe("base64url", () => {
     expect(encoded).not.toContain("+");
     expect(encoded).not.toContain("/");
   });
+
+  // §CRYPTO-EDGE1: String.fromCharCode(...data) spreads the full array into
+  // individual args, hitting V8's max-args limit (~64K) for inputs over ~750KB.
+  // Chunked iteration fixes this; these tests verify the fix and catch regressions.
+  test("toBase64 handles 1MB input without stack overflow (§CRYPTO-EDGE1)", () => {
+    const data = new Uint8Array(1_048_576); // 1MB
+    for (let i = 0; i < data.length; i++) data[i] = i & 0xff;
+    const encoded = toBase64(data); // must not throw RangeError
+    expect(encoded.length).toBeGreaterThan(0);
+    const decoded = fromBase64(encoded);
+    expect(decoded).toEqual(data);
+  });
+
+  test("toBase64 round-trips exact 8KB+1 boundary", () => {
+    const data = new Uint8Array(8193);
+    for (let i = 0; i < data.length; i++) data[i] = (i * 7) & 0xff;
+    const encoded = toBase64(data);
+    const decoded = fromBase64(encoded);
+    expect(decoded).toEqual(data);
+  });
 });
 
 describe("base32", () => {

@@ -9,9 +9,15 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { expandFieldSelection, resolveFieldValue } from "@abadge/core";
+import {
+  ENV_VAR_NAME_PATTERN,
+  expandFieldSelection,
+  RESERVED_ENV_KEYS,
+  resolveFieldValue,
+} from "@abadge/core";
 import { fromBase64 } from "@abadge/crypto";
 import { fetchVaultMeta, updateVaultPassword } from "./api";
+import { type DaemonIdentity, loadOrCreateDaemonIdentity, signChallenge } from "./identity";
 import { defaultPidPath, defaultSocketPath } from "./paths";
 import type {
   DaemonAuthHeaders,
@@ -33,49 +39,11 @@ import { VaultState } from "./vault-state";
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
 
-/** Shell-safe env var name: POSIX identifier. */
-const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
-
-/**
- * Env vars that can alter loader/interpreter behavior of the child process.
- * Injecting these from caller-controlled data would let a malicious or
- * compromised agent hijack subprocess execution (local privilege escalation
- * from agent-level compromise to arbitrary code in the spawned process).
- */
-const RESERVED_ENV_KEYS = new Set([
-  "PATH",
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-  "LD_AUDIT",
-  "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH",
-  "DYLD_FORCE_FLAT_NAMESPACE",
-  "NODE_OPTIONS",
-  "BUN_INSTALL",
-  "BUN_CONFIG_REGISTRY",
-  "PYTHONPATH",
-  "PYTHONSTARTUP",
-  "HOME",
-  "USER",
-  "SHELL",
-  // Node.js bare-import resolution path (analog of PYTHONPATH).
-  "NODE_PATH",
-  // TLS trust / proxy hijack: redirect or MITM outbound TLS from the child.
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "ALL_PROXY",
-  "NO_PROXY",
-  // Shell loader hijack: alter startup or word-splitting of a spawned shell.
-  "BASH_ENV",
-  "ENV",
-  "IFS",
-]);
+// RESERVED_ENV_KEYS and ENV_VAR_NAME_PATTERN are imported from @abadge/core
+// (see import above) — single authoritative source shared with MCP (W3P10-001).
 
 function validateEnvKey(key: string): void {
-  if (!ENV_KEY_PATTERN.test(key)) {
+  if (!ENV_VAR_NAME_PATTERN.test(key)) {
     throw {
       code: RPC_ERRORS.INVALID_PARAMS,
       message: `Invalid env key: ${JSON.stringify(key)}. Must match [A-Z_][A-Z0-9_]*.`,
@@ -181,10 +149,38 @@ async function cleanupOrphanedMounts(): Promise<void> {
   }
 }
 
-function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, RpcHandler> {
+function buildHandlers(
+  vault: VaultState,
+  config: DaemonConfig,
+  identity: DaemonIdentity,
+): Record<string, RpcHandler> {
   let auth: DaemonAuthState | null = null;
 
   return {
+    // W3P12-001 / Critical C-2: TOFU peer verification. Client calls this
+    // BEFORE any sensitive RPC to confirm it's talking to the real daemon and
+    // not a same-UID squatter. Un-gated (no auth / unlock check) on purpose:
+    // gating this would deadlock the handshake since auth.setSession runs
+    // AFTER verification.
+    "identity.sign": async (params) => {
+      const nonce = params.nonce as string | undefined;
+      if (!nonce || typeof nonce !== "string") {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "nonce is required" };
+      }
+      if (nonce.length === 0 || nonce.length > 512) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "nonce must be 1..512 chars",
+        };
+      }
+      const signature = await signChallenge(identity, nonce);
+      return {
+        signature,
+        publicKey: identity.publicKey,
+        sessionStartMs: identity.sessionStartMs,
+      };
+    },
+
     // The daemon does NOT auto-refresh sessions. The CLI is responsible for
     // refreshing the session token and calling auth.setSession with the new
     // token before the stored one expires. The daemon only tracks whether the
@@ -199,12 +195,32 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         };
       }
 
+      const rawOrgId = params.organizationId;
+      const organizationId = typeof rawOrgId === "string" && rawOrgId ? rawOrgId : null;
+
       auth = {
         type,
         token,
         expiresAt: resolveAuthExpiry(params.expiresAt),
+        organizationId,
       };
 
+      return authStatus(auth);
+    },
+
+    // Updates the cached org scope without re-supplying the token. Called by
+    // `abadge org use` so outbound tRPC calls pick up the new org immediately
+    // (§O3 / multi-org CLI fix).
+    "auth.setOrg": async (params): Promise<DaemonAuthStatus> => {
+      if (!auth || isAuthExpired(auth)) {
+        throw {
+          code: RPC_ERRORS.AUTH_REQUIRED,
+          message: "Not logged in. Run `abadge login` first.",
+        };
+      }
+      const rawOrgId = params.organizationId;
+      const organizationId = typeof rawOrgId === "string" && rawOrgId ? rawOrgId : null;
+      auth = { ...auth, organizationId };
       return authStatus(auth);
     },
 
@@ -235,7 +251,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.VAULT_ALREADY_UNLOCKED, message: "Vault is already unlocked" };
       }
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
+      const meta = await fetchVaultMeta(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        auth?.organizationId,
+      );
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found — bootstrap first" };
       }
@@ -277,7 +298,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
       requireUnlocked(vault);
 
-      const meta = await fetchVaultMeta(config.apiUrl, buildAuthHeaders(auth).headers, profileId);
+      const meta = await fetchVaultMeta(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        auth?.organizationId,
+      );
       if (!meta) {
         throw { code: RPC_ERRORS.VAULT_NOT_FOUND, message: "Vault not found" };
       }
@@ -293,22 +319,51 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
         throw { code: RPC_ERRORS.INTERNAL_ERROR, message: `Password change failed: ${msg}` };
       }
 
-      await updateVaultPassword(config.apiUrl, buildAuthHeaders(auth).headers, profileId, result);
+      await updateVaultPassword(
+        config.apiUrl,
+        buildAuthHeaders(auth).headers,
+        profileId,
+        result,
+        auth?.organizationId,
+      );
       return { ok: true };
     },
 
     "item.encrypt": async (params): Promise<EncryptResult> => {
       const payload = params.payload;
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       if (payload === undefined) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
       }
+      // §W1S7-001 — profileId + itemId are bound into the XChaCha20-Poly1305
+      // AAD. CLI callers MUST pre-generate the itemId (UUID) before calling
+      // item.encrypt and pass the same value to items.create.
+      if (!profileId || !itemId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId and itemId are required",
+        };
+      }
       requireUnlocked(vault);
-      return vault.encrypt(payload);
+      return vault.encrypt(payload, { profileId, itemId, contentVersion });
     },
 
     "item.decrypt": async (params) => {
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       const field = params.field as string | undefined;
       if (!encryptedItemKey || !ciphertext) {
         throw {
@@ -316,8 +371,20 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
           message: "encryptedItemKey and ciphertext are required",
         };
       }
+      // §W1S7-001 — AAD meta is mandatory on decrypt; a missing param would
+      // otherwise mask the row-swap detection the AAD is designed to provide.
+      if (!profileId || !itemId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId and itemId are required",
+        };
+      }
       requireUnlocked(vault);
-      const payload = vault.decrypt(encryptedItemKey, ciphertext);
+      const payload = vault.decrypt(encryptedItemKey, ciphertext, {
+        profileId,
+        itemId,
+        contentVersion,
+      });
       if (field !== undefined) {
         // biome-ignore lint/suspicious/noExplicitAny: payload shape validated at runtime
         const resolved = resolveFieldValue(payload as any, field);
@@ -329,17 +396,35 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     "item.rekey": async (params): Promise<RekeyItemResult[]> => {
       const items = params.items as Array<{ id: string; encryptedItemKey: string }> | undefined;
       const oldRootKeyB64 = params.oldRootKey as string | undefined;
+      const profileId = params.profileId as string | undefined;
       if (!items || !oldRootKeyB64) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items and oldRootKey are required" };
       }
+      // §W1S7-001 — rekey re-wraps each DEK under the new root key with the
+      // DEK-wrap AAD bound to (profileId, itemId). profileId MUST come from
+      // the caller, not the currently-unlocked vault meta: during rotation
+      // the unlocked vault may represent a different profile than the items
+      // being rewrapped (e.g. password-change flows on a staged keyVersion).
+      if (!profileId) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: "profileId is required",
+        };
+      }
       requireUnlocked(vault);
       const oldRootKey = fromBase64(oldRootKeyB64);
-      const results = vault.rekey(items, oldRootKey);
+      const results = vault.rekey(items, oldRootKey, { profileId });
       oldRootKey.fill(0);
       return results;
     },
 
     "exec.env": async (params): Promise<EnvExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock — unauthenticated or
+      // pre-unlock callers must not be able to spawn subprocesses as the
+      // daemon UID.
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const secretValue = params.secretValue as string | undefined;
       const envVar = params.envVar as string | undefined;
       const command = params.command as string | undefined;
@@ -353,8 +438,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       validateEnvKey(envVar);
 
       const proc = Bun.spawn([command, ...args], {
-        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
-        env: { ...process.env, [envVar]: secretValue },
+        env: { ...buildChildEnv(), [envVar]: secretValue },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -364,19 +448,44 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.expandEnv": async (params): Promise<EnvExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock (moved from the ZK branch
+      // below so that server-managed payloads also require the operator to be
+      // authenticated and the vault unlocked before any subprocess is spawned).
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const encryptedItemKey = params.encryptedItemKey as string | undefined;
       const ciphertext = params.ciphertext as string | undefined;
       const serverPayload = params.serverPayload;
       const command = params.command as string | undefined;
       const args = (params.args as string[]) ?? [];
+      const profileId = params.profileId as string | undefined;
+      const itemId = params.itemId as string | undefined;
+      const contentVersionRaw = params.contentVersion;
+      const contentVersion =
+        typeof contentVersionRaw === "number" && Number.isFinite(contentVersionRaw)
+          ? contentVersionRaw
+          : undefined;
       if (!command) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "command is required" };
       }
 
       let payload: unknown;
       if (encryptedItemKey && ciphertext) {
-        requireUnlocked(vault);
-        payload = vault.decrypt(encryptedItemKey, ciphertext);
+        // §W1S7-001 — ZK decrypt requires the AAD meta so the XChaCha20-Poly1305
+        // tag check binds to the same (profile, item, contentVersion) the row
+        // was stored under.
+        if (!profileId || !itemId) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "profileId and itemId are required for ZK expandEnv",
+          };
+        }
+        payload = vault.decrypt(encryptedItemKey, ciphertext, {
+          profileId,
+          itemId,
+          contentVersion,
+        });
       } else if (serverPayload !== undefined) {
         payload = serverPayload;
       } else {
@@ -400,8 +509,7 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       }
 
       const proc = Bun.spawn([command, ...args], {
-        // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
-        env: { ...process.env, ...extraEnv },
+        env: { ...buildChildEnv(), ...extraEnv },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",
@@ -411,6 +519,10 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.mount": async (params): Promise<MountExecResult> => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock.
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const secretValue = params.secretValue as string | undefined;
       const targetPath = params.path as string | undefined;
       // mode is never accepted from the caller — always owner-read/write only
@@ -436,6 +548,12 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
     },
 
     "exec.cleanup": async (params) => {
+      // W1S6-003: exec.* RPCs gated on auth + unlock (cleanup removes files
+      // that only an authenticated, unlocked operator could have created via
+      // exec.mount).
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
       const path = params.path as string | undefined;
       if (!path) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "path is required" };
@@ -452,6 +570,25 @@ function buildHandlers(vault: VaultState, config: DaemonConfig): Record<string, 
       return { ok: true };
     },
   };
+}
+
+/**
+ * Build the base environment for a daemon-spawned subprocess.
+ *
+ * Strips every ABADGE_* key from the daemon's own process.env before
+ * inheritance — defence-in-depth so daemon-side config (API URL, tokens, etc.)
+ * is not leaked into arbitrary child commands. The explicit secret pass-through
+ * is layered on top by the caller.
+ */
+function buildChildEnv(): Record<string, string | undefined> {
+  const childEnv: Record<string, string | undefined> = {};
+  // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.env for subprocess inheritance
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith("ABADGE_")) {
+      childEnv[k] = v;
+    }
+  }
+  return childEnv;
 }
 
 function requireUnlocked(vault: VaultState): void {
@@ -503,9 +640,8 @@ export interface DaemonServer {
  * Start the daemon IPC server on a Unix domain socket.
  * Returns a handle for graceful shutdown.
  */
-export function startServer(config: DaemonConfig): DaemonServer {
+export async function startServer(config: DaemonConfig): Promise<DaemonServer> {
   const vault = new VaultState(config.autoLockMs);
-  const handlers = buildHandlers(vault, config);
 
   vault.setAutoLockCallback(() => {
     console.log("[vaultd] Auto-locked after inactivity");
@@ -514,7 +650,25 @@ export function startServer(config: DaemonConfig): DaemonServer {
   // Clean up temp files left behind by previous crashed sessions
   void cleanupOrphanedMounts();
 
-  mkdirSync(dirname(config.socketPath), { recursive: true });
+  // W3P12-003: parent dir MUST be 0700 — if it already exists with wider
+  // perms (e.g. a prior install under a permissive umask, or a cross-UID
+  // attacker pre-creating it), fail early rather than silently tightening
+  // with chmod (which would paper over the real issue).
+  const socketDir = dirname(config.socketPath);
+  mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+  const dirMode = statSync(socketDir).mode & 0o777;
+  if (dirMode !== 0o700) {
+    throw new Error(
+      `[vaultd] FATAL: Socket parent dir ${socketDir} has perms ${dirMode.toString(8)}, expected 700`,
+    );
+  }
+
+  // W3P12-001 / Critical C-2: load or create the daemon's Ed25519 keypair
+  // BEFORE the socket starts accepting connections. This ensures
+  // `identity.sign` handler has the identity in memory the first time a
+  // client calls it for TOFU fingerprint pinning.
+  const identity = await loadOrCreateDaemonIdentity(socketDir);
+  const handlers = buildHandlers(vault, config, identity);
 
   // Clean up stale socket file
   try {
@@ -526,43 +680,69 @@ export function startServer(config: DaemonConfig): DaemonServer {
   // Buffer for accumulating data per connection
   const connectionBuffers = new WeakMap<object, string>();
 
-  const server = Bun.listen({
-    unix: config.socketPath,
-    socket: {
-      open(socket) {
-        connectionBuffers.set(socket, "");
-      },
-      async data(socket, data) {
-        const prev = connectionBuffers.get(socket) ?? "";
-        const accumulated = prev + data.toString("utf8");
+  // W1S6-001 / W3P12-002: atomic socket permissions. `Bun.listen({ unix })`
+  // creates the socket inode under the process umask. With the default
+  // umask 0022 the socket briefly exists at mode 0755, giving a cross-UID
+  // attacker with an inotify/fsevents watcher a deterministic window to
+  // connect before the follow-up chmodSync(0o600) runs. We temporarily
+  // set umask to 0o077 so the socket is created at 0o600 atomically, then
+  // restore the previous umask in finally{}.
+  // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.umask for atomic socket creation
+  const previousUmask = process.umask(0o077);
+  let server: ReturnType<typeof Bun.listen>;
+  try {
+    server = Bun.listen({
+      unix: config.socketPath,
+      socket: {
+        open(socket) {
+          connectionBuffers.set(socket, "");
+        },
+        async data(socket, data) {
+          const prev = connectionBuffers.get(socket) ?? "";
+          const accumulated = prev + data.toString("utf8");
 
-        // Messages are newline-delimited JSON
-        const lines = accumulated.split("\n");
-        // Keep the incomplete last line in the buffer
-        connectionBuffers.set(socket, lines.pop() ?? "");
+          // Messages are newline-delimited JSON
+          const lines = accumulated.split("\n");
+          // Keep the incomplete last line in the buffer
+          connectionBuffers.set(socket, lines.pop() ?? "");
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const response = await dispatch(trimmed, handlers);
-          socket.write(`${JSON.stringify(response)}\n`);
-        }
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            const response = await dispatch(trimmed, handlers);
+            socket.write(`${JSON.stringify(response)}\n`);
+          }
+        },
+        close(socket) {
+          connectionBuffers.delete(socket);
+        },
+        error(_socket, error) {
+          console.error("[vaultd] Socket error:", error.message);
+        },
       },
-      close(socket) {
-        connectionBuffers.delete(socket);
-      },
-      error(_socket, error) {
-        console.error("[vaultd] Socket error:", error.message);
-      },
-    },
-  });
+    });
+  } finally {
+    // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.umask for atomic socket creation
+    process.umask(previousUmask);
+  }
 
-  // Set socket file permissions to owner-only — abort if this fails
+  // Belt-and-suspenders: the umask-at-listen above already creates the socket
+  // at 0o600. chmodSync corrects any platform where umask didn't apply to the
+  // unix inode; the statSync invariant below is the load-bearing guarantee.
   try {
     chmodSync(config.socketPath, 0o600);
   } catch (err) {
     server.stop(true);
     throw new Error(`[vaultd] FATAL: Could not set socket permissions to 0600: ${err}`);
+  }
+
+  // Invariant: socket must be exactly mode 0o600 before we return. Any
+  // deviation means the atomic-create path failed and someone else's
+  // permissions leaked through — abort startup rather than accept the risk.
+  const socketMode = statSync(config.socketPath).mode & 0o777;
+  if (socketMode !== 0o600) {
+    server.stop(true);
+    throw new Error(`[vaultd] FATAL: Socket perms ${socketMode.toString(8)} != 0600 after chmod`);
   }
 
   return {

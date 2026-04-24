@@ -464,6 +464,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       let body:
         | {
             storageMode: "zero_knowledge";
+            id: string;
             label: string;
             encryptedItemKey: string;
             ciphertext: string;
@@ -506,9 +507,18 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
           return;
         }
 
-        const encrypted = encryptItemForProfile(payload, key);
+        // §W1S7-001 — itemId is bound into the XChaCha20-Poly1305 AAD at
+        // encrypt time, so we generate the UUID here and pass the same value
+        // to `items.create`. The server uses `input.id` verbatim; any mismatch
+        // would break AAD binding and make the row undecryptable.
+        const itemId = crypto.randomUUID();
+        const encrypted = encryptItemForProfile(payload, key, {
+          profileId: zkProfileId,
+          itemId,
+        });
         body = {
           storageMode: "zero_knowledge",
+          id: itemId,
           label: name,
           encryptedItemKey: encrypted.encryptedItemKey,
           ciphertext: encrypted.ciphertext,

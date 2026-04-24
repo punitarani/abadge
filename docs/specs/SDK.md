@@ -76,9 +76,7 @@ client.createItem({
   kind: ItemKind;
   tags?: string[];
   encryptedItemKey: string;
-  keyNonce: string;
   ciphertext: string;
-  contentNonce: string;
 })
 
 // Create (server_managed)
@@ -210,7 +208,7 @@ Read the encrypted blob of a ZK item for local decryption.
 **Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
 
 ```typescript
-const { encryptedItemKey, keyNonce, ciphertext, contentNonce, cryptoVersion } =
+const { encryptedItemKey, ciphertext, contentNonce, cryptoVersion } =
   await agent.accessCiphertext(itemId);
 ```
 

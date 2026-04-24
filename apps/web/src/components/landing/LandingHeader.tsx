@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-export type LandingHeaderPage = "home" | "security";
+export type LandingHeaderPage = "home" | "security" | "terms" | "privacy";
 
 type LandingHeaderProps = {
   currentPage: LandingHeaderPage;

@@ -1,4 +1,4 @@
-import { BadRequestError, UnauthorizedError } from "@abadge/core";
+import { ForbiddenError, UnauthorizedError } from "@abadge/core";
 import { and, asc, eq } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { Effect } from "effect";
@@ -26,7 +26,7 @@ async function resolveOptionalOrgId(
       .where(and(eq(member.userId, userId), eq(member.organizationId, orgIdHeader)))
       .limit(1);
     if (!hit) {
-      throw new UnauthorizedError({
+      throw new ForbiddenError({
         code: "ORG_MEMBERSHIP_REQUIRED",
         message: "Not a member of the requested organization",
         hint: "Switch to an organization you belong to.",
@@ -41,17 +41,14 @@ async function resolveOptionalOrgId(
     .where(eq(member.userId, userId))
     .orderBy(asc(member.createdAt));
 
-  if (memberships.length === 0) return null;
-  if (memberships.length > 1) {
-    throw new BadRequestError({
-      code: "ORG_HEADER_REQUIRED",
-      message: "X-Abadge-Org-Id header required for multi-org users",
-      hint: "Set X-Abadge-Org-Id to the organization context for this request.",
-      meta: { availableOrgIds: memberships.map((m) => m.organizationId) },
-    });
+  // Zero → null (fresh signup). One → auto-resolve. Two-or-more + no header →
+  // null; bootstrap-safe routes (userProcedure) must handle organizationId=null.
+  // Deliberately NOT throwing here — that was the multi-org bootstrap trap (§ORG2).
+  if (memberships.length === 1) {
+    const [only] = memberships as [(typeof memberships)[number]];
+    return only.organizationId;
   }
-  const [only] = memberships as [(typeof memberships)[number]];
-  return only.organizationId;
+  return null;
 }
 
 export const resolveSessionIdentityOptionalOrg = (

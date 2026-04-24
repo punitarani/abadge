@@ -106,7 +106,7 @@ Generate a new root key and re-wrap every item DEK in a single transaction. Incr
 <ParamField path="recoveryWrappedRootKey" type="string">
   New root key wrapped with the recovery key. Pass if recovery is set up; otherwise omit.
 </ParamField>
-<ParamField path="rekeyedItems" type="Array<{ itemId, encryptedItemKey, keyNonce }>" required>
+<ParamField path="rekeyedItems" type="Array<{ itemId, encryptedItemKey }>" required>
   Array of rewrapped items. Must include every zero-knowledge item in the profile.
 </ParamField>
 

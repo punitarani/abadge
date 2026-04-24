@@ -1,8 +1,8 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown, Lock, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { useVault } from "@/lib/vault-context";
+import { useOrgStore } from "@/stores/org-store";
 
 function getInitials(name: string): string {
   return name
@@ -34,6 +35,7 @@ export function NavUser(): React.ReactElement {
   const { isMobile } = useSidebar();
   const { lockAll } = useVault();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
 
   const userName = session?.user?.name ?? "User";
@@ -42,6 +44,11 @@ export function NavUser(): React.ReactElement {
 
   async function handleSignOut(): Promise<void> {
     lockAll();
+    // Clear persisted org context and React Query cache before signOut so
+    // the next user on this browser does not inherit stale org identity or
+    // cached data from the previous session.
+    useOrgStore.getState().clearActiveOrg();
+    queryClient.clear();
     await authClient.signOut();
     router.push("/login");
   }

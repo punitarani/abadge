@@ -28,6 +28,13 @@ import {
 } from "@abadge/crypto";
 import { browserTrpcClient, getClientErrorMessage } from "./trpc-browser";
 
+/**
+ * §W1S7-001 — profile bootstrap always lands at keyVersion=1 (the
+ * `profiles.key_version` column default). Binding AAD to (profileId, 1)
+ * matches what `vault.unlock` rebuilds when the daemon later unwraps.
+ */
+const INITIAL_PROFILE_KEY_VERSION = 1;
+
 export async function bootstrapProfile(
   profileId: string,
   masterPassword: string,
@@ -35,8 +42,12 @@ export async function bootstrapProfile(
   const salt = generateSalt();
   const kek = deriveKEK(masterPassword, salt, DEFAULT_KDF_PARAMS);
   const rootKey = generateRootKey();
-  const wrapped = wrapRootKey(rootKey, kek);
-  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
+  const rootWrapMeta = { profileId, keyVersion: INITIAL_PROFILE_KEY_VERSION };
+  const wrapped = wrapRootKey(rootKey, kek, rootWrapMeta);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(
+    rootKey,
+    rootWrapMeta,
+  );
 
   try {
     await browserTrpcClient.profiles.bootstrap.mutate({
@@ -68,6 +79,7 @@ export async function unlockProfile(
     wrappedRootKey: string | null;
     kdfSalt: string | null;
     kdfParams: KDFParams | null;
+    keyVersion: number;
   };
 
   try {
@@ -91,7 +103,13 @@ export async function unlockProfile(
   const kek = deriveKEK(masterPassword, salt, profile.kdfParams);
 
   try {
-    const rootKey = unwrapRootKey({ wrapped: profile.wrappedRootKey }, kek);
+    // §W1S7-001 — AAD binds to (profileId, keyVersion); both come from the
+    // server-side profile row. A stale wrap from a prior keyVersion will fail
+    // the AEAD tag check and surface as "Incorrect master password" below.
+    const rootKey = unwrapRootKey({ wrapped: profile.wrappedRootKey }, kek, {
+      profileId,
+      keyVersion: profile.keyVersion,
+    });
     zeroKey(kek);
     return rootKey;
   } catch {
@@ -107,10 +125,19 @@ export async function changeProfilePassword(
 ): Promise<{ recoveryKey: string }> {
   const rootKey = await unlockProfile(profileId, currentPassword);
 
+  // §W1S7-001 — profiles.changePassword (trpc) does NOT advance keyVersion;
+  // only profiles.rotateKey does. The re-wrap must bind to the CURRENT
+  // keyVersion so subsequent unwraps succeed.
+  const profile = await browserTrpcClient.profiles.get.query({ profileId });
+  const rootWrapMeta = { profileId, keyVersion: profile.profile.keyVersion };
+
   const newSalt = generateSalt();
   const newKek = deriveKEK(newPassword, newSalt, DEFAULT_KDF_PARAMS);
-  const wrapped = wrapRootKey(rootKey, newKek);
-  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
+  const wrapped = wrapRootKey(rootKey, newKek, rootWrapMeta);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(
+    rootKey,
+    rootWrapMeta,
+  );
 
   try {
     await browserTrpcClient.profiles.changePassword.mutate({
@@ -150,11 +177,11 @@ export async function recoverProfile(
   recoveryKeyInput: string,
   newPassword: string,
 ): Promise<{ rootKey: Uint8Array; recoveryKey: string }> {
-  let profile: { recoveryWrappedRootKey: string | null };
+  let profile: { recoveryWrappedRootKey: string | null; keyVersion: number };
 
   try {
     const result = await browserTrpcClient.profiles.get.query({ profileId });
-    profile = result.profile as { recoveryWrappedRootKey: string | null };
+    profile = result.profile as typeof profile;
   } catch (error) {
     throw new Error(getClientErrorMessage(error, "Failed to fetch profile"));
   }
@@ -163,19 +190,27 @@ export async function recoverProfile(
     throw new Error("No recovery key configured for this profile");
   }
 
+  const rootWrapMeta = { profileId, keyVersion: profile.keyVersion };
+
   let rootKey: Uint8Array;
   try {
-    rootKey = recoverRootKey(recoveryKeyInput, {
-      wrapped: profile.recoveryWrappedRootKey,
-    });
+    // §W1S7-001 — recovery-wrap AAD matches the primary-wrap AAD schema.
+    rootKey = recoverRootKey(
+      recoveryKeyInput,
+      { wrapped: profile.recoveryWrappedRootKey },
+      rootWrapMeta,
+    );
   } catch {
     throw new Error("Invalid recovery key");
   }
 
   const newSalt = generateSalt();
   const newKek = deriveKEK(newPassword, newSalt, DEFAULT_KDF_PARAMS);
-  const wrapped = wrapRootKey(rootKey, newKek);
-  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(rootKey);
+  const wrapped = wrapRootKey(rootKey, newKek, rootWrapMeta);
+  const { recoveryKey, wrappedRootKey: recoveryWrapped } = generateRecoveryKeyRaw(
+    rootKey,
+    rootWrapMeta,
+  );
 
   try {
     await browserTrpcClient.profiles.changePassword.mutate({
@@ -207,12 +242,19 @@ export async function recoverProfile(
   return { rootKey, recoveryKey };
 }
 
+/**
+ * Encrypt a ZK item payload. §W1S7-001: `meta` binds profileId + itemId +
+ * contentVersion into the XChaCha20-Poly1305 AAD. The caller MUST pre-generate
+ * the itemId (UUID) and pass the same value to `items.create` so the stored
+ * row id matches the AAD.
+ */
 export function encryptItemForProfile(
   payload: ItemPayload,
   rootKey: Uint8Array,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
 ): { encryptedItemKey: string; ciphertext: string } {
   const plaintext = serializeItemPayload(payload);
-  const encrypted = encryptItem(plaintext, rootKey);
+  const encrypted = encryptItem(plaintext, rootKey, meta);
   return {
     encryptedItemKey: encrypted.encryptedItemKey,
     ciphertext: encrypted.ciphertext,
@@ -223,7 +265,8 @@ export function decryptItemFromProfile(
   encryptedItemKey: string,
   ciphertext: string,
   rootKey: Uint8Array,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
 ): ItemPayload {
-  const decrypted = decryptItem({ encryptedItemKey, ciphertext }, rootKey);
+  const decrypted = decryptItem({ encryptedItemKey, ciphertext }, rootKey, meta);
   return deserializeItemPayload<ItemPayload>(decrypted);
 }

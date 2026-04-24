@@ -14,27 +14,37 @@ import {
   UpdateItemSchema,
 } from "@abadge/core";
 import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
-import { and, desc, eq, isNull } from "@abadge/db";
+import {
+  profileIdForServerAad,
+  SERVER_AAD_MIN_VERSION,
+  type ServerAadMeta,
+} from "@abadge/crypto/shared";
+import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
-import { logSessionAudit } from "../audit";
+import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
 import {
   AgentRequestContextTag,
+  isUniqueViolation,
   runAgentEffect,
   runSessionEffect,
   SessionRequestContextTag,
   strictSchema,
+  tryAsync,
 } from "../effect";
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
-const loadOwnedItem = (itemId: string) =>
+const loadOwnedItem = (
+  itemId: string,
+  eventType: "item.read" | "item.update" | "item.export" | "item.delete",
+) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [item] = yield* Effect.tryPromise(() =>
+    const [item] = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(items)
@@ -49,7 +59,15 @@ const loadOwnedItem = (itemId: string) =>
     );
 
     if (!item) {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          eventType,
+          reason: "not_found",
+          ipAddress: ctx.ipAddress,
+        },
         new NotFoundError({
           code: "ITEM_NOT_FOUND",
           message: "Item not found",
@@ -61,55 +79,153 @@ const loadOwnedItem = (itemId: string) =>
     return item;
   });
 
+/**
+ * ZK insert under an advisory lock (§I5-RACE).
+ * Resolves the first ZK profile in the org, takes `pg_advisory_xact_lock` on
+ * it, re-reads keyVersion (defending against a rotate that committed between
+ * the profile SELECT and the lock acquisition), optionally enforces CAS via
+ * expectedKeyVersion, then inserts with cryptoVersion tagged to the current
+ * keyVersion. Designed to be called from inside `ctx.db.transaction(...)`.
+ */
+async function insertZeroKnowledgeItem(
+  tx: Transaction,
+  opts: {
+    id: string;
+    userId: string;
+    organizationId: string;
+    label: string;
+    encryptedItemKey: string;
+    ciphertext: string;
+    expectedKeyVersion: number | undefined;
+  },
+): Promise<void> {
+  const [profile] = await tx
+    .select({ id: profiles.id, keyVersion: profiles.keyVersion })
+    .from(profiles)
+    .where(
+      and(
+        eq(profiles.organizationId, opts.organizationId),
+        eq(profiles.storageMode, "zero_knowledge"),
+      ),
+    )
+    .limit(1);
+
+  if (!profile) {
+    throw new NotFoundError({
+      code: "NOT_FOUND",
+      message: "No zero-knowledge profile found",
+      hint: "Create a ZK profile first or use server-managed storage mode.",
+    });
+  }
+
+  // Raw SQL for pg_advisory_xact_lock: not expressible in Drizzle's typed API.
+  // Released automatically on txn commit/rollback.
+  // pg_advisory_xact_lock takes a single int; hashtext(uuid) collapses UUIDs into 32 bits.
+  // Collisions are rare (<0.1% for 10K profiles) and benign — two unrelated profiles
+  // occasionally serialize. Acceptable perf cost; correctness is unaffected.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${profile.id}))`);
+
+  // Re-read keyVersion UNDER the lock; defends against a rotate that committed
+  // between the profile SELECT and the advisory-lock acquisition.
+  const [locked] = await tx
+    .select({ keyVersion: profiles.keyVersion })
+    .from(profiles)
+    .where(eq(profiles.id, profile.id));
+
+  if (!locked) {
+    throw new NotFoundError({
+      code: "NOT_FOUND",
+      message: "Profile disappeared during create",
+      hint: "Retry the request.",
+    });
+  }
+
+  if (opts.expectedKeyVersion !== undefined && locked.keyVersion !== opts.expectedKeyVersion) {
+    throw new ConflictError({
+      code: "CONFLICT",
+      message: "Profile key version advanced during item create",
+      hint: "Re-derive the root key for the current keyVersion and retry.",
+      meta: {
+        expectedKeyVersion: opts.expectedKeyVersion,
+        currentKeyVersion: locked.keyVersion,
+      },
+    });
+  }
+
+  await tx.insert(items).values({
+    id: opts.id,
+    userId: opts.userId,
+    organizationId: opts.organizationId,
+    profileId: profile.id,
+    label: opts.label,
+    storageMode: "zero_knowledge",
+    encryptedItemKey: opts.encryptedItemKey,
+    ciphertext: opts.ciphertext,
+    cryptoVersion: locked.keyVersion,
+  });
+}
+
 const createItem = (input: CreateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
-    const id = crypto.randomUUID();
+
+    // §W1S7-001 — ZK branch: client supplies `id` because it is bound into the
+    // XChaCha20-Poly1305 AAD at encrypt time. Server-managed items still mint
+    // the id here (the AAD for AES-GCM is derived server-side).
+    const id = input.storageMode === "zero_knowledge" ? input.id : crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
-      const [profile] = yield* Effect.tryPromise(() =>
-        ctx.db
-          .select({ id: profiles.id })
-          .from(profiles)
-          .where(
-            and(
-              eq(profiles.organizationId, ctx.identity.organizationId),
-              eq(profiles.storageMode, "zero_knowledge"),
-            ),
-          )
-          .limit(1),
-      );
-
-      if (!profile) {
-        return yield* Effect.fail(
-          new NotFoundError({
-            code: "NOT_FOUND",
-            message: "No zero-knowledge profile found",
-            hint: "Create a ZK profile first or use server-managed storage mode.",
+      // tryAsync (not Effect.tryPromise) preserves the domain Error instance
+      // thrown inside the tx callback, so toTrpcError's isDomainError check
+      // maps ConflictError/NotFoundError to the correct tRPC code + cause.
+      yield* tryAsync(() =>
+        ctx.db.transaction((tx) =>
+          insertZeroKnowledgeItem(tx, {
+            id,
+            userId,
+            organizationId: ctx.identity.organizationId,
+            label: resolveStoredLabel(id, input.label),
+            encryptedItemKey: input.encryptedItemKey,
+            ciphertext: input.ciphertext,
+            expectedKeyVersion: input.expectedKeyVersion,
           }),
-        );
-      }
-
-      yield* Effect.tryPromise(() =>
-        ctx.db.insert(items).values({
-          id,
-          userId,
-          organizationId: ctx.identity.organizationId,
-          profileId: profile.id,
-          label: resolveStoredLabel(id, input.label),
-          storageMode: "zero_knowledge",
-          encryptedItemKey: input.encryptedItemKey,
-          ciphertext: input.ciphertext,
-        }),
+        ),
+      ).pipe(
+        // §W1S7-001 — a client-provided id that collides with an existing row
+        // must surface as ConflictError, not a 500. The unique-violation is
+        // the only domain-neutral DB error this insert can raise.
+        Effect.catchIf(
+          (e) => isUniqueViolation(e),
+          () =>
+            Effect.fail(
+              new ConflictError({
+                code: "ITEM_ALREADY_EXISTS",
+                message: "An item with this id already exists",
+                hint: "Generate a new UUID for the item id and retry.",
+                meta: { itemId: id },
+              }),
+            ),
+        ),
       );
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* Effect.tryPromise(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
+      // New server-managed writes are v2 AAD-bound (§W1S7-002). AAD binds
+      // ciphertext to (orgId, profileId, itemId, keyVersion) so a DB-write
+      // adversary cannot substitute rows across items or organizations.
+      // `profileIdForServerAad` is shared with every decrypt site so the
+      // null-profile fallback stays symmetric across encrypt and decrypt.
+      const aadMeta: ServerAadMeta = {
+        orgId: ctx.identity.organizationId,
+        profileId: profileIdForServerAad(null),
+        itemId: id,
+        keyVersion: SERVER_AAD_MIN_VERSION,
+      };
+      const encrypted = yield* tryAsync(() =>
+        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
       );
 
-      yield* Effect.tryPromise(() =>
+      yield* tryAsync(() =>
         ctx.db.insert(items).values({
           id,
           userId,
@@ -137,7 +253,7 @@ const createItem = (input: CreateItemInput) =>
 
 const listItems = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .select({
         id: items.id,
@@ -158,7 +274,7 @@ const listItems = Effect.gen(function* () {
 
 const listItemsForAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
-  const result = yield* Effect.tryPromise(() =>
+  const result = yield* tryAsync(() =>
     ctx.db
       .selectDistinct({
         id: items.id,
@@ -187,7 +303,7 @@ const listItemsForAgent = Effect.gen(function* () {
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.read");
 
     yield* logSessionAudit({
       organizationId: ctx.identity.organizationId,
@@ -204,10 +320,10 @@ const getItem = (itemId: string) =>
 const updateItem = (itemId: string, input: UpdateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.update");
 
     if (input.storageMode === "zero_knowledge") {
-      const updated = yield* Effect.tryPromise(() =>
+      const updated = yield* tryAsync(() =>
         ctx.db
           .update(items)
           .set({
@@ -232,11 +348,19 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      const encrypted = yield* Effect.tryPromise(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, 1),
+      // Rewrite always lands as v2 AAD-bound, even when the prior row was v1.
+      // This opportunistically migrates the row forward as it is touched.
+      const aadMeta: ServerAadMeta = {
+        orgId: ctx.identity.organizationId,
+        profileId: profileIdForServerAad(item.profileId),
+        itemId,
+        keyVersion: SERVER_AAD_MIN_VERSION,
+      };
+      const encrypted = yield* tryAsync(() =>
+        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
       );
 
-      const updated = yield* Effect.tryPromise(() =>
+      const updated = yield* tryAsync(() =>
         ctx.db
           .update(items)
           .set({
@@ -277,10 +401,18 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
 const ownerReveal = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const item = yield* loadOwnedItem(itemId);
+    const item = yield* loadOwnedItem(itemId, "item.export");
 
     if (item.storageMode !== "server_managed") {
-      return yield* Effect.fail(
+      return yield* auditDeniedSession(
+        {
+          organizationId: ctx.identity.organizationId,
+          userId: ctx.identity.userId,
+          itemId,
+          eventType: "item.export",
+          reason: "zk_item_cannot_be_revealed",
+          ipAddress: ctx.ipAddress,
+        },
         new BadRequestError({
           code: "BAD_REQUEST",
           message: "Only server-managed items can be revealed via the API",
@@ -303,8 +435,20 @@ const ownerReveal = (itemId: string) =>
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    const decrypted = yield* Effect.tryPromise(() =>
-      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY),
+    // v1 rows predate AAD binding and MUST be decrypted without AAD.
+    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion).
+    const aadMeta: ServerAadMeta | undefined =
+      keyVersion >= SERVER_AAD_MIN_VERSION
+        ? {
+            orgId: ctx.identity.organizationId,
+            profileId: profileIdForServerAad(item.profileId),
+            itemId: item.id,
+            keyVersion,
+          }
+        : undefined;
+
+    const decrypted = yield* tryAsync(() =>
+      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY, aadMeta),
     );
 
     yield* logSessionAudit({
@@ -323,7 +467,7 @@ const ownerReveal = (itemId: string) =>
 const deleteItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    yield* loadOwnedItem(itemId);
+    yield* loadOwnedItem(itemId, "item.delete");
 
     // Atomic: soft-delete the item, write the primary item.delete audit,
     // and run the cascade (delete permissions + one cascade audit row)
@@ -331,7 +475,7 @@ const deleteItem = (itemId: string) =>
     // sequential tryAsync steps; a mid-flight failure could leave the
     // item deleted but its permissions still active.
     const now = new Date();
-    yield* Effect.tryPromise(() =>
+    yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
 

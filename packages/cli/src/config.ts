@@ -15,6 +15,13 @@ export interface CliConfig {
     cli?: LocalAgentConfig;
     mcp?: LocalAgentConfig;
   };
+  /**
+   * SHA-256 fingerprint of the daemon's Ed25519 public key, pinned on first
+   * contact (W3P12-001 / Critical C-2). A later mismatch means the daemon
+   * regenerated its keypair OR a same-UID attacker is squatting the socket —
+   * the CLI aborts before writing any sensitive RPC frame.
+   */
+  daemonFingerprint?: string;
 }
 
 const CONFIG_DIR = join(homedir(), ".abadge");
@@ -37,6 +44,7 @@ function normalizeConfig(config: Record<string, unknown>): CliConfig | null {
     activeOrgId: str(config.activeOrgId),
     activeProfileId: str(config.activeProfileId),
     localAgents: config.localAgents as CliConfig["localAgents"],
+    daemonFingerprint: str(config.daemonFingerprint),
   };
 }
 
@@ -82,6 +90,7 @@ function writeConfig(normalized: CliConfig): void {
         activeOrgId: normalized.activeOrgId,
         activeProfileId: normalized.activeProfileId,
         localAgents: normalized.localAgents,
+        daemonFingerprint: normalized.daemonFingerprint,
       },
       null,
       2,
@@ -136,4 +145,38 @@ export function requireActiveOrgId(): string {
     return process.exit(1) as never;
   }
   return config.activeOrgId;
+}
+
+/**
+ * Read the pinned daemon fingerprint (W3P12-001 / Critical C-2). Returns
+ * `null` for a first-run client or when the config file doesn't exist yet —
+ * the DaemonClient then pins TOFU-style.
+ */
+export async function readPinnedDaemonFingerprint(): Promise<string | null> {
+  const config = loadConfig();
+  return config?.daemonFingerprint ?? null;
+}
+
+/**
+ * Persist the daemon fingerprint on first contact. Creates the config with a
+ * sensible apiUrl default if none exists — otherwise the handshake would fail
+ * the very first time the user runs `abadge daemon start` before `abadge
+ * login`. Callers supply a fallback `apiUrl` when they know it.
+ */
+export async function writePinnedDaemonFingerprint(
+  fingerprint: string,
+  fallbackApiUrl?: string,
+): Promise<void> {
+  const existing = loadConfig();
+  if (existing) {
+    updateConfig({ daemonFingerprint: fingerprint });
+    return;
+  }
+  if (!fallbackApiUrl) {
+    // No config file + no apiUrl means the caller is pre-login (e.g. just
+    // started the daemon). Skip persistence — we'll re-pin on the first
+    // sensitive call after login, which always has an apiUrl by then.
+    return;
+  }
+  saveConfig({ apiUrl: fallbackApiUrl, daemonFingerprint: fingerprint });
 }

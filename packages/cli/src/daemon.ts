@@ -15,10 +15,42 @@ import {
   startDaemon,
   stopDaemon,
 } from "@abadge/daemon";
-import { requireConfig } from "./config";
+import {
+  loadConfig,
+  readPinnedDaemonFingerprint,
+  requireConfig,
+  writePinnedDaemonFingerprint,
+} from "./config";
+
+/**
+ * Build a DaemonClient wired with the CLI's persistent-pin storage. The
+ * handshake callbacks route through the CLI config so TOFU pinning survives
+ * restarts — the daemon package itself deliberately doesn't import CLI
+ * storage to keep the layering clean (W3P12-001 / Critical C-2).
+ */
+function createClient(): DaemonClient {
+  return new DaemonClient({
+    getPinnedFingerprint: readPinnedDaemonFingerprint,
+    onFirstContact: async (fingerprint) => {
+      const config = loadConfig();
+      console.warn(`[abadge] Pinned daemon identity: ${fingerprint}`);
+      if (!config) {
+        // Pre-login: no config file yet, so the pin can't be persisted now.
+        // The Ed25519 signature still verifies this session; the pin will be
+        // written on the next sensitive call once `saveConfig({ apiUrl })`
+        // runs (login flow).
+        console.warn(
+          "[abadge] Config not yet initialised; fingerprint will be persisted after login.",
+        );
+        return;
+      }
+      await writePinnedDaemonFingerprint(fingerprint, config.apiUrl);
+    },
+  });
+}
 
 async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): Promise<T> {
-  const client = new DaemonClient();
+  const client = createClient();
   return run(client);
 }
 
@@ -43,6 +75,10 @@ export async function daemonSetAuthSession(session: DaemonAuthState): Promise<Da
   return withDaemonClient((client) => client.setAuthSession(session));
 }
 
+export async function daemonSetAuthOrg(organizationId: string | null): Promise<DaemonAuthStatus> {
+  return withDaemonClient((client) => client.setAuthOrg(organizationId));
+}
+
 export async function daemonClearAuthSession(): Promise<DaemonAuthStatus> {
   return withDaemonClient((client) => client.clearAuthSession());
 }
@@ -63,15 +99,19 @@ export async function daemonChangePassword(
   return withDaemonClient((client) => client.changePassword(profileId, oldPassword, newPassword));
 }
 
-export async function daemonEncrypt(payload: unknown): Promise<EncryptResult> {
-  return withDaemonClient((client) => client.encrypt(payload));
+export async function daemonEncrypt(
+  payload: unknown,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
+): Promise<EncryptResult> {
+  return withDaemonClient((client) => client.encrypt(payload, meta));
 }
 
 export async function daemonDecrypt(
   encryptedItemKey: string,
   ciphertext: string,
+  meta: { profileId: string; itemId: string; contentVersion?: number },
 ): Promise<DecryptResult> {
-  return withDaemonClient((client) => client.decrypt(encryptedItemKey, ciphertext));
+  return withDaemonClient((client) => client.decrypt(encryptedItemKey, ciphertext, meta));
 }
 
 export async function daemonExecEnv(
@@ -89,9 +129,10 @@ export async function daemonExpandEnv(
   serverPayload: unknown,
   command: string,
   args: string[],
+  zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
 ): Promise<EnvExecResult> {
   return withDaemonClient((client) =>
-    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args),
+    client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta),
   );
 }
 
@@ -115,9 +156,9 @@ export function stopDaemonProcess(): boolean {
   return stopDaemon();
 }
 
-export function serveDaemon(): void {
+export async function serveDaemon(): Promise<void> {
   const config = requireConfig();
-  startDaemon({
+  await startDaemon({
     apiUrl: config.apiUrl,
   });
 }

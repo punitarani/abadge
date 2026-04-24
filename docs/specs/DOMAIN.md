@@ -53,8 +53,7 @@ A stored credential within a profile. Supports two storage modes with fundamenta
 
 | Field | Type | Description |
 |-------|------|-------------|
-| encryptedItemKey | string | Per-item DEK wrapped by root key |
-| keyNonce | string | Nonce for key wrapping |
+| encryptedItemKey | string | Per-item DEK wrapped by root key (nonce prepended in first 24 bytes) |
 | ciphertext | string | XChaCha20-Poly1305 encrypted payload |
 | contentNonce | string | Nonce for content encryption |
 

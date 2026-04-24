@@ -6,9 +6,11 @@ import {
   createAgentApiClient,
   DeviceAuthorizationError,
   exchangeDeviceToken,
+  recordLoginViaTrpc,
   requestDeviceCode,
   resolveSessionConfig,
 } from "./client";
+import type { SessionConfig } from "./config";
 import * as configModule from "./config";
 
 const originalFetch = globalThis.fetch;
@@ -174,6 +176,63 @@ describe("resolveSessionConfig", () => {
     await expect(resolveSessionConfig()).resolves.toMatchObject({
       sessionHeaders: { Authorization: "Bearer session-token" },
     });
+  });
+});
+
+// §O3 / multi-org CLI — X-Abadge-Org-Id header plumbing in outbound tRPC.
+
+describe("buildSessionHeaders / X-Abadge-Org-Id plumbing", () => {
+  let capturedHeaders: Record<string, string> = {};
+
+  function mockTrpcSuccess(): void {
+    mockFetch(async (_input, init) => {
+      const raw = init?.headers;
+      if (raw) {
+        // Headers() accepts any HeadersInit shape — avoid the explicit cast
+        // since HeadersInit is a DOM type not available in the ES2022 lib.
+        // biome-ignore lint/suspicious/noExplicitAny: HeadersInit not in ES2022 lib
+        const h = new Headers(raw as any);
+        capturedHeaders = {};
+        h.forEach((v, k) => {
+          capturedHeaders[k] = v;
+        });
+      }
+      // tRPC batch response for auth.recordLogin
+      return jsonResponse([{ result: { data: null } }]);
+    });
+  }
+
+  afterEach(() => {
+    capturedHeaders = {};
+  });
+
+  test("recordLoginViaTrpc includes X-Abadge-Org-Id when activeOrgId is set", async () => {
+    mockTrpcSuccess();
+
+    const config = {
+      apiUrl: "https://api.abadge.io",
+      activeOrgId: "org-123",
+      sessionHeaders: { Authorization: "Bearer session-token" },
+    } satisfies SessionConfig;
+
+    // recordLoginViaTrpc is best-effort; we ignore the error if the mock
+    // doesn't satisfy the full tRPC protocol — we just care about headers.
+    await recordLoginViaTrpc(config).catch(() => undefined);
+
+    expect(capturedHeaders["x-abadge-org-id"]).toBe("org-123");
+  });
+
+  test("recordLoginViaTrpc omits X-Abadge-Org-Id when activeOrgId is absent", async () => {
+    mockTrpcSuccess();
+
+    const config = {
+      apiUrl: "https://api.abadge.io",
+      sessionHeaders: { Authorization: "Bearer session-token" },
+    } satisfies SessionConfig;
+
+    await recordLoginViaTrpc(config).catch(() => undefined);
+
+    expect(capturedHeaders["x-abadge-org-id"]).toBeUndefined();
   });
 });
 
