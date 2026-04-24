@@ -11,6 +11,12 @@ export type Bindings = {
   GOOGLE_CLIENT_SECRET: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
+  NODE_ENV?: string;
+  /**
+   * Durable Object namespace backing the rate-limit counter (§RL1-5).
+   * One DO instance per `path:ip` key.
+   */
+  RATE_LIMIT: DurableObjectNamespace;
 };
 
 /** Environment for session-authenticated routes (human users). */

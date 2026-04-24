@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { makeAllowAllRateLimitStub } from "./test-helpers/rate-limit";
 import type { Bindings } from "./types";
 
 mock.module("@abadge/trpc/server", () => ({
@@ -16,6 +17,7 @@ const testEnv: Bindings = {
   GOOGLE_CLIENT_SECRET: "test-google-client-secret",
   GITHUB_CLIENT_ID: "test-github-client-id",
   GITHUB_CLIENT_SECRET: "test-github-client-secret",
+  RATE_LIMIT: makeAllowAllRateLimitStub(),
 };
 
 describe("api app", () => {

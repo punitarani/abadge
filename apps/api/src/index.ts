@@ -102,4 +102,7 @@ app.onError((err, c) => {
   );
 });
 
+// Cloudflare requires Durable Object classes to be exported from the
+// Worker's main module so the runtime can construct instances.
+export { RateLimitCounter } from "./durable-objects/rate-limit-counter";
 export default app;

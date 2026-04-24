@@ -225,7 +225,7 @@ Does not own:
 * No cross-org item access. Items and agents are scoped to their owning organization.
 * Every allowed and denied agent access attempt must be logged in audit\_log.
 * No wildcard permissions for v1. Each permission is (agent, item, capability).
-* No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed.
+* No Durable Objects, Queues, Workflows, or background jobs unless the product requirements changed. **Documented exception:** `RateLimitCounter` (a single DO in `apps/api/src/durable-objects/`) backs the rate-limit middleware. Cross-isolate-consistent counters are a correctness requirement for rate limiting on Workers; no simpler primitive provides it. New DOs require the same threshold — a correctness/security necessity that cannot be met by Postgres or in-memory state.
 * No raw SQL unless Drizzle cannot express the query and the reason is documented inline.
 * Audit log is append-only with no foreign key constraints.
 * The server never sees root keys or plaintext for zero\_knowledge items. KDF and unwrapping happen client-side only (browser, CLI, daemon).

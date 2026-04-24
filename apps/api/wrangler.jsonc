@@ -36,5 +36,27 @@
       "id": "3ea93d0186d94581b5b66f4e670216bb",
       "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
     }
+  ],
+  // §RL1-5: Durable Object rate-limit counter. Cross-isolate consistent
+  // counter for the /api/auth (60/min) + /trpc (100/min) buckets.
+  // See AGENTS.md "No Durable Objects" invariant — this binding is a
+  // documented exception; rate-limit correctness requires cross-isolate
+  // state and no simpler primitive provides it on Workers.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMIT",
+        "class_name": "RateLimitCounter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      // new_sqlite_classes (not new_classes): Cloudflare's 2024-onwards
+      // recommendation for new DOs — SQLite-backed storage is cheaper and
+      // the only supported option for new classes in the Workers free tier.
+      "tag": "v1-rate-limit-counter",
+      "new_sqlite_classes": ["RateLimitCounter"]
+    }
   ]
 }
