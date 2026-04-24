@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
-import { browserTrpcClient } from "@/lib/trpc-browser";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { VaultProvider } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
@@ -32,7 +33,10 @@ export default function DashboardLayout({
 }): React.ReactElement {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
-  const { activeOrgId, setActiveOrg } = useOrgStore();
+  // Store selectors (not destructuring) so the layout only re-renders when
+  // these specific fields change, not on every unrelated store update.
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
+  const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const [hydrated, setHydrated] = useState(false);
 
   // Wait for Zustand persist rehydration
@@ -47,22 +51,27 @@ export default function DashboardLayout({
     return unsub;
   }, []);
 
-  const { data: orgsData, isLoading: orgsLoading } = useQuery({
+  const orgsQuery = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
     enabled: !!session,
   });
 
-  const orgs = orgsData?.organizations ?? [];
+  const orgs = orgsQuery.data?.organizations ?? [];
 
-  // Resolve active org: validate stored org, fall back to first, or redirect to onboarding
+  // Resolve active org: validate stored org, fall back to first, or redirect to onboarding.
+  // Gate on `orgsQuery.status === "success"` rather than `!orgsData`: a failed query leaves
+  // data undefined AND isLoading false — the old `!orgsData` gate caused the layout to hang
+  // on "Loading..." forever in that case instead of surfacing an error branch.
   useEffect(() => {
-    if (!hydrated || sessionPending || orgsLoading || !orgsData) return;
+    if (!hydrated || sessionPending) return;
 
     if (!session) {
       router.push("/login");
       return;
     }
+
+    if (orgsQuery.status !== "success") return;
 
     if (orgs.length === 0) {
       router.push("/onboarding");
@@ -86,8 +95,7 @@ export default function DashboardLayout({
     hydrated,
     sessionPending,
     session,
-    orgsLoading,
-    orgsData,
+    orgsQuery.status,
     orgs,
     activeOrgId,
     setActiveOrg,
@@ -110,10 +118,41 @@ export default function DashboardLayout({
     }
   }, [session?.user]);
 
+  // Surface `organizations.list` failures explicitly so the layout can never
+  // hang on "Loading..." forever. The previous implementation conflated
+  // "pending", "errored", and "not-yet-started" into a single loader.
+  if (hydrated && !sessionPending && session && orgsQuery.isError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <div className="w-full max-w-md space-y-4 rounded-lg border border-border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">We couldn't load your organizations</h1>
+          <p className="text-sm text-muted-foreground">
+            {getClientErrorMessage(
+              orgsQuery.error,
+              "The server didn't respond. Check your connection and try again.",
+            )}
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Button onClick={() => void orgsQuery.refetch()}>Retry</Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await authClient.signOut();
+                router.push("/login");
+              }}
+            >
+              Sign out
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Show loading while auth, orgs, or store hydration are pending
   const orgReady =
     hydrated && activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
-  if (sessionPending || !session || orgsLoading || !orgReady) {
+  if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Loading...</div>

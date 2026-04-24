@@ -1,7 +1,16 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, TicketCheck } from "lucide-react";
+import { useState } from "react";
+import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,8 +73,10 @@ function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.
 }
 
 export function OrgSwitcher(): React.ReactElement {
-  const { activeOrgId, setActiveOrg } = useOrgStore();
+  const activeOrgId = useOrgStore((s) => s.activeOrgId);
+  const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const queryClient = useQueryClient();
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
@@ -133,9 +144,45 @@ export function OrgSwitcher(): React.ReactElement {
                 {org.id === activeOrgId && <Check className="ml-auto size-4" />}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={(e) => {
+                // Keep the dropdown from fighting the dialog for focus
+                e.preventDefault();
+                setJoinDialogOpen(true);
+              }}
+              className="gap-2"
+            >
+              <TicketCheck className="size-4" />
+              <span>Join another organization…</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+      <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Join an organization</DialogTitle>
+            <DialogDescription>
+              Paste the invite link or code your admin shared with you.
+            </DialogDescription>
+          </DialogHeader>
+          <InviteAcceptForm
+            variant="dialog"
+            onSuccess={(result) => {
+              setActiveOrg({
+                id: result.organizationId,
+                slug: result.organizationSlug,
+                name: result.organizationName,
+                logo: null,
+              });
+              // Refetch every org-scoped query so the new membership propagates
+              queryClient.invalidateQueries();
+              setJoinDialogOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </SidebarMenu>
   );
 }

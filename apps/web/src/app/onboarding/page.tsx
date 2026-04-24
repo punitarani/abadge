@@ -1,10 +1,12 @@
 "use client";
 
+import { Building2, TicketCheck } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +18,8 @@ import { bootstrapZkProfile, resolveOrCreateProfile } from "@/lib/profile-bootst
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
 import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
+
+type OnboardingMode = "choose" | "create" | "join";
 
 const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
 
@@ -226,7 +230,10 @@ export default function OnboardingPage(): React.ReactElement | null {
   const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
 
-  // Step management
+  // Mode selects which surface to render: a two-option choose screen for
+  // fresh signups, the existing create-org flow, or the invite-paste form.
+  // `currentStep` only has meaning when mode === "create".
+  const [mode, setMode] = useState<OnboardingMode>("choose");
   const [currentStep, setCurrentStep] = useState(0);
 
   // Tracks the resume-triage mount effect so we don't flash step 1 while we
@@ -360,6 +367,9 @@ export default function OnboardingPage(): React.ReactElement | null {
           setOrgId(decision.orgId);
           setOrgName(decision.orgName);
           setOrgSlug(decision.orgSlug);
+          // An org already exists for this user (they abandoned after step 1).
+          // Skip the choose screen and resume on the profile-setup step.
+          setMode("create");
           setCurrentStep(1);
         }
         setIsCheckingOrgs(false);
@@ -398,197 +408,289 @@ export default function OnboardingPage(): React.ReactElement | null {
         {/* Main */}
         <main className="flex flex-1 flex-col items-center py-12 sm:py-16">
           <div className="w-full max-w-lg space-y-8">
-            {/* Progress */}
-            <ProgressSteps steps={STEPS} currentStep={currentStep} />
+            {/* Choose-mode landing: two large options for fresh signups. */}
+            {mode === "choose" && (
+              <div className="space-y-6">
+                <div className="space-y-1 text-center">
+                  <h1 className="text-2xl font-semibold tracking-tight">Welcome to abadge</h1>
+                  <p className="text-sm text-muted-foreground">How do you want to get started?</p>
+                </div>
 
-            {/* Card */}
-            <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
-              {currentStep === 0 && (
-                <form onSubmit={handleStep1Submit} className="space-y-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                      Step 1 of 2
-                    </p>
-                    <h1 className="text-xl font-semibold tracking-tight">Name your organization</h1>
-                    <p className="text-sm text-muted-foreground">
-                      Your organization is the top-level boundary for all secrets, profiles, and
-                      agents. You are the custodian — you manage secrets on behalf of your users.
-                    </p>
-                  </div>
-
-                  {error && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {error}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("create");
+                      setCurrentStep(0);
+                      setError("");
+                    }}
+                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                      <Building2 className="h-5 w-5" />
                     </div>
-                  )}
-
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="org-name">Organization name</Label>
-                      <Input
-                        id="org-name"
-                        type="text"
-                        placeholder="Acme Corp"
-                        value={orgName}
-                        onChange={(e) => handleOrgNameChange(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Displayed in the dashboard and billing.
+                    <div className="space-y-1">
+                      <div className="text-base font-semibold">Create a new organization</div>
+                      <p className="text-sm text-muted-foreground">
+                        You'll be the owner. Set up profiles, items, and agents.
                       </p>
                     </div>
+                  </button>
 
-                    <div className="space-y-1.5">
-                      <Label htmlFor="org-slug">Organization slug</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="org-slug"
-                          type="text"
-                          value={orgSlug}
-                          onChange={(e) => handleSlugChange(e.target.value)}
-                          placeholder="acme-corp"
-                          className="font-mono text-sm"
-                        />
-                        <SlugStatusIndicator status={slugStatus} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("join");
+                      setError("");
+                    }}
+                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                      <TicketCheck className="h-5 w-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-base font-semibold">Join with an invite</div>
+                      <p className="text-sm text-muted-foreground">
+                        Paste a link or code from your organization admin.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Join path: shared InviteAcceptForm. */}
+            {mode === "join" && (
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setMode("choose")}
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  ← Back
+                </button>
+                <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+                  <div className="mb-5 space-y-1">
+                    <h1 className="text-xl font-semibold tracking-tight">Join an organization</h1>
+                    <p className="text-sm text-muted-foreground">
+                      Paste the invite link or code your admin shared with you.
+                    </p>
+                  </div>
+                  <InviteAcceptForm variant="card" />
+                </div>
+              </div>
+            )}
+
+            {/* Create path: existing two-step flow, unchanged apart from the Back affordance. */}
+            {mode === "create" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("choose");
+                      setCurrentStep(0);
+                      setError("");
+                    }}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    ← Back
+                  </button>
+                </div>
+                <ProgressSteps steps={STEPS} currentStep={currentStep} />
+
+                <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+                  {currentStep === 0 && (
+                    <form onSubmit={handleStep1Submit} className="space-y-6">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                          Step 1 of 2
+                        </p>
+                        <h1 className="text-xl font-semibold tracking-tight">
+                          Name your organization
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                          Your organization is the top-level boundary for all secrets, profiles, and
+                          agents. You are the custodian — you manage secrets on behalf of your
+                          users.
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Lowercase letters, numbers, and hyphens. Auto-generated from the name — edit
-                        to customize.
-                      </p>
-                    </div>
-                  </div>
 
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Creating..." : "Continue →"}
-                  </Button>
-                </form>
-              )}
+                      {error && (
+                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {error}
+                        </div>
+                      )}
 
-              {currentStep === 1 && (
-                <form onSubmit={handleStep2Submit} className="space-y-6">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                      Step 2 of 2
-                    </p>
-                    <h1 className="text-xl font-semibold tracking-tight">
-                      Set up your internal profile
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                      This is your organization's own operational vault for shared secrets like
-                      deploy keys and CI credentials. You'll create additional profiles for each
-                      user or customer whose secrets you manage.
-                    </p>
-                  </div>
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="org-name">Organization name</Label>
+                          <Input
+                            id="org-name"
+                            type="text"
+                            placeholder="Acme Corp"
+                            value={orgName}
+                            onChange={(e) => handleOrgNameChange(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Displayed in the dashboard and billing.
+                          </p>
+                        </div>
 
-                  {error && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {error}
-                    </div>
-                  )}
-
-                  <div className="space-y-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="profile-name">
-                        Profile name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="profile-name"
-                        type="text"
-                        placeholder="internal"
-                        value={profileName}
-                        onChange={(e) => setProfileName(e.target.value)}
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Must be kebab-case (lowercase letters, numbers, hyphens). Unique per org.
-                        Used in API paths — choose a stable name.
-                      </p>
-                    </div>
-
-                    <StorageModePicker value={storageMode} onChange={setStorageMode} />
-
-                    {storageMode === "zero_knowledge" && (
-                      <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-                        <div className="flex items-center gap-2 text-amber-700">
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 5v3.5m0 2h.007"
-                              stroke="currentColor"
-                              strokeWidth="1.25"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
+                        <div className="space-y-1.5">
+                          <Label htmlFor="org-slug">Organization slug</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="org-slug"
+                              type="text"
+                              value={orgSlug}
+                              onChange={(e) => handleSlugChange(e.target.value)}
+                              placeholder="acme-corp"
+                              className="font-mono text-sm"
                             />
-                          </svg>
-                          <span className="text-sm font-medium">
-                            The server will never see this password
-                          </span>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label htmlFor="profile-password">
-                            Profile password <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            id="profile-password"
-                            type="password"
-                            // B17: non-login-looking name + new-password hint keep the browser's
-                            // credential manager from offering to save a password the server
-                            // never sees. `autoComplete="off"` is ignored by most modern browsers
-                            // on password fields; `new-password` is the standards-blessed hint.
-                            name="abadge-profile-password"
-                            autoComplete="new-password"
-                            value={profilePassword}
-                            onChange={(e) => setProfilePassword(e.target.value)}
-                            placeholder="Min 12 characters"
-                            minLength={12}
-                            required={storageMode === "zero_knowledge"}
-                          />
-                          <PasswordStrength password={profilePassword} />
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label htmlFor="profile-confirm-password">
-                            Confirm password <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            id="profile-confirm-password"
-                            type="password"
-                            // B17: see companion comment on the profile-password input above.
-                            name="abadge-profile-password-confirm"
-                            autoComplete="new-password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            placeholder="Repeat password"
-                            required={storageMode === "zero_knowledge"}
-                          />
+                            <SlugStatusIndicator status={slugStatus} />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Lowercase letters, numbers, and hyphens. Auto-generated from the name —
+                            edit to customize.
+                          </p>
                         </div>
                       </div>
-                    )}
-                  </div>
 
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Creating profile..." : "Create profile & go to dashboard"}
-                  </Button>
+                      <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? "Creating..." : "Continue →"}
+                      </Button>
+                    </form>
+                  )}
 
-                  <p className="text-xs text-muted-foreground">
-                    You'll add more profiles for each user or entity whose secrets you manage — one
-                    profile per user, each with its own encryption boundary and agent access
-                    controls.
-                  </p>
-                </form>
-              )}
-            </div>
+                  {currentStep === 1 && (
+                    <form onSubmit={handleStep2Submit} className="space-y-6">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                          Step 2 of 2
+                        </p>
+                        <h1 className="text-xl font-semibold tracking-tight">
+                          Set up your internal profile
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                          This is your organization's own operational vault for shared secrets like
+                          deploy keys and CI credentials. You'll create additional profiles for each
+                          user or customer whose secrets you manage.
+                        </p>
+                      </div>
+
+                      {error && (
+                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {error}
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="profile-name">
+                            Profile name <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="profile-name"
+                            type="text"
+                            placeholder="internal"
+                            value={profileName}
+                            onChange={(e) => setProfileName(e.target.value)}
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Must be kebab-case (lowercase letters, numbers, hyphens). Unique per
+                            org. Used in API paths — choose a stable name.
+                          </p>
+                        </div>
+
+                        <StorageModePicker value={storageMode} onChange={setStorageMode} />
+
+                        {storageMode === "zero_knowledge" && (
+                          <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                            <div className="flex items-center gap-2 text-amber-700">
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 5v3.5m0 2h.007"
+                                  stroke="currentColor"
+                                  strokeWidth="1.25"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                              <span className="text-sm font-medium">
+                                The server will never see this password
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label htmlFor="profile-password">
+                                Profile password <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                id="profile-password"
+                                type="password"
+                                // B17: non-login-looking name + new-password hint keep the browser's
+                                // credential manager from offering to save a password the server
+                                // never sees. `autoComplete="off"` is ignored by most modern browsers
+                                // on password fields; `new-password` is the standards-blessed hint.
+                                name="abadge-profile-password"
+                                autoComplete="new-password"
+                                value={profilePassword}
+                                onChange={(e) => setProfilePassword(e.target.value)}
+                                placeholder="Min 12 characters"
+                                minLength={12}
+                                required={storageMode === "zero_knowledge"}
+                              />
+                              <PasswordStrength password={profilePassword} />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <Label htmlFor="profile-confirm-password">
+                                Confirm password <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                id="profile-confirm-password"
+                                type="password"
+                                // B17: see companion comment on the profile-password input above.
+                                name="abadge-profile-password-confirm"
+                                autoComplete="new-password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                placeholder="Repeat password"
+                                required={storageMode === "zero_knowledge"}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? "Creating profile..." : "Create profile & go to dashboard"}
+                      </Button>
+
+                      <p className="text-xs text-muted-foreground">
+                        You'll add more profiles for each user or entity whose secrets you manage —
+                        one profile per user, each with its own encryption boundary and agent access
+                        controls.
+                      </p>
+                    </form>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* Footer links — TOS moved to /register. This page is post-signup. */}
-            {currentStep === 0 && (
+            {mode === "choose" && (
               <div className="text-center">
                 <p className="text-sm text-muted-foreground">
                   Already have an account?{" "}
