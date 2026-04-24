@@ -128,10 +128,11 @@ function auditAgentSessionReject(
 // audit-log amplification. 1 write per IP per 10s window.
 const UNAUTH_AUDIT_WINDOW_MS = 10_000;
 // Hard cap on map entries. Under a scattered-source attack the map would grow
-// unbounded (one entry per unique probe IP) — cap + opportunistic eviction
-// keep memory bounded regardless of attacker strategy.
+// unbounded (one entry per unique probe IP) — the cap bounds memory to
+// ~2.4MB (10k entries × ~240 bytes/entry). When the cap is hit the map is
+// cleared wholesale; attacker can't amplify audit writes because they're
+// still gated per-IP per-window, and legitimate IPs re-populate naturally.
 const UNAUTH_AUDIT_MAX_ENTRIES = 10_000;
-const UNAUTH_AUDIT_EVICT_THRESHOLD = 2_500;
 const unauthBearerAuditCounters = new Map<string, { resetAt: number }>();
 
 export function shouldWriteUnauthBearerAudit(ipAddress: string | undefined): boolean {
@@ -139,18 +140,6 @@ export function shouldWriteUnauthBearerAudit(ipAddress: string | undefined): boo
   const now = Date.now();
   const entry = unauthBearerAuditCounters.get(key);
   if (!entry || entry.resetAt < now) {
-    // Opportunistic eviction: cheap full-map sweep when the map has grown past
-    // the threshold. O(n) but runs only when n >= 2500 and n stays bounded by
-    // UNAUTH_AUDIT_MAX_ENTRIES.
-    if (unauthBearerAuditCounters.size >= UNAUTH_AUDIT_EVICT_THRESHOLD) {
-      for (const [k, v] of unauthBearerAuditCounters) {
-        if (v.resetAt < now) unauthBearerAuditCounters.delete(k);
-      }
-    }
-    // Hard cap: if we're still at the cap after eviction, drop the whole map.
-    // Attacker still can't amplify audit writes because they're gated per-IP
-    // per-window and we just cleared the window; existing legitimate IPs will
-    // re-populate naturally.
     if (unauthBearerAuditCounters.size >= UNAUTH_AUDIT_MAX_ENTRIES) {
       unauthBearerAuditCounters.clear();
     }
