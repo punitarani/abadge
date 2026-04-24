@@ -46,6 +46,14 @@ export interface DaemonIdentityCallbacks {
 
 export interface DaemonClientOptions extends DaemonIdentityCallbacks {
   socketPath?: string;
+  /**
+   * Explicit acknowledgment that this DaemonClient will perform Ed25519
+   * signature verification on every session BUT will NOT persist or check a
+   * pinned fingerprint across sessions. Required when the pinning callbacks
+   * are omitted. Use ONLY for tests, one-shot scripts, or dev tools — never
+   * for user-facing CLI paths.
+   */
+  skipPersistentPinning?: true;
 }
 
 function defaultMismatchError(expected: string, actual: string): Error {
@@ -68,22 +76,43 @@ export class DaemonClient {
 
   /**
    * Accepts either a plain socket path (back-compat) or a full options bag.
-   * When callbacks are omitted the handshake is still performed but mismatches
-   * fall back to the default hard-fail — callers that can't plumb pinned
-   * storage (tests, one-shot scripts) still benefit from signature verification
-   * even without persistent pinning.
+   *
+   * Plain-string / undefined path: back-compat for tests and one-shot scripts.
+   * Still performs Ed25519 signature verification on every sensitive call, but
+   * does NOT persist or check a pinned fingerprint across sessions.
+   *
+   * Options bag: if pinning callbacks are omitted, `skipPersistentPinning: true`
+   * is required — prevents production code from silently downgrading to no-pin
+   * TOFU by accidentally dropping the callback keys.
    */
   constructor(options?: string | DaemonClientOptions) {
     if (typeof options === "string" || options === undefined) {
+      // Plain-string / undefined back-compat path: no pinning callbacks, no
+      // explicit opt-in. Still safe for single-session tests and dev tools but
+      // should NEVER appear in user-facing CLI/MCP production paths. Callers
+      // who want to stay on this path with an options bag must pass
+      // `skipPersistentPinning: true`.
       this.socketPath = options ?? defaultSocketPath();
-    } else {
-      this.socketPath = options.socketPath ?? defaultSocketPath();
-      this.getPinnedFingerprint = options.getPinnedFingerprint;
-      this.onFirstContact = options.onFirstContact;
-      this.onMismatch = options.onMismatch ?? defaultMismatchError;
+      this.onMismatch = defaultMismatchError;
       return;
     }
-    this.onMismatch = defaultMismatchError;
+    this.socketPath = options.socketPath ?? defaultSocketPath();
+    this.getPinnedFingerprint = options.getPinnedFingerprint;
+    this.onFirstContact = options.onFirstContact;
+    this.onMismatch = options.onMismatch ?? defaultMismatchError;
+    // Options-bag path: if pinning callbacks are omitted, require explicit
+    // `skipPersistentPinning: true`. This prevents production code from
+    // silently downgrading to no-pin by simply dropping the callback keys.
+    if (
+      !options.getPinnedFingerprint &&
+      !options.onFirstContact &&
+      options.skipPersistentPinning !== true
+    ) {
+      throw new Error(
+        "DaemonClient: pinning callbacks (getPinnedFingerprint + onFirstContact) are required. " +
+          "Pass { skipPersistentPinning: true } to explicitly acknowledge no-pin mode (tests / dev tools).",
+      );
+    }
   }
 
   /**
@@ -366,6 +395,10 @@ export async function daemonExpandEnv(
   options?: DaemonIdentityCallbacks,
   zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
 ): Promise<{ exitCode: number }> {
-  const client = new DaemonClient({ ...(options ?? {}) });
+  // Pass `options` directly: if undefined, the constructor takes the back-compat
+  // string/undefined path (no pinning, still verifies signatures). Spreading
+  // `options ?? {}` would produce an empty options bag which now requires
+  // `skipPersistentPinning: true` — passing undefined preserves back-compat.
+  const client = new DaemonClient(options ? { ...options } : undefined);
   return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta);
 }

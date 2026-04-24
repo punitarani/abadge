@@ -443,7 +443,7 @@ const getOrg = (orgId: string) =>
           ? logSessionAudit({
               organizationId: ctx.identity.organizationId,
               userId,
-              eventType: "org.update",
+              eventType: "org.read",
               result: "denied",
               ipAddress: ctx.ipAddress,
               meta: { reason: "insufficient_role", targetOrgId: orgId },
@@ -579,7 +579,7 @@ const listMembers = (orgId: string) =>
           ? logSessionAudit({
               organizationId: ctx.identity.organizationId,
               userId: ctx.identity.userId,
-              eventType: "org.member_remove",
+              eventType: "org.member_list",
               result: "denied",
               ipAddress: ctx.ipAddress,
               meta: { reason: "not_member", targetOrgId: orgId },

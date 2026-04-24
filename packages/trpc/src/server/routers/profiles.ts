@@ -84,6 +84,7 @@ const loadProfile = (
   profileId: string,
   userId: string,
   eventType:
+    | "profile.read"
     | "profile.create"
     | "profile.delete"
     | "profile.bootstrap"
@@ -266,7 +267,7 @@ const listProfiles = (orgId: string) =>
 const getProfile = (profileId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const profile = yield* loadProfile(profileId, ctx.identity.userId, "profile.create");
+    const profile = yield* loadProfile(profileId, ctx.identity.userId, "profile.read");
     return { profile: serializeProfile(profile) };
   });
 

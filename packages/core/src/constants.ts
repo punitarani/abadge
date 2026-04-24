@@ -32,6 +32,7 @@ export type Capability = (typeof CAPABILITIES)[number];
 export const AUDIT_EVENT_TYPES = [
   // profile events
   "profile.create",
+  "profile.read",
   "profile.bootstrap",
   "profile.rotate",
   "profile.delete",
@@ -52,9 +53,11 @@ export const AUDIT_EVENT_TYPES = [
   "auth.token_revoke",
   // org events
   "org.create",
+  "org.read",
   "org.update",
   "org.delete",
   "org.member_add",
+  "org.member_list",
   "org.member_remove",
   "org.member_role_change",
   "org.invite",

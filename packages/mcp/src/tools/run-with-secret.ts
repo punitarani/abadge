@@ -29,9 +29,24 @@ export const MAX_OUTPUT_BYTES = 4 * 1024;
 // the line count and truncation flag are returned.
 export const STREAM_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
 
-function countLines(text: string): number {
+/**
+ * Build the child process env, stripping abadge-private vars so the
+ * spawned command cannot read session tokens / API keys out of its
+ * inherited environment (mirrors the daemon's COMPOSITE-001 fix).
+ */
+export function buildChildEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  const procEnv = globalThis.process?.env ?? {};
+  for (const [k, v] of Object.entries(procEnv)) {
+    if (!k.startsWith("ABADGE_")) env[k] = v;
+  }
+  return env;
+}
+
+export function countLines(text: string): number {
   if (text.length === 0) return 0;
-  return text.split("\n").length;
+  const trimmed = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return trimmed.split("\n").length;
 }
 
 /**
@@ -150,7 +165,7 @@ export async function handler(
     throw new Error(`Invalid env var name: ${envVarName}. Must match /^[A-Z_][A-Z0-9_]*$/.`);
   }
 
-  const childEnv = { ...globalThis.process?.env, [envVarName]: secret };
+  const childEnv = { ...buildChildEnv(), [envVarName]: secret };
 
   const { exitCode, stdout, stderr, stdoutTruncated, stderrTruncated } = await runCommand(
     input.command,

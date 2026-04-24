@@ -1,8 +1,15 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { validateEnvVarName } from "@abadge/core";
 import * as apiClientModule from "../api-client.js";
 import * as resolveSecretModule from "../resolve-secret.js";
-import { handler, MAX_OUTPUT_BYTES, runCommand, STREAM_CAP_BYTES } from "./run-with-secret";
+import {
+  buildChildEnv,
+  countLines,
+  handler,
+  MAX_OUTPUT_BYTES,
+  runCommand,
+  STREAM_CAP_BYTES,
+} from "./run-with-secret";
 
 const nodeBinary = process.execPath; // bun or node — either can run a -e script
 
@@ -399,5 +406,76 @@ describe("handler response shape — §RED1", () => {
 
     clientSpy.mockRestore();
     secretSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countLines — trailing-newline off-by-one (Issue 2)
+// ---------------------------------------------------------------------------
+describe("countLines trailing-newline fix", () => {
+  test("empty string returns 0", () => {
+    expect(countLines("")).toBe(0);
+  });
+
+  test("single line without trailing newline returns 1", () => {
+    expect(countLines("hello")).toBe(1);
+  });
+
+  test("single line with trailing newline returns 1 (not 2)", () => {
+    expect(countLines("hello\n")).toBe(1);
+  });
+
+  test("two lines with trailing newline returns 2 (not 3)", () => {
+    expect(countLines("hello\nworld\n")).toBe(2);
+  });
+
+  test("two lines without trailing newline returns 2", () => {
+    expect(countLines("hello\nworld")).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildChildEnv — ABADGE_* env-leak hardening (Issue 1)
+// ---------------------------------------------------------------------------
+describe("buildChildEnv ABADGE_* stripping", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env.ABADGE_SESSION_TOKEN = "abs_sentinel_should_not_leak";
+    process.env.ABADGE_API_KEY = "abk_sentinel_should_not_leak";
+    process.env.ABADGE_AGENT_ID = "agt_sentinel_should_not_leak";
+  });
+
+  afterEach(() => {
+    // Restore sentinels added by beforeEach.
+    for (const k of Object.keys(process.env)) {
+      if (k.startsWith("ABADGE_") && !(k in originalEnv)) delete process.env[k];
+    }
+  });
+
+  test("buildChildEnv strips all ABADGE_* keys from process.env", () => {
+    const env = buildChildEnv();
+    expect(env).not.toHaveProperty("ABADGE_SESSION_TOKEN");
+    expect(env).not.toHaveProperty("ABADGE_API_KEY");
+    expect(env).not.toHaveProperty("ABADGE_AGENT_ID");
+  });
+
+  test("buildChildEnv preserves non-ABADGE_ keys", () => {
+    // PATH is always present in the test runner env.
+    if (process.env.PATH) {
+      const env = buildChildEnv();
+      expect(env.PATH).toBe(process.env.PATH);
+    }
+  });
+
+  test("child subprocess launched via runCommand does not inherit ABADGE_SESSION_TOKEN", async () => {
+    // Inject the sentinel and one explicitly-allowed secret.
+    const childEnv = { ...buildChildEnv(), ABADGE_SECRET: "the-injected-secret-value" };
+    const { stdout } = await runCommand("/usr/bin/env", [], childEnv);
+    // Only ABADGE_SECRET should appear — sentinels must be stripped.
+    expect(stdout).toContain("ABADGE_SECRET=the-injected-secret-value");
+    expect(stdout).not.toContain("ABADGE_SESSION_TOKEN");
+    expect(stdout).not.toContain("ABADGE_API_KEY");
+    expect(stdout).not.toContain("ABADGE_AGENT_ID");
   });
 });

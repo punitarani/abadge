@@ -244,3 +244,51 @@ describe("DaemonClient TOFU handshake (W3P12-001)", () => {
     ).rejects.toThrow(/^CUSTOM:/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// skipPersistentPinning constructor guard (Issue 3)
+// ---------------------------------------------------------------------------
+describe("DaemonClient skipPersistentPinning constructor guard", () => {
+  test("constructor throws when options bag omits pinning callbacks without explicit skip flag", () => {
+    expect(() => new DaemonClient({ socketPath: "/tmp/foo.sock" })).toThrow(
+      /skipPersistentPinning/,
+    );
+  });
+
+  test("constructor accepts options bag with skipPersistentPinning: true", () => {
+    expect(
+      () => new DaemonClient({ socketPath: "/tmp/foo.sock", skipPersistentPinning: true }),
+    ).not.toThrow();
+  });
+
+  test("constructor accepts plain string path (back-compat, test-only)", () => {
+    expect(() => new DaemonClient("/tmp/foo.sock")).not.toThrow();
+  });
+
+  test("constructor accepts undefined (back-compat, test-only)", () => {
+    // defaultSocketPath() returns a path that may not exist, but the constructor
+    // itself should not throw — connection errors happen at send time.
+    expect(() => new DaemonClient()).not.toThrow();
+  });
+
+  test("constructor accepts options bag with only getPinnedFingerprint (no skipPersistentPinning needed)", () => {
+    // Providing at least one pinning callback satisfies the guard.
+    expect(
+      () =>
+        new DaemonClient({
+          socketPath: "/tmp/foo.sock",
+          getPinnedFingerprint: async () => null,
+        }),
+    ).not.toThrow();
+  });
+
+  test("constructor accepts options bag with only onFirstContact (no skipPersistentPinning needed)", () => {
+    expect(
+      () =>
+        new DaemonClient({
+          socketPath: "/tmp/foo.sock",
+          onFirstContact: async () => {},
+        }),
+    ).not.toThrow();
+  });
+});
