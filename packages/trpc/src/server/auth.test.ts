@@ -275,7 +275,9 @@ describe("shouldWriteUnauthBearerAudit map bounding", () => {
   test("map size stays bounded under scattered-source pressure", () => {
     // Simulate probes from many unique IPs — map must not reach 15k entries.
     for (let i = 0; i < 15_000; i++) {
-      shouldWriteUnauthBearerAudit(`10.${Math.floor(i / 65536) % 256}.${Math.floor(i / 256) % 256}.${i % 256}`);
+      shouldWriteUnauthBearerAudit(
+        `10.${Math.floor(i / 65536) % 256}.${Math.floor(i / 256) % 256}.${i % 256}`,
+      );
     }
     // After the hard cap fires and clears the map, new entries accumulate.
     // The invariant is that the map never held 15k entries simultaneously.
