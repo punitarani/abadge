@@ -118,6 +118,10 @@ async function submitStep1({
     setError("This slug is already taken. Choose a different one.");
     return;
   }
+  if (slugStatus === "checking") {
+    setError("Slug availability is still being checked. Please wait a moment.");
+    return;
+  }
   setLoading(true);
   try {
     const result = await browserTrpcClient.organizations.create.mutate({

@@ -54,6 +54,7 @@ interface Org {
   slug: string;
   logo: string | null;
   createdAt: string;
+  hasBootstrappedProfile: boolean;
 }
 
 function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.ReactElement {
@@ -88,6 +89,21 @@ export function OrgSwitcher(): React.ReactElement {
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
   const currentOrg = orgs.find((o) => o.id === activeOrgId);
 
+  // If a previous "Create organization…" attempt left an org row without a
+  // bootstrapped profile (user dismissed the dialog after step 1), seed the
+  // dialog at step 2 for that org instead of letting the user create a fresh
+  // duplicate. Mirrors /onboarding's resume-triage. Radix unmounts dialog
+  // content on close, so CreateOrgForm reads this seed fresh on each open.
+  const incompleteOrg = orgs.find((o) => !o.hasBootstrappedProfile);
+  const createDialogInitialOrg = incompleteOrg
+    ? {
+        orgId: incompleteOrg.id,
+        orgName: incompleteOrg.name,
+        orgSlug: incompleteOrg.slug,
+        step: 1 as const,
+      }
+    : undefined;
+
   function handleSelect(org: Org): void {
     if (org.id !== activeOrgId) {
       setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo });
@@ -121,7 +137,16 @@ export function OrgSwitcher(): React.ReactElement {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <OrgIcon
-                org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }}
+                org={
+                  currentOrg ?? {
+                    id: "",
+                    name: "?",
+                    slug: "",
+                    logo: null,
+                    createdAt: "",
+                    hasBootstrappedProfile: false,
+                  }
+                }
               />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{currentOrg?.name ?? "Select org"}</span>
@@ -187,6 +212,7 @@ export function OrgSwitcher(): React.ReactElement {
               list on success. We just need to close the dialog here. */}
           <CreateOrgForm
             variant="dialog"
+            initialOrg={createDialogInitialOrg}
             onSuccess={() => {
               setCreateDialogOpen(false);
             }}
