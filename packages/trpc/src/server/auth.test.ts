@@ -13,9 +13,14 @@ import { createTrpcCallerFactory, createTrpcRouter, scopedSessionProcedure } fro
 
 function createMockDb(): BaseRequestContext["db"] {
   let callCount = 0;
-  const results = [[{ organizationId: "org_mock" }], [{ role: "owner" }]];
+  const results = [
+    [{ organizationId: "org_mock" }], // resolveUserOrgId — header lookup
+    [{ role: "owner" }], // requireOrgRole — membership + role
+    [{ id: "profile_mock" }], // assertOrgOnboardingComplete — bootstrapped profile
+  ];
   const mockQuery = {
     from: () => mockQuery,
+    innerJoin: () => mockQuery,
     where: () => mockQuery,
     limit: () => Promise.resolve(results[callCount++] ?? []),
     orderBy: () => Promise.resolve(results[callCount++] ?? []),
