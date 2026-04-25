@@ -27,21 +27,17 @@ import { member, profiles } from "@abadge/db/schema";
 
 export const ONBOARDING_INCOMPLETE_CODE = "ONBOARDING_INCOMPLETE";
 
-function incompleteOrgError(orgId: string): ForbiddenError {
+/**
+ * Exported so call sites that need to write an audit row before throwing
+ * (e.g. `agentProcedure`, `exchangeAgentSession`) can reuse the canonical
+ * error envelope instead of duplicating the message/hint/meta.
+ */
+export function incompleteOrgError(orgId: string): ForbiddenError {
   return new ForbiddenError({
     code: ONBOARDING_INCOMPLETE_CODE,
     message: "Organization onboarding is not complete",
     hint: "Finish onboarding for this organization (create or bootstrap a profile) before using the API, CLI, MCP, or agents.",
     meta: { organizationId: orgId },
-  });
-}
-
-function noUsableOrgError(userId: string): ForbiddenError {
-  return new ForbiddenError({
-    code: ONBOARDING_INCOMPLETE_CODE,
-    message: "No fully set-up organization",
-    hint: "Complete onboarding (create or join an organization and set up a profile) before approving CLI logins or authenticating agents.",
-    meta: { userId },
   });
 }
 
@@ -93,16 +89,4 @@ export async function userHasUsableOrg(db: Database, userId: string): Promise<bo
     )
     .limit(1);
   return rows.length > 0;
-}
-
-/**
- * Throw ONBOARDING_INCOMPLETE if the user has no usable org. Currently
- * unused (the device-approval path surfaces the check via the `userHasUsableOrg`
- * predicate + client-side UI), but exported for future use at auth-layer
- * gates where throwing is more ergonomic than a predicate.
- */
-export async function assertUserHasUsableOrg(db: Database, userId: string): Promise<void> {
-  if (!(await userHasUsableOrg(db, userId))) {
-    throw noUsableOrgError(userId);
-  }
 }

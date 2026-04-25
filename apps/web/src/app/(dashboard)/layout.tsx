@@ -18,7 +18,11 @@ interface OrgSummary {
   slug: string;
   name: string;
   logo: string | null;
-  hasBootstrappedProfile?: boolean;
+  // Non-optional: server schema (`organizations.list` -> Schema.Boolean) always
+  // populates this. Keeping it strict here means a future server-side regression
+  // (e.g. accidentally omitting the field) trips the typecheck instead of
+  // silently leaving `orgReady` permanently false and hanging the dashboard.
+  hasBootstrappedProfile: boolean;
 }
 
 type LayoutDecision =
@@ -29,9 +33,9 @@ type LayoutDecision =
 
 /**
  * Pure decision function for dashboard layout routing, extracted to keep the
- * `useEffect` small and to make the branches unit-testable. Inputs are
- * whatever state matters to the routing call; outputs are one of four
- * actions the effect applies.
+ * `useEffect` body linear and well under the cognitive-complexity limit.
+ * Inputs are whatever state matters to the routing call; outputs are one of
+ * four actions the effect applies.
  *
  * Rules (in order): wait for hydration/session, redirect unauthenticated to
  * login, wait for orgs query to succeed, redirect to /onboarding when the
@@ -196,12 +200,7 @@ export default function DashboardLayout({
   // above redirects to /onboarding; this render guard keeps the dashboard
   // from briefly flashing broken state in that window.
   const orgReady =
-    hydrated &&
-    activeOrgId &&
-    orgs.some(
-      (o: { id: string; hasBootstrappedProfile?: boolean }) =>
-        o.id === activeOrgId && o.hasBootstrappedProfile,
-    );
+    hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId && o.hasBootstrappedProfile);
   if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">

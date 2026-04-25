@@ -48,7 +48,7 @@ import {
   scopedSessionProcedure,
   sessionProcedure,
 } from "../init";
-import { assertOrgOnboardingComplete } from "../onboarding-gate";
+import { incompleteOrgError, orgHasBootstrappedProfile } from "../onboarding-gate";
 import { serializeAgent } from "../serialize";
 
 type OwnedAgentRow = Pick<
@@ -602,8 +602,25 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     // at-use gate lives in `agentProcedure` (init.ts), so a degraded org
     // also stops serving existing sessions on next request — this early
     // failure just gives clients a faster, more specific error instead of
-    // letting them succeed here and fail later.
-    yield* tryAsync(() => assertOrgOnboardingComplete(ctx.db, agent.organizationId));
+    // letting them succeed here and fail later. Audit-log the denial first
+    // (existing invariant: every denied agent access attempt is logged);
+    // `logBaseAudit` swallows audit-write failures internally so a DB blip
+    // can never invert the auth-fail response.
+    const orgComplete = yield* tryAsync(() =>
+      orgHasBootstrappedProfile(ctx.db, agent.organizationId),
+    );
+    if (!orgComplete) {
+      yield* logBaseAudit({
+        organizationId: agent.organizationId,
+        userId: agent.createdBy,
+        agentId: agent.id,
+        eventType: "agent.session_reject",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason: "onboarding_incomplete" },
+      });
+      return yield* Effect.fail(incompleteOrgError(agent.organizationId));
+    }
 
     const challengeHash = yield* tryAsync(() => hashApiKey(input.challenge));
     const [challengeRecord] = (yield* tryAsync(() =>

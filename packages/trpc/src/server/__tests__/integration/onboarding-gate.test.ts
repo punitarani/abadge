@@ -15,13 +15,18 @@
  */
 
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { eq } from "@abadge/db";
-import { profiles } from "@abadge/db/schema";
+import { signEd25519 } from "@abadge/crypto/shared";
+import { desc, eq } from "@abadge/db";
+import { auditLogs, profiles } from "@abadge/db/schema";
+import type { AppBindings } from "../../context";
+import { createTrpcCallerFactory } from "../../init";
 import { orgHasBootstrappedProfile, userHasUsableOrg } from "../../onboarding-gate";
-import { seedOrg, seedProfile, seedUser } from "../helpers/seed";
+import { appRouter } from "../../router";
+import { seedAgent, seedAgentSession, seedOrg, seedProfile, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { createOperatorCaller } from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
+import { TEST_ENV } from "../helpers/test-env";
 
 describe("onboarding gate (assertOrgOnboardingComplete + userHasUsableOrg)", () => {
   const db = getTestDb();
@@ -159,5 +164,118 @@ describe("onboarding gate (assertOrgOnboardingComplete + userHasUsableOrg)", () 
     const caller = createOperatorCaller(db, auth, user.headers, orgId);
     const result = await caller.onboarding.status();
     expect(result).toEqual({ complete: true });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Audit-log invariant
+  //
+  // Existing AGENTS.md invariant: "Every allowed and denied agent access
+  // attempt must be logged in audit_log." The two new agent-side gates
+  // (agentProcedure at-use, exchangeAgentSession at-issuance) must write an
+  // audit row before throwing ONBOARDING_INCOMPLETE — otherwise denials are
+  // silent and the invariant is violated.
+  // ---------------------------------------------------------------------------
+
+  test("agentProcedure: ONBOARDING_INCOMPLETE writes audit row with reason=onboarding_incomplete", async () => {
+    const user = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, user.userId, { withDefaultProfile: false });
+    // Incomplete ZK profile: present but not bootstrapped.
+    await seedProfile(db, orgId, { storageMode: "zero_knowledge" });
+
+    const agent = await seedAgent(db, {
+      userId: user.userId,
+      orgId,
+      authMethod: "legacy_api_key",
+    });
+    const session = await seedAgentSession(db, { agentId: agent.agentId, userId: user.userId });
+
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+    let caught: unknown;
+    try {
+      await agentCaller.agents.self();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    const trpcErr = caught as { code?: string; cause?: { code?: string } };
+    expect(trpcErr.code).toBe("FORBIDDEN");
+    expect(trpcErr.cause?.code).toBe("ONBOARDING_INCOMPLETE");
+
+    // The audit insert is fire-and-forget (must not invert auth-fail on DB
+    // error) — give the I/O a tick to settle before asserting on the row.
+    await new Promise((r) => setTimeout(r, 50));
+
+    const [row] = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.agentId, agent.agentId))
+      .orderBy(desc(auditLogs.occurredAt))
+      .limit(1);
+    expect(row).toBeDefined();
+    expect(row?.eventType).toBe("agent.session_reject");
+    expect(row?.result).toBe("denied");
+    expect(row?.organizationId).toBe(orgId);
+    expect(row?.userId).toBe(user.userId);
+    expect((row?.meta as { reason?: string } | null)?.reason).toBe("onboarding_incomplete");
+  });
+
+  test("exchangeAgentSession: ONBOARDING_INCOMPLETE writes audit row with reason=onboarding_incomplete", async () => {
+    const user = await seedUser(auth);
+    const { orgId } = await seedOrg(auth, user.userId, { withDefaultProfile: false });
+    await seedProfile(db, orgId, { storageMode: "zero_knowledge" }); // incomplete
+
+    // Seed an enrolled public-key agent (publicKey set) so we can drive the
+    // challenge → exchange flow without going through the full bootstrap path.
+    const agent = await seedAgent(db, {
+      userId: user.userId,
+      orgId,
+      authMethod: "public_key_session",
+    });
+    if (!agent.keyPair) throw new Error("seedAgent returned no keyPair for public_key_session");
+
+    const callerFactory = createTrpcCallerFactory(appRouter);
+    const publicCaller = callerFactory({
+      req: new Request("http://test"),
+      resHeaders: new Headers(),
+      env: { ...TEST_ENV } as AppBindings,
+      validatedEnv: TEST_ENV,
+      db,
+      auth,
+      ipAddress: "127.0.0.1",
+    });
+
+    const challenge = await publicCaller.auth.createChallenge({ agentId: agent.agentId });
+    const signature = await signEd25519(agent.keyPair.privateKey, challenge.challenge);
+
+    let caught: unknown;
+    try {
+      await publicCaller.auth.exchangeSession({
+        agentId: agent.agentId,
+        challengeId: challenge.challengeId,
+        challenge: challenge.challenge,
+        signature,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeDefined();
+    const trpcErr = caught as { code?: string; cause?: { code?: string } };
+    expect(trpcErr.code).toBe("FORBIDDEN");
+    expect(trpcErr.cause?.code).toBe("ONBOARDING_INCOMPLETE");
+
+    // logBaseAudit is yielded inside the Effect, so the audit row is durable
+    // by the time the failure propagates. No setTimeout dance needed here.
+    const [row] = await db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.agentId, agent.agentId))
+      .orderBy(desc(auditLogs.occurredAt))
+      .limit(1);
+    expect(row).toBeDefined();
+    expect(row?.eventType).toBe("agent.session_reject");
+    expect(row?.result).toBe("denied");
+    expect(row?.organizationId).toBe(orgId);
+    expect(row?.userId).toBe(user.userId);
+    expect((row?.meta as { reason?: string } | null)?.reason).toBe("onboarding_incomplete");
   });
 });
