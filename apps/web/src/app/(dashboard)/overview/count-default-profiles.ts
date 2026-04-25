@@ -1,10 +1,9 @@
 /**
- * The "default" profile is the one created during onboarding and named
- * "internal" (see onboarding/page.tsx and organizations.create which
- * seeds the row). Returning the count of server_managed profiles — which
- * the previous implementation did — was wrong: the internal profile is
- * zero_knowledge, not server_managed, so the Overview subtitle always
- * read "0 default (internal)" for a freshly onboarded user.
+ * The "default" profile is the one named "internal" — the conventional
+ * name the onboarding flow suggests for an org's operational vault.
+ * Counts how many such profiles exist in the org. Will be 0 when the
+ * user has named their first profile something else (no profile is
+ * auto-created on org creation).
  *
  * Lives in its own module (not in page.tsx) because Next.js 15 enforces
  * that page files only export `default`, `metadata`, and the other

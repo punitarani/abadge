@@ -3,11 +3,8 @@ import {
   ForbiddenError,
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
-  type KdfParams,
-  KdfParamsSchema,
   NotFoundError,
   RateLimitError,
-  StorageModeSchema,
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
@@ -50,24 +47,7 @@ const CreateOrganizationSchema = Schema.Struct({
     ),
   ),
   logo: Schema.optional(Schema.String),
-  // §ON5 — pass through the storage mode chosen in onboarding.
-  // Defaults to server_managed in the router (safe default).
-  storageMode: Schema.optional(StorageModeSchema),
-  // §ON5b — ZK bundles; required when storageMode === "zero_knowledge".
-  wrappedRootKey: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
-  kdfSalt: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
-  kdfParams: Schema.optional(KdfParamsSchema),
-  recoveryWrappedRootKey: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
-}).pipe(
-  Schema.filter((input) => {
-    if (input.storageMode === "zero_knowledge") {
-      if (!input.wrappedRootKey || !input.kdfSalt || !input.kdfParams) {
-        return "zero_knowledge profile requires wrappedRootKey, kdfSalt, and kdfParams";
-      }
-    }
-    return true;
-  }),
-);
+});
 
 const UpdateOrganizationSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -127,7 +107,6 @@ const OrgListItemSchema = Schema.Struct({
 
 const CreateOrgResultSchema = Schema.Struct({
   organization: OrgDataSchema,
-  profileId: Schema.String,
 });
 
 const OrgResultSchema = Schema.Struct({
@@ -251,7 +230,6 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     const ctx = yield* UserRequestContextTag;
     const userId = ctx.identity.userId;
     const orgId = crypto.randomUUID();
-    const profileId = crypto.randomUUID();
     const slug = input.slug ?? toSlug(input.name);
     const now = new Date();
 
@@ -273,10 +251,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       );
     }
 
-    // All three inserts must succeed or fail together: a mid-flight failure
-    // would leave the org without a default profile, a state the dashboard
-    // assumes cannot happen. The slug-race loser's unique-violation is
-    // translated below to SLUG_TAKEN (mirrors profiles.create / permissions.create).
+    // Org + owner-member must succeed or fail together. The slug-race loser's
+    // unique-violation is translated below to SLUG_TAKEN (mirrors
+    // profiles.create / permissions.create). No default profile is seeded —
+    // callers create profiles explicitly via `profiles.create`, and the
+    // onboarding gate (`assertOrgOnboardingComplete`) blocks scoped /
+    // agent calls until at least one bootstrapped profile exists.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx.insert(organization).values({
@@ -294,39 +274,6 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
           role: "owner",
           createdAt: now,
         });
-
-        // Named "internal" by convention; the dashboard surfaces it as the
-        // org's default operational profile. Creating it here in the same
-        // transaction as the org guarantees the onboarding gate
-        // (`assertOrgOnboardingComplete`) is satisfied the moment the org
-        // exists — the web onboarding flow can therefore redirect straight
-        // to the dashboard without a separate profile-bootstrap step.
-        //
-        // §ON5 — use the caller-supplied storageMode (default: server_managed).
-        // §ON5b — thread KDF fields through for zero_knowledge profiles.
-        // The Schema.filter above guarantees KDF fields are present when ZK.
-        const storageMode = input.storageMode ?? "server_managed";
-        const profileValues: typeof profiles.$inferInsert = {
-          id: profileId,
-          organizationId: orgId,
-          name: "internal",
-          storageMode,
-          createdAt: now,
-          updatedAt: now,
-        };
-        if (storageMode === "zero_knowledge") {
-          // Schema.filter guarantees these are present when storageMode === "zero_knowledge".
-          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
-          profileValues.wrappedRootKey = input.wrappedRootKey!;
-          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
-          profileValues.kdfSalt = input.kdfSalt!;
-          // biome-ignore lint/style/noNonNullAssertion: guaranteed by Schema.filter above
-          profileValues.kdfParams = input.kdfParams! as unknown as KdfParams;
-          if (input.recoveryWrappedRootKey) {
-            profileValues.recoveryWrappedRootKey = input.recoveryWrappedRootKey;
-          }
-        }
-        await tx.insert(profiles).values(profileValues);
       }),
     ).pipe(
       Effect.catchIf(
@@ -351,15 +298,6 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       meta: { slug },
     });
 
-    yield* logUserAudit({
-      organizationId: orgId,
-      userId,
-      eventType: "profile.create",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-      meta: { orgId },
-    });
-
     return {
       organization: {
         id: orgId,
@@ -368,7 +306,6 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
         logo: input.logo ?? null,
         createdAt: now.toISOString(),
       },
-      profileId,
     };
   });
 
