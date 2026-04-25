@@ -167,17 +167,13 @@ export function OrgSwitcher(): React.ReactElement {
               Paste the invite link or code your admin shared with you.
             </DialogDescription>
           </DialogHeader>
+          {/* InviteAcceptForm already sets the active org and invalidates the
+              organizations list. Per-org queries are keyed on orgId, so they
+              refetch naturally when activeOrgId changes — we just need to
+              close the dialog here. */}
           <InviteAcceptForm
             variant="dialog"
-            onSuccess={(result) => {
-              setActiveOrg({
-                id: result.organizationId,
-                slug: result.organizationSlug,
-                name: result.organizationName,
-                logo: null,
-              });
-              // Refetch every org-scoped query so the new membership propagates
-              queryClient.invalidateQueries();
+            onSuccess={() => {
               setJoinDialogOpen(false);
             }}
           />

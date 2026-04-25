@@ -35,21 +35,20 @@ function JoinPageContent(): React.ReactElement {
   }, [session, searchParams, router]);
 
   // Gate behind authentication so the server rejects lookups from strangers
-  // and the rate-limit counter keys on a real userId.
-  if (!sessionPending && !session) {
+  // and the rate-limit counter keys on a real userId. Run the redirect in an
+  // effect so we don't mutate router state during render.
+  useEffect(() => {
+    if (sessionPending || session) return;
     const returnPath = initialToken ? `/join?token=${encodeURIComponent(initialToken)}` : "/join";
     router.replace(`/login?redirect=${encodeURIComponent(returnPath)}`);
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Redirecting to sign in…</p>
-      </div>
-    );
-  }
+  }, [sessionPending, session, initialToken, router]);
 
-  if (sessionPending) {
+  if (sessionPending || !session) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">
+          {sessionPending ? "Loading…" : "Redirecting to sign in…"}
+        </p>
       </div>
     );
   }
