@@ -234,6 +234,7 @@ Does not own:
 * `AbadgeAgentClient` keypair-backed sessions auto-refresh at T-2 minutes before expiry; no long-lived secret is stored on disk.
 * Error envelopes use `{ code, message, hint, meta? }` — all four fields on every domain error.
 * The `field` parameter on `access.reveal` and `access.mount` is resolved by `resolveFieldValue` in `@abadge/core/secret-delivery`; never duplicated in routers.
+* **Onboarding-complete gate.** Any tRPC call going through `scopedSessionProcedure` or `agentProcedure`, plus agent session issuance via `exchangeAgentSession`, requires the target organization to have at least one bootstrapped profile (`storageMode='server_managed'` OR `wrappedRootKey IS NOT NULL`). Bare `sessionProcedure` org-management routes (`organizations.update/delete`, `organizations.members.*`, `profiles.*`) are intentionally NOT gated so users can manage and clean up an unbootstrapped org without being locked out. Agent denials at the at-use and at-issuance gates write an `agent.session_reject` audit row with `meta.reason="onboarding_incomplete"`, satisfying the existing "every denied agent access is audit-logged" invariant. Exposed to the web via `onboarding.status`. The CLI cannot be approved from `/device/approve` until the user has a usable org (server-side gate is the source of truth; the page fails-open on a status-fetch error). See `packages/trpc/src/server/onboarding-gate.ts`. Error code: `ONBOARDING_INCOMPLETE` (HTTP 403).
 
 ## Data model summary
 

@@ -13,6 +13,59 @@ import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { VaultProvider } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
+interface OrgSummary {
+  id: string;
+  slug: string;
+  name: string;
+  logo: string | null;
+  // Non-optional: server schema (`organizations.list` -> Schema.Boolean) always
+  // populates this. Keeping it strict here means a future server-side regression
+  // (e.g. accidentally omitting the field) trips the typecheck instead of
+  // silently leaving `orgReady` permanently false and hanging the dashboard.
+  hasBootstrappedProfile: boolean;
+}
+
+type LayoutDecision =
+  | { kind: "wait" }
+  | { kind: "redirect"; to: string }
+  | { kind: "adopt"; org: OrgSummary }
+  | { kind: "ready" };
+
+/**
+ * Pure decision function for dashboard layout routing, extracted to keep the
+ * `useEffect` body linear and well under the cognitive-complexity limit.
+ * Inputs are whatever state matters to the routing call; outputs are one of
+ * four actions the effect applies.
+ *
+ * Rules (in order): wait for hydration/session, redirect unauthenticated to
+ * login, wait for orgs query to succeed, redirect to /onboarding when the
+ * user has no org or no fully set-up org, adopt the first usable org when
+ * the stored one is stale, otherwise the layout is ready.
+ */
+function decideLayoutAction(args: {
+  hydrated: boolean;
+  sessionPending: boolean;
+  session: unknown;
+  orgsStatus: "pending" | "error" | "success";
+  orgs: OrgSummary[];
+  activeOrgId: string | null;
+}): LayoutDecision {
+  if (!args.hydrated || args.sessionPending) return { kind: "wait" };
+  if (!args.session) return { kind: "redirect", to: "/login" };
+  if (args.orgsStatus !== "success") return { kind: "wait" };
+  if (args.orgs.length === 0) return { kind: "redirect", to: "/onboarding" };
+
+  const usableOrgs = args.orgs.filter((o) => o.hasBootstrappedProfile);
+  if (usableOrgs.length === 0) return { kind: "redirect", to: "/onboarding" };
+
+  const storedValid = args.activeOrgId != null && usableOrgs.some((o) => o.id === args.activeOrgId);
+  if (storedValid) return { kind: "ready" };
+
+  const first = usableOrgs[0];
+  if (!first) return { kind: "redirect", to: "/onboarding" };
+  return { kind: "adopt", org: first };
+}
+
 // biome-ignore lint/style/noRestrictedGlobals: Next.js replaces NEXT_PUBLIC_ at build time
 const USERJOT_PROJECT_ID = process.env.NEXT_PUBLIC_USERJOT_PROJECT_ID;
 
@@ -77,37 +130,36 @@ export default function DashboardLayout({
     enabled: !!session,
   });
 
-  const orgs = orgsQuery.data?.organizations ?? [];
+  const orgs = (orgsQuery.data?.organizations ?? []) as OrgSummary[];
 
-  // Resolve active org: validate stored org, fall back to first, or redirect to onboarding.
-  // Gate on `orgsQuery.status === "success"` rather than `!orgsData`: a failed query leaves
-  // data undefined AND isLoading false — the old `!orgsData` gate caused the layout to hang
-  // on "Loading..." forever in that case instead of surfacing an error branch.
+  // Delegate routing to decideLayoutAction so the effect body stays linear.
+  // Gate on `orgsQuery.status === "success"` rather than `!orgsData`: a
+  // failed query leaves data undefined AND isLoading false — the old
+  // `!orgsData` gate caused the layout to hang on "Loading..." forever
+  // instead of surfacing an error branch.
   useEffect(() => {
-    if (!hydrated || sessionPending) return;
-
-    if (!session || !userId) {
-      router.push("/login");
-      return;
-    }
-
-    if (orgsQuery.status !== "success") return;
-
-    if (orgs.length === 0) {
-      router.push("/onboarding");
-      return;
-    }
-
-    const storedOrgValid = activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
-    if (!storedOrgValid) {
-      // Stored org is stale or missing — fall back to first org (orgs.length > 0 checked above)
-      const first = orgs[0];
-      if (first) {
+    const action = decideLayoutAction({
+      hydrated,
+      sessionPending,
+      session,
+      orgsStatus: orgsQuery.status,
+      orgs,
+      activeOrgId,
+    });
+    if (action.kind === "redirect") {
+      router.push(action.to);
+    } else if (action.kind === "adopt") {
+      // decideLayoutAction returns "adopt" only after gating on session being
+      // truthy, so userId is non-null in practice. The conditional is
+      // defensive — without it the new lastUserId field would never be
+      // seeded for an adopted org if the session were somehow stripped
+      // between decision and effect.
+      if (userId) {
         setActiveOrg(userId, {
-          id: first.id,
-          slug: first.slug,
-          name: first.name,
-          logo: first.logo ?? null,
+          id: action.org.id,
+          slug: action.org.slug,
+          name: action.org.name,
+          logo: action.org.logo ?? null,
         });
       }
     }
@@ -170,9 +222,13 @@ export default function DashboardLayout({
     );
   }
 
-  // Show loading while auth, orgs, or store hydration are pending
+  // Show loading while auth, orgs, or store hydration are pending. orgReady
+  // requires the active org to also have a bootstrapped profile — otherwise
+  // scoped child queries would fail with ONBOARDING_INCOMPLETE. The effect
+  // above redirects to /onboarding; this render guard keeps the dashboard
+  // from briefly flashing broken state in that window.
   const orgReady =
-    hydrated && activeOrgId && orgs.some((o: { id: string }) => o.id === activeOrgId);
+    hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId && o.hasBootstrappedProfile);
   if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
     return (
       <div className="flex min-h-screen items-center justify-center">

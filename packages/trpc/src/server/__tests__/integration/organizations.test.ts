@@ -234,20 +234,25 @@ describe("organizations.list hasBootstrappedProfile flag", () => {
     const user = await seedUser(auth);
 
     // org A: only the auto-created zk-no-root profile -> unbootstrapped
+    // (opt out of seedOrg's default server_managed profile so this org's
+    // state is controlled purely by the seedProfile call below.)
     const orgA = await seedOrg(auth, user.userId, {
       slug: `unboot-${crypto.randomUUID().slice(0, 6)}`,
+      withDefaultProfile: false,
     });
     await seedProfile(db, orgA.orgId, { name: "default", storageMode: "zero_knowledge" });
 
     // org B: server_managed profile -> bootstrapped (no key needed)
     const orgB = await seedOrg(auth, user.userId, {
       slug: `srv-${crypto.randomUUID().slice(0, 6)}`,
+      withDefaultProfile: false,
     });
     await seedProfile(db, orgB.orgId, { name: "default", storageMode: "server_managed" });
 
     // org C: zk profile WITH wrappedRootKey -> bootstrapped
     const orgC = await seedOrg(auth, user.userId, {
       slug: `boot-${crypto.randomUUID().slice(0, 6)}`,
+      withDefaultProfile: false,
     });
     const { profileId: profileC } = await seedProfile(db, orgC.orgId, {
       name: "default",

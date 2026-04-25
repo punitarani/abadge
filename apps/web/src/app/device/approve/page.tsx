@@ -1,6 +1,8 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Info, Monitor } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { decideOnboardingStateFromList } from "@/app/onboarding/onboarding-triage";
@@ -96,6 +98,28 @@ function DeviceApprovalPageContent(): React.ReactElement {
   const remaining = useCountdown(DEVICE_CODE_TTL_SECONDS);
   const expired = remaining <= 0;
 
+  // Gate CLI approval on the *user's* onboarding status, not the active org:
+  // if the user hasn't finished onboarding they can't hand the CLI a usable
+  // session. The server-side tRPC gate already rejects, but checking here
+  // first gives a clear pre-approval error instead of the CLI looking
+  // logged-in and then failing on its first call.
+  //
+  // Fail-open on query error: server-side gates (scopedSessionProcedure +
+  // agentProcedure + exchangeAgentSession) are the source of truth. If the
+  // status fetch fails (network/auth/500) we let the user reach the
+  // Approve/Deny buttons rather than trapping them on "Checking your
+  // account…" until the 15-minute device code silently expires. An
+  // under-onboarded user who slips through here will still hit a clear
+  // ONBOARDING_INCOMPLETE error from the server on their first tRPC call.
+  const onboardingQuery = useQuery({
+    queryKey: ["onboarding", "status"],
+    queryFn: () => browserTrpcClient.onboarding.status.query(),
+    enabled: !!session,
+  });
+  const onboardingComplete = onboardingQuery.isError
+    ? true
+    : (onboardingQuery.data?.complete ?? null);
+
   useEffect(() => {
     if (!userCode || isPending) return;
     if (!session) {
@@ -167,6 +191,57 @@ function DeviceApprovalPageContent(): React.ReactElement {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Approve device sign-in</h1>
           <p className="text-sm text-muted-foreground">Checking your session...</p>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  // User signed in but onboarding-status not yet fetched → wait a beat so
+  // the approval button doesn't flash as enabled for incomplete accounts.
+  if (onboardingComplete === null) {
+    return (
+      <AuthShell>
+        <div className="flex flex-col items-center space-y-2 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <Monitor className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Approve device sign-in</h1>
+          <p className="text-sm text-muted-foreground">Checking your account…</p>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  // Block approval for users who haven't finished onboarding. Server-side
+  // gates still enforce this (scopedSessionProcedure + agentProcedure), but
+  // catching it here avoids the CLI briefly appearing logged-in before
+  // erroring on its first call.
+  if (!onboardingComplete) {
+    return (
+      <AuthShell>
+        <div className="flex flex-col items-center space-y-4 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
+            <Monitor className="h-6 w-6 text-amber-700" />
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Finish onboarding first</h1>
+          <p className="text-sm text-muted-foreground">
+            Before you can approve a CLI or MCP device, you need at least one organization with a
+            set-up profile. Create or join an organization and bootstrap a profile, then come back
+            to approve the device.
+          </p>
+          <div className="flex w-full flex-col gap-2 sm:flex-row">
+            <Button asChild className="w-full">
+              <Link href="/onboarding">Go to onboarding</Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => void handleDecision("deny")}
+              disabled={submitting !== null}
+            >
+              {submitting === "deny" ? "Denying…" : "Deny this request"}
+            </Button>
+          </div>
         </div>
       </AuthShell>
     );

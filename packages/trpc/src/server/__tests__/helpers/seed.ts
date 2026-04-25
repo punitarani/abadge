@@ -12,6 +12,7 @@ import {
 import type { Database } from "@abadge/db";
 import { agentSessions, agents, items, permissions, profiles } from "@abadge/db/schema";
 import { getTestHelpers, type TestAuth } from "./test-auth";
+import { getTestDb } from "./test-db";
 import { TEST_ENV } from "./test-env";
 
 // ---------------------------------------------------------------------------
@@ -86,7 +87,19 @@ export interface SeedOrgResult {
 export async function seedOrg(
   auth: TestAuth,
   userId: string,
-  overrides?: { name?: string; slug?: string },
+  overrides?: {
+    name?: string;
+    slug?: string;
+    /**
+     * When `false`, skips the default `server_managed` profile seed so the
+     * org is left in the pre-step2 "no bootstrapped profile" state. Use this
+     * for tests that specifically exercise the `ONBOARDING_INCOMPLETE` gate
+     * or the onboarding-triage logic. Defaults to `true` because real-world
+     * orgs always have at least one profile after onboarding completes, and
+     * `scopedSessionProcedure` enforces that at-use.
+     */
+    withDefaultProfile?: boolean;
+  },
 ): Promise<SeedOrgResult> {
   const helpers = await getTestHelpers(auth);
 
@@ -97,6 +110,10 @@ export async function seedOrg(
   // Use testUtils org helpers (available because organization plugin is loaded)
   await helpers.saveOrganization({ id: orgId, name, slug, createdAt: new Date() });
   await helpers.addMember({ userId, organizationId: orgId, role: "owner" });
+
+  if (overrides?.withDefaultProfile !== false) {
+    await seedProfile(getTestDb(), orgId, { storageMode: "server_managed" });
+  }
 
   return { orgId, slug };
 }
