@@ -256,10 +256,11 @@ Does not own:
 
 * signup redirects the user to `/onboarding`; no personal org is auto-created
 * `/onboarding` presents two options:
-  * **Create a new organization** — existing two-step flow: name/slug the org, then create an initial profile (zero\_knowledge with client-side KDF, or server\_managed)
+  * **Create a new organization** — single-step flow: pick a name and slug. `organizations.create` transactionally creates the org row, the owner `member` row, and a default `server_managed` profile named `internal` so the onboarding gate is satisfied the moment the org exists. The user is redirected straight to `/overview`. Additional profiles (including zero\_knowledge profiles with client-side KDF) are created later from the dashboard's `/profiles` page via `ProfileCreateDrawer`.
   * **Join with an invite code** — paste a raw invite token (`abi_…`) or a full invite URL; the form calls `organizations.members.getInviteInfo` to preview, then `organizations.members.acceptInvite` on confirmation
 * the shared `InviteAcceptForm` component also backs `/join?token=…` (manual-paste route) and the dashboard org-switcher "Join another organization…" dialog — one entry point should never diverge from the others
 * on success, the zustand `useOrgStore.setActiveOrg` is populated so the dashboard layout renders without a stale-org round trip
+* the resume-triage on mount filters by `hasBootstrappedProfile` and only auto-redirects to `/overview` when at least one usable org exists. This keeps the page from looping with the dashboard layout if a user has orgs but none usable (e.g. they deleted their only profile) — they can create a fresh org from the same screen.
 * `createPersonalOrgForUser` in `packages/auth/src/personal-org.ts` is retained for tests and explicit admin seeding only; it is NOT wired to any Better Auth hook
 
 ### Item create (zero\_knowledge)

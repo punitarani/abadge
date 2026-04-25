@@ -61,8 +61,9 @@ describe("onboarding gate (assertOrgOnboardingComplete + userHasUsableOrg)", () 
     const user = await seedUser(auth);
     const { orgId } = await seedOrg(auth, user.userId, { withDefaultProfile: false });
     await seedProfile(db, orgId, { storageMode: "zero_knowledge" });
-    // seedProfile doesn't populate wrappedRootKey, matching the "step 1
-    // created, step 2 never ran" scenario onboarding-triage flags as incomplete.
+    // seedProfile doesn't populate wrappedRootKey, matching the
+    // "ZK profile row created but never bootstrapped" edge case the
+    // onboarding gate must continue to flag as incomplete.
     expect(await orgHasBootstrappedProfile(db, orgId)).toBe(false);
   });
 
@@ -115,8 +116,9 @@ describe("onboarding gate (assertOrgOnboardingComplete + userHasUsableOrg)", () 
   test("scoped call: ONBOARDING_INCOMPLETE when user's org has no bootstrapped profile", async () => {
     const user = await seedUser(auth);
     const { orgId } = await seedOrg(auth, user.userId, { withDefaultProfile: false });
-    // Create only an incomplete ZK profile (no wrappedRootKey) — mirrors
-    // the post-step1/pre-step2 state in the web onboarding flow.
+    // Create only an incomplete ZK profile (no wrappedRootKey) — covers
+    // the edge case of a ZK profile row that exists but never finished
+    // its bootstrap (e.g. the dashboard drawer was abandoned mid-flow).
     await seedProfile(db, orgId, { storageMode: "zero_knowledge" });
 
     const caller = createOperatorCaller(db, auth, user.headers, orgId);

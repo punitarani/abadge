@@ -295,11 +295,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
           createdAt: now,
         });
 
-        // Named "internal" so the web onboarding Step 2 (which passes
-        // name: "internal" to resolveOrCreateProfile) can adopt this row
-        // instead of creating a second profile. Before this name alignment,
-        // every fresh signup ended up with two profiles: the "default" seed
-        // here and the "internal" one from Step 2.
+        // Named "internal" by convention; the dashboard surfaces it as the
+        // org's default operational profile. Creating it here in the same
+        // transaction as the org guarantees the onboarding gate
+        // (`assertOrgOnboardingComplete`) is satisfied the moment the org
+        // exists — the web onboarding flow can therefore redirect straight
+        // to the dashboard without a separate profile-bootstrap step.
         //
         // §ON5 — use the caller-supplied storageMode (default: server_managed).
         // §ON5b — thread KDF fields through for zero_knowledge profiles.
