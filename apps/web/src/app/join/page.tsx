@@ -22,6 +22,13 @@ function JoinPageContent(): React.ReactElement {
 
   // Capture `?token=` once, then strip it from the URL so it doesn't leak via
   // Referer on outbound loads. Same pattern as /invite/accept.
+  //
+  // Ordering matters: tokenRef is populated in the render body (above), which
+  // runs BEFORE any effects on this mount AND before child components mount.
+  // That guarantees InviteAcceptForm's useState lazy initializer below sees
+  // the captured token via the `initialToken` prop. The strip effect fires
+  // only AFTER children have committed, so it can never race the form's
+  // initial render.
   const tokenRef = useRef<string | null>(null);
   if (tokenRef.current === null) {
     tokenRef.current = searchParams.get("token") ?? "";

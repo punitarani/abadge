@@ -488,9 +488,23 @@ export default function OnboardingPage(): React.ReactElement | null {
                   <button
                     type="button"
                     onClick={() => {
+                      // Clear ALL org-creation state on Back, not just mode/step.
+                      // Without this reset, a user who completed step 1 (org row
+                      // already inserted), clicks Back, then re-enters create
+                      // mode and submits step 1 again would call
+                      // organizations.create a second time — leaving the first
+                      // org permanently without a profile. Resetting here
+                      // restores the pre-PR invariant that each page-load can
+                      // create at most one org; if the user did create a partial
+                      // org and abandons it, the next page-mount's resume-triage
+                      // recovers it via decideOnboardingStateFromList.
                       setMode("choose");
                       setCurrentStep(0);
                       setError("");
+                      setOrgId("");
+                      setOrgName("");
+                      setOrgSlug("");
+                      setSlugEdited(false);
                     }}
                     className="text-xs font-medium text-muted-foreground hover:text-foreground"
                   >

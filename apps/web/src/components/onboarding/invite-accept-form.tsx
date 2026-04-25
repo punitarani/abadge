@@ -71,20 +71,27 @@ export function InviteAcceptForm({
     // `parsedToken` in the key means switching tokens re-fetches instead of
     // returning stale data.
     queryKey: ["invite-info", parsedToken],
-    queryFn: () =>
-      browserTrpcClient.organizations.members.getInviteInfo.query({
-        // Safe: enabled gates on parsedToken, so this only runs when non-null.
-        token: parsedToken as string,
-      }),
+    queryFn: () => {
+      // Runtime guard rather than `as string` cast: `enabled` already gates
+      // this on parsedToken, but a future caller invoking infoQuery outside
+      // the current render path would silently send `null` with no compile
+      // warning. Throwing here keeps the contract explicit.
+      if (!parsedToken) throw new Error("Invite token missing");
+      return browserTrpcClient.organizations.members.getInviteInfo.query({
+        token: parsedToken,
+      });
+    },
     enabled: !!parsedToken,
     retry: false,
   });
 
   const acceptMutation = useMutation({
-    mutationFn: () =>
-      browserTrpcClient.organizations.members.acceptInvite.mutate({
-        token: parsedToken as string,
-      }),
+    mutationFn: () => {
+      if (!parsedToken) throw new Error("Invite token missing");
+      return browserTrpcClient.organizations.members.acceptInvite.mutate({
+        token: parsedToken,
+      });
+    },
     onSuccess: (data) => {
       setActiveOrg({
         id: data.organizationId,
