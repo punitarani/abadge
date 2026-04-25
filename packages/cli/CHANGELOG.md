@@ -1,5 +1,25 @@
 # @abadge/cli
 
+## 0.0.5
+
+### Patch Changes
+
+- ef09898: Fix new-user onboarding + dashboard hang. The CLI is unaffected at runtime —
+  this changeset exists because the PR touches a test comment in
+  `packages/trpc/` (a path watched by the CLI release surface) when removing
+  the auto-personal-org Better Auth hook. No CLI code changed.
+- c07c4cf: Gate CLI access on completed onboarding. The server now rejects org-scoped
+  tRPC calls with `ONBOARDING_INCOMPLETE` (HTTP 403) when the user's
+  organization has no bootstrapped profile (`storageMode='server_managed'`
+  OR `wrappedRootKey IS NOT NULL`). The CLI's first call after a device-code
+  approval will surface this error if the user signed up but never finished
+  the profile-bootstrap step. Pre-existing `requireOrgRole` denials that
+  previously surfaced as HTTP 500 (a wrapping bug in `scopedSessionProcedure`)
+  now correctly surface as HTTP 403 — clients should rely on
+  `AbadgeApiError.code` rather than HTTP status to distinguish error classes.
+  No CLI binary code changed; the CLI just propagates the new server
+  behavior.
+
 ## 0.0.4
 
 ### Patch Changes
