@@ -3,18 +3,18 @@ import { member, organization, profiles } from "@abadge/db/schema";
 import { safeAuditInsert } from "./audit-hooks";
 
 /**
- * Creates a personal org + server_managed "internal" profile for a new user.
+ * Creates a personal org + server_managed "internal" profile for a given user.
  *
- * §ON6 — AGENTS.md invariant: "Every user gets a personal org on first login."
- * Called from the Better Auth databaseHooks.user.create.after hook in server.ts.
- * Also exported for direct unit testing.
+ * Explicit seeding helper. Signup does NOT auto-invoke this any more — users
+ * create or join their first organization through the /onboarding flow
+ * (see apps/web/src/app/onboarding/page.tsx). This function is retained for:
+ * - tests that need a seeded org without driving the UI
+ * - potential admin / migration scripts
  *
  * Design decisions:
- * - Always server_managed: the user can create a ZK profile later via the
- *   normal profiles.create flow. Creating a ZK profile here would require
- *   client-supplied KDF material which is not available in a server-side hook.
- * - Never throws: callers swallow errors so that signup is never rejected
- *   because the auto-org creation failed.
+ * - Always server_managed: ZK profiles require client-supplied KDF material,
+ *   which is not available in a server-only helper.
+ * - The caller owns error handling. This function will throw on DB failure.
  */
 export async function createPersonalOrgForUser(
   db: Database,
@@ -66,6 +66,6 @@ export async function createPersonalOrgForUser(
     result: "allowed",
     ipAddress: null,
     surface: "auth",
-    meta: { auto: true, trigger: "user.create.after", slug },
+    meta: { auto: true, trigger: "createPersonalOrgForUser", slug },
   });
 }

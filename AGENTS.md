@@ -237,7 +237,7 @@ Does not own:
 
 ## Data model summary
 
-* `organization` — org-scoped isolation boundary (Better Auth table). Every user gets a personal org on first login. Agents and permissions are scoped to an org.
+* `organization` — org-scoped isolation boundary (Better Auth table). Users create or join their first organization through the onboarding flow (`/onboarding`, `/join`, or org-switcher); signup does not auto-create an org. Agents and permissions are scoped to an org.
 * `profiles` — encryption boundaries within an org. Fields: orgId, name, storageMode (zero\_knowledge or server\_managed), wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion. One profile can hold many items.
 * `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt. Note: `encryptedItemKey` carries the XChaCha20-Poly1305 key-wrap nonce prepended in its first 24 bytes; there is no separate `keyNonce` column.
 * `agents` — service accounts scoped to an org. Fields: orgId, kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
@@ -250,6 +250,16 @@ Does not own:
 * `user`, `session`, `account`, `verification`, `deviceCode` — auth tables (Better Auth).
 
 ## Main flows to protect
+
+### Onboarding (first login)
+
+* signup redirects the user to `/onboarding`; no personal org is auto-created
+* `/onboarding` presents two options:
+  * **Create a new organization** — existing two-step flow: name/slug the org, then create an initial profile (zero\_knowledge with client-side KDF, or server\_managed)
+  * **Join with an invite code** — paste a raw invite token (`abi_…`) or a full invite URL; the form calls `organizations.members.getInviteInfo` to preview, then `organizations.members.acceptInvite` on confirmation
+* the shared `InviteAcceptForm` component also backs `/join?token=…` (manual-paste route) and the dashboard org-switcher "Join another organization…" dialog — one entry point should never diverge from the others
+* on success, the zustand `useOrgStore.setActiveOrg` is populated so the dashboard layout renders without a stale-org round trip
+* `createPersonalOrgForUser` in `packages/auth/src/personal-org.ts` is retained for tests and explicit admin seeding only; it is NOT wired to any Better Auth hook
 
 ### Item create (zero\_knowledge)
 

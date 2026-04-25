@@ -5,14 +5,12 @@
  *         profile INSERT, ignoring the caller's choice.
  * §ON5b — the same INSERT omitted wrappedRootKey/kdfSalt/kdfParams for ZK,
  *          leaving the profile structurally unusable.
- * §ON6 — no hook wired to auto-create a personal org on signup, so fresh
- *         users had 0 orgs (violates the AGENTS.md invariant).
- *
- * NOTE on §ON6 hook coverage: Better Auth's testUtils.saveUser does a raw
- * adapter insert that bypasses the databaseHooks pipeline. The hook wiring
- * in server.ts is trivially reviewable (one line). The unit below tests the
- * core invariant — createPersonalOrgForUser — directly against the DB,
- * which is the meaningful behaviour to pin.
+ * §ON6 — createPersonalOrgForUser seeding helper. Historically this was wired
+ *         to Better Auth's user.create.after hook to guarantee every signup
+ *         landed with one org; the AGENTS.md invariant has since been relaxed
+ *         and onboarding is user-driven via /onboarding + /join. The function
+ *         is retained as an explicit seeding helper (tests + admin scripts)
+ *         and the test below pins its core invariant.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
@@ -41,10 +39,10 @@ describe("new-user flow (§ON5 §ON5b §ON6)", () => {
   // ---------------------------------------------------------------------------
 
   test("§ON6 — createPersonalOrgForUser seeds 1 org + server_managed profile for a fresh user", async () => {
-    // seedUser inserts the user row via testUtils (raw adapter insert).
-    // We call createPersonalOrgForUser directly — that is the unit §ON6 fixes.
-    // The hook wiring (server.ts databaseHooks.user.create.after) is a one-liner
-    // and is trivially reviewable.
+    // seedUser inserts the user row via testUtils (raw adapter insert). The
+    // function is no longer wired to any Better Auth hook; it is exercised
+    // here to pin the seeding contract for tests and admin scripts that
+    // still depend on it.
     const seedResult = await seedUser(auth);
 
     await createPersonalOrgForUser(db, {
