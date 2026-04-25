@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronsUpDown, TicketCheck } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, TicketCheck } from "lucide-react";
 import { useState } from "react";
+import { CreateOrgForm } from "@/components/onboarding/create-org-form";
 import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import {
   Dialog,
@@ -77,6 +78,7 @@ export function OrgSwitcher(): React.ReactElement {
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const queryClient = useQueryClient();
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
@@ -149,6 +151,16 @@ export function OrgSwitcher(): React.ReactElement {
               onSelect={(e) => {
                 // Keep the dropdown from fighting the dialog for focus
                 e.preventDefault();
+                setCreateDialogOpen(true);
+              }}
+              className="gap-2"
+            >
+              <Building2 className="size-4" />
+              <span>Create organization…</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
                 setJoinDialogOpen(true);
               }}
               className="gap-2"
@@ -159,6 +171,29 @@ export function OrgSwitcher(): React.ReactElement {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        {/* Wider dialog: the two-step form has a progress bar plus form fields,
+            and at the default width step 2 (storage mode picker + ZK password
+            inputs) gets cramped. */}
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create an organization</DialogTitle>
+            <DialogDescription>
+              You'll be the owner. Set up an internal profile to start storing secrets.
+            </DialogDescription>
+          </DialogHeader>
+          {/* CreateOrgForm sets the active org and invalidates the organizations
+              list on success. We just need to close the dialog here. */}
+          <CreateOrgForm
+            variant="dialog"
+            onSuccess={() => {
+              setCreateDialogOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
         <DialogContent>
           <DialogHeader>
