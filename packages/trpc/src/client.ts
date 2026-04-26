@@ -128,6 +128,10 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
   });
 }
 
+/** SPA cache profile for the dashboard — see comment block on the QueryClient defaults below. */
+const ONE_MINUTE_MS = 60 * 1000;
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
 export function createTrpcQueryClient(config?: QueryClientConfig): QueryClient {
   return new QueryClient({
     defaultOptions: {
@@ -144,8 +148,8 @@ export function createTrpcQueryClient(config?: QueryClientConfig): QueryClient {
         //     ticker; tab-switching shouldn't trigger a refetch storm.
         //   - refetchOnReconnect "always": after network recovery, force fresh
         //     data even if technically still within staleTime.
-        staleTime: 60_000,
-        gcTime: 10 * 60_000,
+        staleTime: ONE_MINUTE_MS,
+        gcTime: TEN_MINUTES_MS,
         refetchOnWindowFocus: false,
         refetchOnReconnect: "always",
         retry: false,

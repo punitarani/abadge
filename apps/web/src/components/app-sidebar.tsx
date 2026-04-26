@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LifeBuoy,
+  type LucideIcon,
   ScrollText,
   Send,
   Settings,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -53,7 +54,7 @@ const navGroups = [
   },
 ] as const satisfies ReadonlyArray<{
   label: string;
-  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: typeof Columns3 }>;
+  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: LucideIcon }>;
 }>;
 
 const secondaryNavItems = [
@@ -64,15 +65,47 @@ const secondaryNavItems = [
 const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
 
 /**
- * Pointer/focus handlers wired to a route's prefetcher. We fire on both
- * pointerenter (mouse hover) and focus (keyboard tab) so keyboard-only users
- * get the same warm-cache benefit as mouse users.
+ * "Settle"-style hover/focus debounce: prefetch fires only if the user stays
+ * on the link for `HOVER_DEBOUNCE_MS`, and cancels if they move on first.
+ * This avoids wasted requests when the cursor grazes the link en route to
+ * another target. TanStack Query's dedupe would handle request amplification
+ * but does not help with the bandwidth cost of an unnecessary first request.
  */
-function usePrefetchHandlers(prefetch: () => void): {
+const HOVER_DEBOUNCE_MS = 100;
+
+interface PrefetchHandlers {
   onPointerEnter: () => void;
+  onPointerLeave: () => void;
   onFocus: () => void;
-} {
-  return useMemo(() => ({ onPointerEnter: prefetch, onFocus: prefetch }), [prefetch]);
+  onBlur: () => void;
+}
+
+function usePrefetchHandlers(prefetch: () => void): PrefetchHandlers {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const start = useCallback(() => {
+    cancel();
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      prefetch();
+    }, HOVER_DEBOUNCE_MS);
+  }, [prefetch, cancel]);
+
+  useEffect(() => cancel, [cancel]);
+
+  return {
+    onPointerEnter: start,
+    onPointerLeave: cancel,
+    onFocus: start,
+    onBlur: cancel,
+  };
 }
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
@@ -186,7 +219,7 @@ function NavLink({
 }: {
   path: PrefetchableRoute;
   label: string;
-  icon: typeof Columns3;
+  icon: LucideIcon;
   pathname: string;
   prefetch: () => void;
 }): React.ReactElement {
