@@ -116,13 +116,44 @@ The cell numbering is **{scenario}.{variation}** where each scenario has 3 varia
 
 **Note on auth path**: Running the CLI against a real API requires a running daemon + authenticated session. With `ABADGE_SESSION_TOKEN="test"` set, the CLI surfaces a clean `Unauthorized` error from the API (proving the request reaches the server). Without auth, the CLI's `daemonAuthHeaders()` path reports a parse error from the user's pre-existing `~/.abadge/` daemon state — unrelated to the new feature; reproduces with any CLI command on this developer machine. End-to-end auth-and-API testing is gated by Phase 4 (Doppler-managed env).
 
-## Phase 4 — End-to-end (best-effort; gated by Doppler/DB availability)
+## Phase 4 — End-to-end against live stack 🟢
+
+Live stack came up via `doppler run -- turbo dev --filter='!@abadge/docs'` (Mintlify is the only blocker; everything else needs no extra setup). Test harness at `scripts/e2e-multiperm.sh` exercises the running API/DB/CLI directly with real Better Auth sessions and real Drizzle writes.
+
+**Final tally: 41 pass / 0 fail across 9 scenario classes + 7 pentests + 6 CLI smoke tests.** Hits real Postgres, real Hono+tRPC API on Cloudflare worker emulator, real CLI binary, real Better Auth bearer-token sessions.
 
 | # | Surface | Status | Notes |
 |---|---|---|---|
-| 4.1 | `bun run dev` (full stack) | 🟡 SKIPPED | requires Doppler-managed env vars; documented as remaining manual verification |
-| 4.2 | Browser grant flow | 🟡 SKIPPED | depends on 4.1 |
-| 4.3 | `bun run mcp` | 🟡 SKIPPED | depends on Doppler |
+| 4.0 | `doppler run -- turbo dev` (web + API up) | 🟢 PASS | API on :8787, Web on :3000 (`mint`-only failure isolated via filter) |
+| 4.1 | Postgres migrations applied | 🟢 PASS | `bun run db:push` clean |
+| 4.2 | Better Auth session (email signup → bearer token) | 🟢 PASS | bearer plugin emits `set-auth-token` header |
+| 4.A.1-3 | Live: single-cap variations (3) | 🟢 PASS | local+SM+mount_env, remote+SM+reveal, mcp+SM+mount_file |
+| 4.B.1-3 | Live: 3-cap batch / shared expiry / 2-cap batch | 🟢 PASS | atomic transactions write all rows |
+| 4.C.1-3 | Live: matrix violation rejection (storage, locality, locality-unreachable) | 🟢 PASS | INVALID_CAPABILITY_STORAGE / INVALID_CAPABILITY_LOCALITY with `meta.invalidCapabilities` |
+| 4.D.1-3 | Live: mixed valid+invalid batch atomic rollback | 🟢 PASS | 0 rows landed; meta lists all 3 offenders |
+| 4.E.1-3 | Live: pre-grant overlap, in-input dup, empty array | 🟢 PASS | PERMISSION_ALREADY_EXISTS with `meta.duplicateCapabilities`; schema BAD_REQUEST for in-input dups + empty array |
+| 4.G.1-3 | Live: list AND-combined / agent-only / no-filter | 🟢 PASS | filters compose correctly |
+| 4.H.1-3 | Live: revoke single chip / re-grant / revoke all | 🟢 PASS | siblings intact, no PERMISSION_ALREADY_EXISTS on re-grant |
+| 4.Pen.1 | Pentest: bogus session token | 🟢 UNAUTHORIZED |
+| 4.Pen.2 | Pentest: no auth at all | 🟢 UNAUTHORIZED |
+| 4.Pen.3 | Pentest: cross-org agent ID injected | 🟢 AGENT_NOT_FOUND |
+| 4.Pen.4 | Pentest: cross-org item ID injected | 🟢 ITEM_NOT_FOUND |
+| 4.Pen.5 | Pentest: tampered org header (org2 header on org1 op) | 🟢 AGENT_NOT_FOUND (org isolation) |
+| 4.Pen.6 | Pentest: huge dup-only capabilities array | 🟢 BAD_REQUEST (schema `Schema.NonEmptyArray` distinct filter) |
+| 4.Pen.7 | Pentest: SQL-injection-shaped capability value | 🟢 BAD_REQUEST (enum-schema rejection); permissions table queryable post-attack |
+| 4.CLI.1 | CLI binary: repeated `--capability` flag → 2 perms | 🟢 PASS | "Granted 2 permissions" |
+| 4.CLI.2 | CLI binary: comma-separated `--capability` → 3 perms | 🟢 PASS | "Granted 3 permissions" |
+| 4.CLI.3 | CLI binary: surfaces PERMISSION_ALREADY_EXISTS | 🟢 PASS | error envelope reaches CLI hint output |
+| 4.CLI.4 | CLI binary: in-input dup rejected before SDK call | 🟢 PASS | client-side dedup check fires |
+| 4.CLI.5 | CLI binary: list returns 3 rows for an agent | 🟢 PASS | `--json` output parsed |
+| 4.CLI.6 | CLI binary: surfaces INVALID_CAPABILITY_STORAGE/LOCALITY | 🟢 PASS | matrix error with hint |
+| 4.Audit | Audit log: ≥10 `permission.create` rows + ≥4 `permission.revoke` rows | 🟢 PASS | one-row-per-cap invariant preserved end-to-end |
+
+### Notes from live testing
+
+- Rate limit is 100 req/min per org. The full E2E hits ~80 reqs and passes inside one window. CI-style runs may need to either insert waits or lift the limit via env.
+- The CLI's `~/.abadge/config.json` `apiUrl` takes precedence over `ABADGE_API_URL`. Tests must either move the user config aside or write a localhost-pointing config. The harness writes a config with `activeOrgId` set so multi-org users skip the `ORG_HEADER_REQUIRED` failure path.
+- Items.create input shape is `{storageMode, payload}` — no `profileId` (the SM branch creates items without a profile binding; ZK items use `id` for AAD binding). Items.payload.kind must be one of `ITEM_KINDS` (login, api_key, token, json, certificate, ssh_key, opaque); the harness uses `token` with `value` field for simplicity.
 
 ---
 
@@ -149,8 +180,8 @@ The cell numbering is **{scenario}.{variation}** where each scenario has 3 varia
 - CLI parser: repeated flag, comma-separated, in-input duplicate, missing required, unknown enum, --help text
 - Storybook story compatibility (verified via typecheck)
 
-**End-to-end (Phase 4)**: 🟡 SKIPPED
-- Requires Doppler-managed env (Better Auth OAuth credentials, encryption key, etc.). The integration matrix covers the same code path web/CLI/MCP funnel through, so the contract is verified at every layer except the HTTP transport itself, which is provided by tRPC + Hono and not modified by this change.
+**End-to-end (Phase 4)**: 41/41 🟢 against live stack via `doppler run -- turbo dev --filter='!@abadge/docs'`
+- 9 happy/adversarial/edge scenarios, 7 pentests, 6 CLI binary tests, plus DB-direct audit log verification. Real Postgres, real Hono+tRPC API on Cloudflare worker emulator, real Better Auth sessions, real CLI binary. Test harness saved at `scripts/e2e-multiperm.sh`.
 
 **Total integration tests run for this PR**: 184 (157 prior + 27 new matrix), 0 failures, ~6.9s parallel runtime across 28 files. Bun's default behavior is to run test files in parallel; sequential within a file.
 
