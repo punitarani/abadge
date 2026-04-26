@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -29,6 +30,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { type PrefetchableRoute, useRoutePrefetcher } from "@/hooks/use-route-prefetcher";
 
 const navGroups = [
   {
@@ -49,17 +51,36 @@ const navGroups = [
     label: "Monitor",
     items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
   },
-];
+] as const satisfies ReadonlyArray<{
+  label: string;
+  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: typeof Columns3 }>;
+}>;
 
 const secondaryNavItems = [
   { path: "support", label: "Support", icon: LifeBuoy },
   { path: "feedback", label: "Feedback", icon: Send },
-];
+] as const;
 
-const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }];
+const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
+
+/**
+ * Pointer/focus handlers wired to a route's prefetcher. We fire on both
+ * pointerenter (mouse hover) and focus (keyboard tab) so keyboard-only users
+ * get the same warm-cache benefit as mouse users.
+ */
+function usePrefetchHandlers(prefetch: () => void): {
+  onPointerEnter: () => void;
+  onFocus: () => void;
+} {
+  return useMemo(() => ({ onPointerEnter: prefetch, onFocus: prefetch }), [prefetch]);
+}
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
+  const prefetchers = useRoutePrefetcher();
+
+  const overviewHandlers = usePrefetchHandlers(prefetchers.overview);
+  const settingsHandlers = usePrefetchHandlers(prefetchers.settings);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -73,7 +94,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
-                  <Link href="/overview">
+                  <Link href="/overview" {...overviewHandlers}>
                     <LayoutDashboard />
                     <span>Overview</span>
                   </Link>
@@ -89,20 +110,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {group.items.map((item) => {
-                  const href = `/${item.path}`;
-                  const isActive = pathname.startsWith(href);
-                  return (
-                    <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton asChild isActive={isActive}>
-                        <Link href={href}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    path={item.path}
+                    label={item.label}
+                    icon={item.icon}
+                    pathname={pathname}
+                    prefetch={prefetchers[item.path]}
+                  />
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -140,7 +157,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href}>
+                      <Link href={href} {...settingsHandlers}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
@@ -157,5 +174,33 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+function NavLink({
+  path,
+  label,
+  icon: Icon,
+  pathname,
+  prefetch,
+}: {
+  path: PrefetchableRoute;
+  label: string;
+  icon: typeof Columns3;
+  pathname: string;
+  prefetch: () => void;
+}): React.ReactElement {
+  const href = `/${path}`;
+  const isActive = pathname.startsWith(href);
+  const handlers = usePrefetchHandlers(prefetch);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive}>
+        <Link href={href} {...handlers}>
+          <Icon />
+          <span>{label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
