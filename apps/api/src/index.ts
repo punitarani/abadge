@@ -84,6 +84,7 @@ app.notFound((c) =>
 
 // §ENV2c — canonical envelope for unhandled errors.
 app.onError((err, c) => {
+  console.error("[onError]", err);
   if (err instanceof HTTPException) {
     const status = err.status;
     return c.json(
