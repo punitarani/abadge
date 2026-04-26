@@ -4,7 +4,7 @@ import type { ItemSummary } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useQueryStates } from "nuqs";
+import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +47,7 @@ export default function ItemsListPage(): React.ReactElement {
   const [filters, setFilters] = useQueryStates(itemsFilterParsers, {
     history: "replace",
     clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
   });
   const { q: search, storage: storageFilter, create: createOpen } = filters;
 

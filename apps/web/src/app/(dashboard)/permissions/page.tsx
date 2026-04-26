@@ -4,7 +4,7 @@ import type { Agent, ItemSummary, Permission } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useQueryStates } from "nuqs";
+import { debounce, useQueryStates } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
@@ -248,6 +248,7 @@ export default function PermissionsListPage(): React.ReactElement {
   const [filters, setFilters] = useQueryStates(permissionsFilterParsers, {
     history: "replace",
     clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
   });
   const {
     q: search,

@@ -8,10 +8,10 @@ import {
   type Profile,
 } from "@abadge/core";
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useQueryStates } from "nuqs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { debounce, useQueryStates } from "nuqs";
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,7 +111,6 @@ function AuditRow({
 function AuditTableBody({
   error,
   isPending,
-  isInitialLoad,
   entries,
   agentNames,
   itemLabels,
@@ -119,7 +118,6 @@ function AuditTableBody({
 }: {
   error: Error | null;
   isPending: boolean;
-  isInitialLoad: boolean;
   entries: AuditEntry[];
   agentNames: Map<string, string>;
   itemLabels: Map<string, string>;
@@ -135,7 +133,7 @@ function AuditTableBody({
     );
   }
 
-  if (isPending && isInitialLoad) {
+  if (isPending) {
     return (
       <TableRow>
         <TableCell colSpan={COLUMN_COUNT} className="py-8 text-center text-muted-foreground">
@@ -180,6 +178,7 @@ export default function AuditPage(): React.ReactElement {
   const [filters, setFilters] = useQueryStates(auditFilterParsers, {
     history: "replace",
     clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
   });
   const {
     q: search,
@@ -189,69 +188,42 @@ export default function AuditPage(): React.ReactElement {
     range: dateRange,
   } = filters;
 
-  // Accumulated entries for "Load more" pattern
-  const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-
-  const apiInput = useMemo(
+  // Server-side filter slice — drives the queryKey. When this changes,
+  // useInfiniteQuery resets pages atomically (no manual cursor/initialLoad
+  // bookkeeping, no race between filter and cursor state).
+  const serverFilters = useMemo(
     () => ({
-      limit: PAGE_SIZE,
-      cursor,
       ...(eventTypeFilter !== "all" ? { eventType: eventTypeFilter } : {}),
       ...(resultFilter !== "all" ? { result: resultFilter } : {}),
       ...(profileFilter !== "all" ? { profileId: profileFilter } : {}),
     }),
-    [cursor, eventTypeFilter, resultFilter, profileFilter],
+    [eventTypeFilter, resultFilter, profileFilter],
   );
 
-  const auditQuery = useQuery({
-    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", apiInput),
-    queryFn: async () => {
-      const result = await browserTrpcClient.audit.list.query(apiInput);
-      if (isInitialLoad) {
-        setAllEntries(result.entries);
-        setIsInitialLoad(false);
-      } else {
-        setAllEntries((prev) => [...prev, ...result.entries]);
-      }
-      setNextCursor(result.nextCursor ?? null);
-      return result;
-    },
+  const auditQuery = useInfiniteQuery({
+    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", serverFilters),
+    queryFn: ({ pageParam }) =>
+      browserTrpcClient.audit.list.query({
+        limit: PAGE_SIZE,
+        ...(pageParam ? { cursor: pageParam } : {}),
+        ...serverFilters,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeOrgId,
-    // Prevent automatic refetches from duplicating accumulated entries.
-    // Each cursor-based page is a distinct query key, so pagination still works.
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  // Reset pagination when server-side filters change. Both paths are intentional:
-  // - onChange handlers below call resetPagination synchronously so the UI-driven
-  //   case batches the cursor reset with the filter update in one render. Without
-  //   it, the next render's queryFn would fire with new filter + stale cursor, and
-  //   its setAllEntries(prev => [...]) accumulator would run before the second fetch
-  //   supersedes it, producing transient mismatched rows.
-  // - The useEffect catches URL-driven changes (back/forward navigation, shared
-  //   links) where no onChange fires; the brief race window self-corrects within
-  //   one render after the effect commits.
-  const resetPagination = useCallback(() => {
-    setAllEntries([]);
-    setCursor(undefined);
-    setNextCursor(null);
-    setIsInitialLoad(true);
-  }, []);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset when server-side filters change
-  useEffect(() => {
-    resetPagination();
-  }, [eventTypeFilter, resultFilter, profileFilter]);
+  const allEntries = useMemo<AuditEntry[]>(
+    () => auditQuery.data?.pages.flatMap((p) => p.entries) ?? [],
+    [auditQuery.data?.pages],
+  );
+  const hasMore = auditQuery.hasNextPage;
 
   function handleLoadMore(): void {
-    if (nextCursor) {
-      setCursor(nextCursor);
-    }
+    void auditQuery.fetchNextPage();
   }
 
   // Lookup data
@@ -309,9 +281,6 @@ export default function AuditPage(): React.ReactElement {
     return entries;
   }, [allEntries, search, dateRange, agentNames, itemLabels]);
 
-  const totalLoaded = allEntries.length;
-  const hasMore = Boolean(nextCursor);
-
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -346,10 +315,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={eventTypeFilter}
-          onChange={(e) => {
-            void setFilters({ event: e.target.value as typeof eventTypeFilter });
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ event: e.target.value as typeof eventTypeFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All events</option>
@@ -362,10 +328,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={resultFilter}
-          onChange={(e) => {
-            void setFilters({ result: e.target.value as typeof resultFilter });
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ result: e.target.value as typeof resultFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All results</option>
@@ -378,10 +341,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={profileFilter}
-          onChange={(e) => {
-            void setFilters({ profile: e.target.value });
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ profile: e.target.value })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All profiles</option>
@@ -421,7 +381,6 @@ export default function AuditPage(): React.ReactElement {
             <AuditTableBody
               error={auditQuery.error}
               isPending={auditQuery.isPending}
-              isInitialLoad={isInitialLoad}
               entries={filteredEntries}
               agentNames={agentNames}
               itemLabels={itemLabels}
@@ -435,16 +394,17 @@ export default function AuditPage(): React.ReactElement {
       {filteredEntries.length > 0 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Showing {filteredEntries.length} of {hasMore ? `${totalLoaded}+` : totalLoaded} events
+            Showing {filteredEntries.length} of{" "}
+            {hasMore ? `${allEntries.length}+` : allEntries.length} events
           </span>
           {hasMore && (
             <Button
               variant="outline"
               size="sm"
               onClick={handleLoadMore}
-              disabled={auditQuery.isFetching}
+              disabled={auditQuery.isFetchingNextPage}
             >
-              {auditQuery.isFetching ? "Loading..." : "Load more"}
+              {auditQuery.isFetchingNextPage ? "Loading..." : "Load more"}
             </Button>
           )}
         </div>

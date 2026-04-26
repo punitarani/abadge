@@ -4,7 +4,7 @@ import type { Profile } from "@abadge/core";
 import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useQueryStates } from "nuqs";
+import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { ProfileCreateDrawer } from "@/components/dashboard/profile-create-drawer";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,7 @@ export default function ProfilesListPage(): React.ReactElement {
   const [filters, setFilters] = useQueryStates(profilesFilterParsers, {
     history: "replace",
     clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
   });
   const { q: search, storage: storageFilter, vault: vaultFilter, create: createOpen } = filters;
 

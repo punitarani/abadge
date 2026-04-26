@@ -4,7 +4,7 @@ import type { Agent, AgentAuthMethod, AgentKind } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useQueryStates } from "nuqs";
+import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +68,7 @@ export default function AgentsListPage(): React.ReactElement {
   const [filters, setFilters] = useQueryStates(agentsFilterParsers, {
     history: "replace",
     clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
   });
   const {
     q: search,
