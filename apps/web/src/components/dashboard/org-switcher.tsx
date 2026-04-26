@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronsUpDown, TicketCheck } from "lucide-react";
+import { Building2, Check, ChevronsUpDown, TicketCheck } from "lucide-react";
 import { useState } from "react";
+import { CreateOrgForm } from "@/components/onboarding/create-org-form";
 import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import {
   Dialog,
@@ -54,6 +55,7 @@ interface Org {
   slug: string;
   logo: string | null;
   createdAt: string;
+  hasBootstrappedProfile: boolean;
 }
 
 function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.ReactElement {
@@ -80,6 +82,7 @@ export function OrgSwitcher(): React.ReactElement {
   const userId = session?.user?.id ?? null;
   const queryClient = useQueryClient();
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
@@ -88,6 +91,21 @@ export function OrgSwitcher(): React.ReactElement {
 
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
   const currentOrg = orgs.find((o) => o.id === activeOrgId);
+
+  // If a previous "Create organization…" attempt left an org row without a
+  // bootstrapped profile (user dismissed the dialog after step 1), seed the
+  // dialog at step 2 for that org instead of letting the user create a fresh
+  // duplicate. Mirrors /onboarding's resume-triage. Radix unmounts dialog
+  // content on close, so CreateOrgForm reads this seed fresh on each open.
+  const incompleteOrg = orgs.find((o) => !o.hasBootstrappedProfile);
+  const createDialogInitialOrg = incompleteOrg
+    ? {
+        orgId: incompleteOrg.id,
+        orgName: incompleteOrg.name,
+        orgSlug: incompleteOrg.slug,
+        step: 1 as const,
+      }
+    : undefined;
 
   function handleSelect(org: Org): void {
     if (!userId) return;
@@ -123,7 +141,16 @@ export function OrgSwitcher(): React.ReactElement {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <OrgIcon
-                org={currentOrg ?? { id: "", name: "?", slug: "", logo: null, createdAt: "" }}
+                org={
+                  currentOrg ?? {
+                    id: "",
+                    name: "?",
+                    slug: "",
+                    logo: null,
+                    createdAt: "",
+                    hasBootstrappedProfile: false,
+                  }
+                }
               />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{currentOrg?.name ?? "Select org"}</span>
@@ -153,6 +180,16 @@ export function OrgSwitcher(): React.ReactElement {
               onSelect={(e) => {
                 // Keep the dropdown from fighting the dialog for focus
                 e.preventDefault();
+                setCreateDialogOpen(true);
+              }}
+              className="gap-2"
+            >
+              <Building2 className="size-4" />
+              <span>Create organization…</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
                 setJoinDialogOpen(true);
               }}
               className="gap-2"
@@ -163,6 +200,30 @@ export function OrgSwitcher(): React.ReactElement {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        {/* Wider dialog: the two-step form has a progress bar plus form fields,
+            and at the default width step 2 (storage mode picker + ZK password
+            inputs) gets cramped. */}
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create an organization</DialogTitle>
+            <DialogDescription>
+              You'll be the owner. Set up an internal profile to start storing secrets.
+            </DialogDescription>
+          </DialogHeader>
+          {/* CreateOrgForm sets the active org and invalidates the organizations
+              list on success. We just need to close the dialog here. */}
+          <CreateOrgForm
+            variant="dialog"
+            initialOrg={createDialogInitialOrg}
+            onSuccess={() => {
+              setCreateDialogOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={joinDialogOpen} onOpenChange={setJoinDialogOpen}>
         <DialogContent>
           <DialogHeader>

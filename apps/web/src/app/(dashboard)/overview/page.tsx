@@ -26,7 +26,7 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
-import { countDefaultProfiles } from "./count-default-profiles";
+import { countProfilesByStorage, type ProfilesByStorage } from "./count-profiles-by-storage";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -50,7 +50,7 @@ const AUDIT_COLUMN_COUNT = 6;
 function SummaryCards({
   isLoading,
   profileCount,
-  defaultProfileCount,
+  profilesByStorage,
   itemCount,
   agentCount,
   activeAgentCount,
@@ -62,7 +62,7 @@ function SummaryCards({
 }: {
   isLoading: boolean;
   profileCount: number;
-  defaultProfileCount: number;
+  profilesByStorage: ProfilesByStorage;
   itemCount: number;
   agentCount: number;
   activeAgentCount: number;
@@ -77,7 +77,11 @@ function SummaryCards({
       <SummaryCard
         label="Profiles under custody"
         value={isLoading ? "..." : profileCount}
-        subtitle={isLoading ? "Loading..." : `${defaultProfileCount} default (internal)`}
+        subtitle={
+          isLoading
+            ? "Loading..."
+            : `${profilesByStorage.serverManaged} server-managed · ${profilesByStorage.zeroKnowledge} zero-knowledge`
+        }
       />
       <SummaryCard
         label="Items"
@@ -279,7 +283,7 @@ export default function OverviewPage(): React.ReactElement {
     return diff > 0 && diff < sevenDaysMs;
   }).length;
 
-  const defaultProfileCount = countDefaultProfiles(profiles);
+  const profilesByStorage = countProfilesByStorage(profiles);
 
   const agentNames = useMemo(() => buildAuditAgentNameMap(agents), [agents]);
   const itemLabels = useMemo(() => buildAuditItemLabelMap(items), [items]);
@@ -320,7 +324,7 @@ export default function OverviewPage(): React.ReactElement {
       <SummaryCards
         isLoading={isLoading}
         profileCount={profiles.length}
-        defaultProfileCount={defaultProfileCount}
+        profilesByStorage={profilesByStorage}
         itemCount={items.length}
         agentCount={agents.length}
         activeAgentCount={activeAgents.length}

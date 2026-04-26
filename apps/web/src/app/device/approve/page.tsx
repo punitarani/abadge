@@ -5,7 +5,7 @@ import { Info, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { decideOnboardingStateFromList } from "@/app/onboarding/onboarding-triage";
+import { decideResumeAction } from "@/app/onboarding/onboarding-triage";
 import { AuthShell } from "@/components";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
@@ -75,8 +75,13 @@ function useCountdown(ttlSeconds: number): number {
 async function resolveApprovalRedirect(): Promise<string> {
   try {
     const result = await browserTrpcClient.organizations.list.query();
-    const decision = decideOnboardingStateFromList(result.organizations);
-    return decision.step === "redirect" ? "/overview" : "/onboarding";
+    // decideResumeAction returns "redirect" when the user has any usable
+    // (bootstrapped-profile) org, "resume-profile" when an incomplete org
+    // exists, and "fall-through" when no orgs exist. Only the first lets
+    // the CLI session do anything useful, so anything else routes back
+    // through onboarding.
+    const decision = decideResumeAction(result.organizations);
+    return decision.kind === "redirect" ? "/overview" : "/onboarding";
   } catch {
     // If the lookup fails we still need to send the user somewhere. /onboarding
     // is the safer default: the onboarding page itself re-triages on mount and

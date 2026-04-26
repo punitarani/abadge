@@ -5,224 +5,20 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { CreateOrgForm } from "@/components/onboarding/create-org-form";
 import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
-import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PasswordStrength } from "@/components/ui/password-strength";
-import { ProgressSteps } from "@/components/ui/progress-steps";
 import { authClient } from "@/lib/auth-client";
-import { bootstrapZkProfile, resolveOrCreateProfile } from "@/lib/profile-bootstrap";
-import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { browserTrpcClient } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
-import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
+import { decideResumeAction } from "./onboarding-triage";
 
 type OnboardingMode = "choose" | "create" | "join";
 
-const STEPS = [{ label: "Organization" }, { label: "Internal profile" }];
-
-function dicebearUrl(seed: string): string {
-  return `https://api.dicebear.com/9.x/shapes/svg?seed=${encodeURIComponent(seed)}`;
-}
-
-type SlugStatus = "idle" | "checking" | "available" | "taken";
-
-function SlugStatusIndicator({ status }: { status: SlugStatus }): React.ReactElement | null {
-  if (status === "checking") {
-    return <span className="shrink-0 text-xs text-muted-foreground">Checking...</span>;
-  }
-  if (status === "available") {
-    return <span className="shrink-0 text-xs text-emerald-600">Available</span>;
-  }
-  if (status === "taken") {
-    return <span className="shrink-0 text-xs text-red-600">Taken</span>;
-  }
-  return null;
-}
-
-function useSlugStatus(slug: string): SlugStatus {
-  const [status, setStatus] = useState<SlugStatus>("idle");
-
-  useEffect(() => {
-    if (!slug || slug.length < 2) {
-      setStatus("idle");
-      return;
-    }
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-      setStatus("idle");
-      return;
-    }
-    setStatus("checking");
-    const timer = setTimeout(async () => {
-      try {
-        const result = await browserTrpcClient.organizations.checkSlug.query({ slug });
-        setStatus(result.available ? "available" : "taken");
-      } catch {
-        setStatus("idle");
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [slug]);
-
-  return status;
-}
-
-function toSlugPreview(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function validateStep2Input(
-  profileName: string,
-  storageMode: string,
-  profilePassword: string,
-  confirmPassword: string,
-): string | null {
-  if (!profileName.trim()) {
-    return "Profile name is required";
-  }
-  if (storageMode === "zero_knowledge") {
-    if (profilePassword.length < 12) {
-      return "Profile password must be at least 12 characters";
-    }
-    if (profilePassword !== confirmPassword) {
-      return "Passwords do not match";
-    }
-  }
-  return null;
-}
-
-interface Step1Params {
-  userId: string;
+interface ResumeState {
+  orgId: string;
   orgName: string;
   orgSlug: string;
-  slugStatus: SlugStatus;
-  setActiveOrg: (
-    userId: string,
-    org: { id: string; slug: string; name: string; logo: string | null },
-  ) => void;
-  setOrgId: (id: string) => void;
-  setCurrentStep: (step: number) => void;
-  setLoading: (v: boolean) => void;
-  setError: (v: string) => void;
-}
-
-async function submitStep1({
-  userId,
-  orgName,
-  orgSlug,
-  slugStatus,
-  setActiveOrg,
-  setOrgId,
-  setCurrentStep,
-  setLoading,
-  setError,
-}: Step1Params): Promise<void> {
-  if (!orgName.trim()) {
-    setError("Organization name is required");
-    return;
-  }
-  if (slugStatus === "taken") {
-    setError("This slug is already taken. Choose a different one.");
-    return;
-  }
-  setLoading(true);
-  try {
-    const result = await browserTrpcClient.organizations.create.mutate({
-      name: orgName.trim(),
-      slug: orgSlug || undefined,
-      logo: orgSlug ? dicebearUrl(orgSlug) : undefined,
-    });
-    const org = result.organization;
-
-    // If no custom slug was provided, the server generated one — update the logo with the canonical slug
-    if (!orgSlug && !org.logo) {
-      const logoUrl = dicebearUrl(org.slug);
-      await browserTrpcClient.organizations.update.mutate({
-        orgId: org.id,
-        logo: logoUrl,
-      });
-      org.logo = logoUrl;
-    }
-
-    setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
-    setOrgId(org.id);
-    setCurrentStep(1);
-  } catch (err) {
-    setError(getClientErrorMessage(err, "Failed to create organization"));
-  } finally {
-    setLoading(false);
-  }
-}
-
-interface Step2Params {
-  orgId: string;
-  profileName: string;
-  storageMode: "zero_knowledge" | "server_managed";
-  profilePassword: string;
-  confirmPassword: string;
-  setLoading: (v: boolean) => void;
-  setError: (v: string) => void;
-  onSuccess: () => void;
-}
-
-async function submitStep2({
-  orgId,
-  profileName,
-  storageMode,
-  profilePassword,
-  confirmPassword,
-  setLoading,
-  setError,
-  onSuccess,
-}: Step2Params): Promise<void> {
-  const validationError = validateStep2Input(
-    profileName,
-    storageMode,
-    profilePassword,
-    confirmPassword,
-  );
-  if (validationError) {
-    setError(validationError);
-    return;
-  }
-  setLoading(true);
-  try {
-    const profileId = await resolveOrCreateProfile(browserTrpcClient, {
-      orgId,
-      name: profileName.trim(),
-      storageMode,
-    });
-    // If bootstrap fails after the profile row is created, delete the orphan so
-    // the user can retry onboarding with the same profile name. Rollback errors
-    // are swallowed (logged only) — the original bootstrap error still surfaces
-    // to the UI.
-    // Test harness is in place (apps/web/bunfig.toml + happy-dom), but a full
-    // rollback test requires mocking the tRPC client against the React tree;
-    // the pure helper resolveOrCreateProfile is covered by resolve-profile.test.ts.
-    try {
-      if (storageMode === "zero_knowledge") {
-        await bootstrapZkProfile(profileId, profilePassword);
-      }
-    } catch (bootstrapErr) {
-      await browserTrpcClient.profiles.delete
-        .mutate({ profileId })
-        .catch((rollbackErr: unknown) => {
-          console.warn("[onboarding] Failed to rollback unbootstrapped profile:", rollbackErr);
-        });
-      throw bootstrapErr;
-    }
-    toast.success("Profile created successfully");
-    onSuccess();
-  } catch (err) {
-    setError(getClientErrorMessage(err, "Failed to create profile"));
-  } finally {
-    setLoading(false);
-  }
+  step: 0 | 1;
 }
 
 export default function OnboardingPage(): React.ReactElement | null {
@@ -230,101 +26,22 @@ export default function OnboardingPage(): React.ReactElement | null {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   // Stable primitive: Better Auth's useSession() can return a fresh object
   // reference per render. Depending on session.user.id keeps effects from
-  // re-firing (and redoing organizations.list + per-org profiles.list) on
-  // unrelated renders.
+  // re-firing (and redoing organizations.list) on unrelated renders.
   const userId = session?.user?.id ?? null;
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
 
   // Mode selects which surface to render: a two-option choose screen for
   // fresh signups, the existing create-org flow, or the invite-paste form.
-  // `currentStep` only has meaning when mode === "create".
   const [mode, setMode] = useState<OnboardingMode>("choose");
-  const [currentStep, setCurrentStep] = useState(0);
 
   // Tracks the resume-triage mount effect so we don't flash step 1 while we
   // decide whether the user should resume step 2 or redirect to overview.
   const [isCheckingOrgs, setIsCheckingOrgs] = useState(true);
 
-  // Step 1 state
-  const [orgName, setOrgName] = useState("");
-  const [orgSlug, setOrgSlug] = useState("");
-  const [slugEdited, setSlugEdited] = useState(false);
-  const slugStatus = useSlugStatus(orgSlug);
-  const [orgId, setOrgId] = useState("");
-
-  // Step 2 state
-  const [profileName, setProfileName] = useState("internal");
-  const [storageMode, setStorageMode] = useState<"zero_knowledge" | "server_managed">(
-    "zero_knowledge",
-  );
-  const [profilePassword, setProfilePassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  // Shared state
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  function handleOrgNameChange(value: string): void {
-    setOrgName(value);
-    if (!slugEdited) {
-      setOrgSlug(toSlugPreview(value));
-    }
-  }
-
-  function handleSlugChange(value: string): void {
-    setSlugEdited(true);
-    // Intentional: toSlugPreview normalizes input (lowercases, strips invalid chars).
-    // This is correct for a slug field — the user sees their input auto-corrected.
-    setOrgSlug(toSlugPreview(value));
-  }
-
-  async function handleStep1Submit(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    setError("");
-    if (!userId) {
-      // Belt-and-suspenders: the auth guard effect below redirects to /login
-      // when userId is null, but guard the store write explicitly so a
-      // rendered-but-unauthenticated state can't persist an org under a null
-      // user id.
-      setError("Not authenticated. Please sign in again.");
-      return;
-    }
-    await submitStep1({
-      userId,
-      orgName,
-      orgSlug,
-      slugStatus,
-      setActiveOrg,
-      setOrgId,
-      setCurrentStep,
-      setLoading,
-      setError,
-    });
-  }
-
-  async function handleStep2Submit(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    setError("");
-    await submitStep2({
-      orgId,
-      profileName,
-      storageMode,
-      profilePassword,
-      confirmPassword,
-      setLoading,
-      setError,
-      onSuccess: () => {
-        // Belt-and-suspenders: clear profile password state on success.
-        // Paired with the unmount cleanup below (B17) and the autoComplete
-        // attributes on the inputs. We deliberately do NOT clear on error —
-        // the user may want to retry without retyping.
-        setProfilePassword("");
-        setConfirmPassword("");
-        router.push("/overview");
-      },
-    });
-  }
+  // Seed for CreateOrgForm when resuming a partial onboarding (org row exists
+  // but profile wasn't bootstrapped). null means "fresh create".
+  const [resumeState, setResumeState] = useState<ResumeState | null>(null);
 
   // Auth guard — unauthenticated visitors shouldn't see the create-org form.
   // Redirect happens in an effect to avoid side-effects during render.
@@ -334,21 +51,10 @@ export default function OnboardingPage(): React.ReactElement | null {
     }
   }, [sessionPending, userId, router]);
 
-  // B17: tear-down clearing of profile password state on unmount. Complements
-  // B5's success-path clear. Defense-in-depth only — React state "clearing"
-  // drops the reference but the old string may linger until GC. True zeroing
-  // would require Uint8Array-backed inputs (out of scope for MVP).
-  useEffect(() => {
-    return () => {
-      setProfilePassword("");
-      setConfirmPassword("");
-    };
-  }, []);
-
   // Resume-triage: if the user abandoned onboarding (tab close after org
   // create but before profile bootstrap), skip straight to step 2 for that
   // org. If they are fully onboarded, redirect to /overview. If they have no
-  // orgs, fall through to step 1.
+  // orgs, fall through to the choose screen.
   useEffect(() => {
     if (sessionPending || !userId) return;
 
@@ -360,56 +66,43 @@ export default function OnboardingPage(): React.ReactElement | null {
     //
     // We treat a null storedUserId as a mismatch so that browsers which
     // persisted state under the pre-lastUserId store shape also get scrubbed
-    // on first load after this code ships. This is the most critical path
-    // for the original bug (new user redirected here with stale org from a
-    // prior user on the same browser): if the guard does not fire, the
-    // organizations.list call below still goes out with the stale header and
-    // 401s. A spurious clear on a genuinely-fresh store is harmless — the
-    // list query re-seeds server truth in the same effect.
+    // on first load after this code ships. A spurious clear on a genuinely-
+    // fresh store is harmless — the resume-triage list query below re-seeds
+    // server truth in the same effect.
     const storedUserId = useOrgStore.getState().lastUserId;
     if (storedUserId !== userId) {
       clearActiveOrg();
     }
 
     let cancelled = false;
+    const applyResume = (action: ReturnType<typeof decideResumeAction>): void => {
+      if (action.kind === "redirect") {
+        router.replace("/overview");
+        return;
+      }
+      if (action.kind === "resume-profile") {
+        const { org } = action;
+        setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo });
+        setResumeState({
+          orgId: org.id,
+          orgName: org.name,
+          orgSlug: org.slug,
+          step: 1,
+        });
+        // An org already exists for this user (they abandoned after step 1).
+        // Skip the choose screen and resume on the profile-setup step.
+        setMode("create");
+      }
+      setIsCheckingOrgs(false);
+    };
     (async () => {
       try {
         const listResult = await browserTrpcClient.organizations.list.query();
         if (cancelled) return;
-
-        const summaries: ListedOrg[] = listResult.organizations ?? [];
-        if (summaries.length === 0) {
-          setIsCheckingOrgs(false);
-          return;
-        }
-
-        // Single round trip: organizations.list now carries hasBootstrappedProfile
-        // per row, so the previous N+1 profiles.list-per-org chain is gone.
-        const decision = decideOnboardingStateFromList(summaries);
-        if (decision.step === "redirect") {
-          router.replace("/overview");
-          return;
-        }
-        if (decision.step === "step2") {
-          const logo = summaries.find((s) => s.id === decision.orgId)?.logo ?? null;
-          setActiveOrg(userId, {
-            id: decision.orgId,
-            slug: decision.orgSlug,
-            name: decision.orgName,
-            logo,
-          });
-          setOrgId(decision.orgId);
-          setOrgName(decision.orgName);
-          setOrgSlug(decision.orgSlug);
-          // An org already exists for this user (they abandoned after step 1).
-          // Skip the choose screen and resume on the profile-setup step.
-          setMode("create");
-          setCurrentStep(1);
-        }
-        setIsCheckingOrgs(false);
+        applyResume(decideResumeAction(listResult.organizations ?? []));
       } catch (err) {
         // If the resume probe fails (network, auth race, etc.), fall through
-        // to step 1. Users can still create a new org; we just won't auto-resume.
+        // to the choose screen. Users can still create a new org.
         console.warn("[onboarding] Failed to detect existing org state:", err);
         if (!cancelled) setIsCheckingOrgs(false);
       }
@@ -455,8 +148,7 @@ export default function OnboardingPage(): React.ReactElement | null {
                     type="button"
                     onClick={() => {
                       setMode("create");
-                      setCurrentStep(0);
-                      setError("");
+                      setResumeState(null);
                     }}
                     className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
                   >
@@ -473,10 +165,7 @@ export default function OnboardingPage(): React.ReactElement | null {
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode("join");
-                      setError("");
-                    }}
+                    onClick={() => setMode("join")}
                     className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
@@ -515,226 +204,19 @@ export default function OnboardingPage(): React.ReactElement | null {
               </div>
             )}
 
-            {/* Create path: existing two-step flow, unchanged apart from the Back affordance. */}
+            {/* Create path: shared CreateOrgForm. */}
             {mode === "create" && (
-              <>
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Clear ALL org-creation state on Back, not just mode/step.
-                      // Without this reset, a user who completed step 1 (org row
-                      // already inserted), clicks Back, then re-enters create
-                      // mode and submits step 1 again would call
-                      // organizations.create a second time — leaving the first
-                      // org permanently without a profile. Resetting here
-                      // restores the pre-PR invariant that each page-load can
-                      // create at most one org; if the user did create a partial
-                      // org and abandons it, the next page-mount's resume-triage
-                      // recovers it via decideOnboardingStateFromList.
-                      setMode("choose");
-                      setCurrentStep(0);
-                      setError("");
-                      setOrgId("");
-                      setOrgName("");
-                      setOrgSlug("");
-                      setSlugEdited(false);
-                    }}
-                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    ← Back
-                  </button>
-                </div>
-                <ProgressSteps steps={STEPS} currentStep={currentStep} />
-
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
-                  {currentStep === 0 && (
-                    <form onSubmit={handleStep1Submit} className="space-y-6">
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                          Step 1 of 2
-                        </p>
-                        <h1 className="text-xl font-semibold tracking-tight">
-                          Name your organization
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                          Your organization is the top-level boundary for all secrets, profiles, and
-                          agents. You are the custodian — you manage secrets on behalf of your
-                          users.
-                        </p>
-                      </div>
-
-                      {error && (
-                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                          {error}
-                        </div>
-                      )}
-
-                      <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="org-name">Organization name</Label>
-                          <Input
-                            id="org-name"
-                            type="text"
-                            placeholder="Acme Corp"
-                            value={orgName}
-                            onChange={(e) => handleOrgNameChange(e.target.value)}
-                            required
-                            autoFocus
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Displayed in the dashboard and billing.
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label htmlFor="org-slug">Organization slug</Label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              id="org-slug"
-                              type="text"
-                              value={orgSlug}
-                              onChange={(e) => handleSlugChange(e.target.value)}
-                              placeholder="acme-corp"
-                              className="font-mono text-sm"
-                            />
-                            <SlugStatusIndicator status={slugStatus} />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Lowercase letters, numbers, and hyphens. Auto-generated from the name —
-                            edit to customize.
-                          </p>
-                        </div>
-                      </div>
-
-                      <Button type="submit" className="w-full" disabled={loading}>
-                        {loading ? "Creating..." : "Continue →"}
-                      </Button>
-                    </form>
-                  )}
-
-                  {currentStep === 1 && (
-                    <form onSubmit={handleStep2Submit} className="space-y-6">
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                          Step 2 of 2
-                        </p>
-                        <h1 className="text-xl font-semibold tracking-tight">
-                          Set up your internal profile
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                          This is your organization's own operational vault for shared secrets like
-                          deploy keys and CI credentials. You'll create additional profiles for each
-                          user or customer whose secrets you manage.
-                        </p>
-                      </div>
-
-                      {error && (
-                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                          {error}
-                        </div>
-                      )}
-
-                      <div className="space-y-4">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="profile-name">
-                            Profile name <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            id="profile-name"
-                            type="text"
-                            placeholder="internal"
-                            value={profileName}
-                            onChange={(e) => setProfileName(e.target.value)}
-                            required
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Must be kebab-case (lowercase letters, numbers, hyphens). Unique per
-                            org. Used in API paths — choose a stable name.
-                          </p>
-                        </div>
-
-                        <StorageModePicker value={storageMode} onChange={setStorageMode} />
-
-                        {storageMode === "zero_knowledge" && (
-                          <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-                            <div className="flex items-center gap-2 text-amber-700">
-                              <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 16 16"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 5v3.5m0 2h.007"
-                                  stroke="currentColor"
-                                  strokeWidth="1.25"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                              <span className="text-sm font-medium">
-                                The server will never see this password
-                              </span>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <Label htmlFor="profile-password">
-                                Profile password <span className="text-red-500">*</span>
-                              </Label>
-                              <Input
-                                id="profile-password"
-                                type="password"
-                                // B17: non-login-looking name + new-password hint keep the browser's
-                                // credential manager from offering to save a password the server
-                                // never sees. `autoComplete="off"` is ignored by most modern browsers
-                                // on password fields; `new-password` is the standards-blessed hint.
-                                name="abadge-profile-password"
-                                autoComplete="new-password"
-                                value={profilePassword}
-                                onChange={(e) => setProfilePassword(e.target.value)}
-                                placeholder="Min 12 characters"
-                                minLength={12}
-                                required={storageMode === "zero_knowledge"}
-                              />
-                              <PasswordStrength password={profilePassword} />
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <Label htmlFor="profile-confirm-password">
-                                Confirm password <span className="text-red-500">*</span>
-                              </Label>
-                              <Input
-                                id="profile-confirm-password"
-                                type="password"
-                                // B17: see companion comment on the profile-password input above.
-                                name="abadge-profile-password-confirm"
-                                autoComplete="new-password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                placeholder="Repeat password"
-                                required={storageMode === "zero_knowledge"}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <Button type="submit" className="w-full" disabled={loading}>
-                        {loading ? "Creating profile..." : "Create profile & go to dashboard"}
-                      </Button>
-
-                      <p className="text-xs text-muted-foreground">
-                        You'll add more profiles for each user or entity whose secrets you manage —
-                        one profile per user, each with its own encryption boundary and agent access
-                        controls.
-                      </p>
-                    </form>
-                  )}
-                </div>
-              </>
+              <CreateOrgForm
+                variant="card"
+                initialOrg={resumeState ?? undefined}
+                onBack={() => {
+                  setMode("choose");
+                  setResumeState(null);
+                }}
+                onSuccess={() => {
+                  router.push("/overview");
+                }}
+              />
             )}
 
             {/* Footer links — TOS moved to /register. This page is post-signup. */}

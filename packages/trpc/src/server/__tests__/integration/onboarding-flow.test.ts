@@ -64,7 +64,6 @@ describe("onboarding flow: zero-org user can reach bootstrap endpoints", () => {
 
     expect(result.organization.slug).toBe("bootstrap-org");
     expect(result.organization.name).toBe("Bootstrap Org");
-    expect(result.profileId).toBeTruthy();
   });
 
   // -------------------------------------------------------------------------

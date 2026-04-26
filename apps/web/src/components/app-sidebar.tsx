@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpen,
   Bot,
   Columns3,
   KeyRound,
@@ -111,6 +112,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a href="https://docs.abadge.io" target="_blank" rel="noopener noreferrer">
+                    <BookOpen />
+                    <span>Docs</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {secondaryNavItems.map((item) => {
                 const href = `/${item.path}`;
                 const isActive = pathname.startsWith(href);

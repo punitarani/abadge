@@ -231,7 +231,6 @@ interface SdkTrpcClient {
           logo: string | null;
           createdAt: string;
         };
-        profileId: string;
       }
     >;
     list: TrpcQueryWithoutInput<{
