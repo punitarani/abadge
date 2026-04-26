@@ -183,6 +183,23 @@ How secrets reach agents — designed to minimize exposure.
 Secret is passed as an environment variable to a spawned subprocess. The secret exists only in
 process memory — never written to disk. The parent process does not retain the value after spawning.
 
+#### Bulk env injection (`abadge run --all` / `access.bulkMountEnv`)
+
+Bulk mode injects every item the agent has `mount_env` on within **one profile** in a single subprocess spawn. Invariants:
+
+* **Profile is the trust boundary, enforced server-side.** The bulk endpoint takes `profileId` as input and joins `items.profileId = input` in the same query that scopes by `org` and `agentId`. A tampered CLI cannot exfiltrate items in other profiles via this endpoint, even when the agent has grants on them.
+* **Cross-org probing returns `PROFILE_NOT_FOUND`, not `FORBIDDEN`** — the server checks profile-org membership before any data exposure, so existence of foreign profiles is never leaked.
+* **Bulk is a UX layer over N explicit grants, not a wildcard.** Each `(agent, item, mount_env)` row is enforced individually; revoking any one grant takes that item out of the next bulk call.
+* **Per-item audit fidelity preserved.** Every included item produces one `access.mount_env` row with `meta.viaBulk = true` and the dedicated `profileId` column populated. Bulk does not collapse audit history.
+* **Audit reflects delivery intent, not the daemon's structural skip.** The API audits one `access.mount_env` row for every mount_env-granted item it returns to the daemon, even though the daemon then silently skips ZK items whose decrypted payload turns out to be multi-field (the structural filter cannot run server-side for ZK items because the server never sees plaintext). Auditors should treat bulk audit rows as "the agent received the data," not "the agent's subprocess saw an env var."
+* **Reserved-env-key hard-reject.** A label normalizing to a name in `RESERVED_ENV_KEYS` (e.g. `LD_PRELOAD`, `NODE_OPTIONS`, `HTTPS_PROXY`) fails the bulk call with the offending item's id and label. Silently skipping would launch the user's app with the wrong env — refused for the same reason single-item `mount_env` validates env-var names.
+* **Collision hard-reject.** Two items normalizing to the same env var fail with both item ids. Refuses to silently override.
+* **Local-only.** `mount_env` is local-only per the capability matrix; remote agents are rejected at the gate with no per-item audit (no items were accessed).
+* **ZK plaintext stays inside the daemon.** Same model as the existing `--expand-env`: the API returns each item's encrypted envelope; the daemon decrypts in-process and only env vars cross to the spawned child. CLI never sees ZK plaintext.
+* **`buildChildEnv` strips `ABADGE_*`** from the inherited env before injecting bulk vars, so the spawned process can never read the agent session token.
+* **Sanity ceiling: 256 items per call.** Both the API and the daemon enforce the cap (defense in depth — a tampered CLI can't blow the Unix-socket newline-delimited JSON buffer by skipping the API). Hit the cap and you get `BAD_REQUEST` with `meta.limit = 256`.
+* **Active profile is explicit.** No implicit "first profile" fallback — if `activeProfileId` is unset and `--profile` not passed, the CLI hard-fails. Keeps "which trust boundary am I in" auditable.
+
 ### File Mounting (`mount_file`)
 
 Secret is written to a temporary file with `0600` permissions (owner read/write only). The daemon

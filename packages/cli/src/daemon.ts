@@ -1,4 +1,5 @@
 import type {
+  BulkExecItem,
   DaemonAuthHeaders,
   DaemonAuthState,
   DaemonAuthStatus,
@@ -134,6 +135,14 @@ export async function daemonExpandEnv(
   return withDaemonClient((client) =>
     client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta),
   );
+}
+
+export async function daemonExpandEnvBulk(
+  items: BulkExecItem[],
+  command: string,
+  args: string[],
+): Promise<EnvExecResult> {
+  return withDaemonClient((client) => client.expandEnvBulk(items, command, args));
 }
 
 export async function daemonExecMount(

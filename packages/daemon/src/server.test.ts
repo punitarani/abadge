@@ -765,3 +765,147 @@ describe("fetchVaultMeta X-Abadge-Org-Id header plumbing (§O3)", () => {
     expect(capturedOrgHeader).toBeNull();
   });
 });
+
+describe("daemon exec.envBulk", () => {
+  test("spawns child with single-string-field server-managed items merged into env", async () => {
+    const { client } = await startTestServerUnlocked();
+    const outFile = join(mkdtempSync(join(tmpdir(), "abadge-bulk-out-")), "env.txt");
+    tempDirs.push(join(outFile, ".."));
+
+    const result = await client.expandEnvBulk(
+      [
+        {
+          itemId: "item-1",
+          label: "openai-api-key",
+          storageMode: "server_managed",
+          payload: { fields: { value: "sk-aaa" } },
+        },
+        {
+          itemId: "item-2",
+          label: "DATABASE_URL",
+          storageMode: "server_managed",
+          payload: { fields: { value: "postgres://localhost/db" } },
+        },
+      ],
+      "/bin/sh",
+      ["-c", `env > ${outFile}`],
+    );
+    expect(result.exitCode).toBe(0);
+    const contents = await Bun.file(outFile).text();
+    // Label normalization happens in the daemon, not the field name.
+    expect(contents).toMatch(/^OPENAI_API_KEY=sk-aaa$/m);
+    expect(contents).toMatch(/^DATABASE_URL=postgres:\/\/localhost\/db$/m);
+  });
+
+  test("silently skips multi-field items (login-shaped) — those need --item explicit selection", async () => {
+    const { client } = await startTestServerUnlocked();
+    const outFile = join(mkdtempSync(join(tmpdir(), "abadge-bulk-skip-")), "env.txt");
+    tempDirs.push(join(outFile, ".."));
+
+    const result = await client.expandEnvBulk(
+      [
+        {
+          itemId: "item-1",
+          label: "stripe-key",
+          storageMode: "server_managed",
+          payload: { fields: { value: "sk-stripe" } },
+        },
+        {
+          itemId: "item-2",
+          label: "main-db",
+          storageMode: "server_managed",
+          payload: { fields: { username: "admin", password: "shh", url: "postgres://x" } },
+        },
+      ],
+      "/bin/sh",
+      ["-c", `env > ${outFile}`],
+    );
+    expect(result.exitCode).toBe(0);
+    const contents = await Bun.file(outFile).text();
+    expect(contents).toMatch(/^STRIPE_KEY=sk-stripe$/m);
+    // Multi-field item is skipped — no MAIN_DB_USERNAME / MAIN_DB_PASSWORD expansion.
+    expect(contents).not.toMatch(/^MAIN_DB(_|=)/m);
+  });
+
+  test("hard-rejects an item whose label normalizes to a reserved env var", async () => {
+    const { client } = await startTestServerUnlocked();
+
+    await expect(
+      client.expandEnvBulk(
+        [
+          {
+            itemId: "item-bad",
+            label: "node-options",
+            storageMode: "server_managed",
+            payload: { fields: { value: "--require /tmp/evil.js" } },
+          },
+        ],
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow(/id=item-bad.*reserved env var 'NODE_OPTIONS'/);
+  });
+
+  test("hard-rejects two items that collide on the same env var name", async () => {
+    const { client } = await startTestServerUnlocked();
+
+    await expect(
+      client.expandEnvBulk(
+        [
+          {
+            itemId: "item-A",
+            label: "api-key",
+            storageMode: "server_managed",
+            payload: { fields: { value: "first" } },
+          },
+          {
+            itemId: "item-B",
+            label: "API_KEY",
+            storageMode: "server_managed",
+            payload: { fields: { value: "second" } },
+          },
+        ],
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow(/collision on 'API_KEY'.*item-A.*item-B/);
+  });
+
+  test("rejects items array exceeding BULK_ITEMS_MAX (256) at the daemon boundary", async () => {
+    const { client } = await startTestServerUnlocked();
+    const oversized = Array.from({ length: 257 }, (_, i) => ({
+      itemId: `item-${i}`,
+      label: `KEY_${i}`,
+      storageMode: "server_managed" as const,
+      payload: { fields: { value: `v-${i}` } },
+    }));
+
+    await expect(client.expandEnvBulk(oversized, "/usr/bin/true", [])).rejects.toThrow(
+      /items exceeds limit of 256/,
+    );
+  });
+
+  test("auth + unlock gates apply (no spawn before authentication)", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.envBulk",
+      params: {
+        items: [
+          {
+            itemId: "item-1",
+            label: "MY_KEY",
+            storageMode: "server_managed",
+            payload: { fields: { value: "ok" } },
+          },
+        ],
+        command: "/usr/bin/true",
+        args: [],
+      },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      // RPC_ERRORS.AUTH_REQUIRED = -32004
+      expect(response.error.code).toBe(-32004);
+    }
+  });
+});

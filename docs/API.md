@@ -475,6 +475,28 @@ Response:
 
 Denied if: remote agent, or missing `mount_env`/`mount_file` permission.
 
+### `access.bulkMountEnv`
+
+Auth: `agentProcedure`
+
+Returns every item in the given profile that the calling agent has `mount_env` on, in one round trip. Backs `abadge run --all`. **Profile is the trust boundary** — items in other profiles are NEVER returned, even when the agent has grants on them.
+
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `profileId` | string | yes | The profile to scope the bulk mount to |
+
+Response: `{ items: BulkMountEnvItem[] }` where each item is either:
+
+* `{ storageMode: "zero_knowledge", itemId, label, encryptedItemKey, ciphertext, cryptoVersion, profileId, contentVersion }`
+* `{ storageMode: "server_managed", itemId, label, payload }`
+
+Each included item produces one `access.mount_env` audit row tagged `meta.viaBulk = true` and carrying `profileId`.
+
+Failure modes:
+* Remote agents → `PERMISSION_DENIED` (no per-item audit row, since no items were accessed).
+* `profileId` belonging to another org → `PROFILE_NOT_FOUND` (existence is not leaked).
+* More than 256 matching items → `BAD_REQUEST` with `meta.limit = 256`. Scope the profile or use `--item` per-secret.
+
 ## Audit events
 
 | Category | Event types |

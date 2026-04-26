@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { BulkMountEnvItem } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
 import { auditLogs } from "@abadge/db/schema";
@@ -560,6 +561,321 @@ describe("access", () => {
         expect(trpcError.cause?.code).toBe("FIELD_NOT_FOUND");
         const availableFields = trpcError.cause?.meta?.availableFields ?? [];
         expect(availableFields).toContain("username");
+      }
+    });
+  });
+
+  describe("access.bulkMountEnv", () => {
+    test("returns only items in the input profile that the agent has mount_env on", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+
+      const profileA = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+      const profileB = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      // Two items in profile A: one granted, one not.
+      const grantedA = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileA.profileId,
+        label: "openai-key",
+        fields: { value: "sk-A" },
+      });
+      const ungranted = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileA.profileId,
+        fields: { value: "should-not-appear" },
+      });
+
+      // One item in profile B that the agent DOES have mount_env on — must
+      // NOT come back when scoping to profile A. Profile is the trust boundary.
+      const grantedB = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileB.profileId,
+        label: "redis-url",
+        fields: { value: "redis://b" },
+      });
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: grantedA.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: grantedB.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profileA.profileId });
+      const items = result.items as ReadonlyArray<BulkMountEnvItem>;
+      const ids = items.map((i) => i.itemId).sort();
+      expect(ids).toEqual([grantedA.itemId].sort());
+      expect(ids).not.toContain(ungranted.itemId);
+      expect(ids).not.toContain(grantedB.itemId);
+    });
+
+    test("excludes items granted only read_ciphertext (capability filter)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        fields: { value: "x" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      // ZK-style read capability — not mount_env. ZK items aren't even
+      // applicable here but the capability filter still applies generally.
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+      expect(result.items).toEqual([]);
+    });
+
+    test("excludes items where the mount_env permission has expired", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        fields: { value: "stale" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+        expiresAt: new Date(Date.now() - 60_000), // expired 1 min ago
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+      expect(result.items).toEqual([]);
+    });
+
+    test("rejects remote agents at the gate with PERMISSION_DENIED", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "remote",
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+        throw new Error("Expected bulkMountEnv to reject remote agent");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("PERMISSION_DENIED");
+      }
+    });
+
+    test("returns PROFILE_NOT_FOUND for a profileId in another org (no existence leak)", async () => {
+      const owner = await seedUser(auth);
+      const org1 = await seedOrg(auth, owner.userId);
+      const org2 = await seedOrg(auth, owner.userId);
+      const otherProfile = await seedProfile(db, org2.orgId, { storageMode: "server_managed" });
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org1.orgId,
+        kind: "local_cli",
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: otherProfile.profileId });
+        throw new Error("Expected bulkMountEnv to reject cross-org profile lookup");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("PROFILE_NOT_FOUND");
+      }
+    });
+
+    test("writes one access.mount_env audit row per included item with meta.viaBulk = true", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item1 = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "key1",
+        fields: { value: "v1" },
+      });
+      const item2 = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "key2",
+        fields: { value: "v2" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item1.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item2.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+
+      const rows = await db
+        .select()
+        .from(auditLogs)
+        .where(
+          and(eq(auditLogs.eventType, "access.mount_env"), eq(auditLogs.agentId, agent.agentId)),
+        );
+      expect(rows.length).toBe(2);
+      for (const r of rows) {
+        const meta = (r.meta as { viaBulk?: boolean } | null) ?? {};
+        expect(meta.viaBulk).toBe(true);
+        expect(r.profileId).toBe(profile.profileId);
+        expect(r.result).toBe("allowed");
+      }
+    });
+
+    test("returns mixed ZK + server-managed items in one response", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const zkProfile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+
+      const zkItem = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: zkProfile.profileId,
+        label: "zk-secret",
+      });
+      // server-managed items can also live alongside ZK items in a profile
+      // (profile.storageMode is the "default" — items can override). Seed one
+      // here and grant mount_env on both.
+      const smItem = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: zkProfile.profileId,
+        label: "sm-secret",
+        fields: { value: "v-sm" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: zkItem.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: smItem.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: zkProfile.profileId });
+      expect(result.items.length).toBe(2);
+      // strictSchema's output type collapses unions into `{}` at the trpc-caller
+      // boundary; the runtime shape matches BulkMountEnvItem so we re-narrow here.
+      const items = result.items as ReadonlyArray<BulkMountEnvItem>;
+      const byId = new Map(items.map((i) => [i.itemId, i]));
+      const zk = byId.get(zkItem.itemId);
+      const sm = byId.get(smItem.itemId);
+      expect(zk?.storageMode).toBe("zero_knowledge");
+      expect(sm?.storageMode).toBe("server_managed");
+      if (zk?.storageMode === "zero_knowledge") {
+        // ZK envelope passes through to the daemon for in-process decryption.
+        expect(zk.encryptedItemKey).toBeTruthy();
+        expect(zk.ciphertext).toBeTruthy();
+        expect(zk.profileId).toBe(zkProfile.profileId);
+      }
+      if (sm?.storageMode === "server_managed") {
+        expect(sm.payload.fields.value).toBe("v-sm");
       }
     });
   });

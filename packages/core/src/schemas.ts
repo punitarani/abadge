@@ -529,6 +529,40 @@ export const MountAccessResponseSchema = Schema.Union(
   ServerManagedMountAccessResponseSchema,
 );
 
+export const BulkMountEnvSchema = Schema.Struct({
+  profileId: NonEmptyString,
+});
+
+const BulkMountEnvItemBaseFields = {
+  itemId: NonEmptyString,
+  label: NonEmptyString,
+} as const;
+
+const ZeroKnowledgeBulkMountEnvItemSchema = Schema.Struct({
+  ...BulkMountEnvItemBaseFields,
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+  cryptoVersion: Schema.Int,
+  profileId: NonEmptyString,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
+});
+
+const ServerManagedBulkMountEnvItemSchema = Schema.Struct({
+  ...BulkMountEnvItemBaseFields,
+  storageMode: Schema.Literal("server_managed"),
+  payload: ItemPayloadSchema,
+});
+
+export const BulkMountEnvItemSchema = Schema.Union(
+  ZeroKnowledgeBulkMountEnvItemSchema,
+  ServerManagedBulkMountEnvItemSchema,
+);
+
+export const BulkMountEnvResponseSchema = Schema.Struct({
+  items: Schema.Array(BulkMountEnvItemSchema),
+});
+
 export const IdResultSchema = Schema.Struct({
   id: NonEmptyString,
 });
