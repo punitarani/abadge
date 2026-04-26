@@ -227,7 +227,15 @@ export default function AuditPage(): React.ReactElement {
     refetchOnMount: false,
   });
 
-  // Reset pagination when server-side filters change (incl. via URL/back-forward)
+  // Reset pagination when server-side filters change. Both paths are intentional:
+  // - onChange handlers below call resetPagination synchronously so the UI-driven
+  //   case batches the cursor reset with the filter update in one render. Without
+  //   it, the next render's queryFn would fire with new filter + stale cursor, and
+  //   its setAllEntries(prev => [...]) accumulator would run before the second fetch
+  //   supersedes it, producing transient mismatched rows.
+  // - The useEffect catches URL-driven changes (back/forward navigation, shared
+  //   links) where no onChange fires; the brief race window self-corrects within
+  //   one render after the effect commits.
   const resetPagination = useCallback(() => {
     setAllEntries([]);
     setCursor(undefined);
