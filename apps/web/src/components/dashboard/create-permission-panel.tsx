@@ -5,6 +5,7 @@ import {
   type AgentLocality,
   CAPABILITIES,
   type Capability,
+  type CreatePermissionInput,
   getAllowedCapabilities,
   type ItemSummary,
   type StorageMode,
@@ -289,13 +290,12 @@ export function CreatePermissionPanel({
     enabled: Boolean(selectedAgent && selectedItem),
   });
 
+  // Use the canonical SDK input type so the non-empty-tuple invariant
+  // (`readonly [Capability, ...Capability[]]`) the tRPC procedure requires is
+  // enforced at compile time rather than at the server-side schema check.
   const createPermission = useMutation({
-    mutationFn: (input: {
-      agentId: string;
-      itemId: string;
-      capabilities: Capability[];
-      expiresAt?: string;
-    }) => browserTrpcClient.permissions.create.mutate(input),
+    mutationFn: (input: CreatePermissionInput) =>
+      browserTrpcClient.permissions.create.mutate(input),
     onSuccess: async (result) => {
       const count = result.permissions.length;
       resetForm();
@@ -418,8 +418,14 @@ export function CreatePermissionPanel({
     }
 
     // Stable order: emit in the canonical CAPABILITIES order so the audit
-    // log reads the same way regardless of UI click order.
-    const capabilities = CAPABILITIES.filter((cap) => selectedCapabilities.has(cap));
+    // log reads the same way regardless of UI click order. The non-empty
+    // guard above (`selectedCapabilities.size === 0` early return) makes this
+    // cast safe — narrows to the `[Capability, ...Capability[]]` shape that
+    // CreatePermissionInput requires.
+    const capabilities = CAPABILITIES.filter((cap) => selectedCapabilities.has(cap)) as [
+      Capability,
+      ...Capability[],
+    ];
 
     try {
       await createPermission.mutateAsync({

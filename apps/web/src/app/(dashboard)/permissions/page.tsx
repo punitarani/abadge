@@ -599,7 +599,10 @@ function summarizeGroupExpiry(permissions: Permission[]): ExpirySummary {
   }
   const distinct = new Set(expiries.map((e) => e ?? "permanent"));
   if (distinct.size > 1) {
-    return { label: "Mixed", tone: "neutral" };
+    // Elevate to danger when any expiry has already passed — the Expires
+    // column should not look fine when one chip is already dead.
+    const hasExpired = expiries.some((e) => e !== null && isExpired(e));
+    return { label: "Mixed", tone: hasExpired ? "danger" : "neutral" };
   }
   const first = expiries.find((e) => e !== null) ?? null;
   if (!first) {
