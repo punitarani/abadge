@@ -32,7 +32,9 @@
     "version:packages": "changeset version",
     "release:publish": "bun scripts/releases/publish.ts",
     "release:cli": "bun scripts/releases/publish.ts --package cli",
-    "release:cli:dry-run": "bun scripts/releases/publish.ts --dry-run --package cli"
+    "release:cli:dry-run": "bun scripts/releases/publish.ts --dry-run --package cli",
+    "release:mcp": "bun scripts/releases/publish.ts --package mcp",
+    "release:mcp:dry-run": "bun scripts/releases/publish.ts --dry-run --package mcp"
   },
   "overrides": {
     "drizzle-orm": "0.45.2",

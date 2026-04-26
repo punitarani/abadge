@@ -23,7 +23,35 @@ abadge agent register --name legacy-bot --kind remote --legacy-api-key
 | `-k, --kind <kind>` | no | `local_cli` (default), `local_mcp`, or `remote` |
 | `-d, --description <text>` | no | Optional description (stored in `metadata.description`) |
 | `--legacy-api-key` | no | Opt into legacy API-key auth instead of Ed25519 keypair |
+| `--mcp-config` | no | After registering a `local_mcp` agent, print a Claude Desktop config snippet |
 | `--json` | no | Print raw JSON |
+
+### `--mcp-config` (local_mcp only)
+
+When combined with `--kind local_mcp`, the CLI prints a paste-ready `mcpServers` JSON block after
+registration. The snippet uses absolute paths so it works regardless of `$PATH`:
+
+```bash
+abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+```
+
+```json
+{
+  "mcpServers": {
+    "abadge": {
+      "command": "/Users/you/.abadge/bin/abadge-mcp",
+      "env": {
+        "ABADGE_API_URL": "https://api.abadge.io",
+        "ABADGE_AGENT_ID": "agent_01HZ...",
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/agent_01HZ....ed25519.jwk"
+      }
+    }
+  }
+}
+```
+
+The binary path defaults to `${ABADGE_INSTALL_DIR:-~/.abadge/bin}/abadge-mcp`. The CLI reads
+`apiUrl` from `~/.abadge/config.json` (populated by `abadge login`).
 
 <Warning>
   For `--legacy-api-key`, the `abl_...` (local) or `abg_...` (remote) key is shown **exactly once**. Save it before the command exits.
@@ -81,6 +109,20 @@ abadge agent revoke <agent-id>
 ```
 
 Permissions are not deleted; they remain visible (and useless) until the agent is rotated, removed, or re-enabled.
+
+## `abadge agent mcp-config <agent-id>`
+
+Reprint the Claude Desktop config snippet for an already-registered `local_mcp` agent. Reads the
+agent ID, private-key path, and `apiUrl` from `~/.abadge/config.json` (populated by `abadge login`
+and `abadge agent register --kind local_mcp`). Useful when you've lost the original snippet or are
+re-paste-ing the config on a new MCP client.
+
+```bash
+abadge agent mcp-config agent_01HZ...
+```
+
+The supplied agent ID must match `localAgents.mcp.agentId` in your config. If they differ, the
+command exits non-zero with a clear error — re-register the local MCP agent or pass the correct id.
 
 ## Related
 

@@ -21,10 +21,16 @@ bun run release:cli:dry-run -- --outdir /tmp/abadge-cli-release
 ### Public installer
 
 ```bash
+# Installs both the CLI (`abadge`) and the MCP server (`abadge-mcp`) by default
 curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+# CLI only
+ABADGE_INSTALL_PACKAGE=cli \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
 ```
 
-See [`docs/release/cli.md`](./release/cli.md) for the release and installer flow.
+See [`docs/release/cli.md`](./release/cli.md) and [`docs/release/mcp.md`](./release/mcp.md) for
+the per-package release and installer flow.
 
 ## Configuration
 

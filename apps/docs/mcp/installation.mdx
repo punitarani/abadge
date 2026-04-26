@@ -1,29 +1,110 @@
 ---
 title: "Installation"
-description: "Run the abadge MCP server from the monorepo or as a compiled binary."
+description: "Install the abadge MCP server as a compiled binary or run it from source."
 ---
 
-The MCP server lives in `packages/mcp` and runs as a subprocess that an MCP-aware client launches over stdio.
+The MCP server is shipped as a compiled binary (`abadge-mcp`) and runs as a subprocess that an
+MCP-aware client launches over stdio.
 
-## From the monorepo
-
-Once you've cloned `punitarani/abadge` and run `bun install`:
+## Recommended: install script
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+By default this installs **both** `abadge` (CLI) and `abadge-mcp` (MCP server) to
+`~/.abadge/bin`. To install only the MCP server:
+
+```bash
+ABADGE_INSTALL_PACKAGE=mcp \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+The script:
+
+1. Detects your OS, architecture, and (on Linux) libc (glibc baseline or musl).
+2. Downloads the latest signed `mcp-v*` release archive from GitHub.
+3. Verifies the SHA-256 checksum against the published `SHA256SUMS` file.
+4. Extracts the binary to `~/.abadge/bin/abadge-mcp`.
+5. Adds `~/.abadge/bin` to your shell profile's `PATH` if it's not already there.
+
+After install:
+
+```bash
+abadge-mcp
+# expect non-zero exit and a message like
+# "ABADGE_AGENT_ID is required (env or ~/.abadge/config.json)."
+```
+
+That error proves the binary loaded and validated config — it just needs auth env vars or a
+populated `~/.abadge/config.json`. See [Authentication](/mcp/authentication).
+
+## Pinning a version
+
+When installing only the MCP server:
+
+```bash
+ABADGE_INSTALL_PACKAGE=mcp ABADGE_MCP_VERSION=0.0.2 \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+When installing both packages, use the scoped variables (CLI and MCP have independent release
+cadences):
+
+```bash
+ABADGE_CLI_VERSION=1.4.2 ABADGE_MCP_VERSION=0.0.2 \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+## Custom install paths
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ABADGE_INSTALL_PACKAGE` | `all` | `cli`, `mcp`, or `all` |
+| `ABADGE_INSTALL_DIR` | `~/.abadge/bin` | Where the binary is installed |
+| `ABADGE_INSTALL_REPO` | `punitarani/abadge` | GitHub repo to fetch from |
+| `ABADGE_INSTALL_BASE_URL` | (GitHub releases) | Override the release archive URL |
+| `ABADGE_MCP_VERSION` | (latest stable `mcp-v*`) | Pin the MCP release |
+| `ABADGE_VERSION` | (none) | Fallback when installing a single package only |
+| `PROFILE` | (auto-detected) | Shell profile file to update |
+
+## Build from source
+
+If you've cloned the monorepo:
+
+```bash
+# Run directly from TypeScript (development workflow)
 bun run mcp
+
+# Compile a binary into packages/mcp/dist/
+bun run --cwd packages/mcp build
+./packages/mcp/dist/abadge-mcp
 ```
 
-This is equivalent to:
+Compile a per-platform release tarball into `/tmp` (mirrors the GitHub Actions release pipeline):
 
 ```bash
-bun packages/mcp/src/index.ts
+bun run release:mcp:dry-run -- --outdir /tmp/abadge-mcp-release
+ls /tmp/abadge-mcp-release/
 ```
 
-Both forms expect the auth env vars (or `~/.abadge/config.json`) to be set so the server can authenticate. See [Authentication](/mcp/authentication).
+## What gets installed where
 
-## As a compiled binary (planned)
+| Path | Purpose | Permissions |
+|---|---|---|
+| `~/.abadge/bin/abadge-mcp` | The MCP server binary | `0755` |
+| `~/.abadge/config.json` | Shared config (read by both CLI and MCP server) | `0600` |
+| `~/.abadge/agents/*.jwk` | Local Ed25519 private keys (one per registered agent) | `0600` |
+| `~/.abadge/vaultd.sock` | Daemon Unix socket (required for ZK item access) | `0600` |
 
-A standalone binary release is on the roadmap. In the meantime, embed the monorepo command in your client config (see [Claude Desktop](/mcp/claude-desktop)).
+The MCP server reads its config from env vars or `~/.abadge/config.json`. To register an MCP
+agent and get a paste-ready Claude Desktop snippet:
+
+```bash
+abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+```
+
+See [Claude Desktop](/mcp/claude-desktop) for the full setup walk-through.
 
 ## What it does on startup
 
