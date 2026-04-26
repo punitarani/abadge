@@ -3,6 +3,21 @@
 The abadge MCP server exposes item-aware tools to AI agents without returning secret values to the
 model. It runs as a subprocess MCP server over stdio.
 
+## Install
+
+The MCP server ships as a compiled binary (`abadge-mcp`). The fastest path:
+
+```bash
+# Installs both the abadge CLI and abadge-mcp binary to ~/.abadge/bin
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+# Or MCP only
+ABADGE_INSTALL_PACKAGE=mcp \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+See [docs/release/mcp.md](release/mcp.md) for the underlying release pipeline and pinning options.
+
 ## Setup
 
 ### Authentication
@@ -33,6 +48,10 @@ The config file `~/.abadge/config.json` is also read; environment variables take
 ### Running
 
 ```bash
+# Installed binary
+abadge-mcp
+
+# Development workflow (monorepo)
 bun run mcp
 # or directly
 bun packages/mcp/src/index.ts
@@ -40,21 +59,31 @@ bun packages/mcp/src/index.ts
 
 ## Claude Desktop / MCP client config
 
+The CLI can emit a paste-ready snippet:
+
+```bash
+abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+```
+
+For reference, the shape is:
+
 ```json
 {
   "mcpServers": {
     "abadge": {
-      "command": "bun",
-      "args": ["packages/mcp/src/index.ts"],
+      "command": "/Users/you/.abadge/bin/abadge-mcp",
       "env": {
-        "ABADGE_API_URL": "http://localhost:8787",
+        "ABADGE_API_URL": "https://api.abadge.io",
         "ABADGE_AGENT_ID": "agent_...",
-        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/agent_....ed25519.jwk"
       }
     }
   }
 }
 ```
+
+Use the absolute path for `command` — Claude Desktop is launched by launchd/systemd with a
+minimal `$PATH` that does not include `~/.abadge/bin`.
 
 ## Keypair session lifecycle
 

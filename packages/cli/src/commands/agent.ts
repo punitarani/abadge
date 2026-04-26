@@ -1,12 +1,60 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 import { AGENT_KINDS, type AgentKind } from "@abadge/core";
 import type { AbadgeUserClient } from "@abadge/sdk";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { loadConfig, updateConfig } from "../config";
 import { error, errorMessage, json, success, table, warn } from "../output";
+
+type McpConfigSnippetInput = {
+  agentId: string;
+  apiUrl: string;
+  privateKeyPath: string;
+  binaryPath: string;
+};
+
+export type McpConfigObject = {
+  mcpServers: {
+    abadge: {
+      command: string;
+      env: {
+        ABADGE_API_URL: string;
+        ABADGE_AGENT_ID: string;
+        ABADGE_PRIVATE_KEY_PATH: string;
+      };
+    };
+  };
+};
+
+export function buildMcpConfigObject(input: McpConfigSnippetInput): McpConfigObject {
+  return {
+    mcpServers: {
+      abadge: {
+        command: input.binaryPath,
+        env: {
+          ABADGE_API_URL: input.apiUrl,
+          ABADGE_AGENT_ID: input.agentId,
+          ABADGE_PRIVATE_KEY_PATH: input.privateKeyPath,
+        },
+      },
+    },
+  };
+}
+
+export function buildMcpConfigSnippet(input: McpConfigSnippetInput): string {
+  return JSON.stringify(buildMcpConfigObject(input), null, 2);
+}
+
+export function defaultMcpBinaryPath(): string {
+  // Default to the directory install.sh writes to. Operators with a custom
+  // ABADGE_INSTALL_DIR can read their installed location from the env at
+  // register time.
+  const installDir = process.env.ABADGE_INSTALL_DIR ?? join(homedir(), ".abadge", "bin");
+  return join(installDir, "abadge-mcp");
+}
 
 /**
  * Maps an agent kind to the local config slot that should persist its
@@ -33,7 +81,13 @@ export function configSlotForKind(kind: AgentKind): "cli" | "mcp" | null {
 
 async function registerKeypairAgent(
   client: AbadgeUserClient,
-  opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
+  opts: {
+    name: string;
+    kind: AgentKind;
+    description?: string;
+    json?: boolean;
+    mcpConfig?: boolean;
+  },
 ): Promise<void> {
   const genKey = crypto.subtle.generateKey.bind(crypto.subtle) as (
     algorithm: { name: string },
@@ -74,8 +128,24 @@ async function registerKeypairAgent(
     });
   }
 
+  // The action handler validates that loadConfig()?.apiUrl is set BEFORE
+  // calling registerKeypairAgent when --mcp-config is requested, so the
+  // ?? "" fallback below is defensive only — it should never resolve to "".
+  const mcpConfig = opts.mcpConfig
+    ? buildMcpConfigObject({
+        agentId: result.agent.id,
+        apiUrl: loadConfig()?.apiUrl ?? "",
+        privateKeyPath: keyPath,
+        binaryPath: defaultMcpBinaryPath(),
+      })
+    : undefined;
+
   if (opts.json) {
-    json({ agent: result.agent, privateKeyPath: keyPath });
+    json({
+      agent: result.agent,
+      privateKeyPath: keyPath,
+      ...(mcpConfig ? { mcpConfig } : {}),
+    });
   } else {
     success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
     success(`Private key saved to ${keyPath}`);
@@ -83,6 +153,11 @@ async function registerKeypairAgent(
       warn(
         "Remote agent registered. Configure the remote service with the credentials shown above; no local config was written.",
       );
+    }
+    if (mcpConfig) {
+      console.log("");
+      console.log("Add to your MCP client config (e.g. Claude Desktop):");
+      console.log(JSON.stringify(mcpConfig, null, 2));
     }
   }
 }
@@ -118,6 +193,10 @@ export function createAgentCommand(): Command {
     .option("-k, --kind <kind>", "Agent kind", "local_cli")
     .option("-d, --description <text>", "Agent description")
     .option("--legacy-api-key", "Use legacy API key auth instead of Ed25519 keypair")
+    .option(
+      "--mcp-config",
+      "After registering a local_mcp agent, print a Claude Desktop config snippet",
+    )
     .option("--json", "Output as JSON")
     .action(
       async (opts: {
@@ -125,6 +204,7 @@ export function createAgentCommand(): Command {
         kind: string;
         description?: string;
         legacyApiKey?: boolean;
+        mcpConfig?: boolean;
         json?: boolean;
       }) => {
         if (!AGENT_KINDS.includes(opts.kind as AgentKind)) {
@@ -132,6 +212,21 @@ export function createAgentCommand(): Command {
           process.exit(1);
         }
         const kind = opts.kind as AgentKind;
+
+        if (opts.mcpConfig && kind !== "local_mcp") {
+          error("--mcp-config is only valid with --kind local_mcp.");
+          process.exit(1);
+        }
+        if (opts.mcpConfig && opts.legacyApiKey) {
+          error("--mcp-config cannot be combined with --legacy-api-key.");
+          process.exit(1);
+        }
+        if (opts.mcpConfig && !loadConfig()?.apiUrl) {
+          // Validate before createAgent so a missing apiUrl doesn't strand a
+          // server-side agent record with no usable client config.
+          error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
+          process.exit(1);
+        }
 
         try {
           const client = await createUserApiClient();
@@ -146,6 +241,44 @@ export function createAgentCommand(): Command {
         }
       },
     );
+
+  cmd
+    .command("mcp-config")
+    .description("Print a Claude Desktop config snippet for a registered local_mcp agent")
+    .argument(
+      "<id>",
+      "Agent ID (must match the registered local_mcp agent in ~/.abadge/config.json)",
+    )
+    .action((id: string) => {
+      const config = loadConfig();
+      const apiUrl = config?.apiUrl;
+      const localMcp = config?.localAgents?.mcp;
+
+      if (!apiUrl) {
+        error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
+        process.exit(1);
+      }
+      if (!localMcp) {
+        error(
+          "No local_mcp agent is registered on this machine. Run `abadge agent register --kind local_mcp --mcp-config` first.",
+        );
+        process.exit(1);
+      }
+      if (localMcp.agentId !== id) {
+        error(
+          `Local config has agent ${localMcp.agentId}, not ${id}. Re-register the agent or pass the matching id.`,
+        );
+        process.exit(1);
+      }
+
+      const snippet = buildMcpConfigSnippet({
+        agentId: localMcp.agentId,
+        apiUrl,
+        privateKeyPath: localMcp.privateKeyPath,
+        binaryPath: defaultMcpBinaryPath(),
+      });
+      console.log(snippet);
+    });
 
   cmd
     .command("list")

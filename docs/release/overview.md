@@ -27,13 +27,13 @@ That file defines:
 
 ## Current state
 
-Today only one package is registered:
+Two packages are registered:
 
-* `cli` -> `@abadge/cli`
+* `cli` -> `@abadge/cli` (ships as the `abadge` binary)
+* `mcp` -> `@abadge/mcp` (ships as the `abadge-mcp` binary)
 
-Its target is:
-
-* `github-binary`
+Both use the `github-binary` target kind. Each has its own tag prefix (`cli-v*`, `mcp-v*`) and
+versions independently. See [cli.md](./cli.md) and [mcp.md](./mcp.md) for per-package details.
 
 ## Flow
 

@@ -33,7 +33,7 @@ export type ReleasePackage = {
 
 export const repoRoot = resolve(fileURLToPath(new URL("../../", import.meta.url)));
 
-const cliPlatforms = [
+const binaryPlatforms = [
   { id: "darwin-x64", bunTarget: "bun-darwin-x64" },
   { id: "darwin-arm64", bunTarget: "bun-darwin-arm64" },
   { id: "linux-x64-baseline", bunTarget: "bun-linux-x64-baseline" },
@@ -75,7 +75,42 @@ export const releasePackages = [
         entrypoint: "packages/cli/bin/abadge.ts",
         buildCommand: ["bun", "build", "--compile"],
         prepareCommands: [["bun", "run", "--cwd", "packages/sdk", "build"]],
-        platforms: cliPlatforms,
+        platforms: binaryPlatforms,
+      },
+    ],
+  },
+  {
+    id: "mcp",
+    packageName: "@abadge/mcp",
+    workspaceDir: "packages/mcp",
+    versionSource: "packages/mcp/package.json",
+    changePaths: [
+      "packages/mcp/",
+      "packages/daemon/",
+      "packages/sdk/",
+      "packages/core/",
+      "packages/crypto/",
+      "packages/trpc/",
+      "install.sh",
+      "scripts/releases/",
+      ".github/workflows/release.yml",
+      "docs/MCP.md",
+      "docs/release/mcp.md",
+      "apps/docs/mcp/",
+      "package.json",
+    ],
+    targets: [
+      {
+        id: "mcp-binary",
+        kind: "github-binary",
+        tagPrefix: "mcp-v",
+        assetPrefix: "abadge-mcp",
+        releaseTitle: "abadge MCP server",
+        binaryName: "abadge-mcp",
+        entrypoint: "packages/mcp/src/index.ts",
+        buildCommand: ["bun", "build", "--compile"],
+        prepareCommands: [["bun", "run", "--cwd", "packages/sdk", "build"]],
+        platforms: binaryPlatforms,
       },
     ],
   },

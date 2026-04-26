@@ -25,12 +25,32 @@ After install:
 abadge --version
 ```
 
-## Pinning a version
-
-Set `ABADGE_VERSION` to install a specific release:
+By default the install script installs **both** `abadge` and `abadge-mcp`. To install only one:
 
 ```bash
-ABADGE_VERSION=1.4.2 \
+# CLI only
+ABADGE_INSTALL_PACKAGE=cli \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+# MCP server only — see also /mcp/installation
+ABADGE_INSTALL_PACKAGE=mcp \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+## Pinning a version
+
+When installing a single package, `ABADGE_VERSION` pins that package's release:
+
+```bash
+ABADGE_INSTALL_PACKAGE=cli ABADGE_VERSION=1.4.2 \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+When installing multiple packages, use the scoped variables — `ABADGE_VERSION` is rejected to
+avoid ambiguity:
+
+```bash
+ABADGE_CLI_VERSION=1.4.2 ABADGE_MCP_VERSION=0.0.2 \
   curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
 ```
 
@@ -38,9 +58,13 @@ ABADGE_VERSION=1.4.2 \
 
 | Variable | Default | Effect |
 |---|---|---|
-| `ABADGE_INSTALL_DIR` | `~/.abadge/bin` | Where the binary is installed |
+| `ABADGE_INSTALL_PACKAGE` | `all` | `cli`, `mcp`, or `all` |
+| `ABADGE_INSTALL_DIR` | `~/.abadge/bin` | Where binaries are installed |
 | `ABADGE_INSTALL_REPO` | `punitarani/abadge` | GitHub repo to fetch from |
 | `ABADGE_INSTALL_BASE_URL` | (GitHub releases) | Override the release archive URL |
+| `ABADGE_CLI_VERSION` | (latest stable `cli-v*`) | Pin the CLI release |
+| `ABADGE_MCP_VERSION` | (latest stable `mcp-v*`) | Pin the MCP release |
+| `ABADGE_VERSION` | (none) | Fallback for single-package installs |
 | `PROFILE` | (auto-detected) | Shell profile file to update |
 
 ## Build from source
