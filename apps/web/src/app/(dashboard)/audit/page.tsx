@@ -239,14 +239,16 @@ export default function AuditPage(): React.ReactElement {
 
   const handleRefresh = useCallback((): void => {
     if (!activeOrgId) return;
+    // Drop every cached audit page before resetPagination switches the observer
+    // to the page-1 key. Two reasons:
+    //   1. Any other cached page would otherwise be refetched with its stale
+    //      queryFn closure (cursor=N, isInitialLoad=false) and append page-N
+    //      entries on top of fresh page-1 entries via setAllEntries in queryFn.
+    //   2. With no cached data on the page-1 key, the new observer triggers an
+    //      initial fetch — refetchOnMount: false only suppresses refetches
+    //      against existing cached data, not initial fetches.
+    queryClient.removeQueries({ queryKey: dashboardQueryKeys.orgAuditPrefix(activeOrgId) });
     resetPagination();
-    // refetchType: "all" so the page-1 query (inactive while we're on a later
-    // cursor) is also refetched once resetPagination switches the observer to it.
-    // refetchOnMount: false on auditQuery would otherwise suppress that refetch.
-    void queryClient.invalidateQueries({
-      queryKey: dashboardQueryKeys.orgAuditPrefix(activeOrgId),
-      refetchType: "all",
-    });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgAgents(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgItems(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profiles(activeOrgId) });
