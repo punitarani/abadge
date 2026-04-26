@@ -1,8 +1,14 @@
+import { labelToEnvKey } from "@abadge/core";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { error, errorMessage, warn } from "../output";
 
+// Single shared normalization with `abadge run --all`. Falls back to the raw
+// uppercased label when `labelToEnvKey` rejects (returns "") so the export
+// stays a best-effort dump and never silently drops a row.
 function toEnvKey(label: string): string {
+  const normalized = labelToEnvKey(label);
+  if (normalized.length > 0) return normalized;
   return label.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 }
 

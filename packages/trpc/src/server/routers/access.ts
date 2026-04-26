@@ -1,4 +1,6 @@
 import type {
+  BulkMountEnvInput,
+  BulkMountEnvItem,
   Capability,
   CiphertextAccessInput,
   ItemPayload,
@@ -7,6 +9,8 @@ import type {
 } from "@abadge/core";
 import {
   BadRequestError,
+  BulkMountEnvResponseSchema,
+  BulkMountEnvSchema,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
   FieldNotFoundError,
@@ -26,8 +30,12 @@ import {
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
 } from "@abadge/crypto/shared";
-import { and, eq, isNull } from "@abadge/db";
-import { items, permissions as permissionRecords } from "@abadge/db/schema";
+import { and, eq, gt, isNull, or } from "@abadge/db";
+import {
+  items,
+  permissions as permissionRecords,
+  profiles as profileRecords,
+} from "@abadge/db/schema";
 import { Cause, Effect } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
@@ -558,6 +566,209 @@ const accessMount = (input: MountAccessInput) =>
     };
   });
 
+/**
+ * Server-enforced ceiling on bulk mount results. Prevents a misconfigured
+ * profile (or a hostile DB-write adversary) from forcing the daemon to
+ * decrypt thousands of items in one Bun.spawn call. The daemon socket is
+ * newline-delimited JSON without an explicit framing limit, so the cap also
+ * keeps RPC payloads well under any reasonable OS socket buffer.
+ *
+ * 256 = "comfortably more than any real .env file we've seen" without
+ * meaningfully relaxing the DoS bound. Tune up if real usage demands.
+ */
+const BULK_MOUNT_ENV_MAX_ITEMS = 256;
+
+const accessBulkMountEnv = (input: BulkMountEnvInput) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+
+    // Local-only capability (CAPABILITY_MATRIX). Reject remote agents at the
+    // gate. No per-item audit row — no items were accessed.
+    if (ctx.identity.agentLocality !== "local") {
+      return yield* Effect.fail(
+        new ForbiddenError({
+          code: "PERMISSION_DENIED",
+          message: "Remote agents cannot bulk-mount env vars",
+          hint: "Run the agent locally to use --all, or use access.reveal per-item remotely.",
+        }),
+      );
+    }
+
+    // Verify the profile belongs to the agent's org BEFORE returning anything.
+    // Cross-org probing returns NOT_FOUND so existence isn't leaked.
+    const [profile] = yield* tryAsync(() =>
+      ctx.db
+        .select({ id: profileRecords.id })
+        .from(profileRecords)
+        .where(
+          and(
+            eq(profileRecords.id, input.profileId),
+            eq(profileRecords.organizationId, ctx.identity.agentOrganizationId),
+          ),
+        )
+        .limit(1),
+    );
+    if (!profile) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found",
+          hint: "Confirm the profileId belongs to the agent's organization.",
+        }),
+      );
+    }
+
+    // The user's hard invariant: profile is the trust boundary. The filter
+    // sits in the same query as org+agent scoping, so a tampered CLI cannot
+    // spoof a different profile. expiresAt IS NULL OR expiresAt > now —
+    // mirrors checkPermission's tri-state collapsed into a SQL predicate.
+    const now = new Date();
+    const rows = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          item: items,
+          permissionExpiresAt: permissionRecords.expiresAt,
+        })
+        .from(items)
+        .innerJoin(
+          permissionRecords,
+          and(
+            eq(permissionRecords.itemId, items.id),
+            eq(permissionRecords.agentId, ctx.identity.agentId),
+            eq(permissionRecords.capability, "mount_env"),
+          ),
+        )
+        .where(
+          and(
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
+            eq(items.profileId, input.profileId),
+            isNull(items.deletedAt),
+            or(isNull(permissionRecords.expiresAt), gt(permissionRecords.expiresAt, now)),
+          ),
+        )
+        .limit(BULK_MOUNT_ENV_MAX_ITEMS + 1),
+    );
+
+    if (rows.length > BULK_MOUNT_ENV_MAX_ITEMS) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: `Profile has more than ${BULK_MOUNT_ENV_MAX_ITEMS} items granting mount_env to this agent`,
+          hint: "Scope the profile to fewer items or run secrets explicitly with --item.",
+          meta: { limit: BULK_MOUNT_ENV_MAX_ITEMS },
+        }),
+      );
+    }
+
+    const responseItems: BulkMountEnvItem[] = [];
+    // Greptile P1 / phantom-audit fix: stage every "allowed" audit row for
+    // the call and flush only after responseItems is fully built. If a later
+    // item's decrypt fails (server-managed IntegrityError, ZK envelope
+    // corruption mid-loop, etc.), Effect.fail short-circuits the gen and
+    // the staged rows disappear — so the audit log never claims "allowed"
+    // for items the agent never received. Denied rows are factually correct
+    // ("the agent attempted access on a corrupt item") and can still flush
+    // immediately at their failure site.
+    type StagedAudit = Parameters<typeof logAgentAudit>[0];
+    const pendingAllowedAudits: StagedAudit[] = [];
+
+    for (const row of rows) {
+      const item = row.item;
+
+      if (item.storageMode === "zero_knowledge") {
+        if (!item.profileId || !item.encryptedItemKey || !item.ciphertext) {
+          // Per-item audit: this access was attempted (granted) but failed
+          // due to data corruption. Hard-fail the whole bulk call so the
+          // user notices, rather than silently dropping the item. Flush
+          // the denied row immediately — it is factually correct.
+          yield* logAgentAudit({
+            organizationId: ctx.identity.agentOrganizationId,
+            userId: ctx.identity.agentUserId,
+            agentId: ctx.identity.agentId,
+            itemId: item.id,
+            profileId: item.profileId ?? undefined,
+            eventType: "access.mount_env",
+            result: "denied",
+            ipAddress: ctx.ipAddress,
+            meta: { viaBulk: true, reason: "zk item missing envelope or profile binding" },
+          });
+          return yield* Effect.fail(
+            new IntegrityError({
+              code: "INTEGRITY_ERROR",
+              message: "Zero-knowledge item is missing required encryption fields",
+              hint: "This indicates data corruption; contact support.",
+              meta: { itemId: item.id },
+            }),
+          );
+        }
+
+        pendingAllowedAudits.push({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId,
+          eventType: "access.mount_env",
+          result: "allowed",
+          deliveryMode: "mount_env",
+          ipAddress: ctx.ipAddress,
+          meta: { viaBulk: true },
+        });
+
+        responseItems.push({
+          storageMode: "zero_knowledge",
+          itemId: item.id,
+          label: item.label,
+          encryptedItemKey: item.encryptedItemKey,
+          ciphertext: item.ciphertext,
+          cryptoVersion: item.cryptoVersion,
+          profileId: item.profileId,
+          contentVersion: item.contentVersion,
+        });
+        continue;
+      }
+
+      // server_managed branch — decrypt and ship the payload. If decrypt
+      // fails (e.g., failMissingServerManagedData writes its own denied
+      // audit then aborts), the gen short-circuits and pendingAllowedAudits
+      // never flushes — so any earlier ZK items that were staged as
+      // "allowed" do NOT leave audit rows. This is the load-bearing
+      // property of the staging pattern.
+      const decrypted = yield* decryptServerManagedItem(item, "access.mount_env");
+      const payload = decodeServerManagedPayload(item.id, decrypted);
+
+      pendingAllowedAudits.push({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: item.id,
+        profileId: item.profileId ?? undefined,
+        eventType: "access.mount_env",
+        result: "allowed",
+        deliveryMode: "mount_env",
+        ipAddress: ctx.ipAddress,
+        meta: { viaBulk: true },
+      });
+
+      responseItems.push({
+        storageMode: "server_managed",
+        itemId: item.id,
+        label: item.label,
+        payload,
+      });
+    }
+
+    // All items resolved successfully — flush the staged audit rows. Any
+    // earlier failure short-circuited via Effect.fail, in which case
+    // pendingAllowedAudits is discarded with the gen frame and no phantom
+    // "allowed" rows hit the audit table.
+    for (const auditRow of pendingAllowedAudits) {
+      yield* logAgentAudit(auditRow);
+    }
+
+    return { items: responseItems };
+  });
+
 export const accessRouter = createTrpcRouter({
   ciphertext: agentProcedure
     .input(strictSchema(CiphertextAccessSchema))
@@ -571,4 +782,8 @@ export const accessRouter = createTrpcRouter({
     .input(strictSchema(MountAccessSchema))
     .output(strictSchema(MountAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessMount(input))),
+  bulkMountEnv: agentProcedure
+    .input(strictSchema(BulkMountEnvSchema))
+    .output(strictSchema(BulkMountEnvResponseSchema))
+    .mutation(({ ctx, input }) => runAgentEffect(ctx, accessBulkMountEnv(input))),
 });

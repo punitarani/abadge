@@ -208,6 +208,7 @@
             "pages": [
               "mcp/tools/list_items",
               "mcp/tools/run_with_secret",
+              "mcp/tools/run_with_all_secrets",
               "mcp/tools/mount_secret",
               "mcp/tools/release_mount",
               "mcp/tools/get_audit"

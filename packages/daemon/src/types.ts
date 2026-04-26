@@ -105,6 +105,31 @@ export interface EnvExecResult {
   signal?: string;
 }
 
+/**
+ * One item passed to `exec.envBulk`. The daemon decrypts ZK items in-process
+ * (using the AAD meta to rebuild the XChaCha20-Poly1305 binding) and
+ * passes server-managed payloads through verbatim.
+ *
+ * The label is the item's user-facing name; the daemon normalizes it to a
+ * shell-safe env var name via `labelToEnvKey` from `@abadge/core`.
+ */
+export type BulkExecItem =
+  | {
+      itemId: string;
+      label: string;
+      storageMode: "zero_knowledge";
+      encryptedItemKey: string;
+      ciphertext: string;
+      profileId: string;
+      contentVersion: number;
+    }
+  | {
+      itemId: string;
+      label: string;
+      storageMode: "server_managed";
+      payload: unknown;
+    };
+
 /** Result of item.rekey for a single item. */
 export interface RekeyItemResult {
   id: string;

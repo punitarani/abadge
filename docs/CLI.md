@@ -341,8 +341,12 @@ abadge permission revoke <permission-id>
 
 ### `abadge run`
 
-Resolves a secret value and injects it into a subprocess via the daemon. Exits with the child
-process exit code. Supports field-level delivery for multi-field items and environment expansion.
+Resolves secret values and injects them into a subprocess via the daemon. Exits with the child
+process exit code. Two modes:
+
+**Single-item mode (`--item <id>`)** — pull one item; control delivery with `--field`, `--env-var`, or `--expand-env`.
+
+**Bulk mode (`--all`)** — pull every item in the **active profile** that the agent has `mount_env` on, normalize each item's label into a POSIX-shaped env var name (`openai-api-key` → `OPENAI_API_KEY`), and spawn the command with all of them. Profile is the trust boundary: items in other profiles are NEVER injected, even if the agent has grants on them.
 
 ```bash
 # Single-value item — inject as ABADGE_SECRET
@@ -361,14 +365,25 @@ abadge run --item prod-db --field username --env-var DB_USER \
 # Expand every field of a multi-field item into the environment
 abadge run --item my-service-env --expand-env -- ./server
 # → DATABASE_URL=..., REDIS_URL=..., API_KEY=... (field name = env var name)
+
+# Bulk mode — every item in the active profile granted mount_env
+abadge run --all -- npm start
+# → OPENAI_API_KEY=..., DATABASE_URL=..., REDIS_URL=...
+
+# Bulk mode against a specific profile (overrides active profile)
+abadge run --all --profile prof_dev -- ./worker
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--item` | Item ID or label |
-| `--field` | Named field to inject (for multi-field items); can be repeated |
-| `--env-var` | Environment variable name (default: `ABADGE_SECRET`) |
-| `--expand-env` | Inject every field as a separate env var (field name = var name) |
+| `--item` | Item ID or label (single-item mode; mutually exclusive with `--all`) |
+| `--all` | Bulk mode: inject every item in the active profile granted `mount_env`, with each label normalized to an env var name |
+| `--profile` | Override the active profile when using `--all` (defaults to `~/.abadge/config.json::activeProfileId`) |
+| `--field` | Named field to inject (single-item mode); can be repeated |
+| `--env-var` | Environment variable name (single-item mode; default: `ABADGE_SECRET`) |
+| `--expand-env` | Inject every field of one item as a separate env var (single-item mode; field name = var name) |
+
+**Bulk-mode rules.** Only items with exactly **one string field** participate (the env-var-shaped subset; matches `abadge import .env` output). Multi-field items (login, certificate, ssh_key) are silently skipped — use single-item mode with `--field` for those. Two items normalizing to the same env var, or a label normalizing to a reserved key (`PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, …), are **hard-rejected** with the offending item ID. Bulk is capped at 256 items per run; scope further if you hit that. Each included item produces its own `access.mount_env` audit row tagged `meta.viaBulk = true`.
 
 ### `abadge mount`
 

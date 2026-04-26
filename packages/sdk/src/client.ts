@@ -13,6 +13,7 @@ import type {
   AuditFilters,
   AuditListResult,
   BootstrapVaultInput,
+  BulkMountEnvResponse,
   ChangePasswordInput,
   CiphertextAccessResponse,
   CreateAgentInput,
@@ -176,6 +177,7 @@ interface SdkTrpcClient {
       { itemId: string; mountType: "env" | "file"; field?: string },
       MountAccessResponse
     >;
+    bulkMountEnv: TrpcMutation<{ profileId: string }, BulkMountEnvResponse>;
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
@@ -1223,6 +1225,28 @@ export class AbadgeAgentClient {
     return this.authedCall(
       () => this.client.access.mount.mutate({ itemId, mountType, ...(field ? { field } : {}) }),
       "Failed to access mount payload",
+    );
+  }
+
+  /**
+   * Bulk-fetch every item in the given profile that the agent has `mount_env`
+   * on, in one round trip. Each item access produces its own audit row
+   * (`access.mount_env`, `meta.viaBulk = true`).
+   *
+   * Profile-scoped by hard server invariant: items in other profiles are NOT
+   * returned even if the agent has grants on them. Cross-org probing yields
+   * `PROFILE_NOT_FOUND` (existence is not leaked).
+   *
+   * Used by `abadge run --all`. Local agents only.
+   *
+   * @param profileId - The profile to scope the bulk mount to
+   * @returns Array of per-item mount responses (ZK envelope or server-managed payload)
+   * @throws {AbadgeApiError} PERMISSION_DENIED (remote agent), PROFILE_NOT_FOUND, BAD_REQUEST (>256 items)
+   */
+  async bulkAccessMountEnv(profileId: string): Promise<BulkMountEnvResponse> {
+    return this.authedCall(
+      () => this.client.access.bulkMountEnv.mutate({ profileId }),
+      "Failed to bulk-fetch mount payloads",
     );
   }
 }

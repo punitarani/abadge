@@ -38,14 +38,40 @@ abadge run --item my-service-env --expand-env -- ./server
 
 `--expand-env` requires the local daemon — start it with `abadge daemon start` if needed.
 
+## Bulk mode (`--all`)
+
+`--all` fetches **every item in the active profile** that the runtime agent has `mount_env` on, normalizes each item's `label` into a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`), and spawns the command with all of them.
+
+```bash
+# Use the active profile from ~/.abadge/config.json::activeProfileId
+abadge run --all -- npm start
+
+# Override the active profile
+abadge run --all --profile prof_dev -- ./worker
+```
+
+Profile is the trust boundary: items in other profiles are NEVER injected, even if the agent has grants on them. `--all` is mutually exclusive with `--item`.
+
+**Eligibility (structural filter).** Only items with exactly one string field participate — the env-var-shaped subset that `abadge import .env` produces. Multi-field items (login, certificate, ssh_key) are silently skipped; use single-item mode with `--field` for those.
+
+**Hard-fails (refuses to silently misbehave).**
+
+- A label normalizing to a name in the reserved env-var blocklist (`PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, `HTTPS_PROXY`, …) → error with the offending item's id.
+- Two items normalizing to the same env var → error listing both ids.
+- More than 256 items match → error with `meta.limit = 256`. Scope further or use `--item` per-secret.
+
+`--all` requires the local daemon and an unlocked vault for any ZK items in the profile (server-managed items don't need an unlocked vault but still require the daemon for env injection).
+
 ## Flags
 
 | Flag | Required | Description |
 |---|---|---|
-| `--item <id>` | yes | Item ID |
-| `--field <name>` | no | Named field to inject (for multi-field items) |
-| `--env-var <name>` | no | Environment variable name. Defaults to `ABADGE_SECRET`. |
-| `--expand-env` | no | Inject every field as a separate env var (requires the daemon) |
+| `--item <id>` | yes (single-item mode) | Item ID. Mutually exclusive with `--all`. |
+| `--all` | yes (bulk mode) | Inject every item in the active profile granted `mount_env` |
+| `--profile <id>` | no | Override the active profile when using `--all` |
+| `--field <name>` | no | Named field to inject (single-item mode) |
+| `--env-var <name>` | no | Environment variable name (single-item mode). Defaults to `ABADGE_SECRET`. |
+| `--expand-env` | no | Inject every field of one item as a separate env var (single-item mode; requires the daemon) |
 
 Everything after `--` is the subprocess command and arguments.
 

@@ -98,6 +98,53 @@ Denied if: remote agent, or missing the corresponding `mount_*` permission.
 
 Audit: `access.mount_env` or `access.mount_file`.
 
+## `access.bulkMountEnv`
+
+Returns every item in the given **profile** that the calling agent has `mount_env` on, in one round trip. Backs `abadge run --all`. Profile is the trust boundary — items in other profiles are NEVER returned, even if the agent has grants on them.
+
+Auth: `agentProcedure` (local agents only).
+
+Input:
+
+```ts
+{ profileId: string }
+```
+
+Response:
+
+```ts
+{
+  items: Array<
+    | {
+        storageMode: "zero_knowledge";
+        itemId: string;
+        label: string;
+        encryptedItemKey: string;
+        ciphertext: string;
+        cryptoVersion: number;
+        profileId: string;
+        contentVersion: number;
+      }
+    | {
+        storageMode: "server_managed";
+        itemId: string;
+        label: string;
+        payload: ItemPayload;
+      }
+  >
+}
+```
+
+Each included item produces one `access.mount_env` audit row tagged `meta.viaBulk = true` with `profileId` populated.
+
+Failure modes:
+
+- Remote agents → `PERMISSION_DENIED` at the gate (no per-item audit row, since no items were accessed).
+- `profileId` belonging to another org → `PROFILE_NOT_FOUND` (existence is not leaked).
+- More than 256 matching items → `BAD_REQUEST` with `meta.limit = 256`. Scope further or use single-item `access.mount`.
+
+The CLI normalizes each item's `label` into a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`), applies the structural filter (only items with exactly one string field participate), and hard-rejects on collisions or reserved names like `LD_PRELOAD` / `NODE_OPTIONS`. ZK items are decrypted in-process by the daemon; CLI never sees ZK plaintext.
+
 ## Decision flow
 
 Every `access.*` call runs the same decision flow before any decryption:

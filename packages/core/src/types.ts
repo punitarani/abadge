@@ -14,6 +14,9 @@ import type {
   AuditEntrySchema,
   AuditListResultSchema,
   AuditQuerySchema,
+  BulkMountEnvItemSchema,
+  BulkMountEnvResponseSchema,
+  BulkMountEnvSchema,
   ChangePasswordSchema,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
@@ -98,6 +101,9 @@ export type AuditEntry = TypeOf<typeof AuditEntrySchema>;
 export type CiphertextAccessInput = TypeOf<typeof CiphertextAccessSchema>;
 export type RevealAccessInput = TypeOf<typeof RevealAccessSchema>;
 export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
+export type BulkMountEnvInput = TypeOf<typeof BulkMountEnvSchema>;
+export type BulkMountEnvItem = TypeOf<typeof BulkMountEnvItemSchema>;
+export type BulkMountEnvResponse = TypeOf<typeof BulkMountEnvResponseSchema>;
 
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;

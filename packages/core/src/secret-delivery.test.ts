@@ -4,6 +4,7 @@ import {
   expandFieldSelection,
   FieldNotFoundError,
   formatDomainError,
+  labelToEnvKey,
   listStringFields,
   MultiFieldItemError,
   resolveFieldValue,
@@ -136,6 +137,52 @@ describe("field expansion helpers", () => {
       key: "key-pem",
       cert: "cert-pem",
     });
+  });
+});
+
+describe("labelToEnvKey", () => {
+  test("uppercases and preserves valid identifiers verbatim", () => {
+    expect(labelToEnvKey("DATABASE_URL")).toBe("DATABASE_URL");
+    expect(labelToEnvKey("API_KEY")).toBe("API_KEY");
+  });
+
+  test("uppercases lowercase labels", () => {
+    expect(labelToEnvKey("database_url")).toBe("DATABASE_URL");
+  });
+
+  test("substitutes hyphens, dots, and spaces with underscores", () => {
+    expect(labelToEnvKey("openai-api-key")).toBe("OPENAI_API_KEY");
+    expect(labelToEnvKey("pg.primary.host")).toBe("PG_PRIMARY_HOST");
+    expect(labelToEnvKey("stripe live key")).toBe("STRIPE_LIVE_KEY");
+  });
+
+  test("collapses runs of underscores from punctuation clusters", () => {
+    expect(labelToEnvKey("DB---URL")).toBe("DB_URL");
+    expect(labelToEnvKey("foo___bar")).toBe("FOO_BAR");
+  });
+
+  test("trims trailing underscores from punctuation suffixes", () => {
+    expect(labelToEnvKey("api-key-")).toBe("API_KEY");
+    expect(labelToEnvKey("token...")).toBe("TOKEN");
+  });
+
+  test("prepends underscore when label starts with a digit", () => {
+    expect(labelToEnvKey("1password")).toBe("_1PASSWORD");
+    expect(labelToEnvKey("42-secret")).toBe("_42_SECRET");
+  });
+
+  test("returns empty string for unsalvageable labels", () => {
+    expect(labelToEnvKey("")).toBe("");
+    expect(labelToEnvKey("***")).toBe("");
+    expect(labelToEnvKey("___")).toBe("");
+  });
+
+  test("does not enforce RESERVED_ENV_KEYS — that is the caller's job", () => {
+    // labelToEnvKey is purely a normalizer. Reservation rejection lives in
+    // the caller so it can attribute the failure to a specific item id/label.
+    expect(labelToEnvKey("path")).toBe("PATH");
+    expect(labelToEnvKey("ld-preload")).toBe("LD_PRELOAD");
+    expect(labelToEnvKey("node-options")).toBe("NODE_OPTIONS");
   });
 });
 

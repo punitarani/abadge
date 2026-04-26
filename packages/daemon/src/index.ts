@@ -1,6 +1,7 @@
 export { DaemonClient } from "./client";
 export { clearDaemonState, isDaemonRunning, startDaemon, stopDaemon } from "./lifecycle";
 export type {
+  BulkExecItem,
   DaemonAuthHeaders,
   DaemonAuthState,
   DaemonAuthStatus,
