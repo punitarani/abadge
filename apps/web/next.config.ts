@@ -13,6 +13,15 @@ const nextConfig: NextConfig = {
     ABADGE_API_URL: process.env.ABADGE_API_URL,
     ABADGE_APP_URL: process.env.ABADGE_APP_URL,
   },
+  experimental: {
+    // Rewrites `import { Foo } from "lucide-react"` (a barrel) to a deep,
+    // tree-shakeable import. lucide-react and @phosphor-icons/react are in
+    // Next 15's documented auto-optimize list. radix-ui (umbrella) is added
+    // optimistically: if the umbrella isn't supported, this entry is a no-op
+    // and the regular `radix-ui` barrel still tree-shakes via standard ESM
+    // (verify with `bun run build` and inspect bundle size).
+    optimizePackageImports: ["lucide-react", "@phosphor-icons/react", "radix-ui"],
+  },
   async redirects() {
     return [
       {

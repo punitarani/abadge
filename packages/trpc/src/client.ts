@@ -128,11 +128,30 @@ export function createNodeTrpcClient(options: NodeTrpcClientOptions) {
   });
 }
 
+/** SPA cache profile for the dashboard — see comment block on the QueryClient defaults below. */
+const ONE_MINUTE_MS = 60 * 1000;
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
 export function createTrpcQueryClient(config?: QueryClientConfig): QueryClient {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 30_000,
+        // SPA cache profile for the dashboard:
+        //   - 1-minute staleTime: cached data is reused across intra-dashboard
+        //     navigation without refetch, but a mount of a >60s-old query still
+        //     refetches (refetchOnMount default true) — that's intentional, the
+        //     dashboard surfaces security-sensitive state (permissions, agents)
+        //     that must not silently lag behind reality.
+        //   - 10-minute gcTime: cache survives long enough for back-navigation
+        //     to feel instant after a brief detour.
+        //   - refetchOnWindowFocus disabled: this is an admin tool, not a stock
+        //     ticker; tab-switching shouldn't trigger a refetch storm.
+        //   - refetchOnReconnect "always": after network recovery, force fresh
+        //     data even if technically still within staleTime.
+        staleTime: ONE_MINUTE_MS,
+        gcTime: TEN_MINUTES_MS,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: "always",
         retry: false,
       },
       mutations: {

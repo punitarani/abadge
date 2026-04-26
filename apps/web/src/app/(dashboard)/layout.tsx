@@ -79,14 +79,62 @@ declare global {
   }
 }
 
+/**
+ * Persistent dashboard shell. The sidebar, vault provider, and chrome render
+ * UNCONDITIONALLY here so they survive every transient state hiccup that the
+ * gate inside `<SidebarInset>` recovers from. Auth/org gating lives in
+ * {@link DashboardGate}, which renders inside the content area only — that
+ * way a momentary "loading" or "redirect" state never blanks out the
+ * sidebar/header chrome.
+ */
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }): React.ReactElement {
+  return (
+    <>
+      <VaultProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <div className="px-8 py-6">
+              <DashboardGate>{children}</DashboardGate>
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </VaultProvider>
+      {USERJOT_PROJECT_ID && (
+        <>
+          <Script id="userjot-loader" strategy="afterInteractive">
+            {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
+          </Script>
+          <Script id="userjot-init" strategy="afterInteractive">
+            {`window.uj.init('${USERJOT_PROJECT_ID}',{widget:true,position:'right',theme:'auto'});`}
+          </Script>
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Auth/org gate for the dashboard. Renders one of:
+ *   - children — when the session and active org are ready
+ *   - inline error card — when `organizations.list` fails
+ *   - inline loader — while session, org list, or Zustand are pending
+ *
+ * Lives INSIDE `<SidebarInset>` so the sidebar/header chrome stay visible
+ * during gating and the user never sees a full blank-screen flash. The
+ * redirect-to-login and redirect-to-onboarding behavior is driven by a single
+ * `useEffect` calling `decideLayoutAction()` (a pure function with its own
+ * tests in `decideLayoutAction.test.ts` if present, or kept here as a
+ * standalone export-friendly helper).
+ */
+function DashboardGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
-  // Store selectors (not destructuring) so the layout only re-renders when
+  // Store selectors (not destructuring) so the gate only re-renders when
   // these specific fields change, not on every unrelated store update.
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
@@ -163,12 +211,12 @@ export default function DashboardLayout({
     }
   }, [session?.user]);
 
-  // Surface `organizations.list` failures explicitly so the layout can never
+  // Surface `organizations.list` failures explicitly so the gate can never
   // hang on "Loading..." forever. The previous implementation conflated
   // "pending", "errored", and "not-yet-started" into a single loader.
   if (hydrated && !sessionPending && session && orgsQuery.isError) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-6">
+      <div className="flex items-center justify-center py-12">
         <div className="w-full max-w-md space-y-4 rounded-lg border border-border bg-card p-6 text-center shadow-sm">
           <h1 className="text-lg font-semibold">We couldn't load your organizations</h1>
           <p className="text-sm text-muted-foreground">
@@ -194,41 +242,23 @@ export default function DashboardLayout({
     );
   }
 
-  // Show loading while auth, orgs, or store hydration are pending. orgReady
+  // Inline loader while auth, orgs, or store hydration are pending. orgReady
   // requires the active org to also have a bootstrapped profile — otherwise
   // scoped child queries would fail with ONBOARDING_INCOMPLETE. The effect
   // above redirects to /onboarding; this render guard keeps the dashboard
-  // from briefly flashing broken state in that window.
+  // from briefly flashing broken state in that window. Crucially, the loader
+  // lives INSIDE `<SidebarInset>` (the parent layout renders the chrome
+  // unconditionally), so even during this gate the sidebar stays visible —
+  // the user no longer sees a full blank screen on transient state hiccups.
   const orgReady =
     hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId && o.hasBootstrappedProfile);
   if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex items-center justify-center py-12">
         <div className="text-sm text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
-  return (
-    <>
-      <VaultProvider>
-        <SidebarProvider>
-          <AppSidebar />
-          <SidebarInset>
-            <div className="px-8 py-6">{children}</div>
-          </SidebarInset>
-        </SidebarProvider>
-      </VaultProvider>
-      {USERJOT_PROJECT_ID && (
-        <>
-          <Script id="userjot-loader" strategy="afterInteractive">
-            {`window.$ujq=window.$ujq||[];window.uj=window.uj||new Proxy({},{get:(_,p)=>(...a)=>window.$ujq.push([p,...a])});document.head.appendChild(Object.assign(document.createElement('script'),{src:'https://cdn.userjot.com/sdk/v2/uj.js',type:'module',async:!0}));`}
-          </Script>
-          <Script id="userjot-init" strategy="afterInteractive">
-            {`window.uj.init('${USERJOT_PROJECT_ID}',{widget:true,position:'right',theme:'auto'});`}
-          </Script>
-        </>
-      )}
-    </>
-  );
+  return <>{children}</>;
 }

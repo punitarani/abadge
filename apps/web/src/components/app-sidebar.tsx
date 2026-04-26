@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LifeBuoy,
+  type LucideIcon,
   ScrollText,
   Send,
   Settings,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useRef } from "react";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -29,6 +31,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { type PrefetchableRoute, useRoutePrefetcher } from "@/hooks/use-route-prefetcher";
 
 const navGroups = [
   {
@@ -49,17 +52,68 @@ const navGroups = [
     label: "Monitor",
     items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
   },
-];
+] as const satisfies ReadonlyArray<{
+  label: string;
+  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: LucideIcon }>;
+}>;
 
 const secondaryNavItems = [
   { href: "mailto:support@abadge.io", label: "Support", icon: LifeBuoy },
   { href: "https://abadge.userjot.com/", label: "Feedback", icon: Send },
-];
+] as const;
 
-const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }];
+const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
+
+/**
+ * "Settle"-style hover/focus debounce: prefetch fires only if the user stays
+ * on the link for `HOVER_DEBOUNCE_MS`, and cancels if they move on first.
+ * This avoids wasted requests when the cursor grazes the link en route to
+ * another target. TanStack Query's dedupe would handle request amplification
+ * but does not help with the bandwidth cost of an unnecessary first request.
+ */
+const HOVER_DEBOUNCE_MS = 100;
+
+interface PrefetchHandlers {
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  onFocus: () => void;
+  onBlur: () => void;
+}
+
+function usePrefetchHandlers(prefetch: () => void): PrefetchHandlers {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const start = useCallback(() => {
+    cancel();
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      prefetch();
+    }, HOVER_DEBOUNCE_MS);
+  }, [prefetch, cancel]);
+
+  useEffect(() => cancel, [cancel]);
+
+  return {
+    onPointerEnter: start,
+    onPointerLeave: cancel,
+    onFocus: start,
+    onBlur: cancel,
+  };
+}
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
+  const prefetchers = useRoutePrefetcher();
+
+  const overviewHandlers = usePrefetchHandlers(prefetchers.overview);
+  const settingsHandlers = usePrefetchHandlers(prefetchers.settings);
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -73,7 +127,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
-                  <Link href="/overview">
+                  <Link href="/overview" {...overviewHandlers}>
                     <LayoutDashboard />
                     <span>Overview</span>
                   </Link>
@@ -89,20 +143,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {group.items.map((item) => {
-                  const href = `/${item.path}`;
-                  const isActive = pathname.startsWith(href);
-                  return (
-                    <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton asChild isActive={isActive}>
-                        <Link href={href}>
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    path={item.path}
+                    label={item.label}
+                    icon={item.icon}
+                    pathname={pathname}
+                    prefetch={prefetchers[item.path]}
+                  />
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -142,7 +192,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href}>
+                      <Link href={href} {...settingsHandlers}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
@@ -159,5 +209,33 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+function NavLink({
+  path,
+  label,
+  icon: Icon,
+  pathname,
+  prefetch,
+}: {
+  path: PrefetchableRoute;
+  label: string;
+  icon: LucideIcon;
+  pathname: string;
+  prefetch: () => void;
+}): React.ReactElement {
+  const href = `/${path}`;
+  const isActive = pathname.startsWith(href);
+  const handlers = usePrefetchHandlers(prefetch);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isActive}>
+        <Link href={href} {...handlers}>
+          <Icon />
+          <span>{label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
