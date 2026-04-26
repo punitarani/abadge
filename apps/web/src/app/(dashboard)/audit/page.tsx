@@ -240,7 +240,13 @@ export default function AuditPage(): React.ReactElement {
   const handleRefresh = useCallback((): void => {
     if (!activeOrgId) return;
     resetPagination();
-    void queryClient.invalidateQueries({ queryKey: ["audit", activeOrgId] });
+    // refetchType: "all" so the page-1 query (inactive while we're on a later
+    // cursor) is also refetched once resetPagination switches the observer to it.
+    // refetchOnMount: false on auditQuery would otherwise suppress that refetch.
+    void queryClient.invalidateQueries({
+      queryKey: dashboardQueryKeys.orgAuditPrefix(activeOrgId),
+      refetchType: "all",
+    });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgAgents(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgItems(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profiles(activeOrgId) });
