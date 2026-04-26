@@ -108,7 +108,6 @@ export function useRoutePrefetcher(): Record<PrefetchableRoute, () => void> {
       settings: () => {
         prefetchOrganization();
         prefetchMembers();
-        prefetchItems();
       },
     }),
     [

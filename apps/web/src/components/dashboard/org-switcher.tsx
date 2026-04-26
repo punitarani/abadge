@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
@@ -79,10 +80,18 @@ export function OrgSwitcher(): React.ReactElement {
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // The persistent shell renders OrgSwitcher before DashboardGate confirms
+  // auth, so guard the org-list fetch on session presence to avoid firing a
+  // guaranteed 401 against the API on any unauthenticated dashboard URL hit.
+  // Mirrors the same guard in DashboardGate's organizations.list query — both
+  // consumers share `dashboardQueryKeys.organizations()`, so React Query
+  // dedupes the network request.
+  const { data: session, isPending: sessionPending } = authClient.useSession();
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
+    enabled: !!session,
   });
 
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
@@ -117,7 +126,12 @@ export function OrgSwitcher(): React.ReactElement {
     }
   }
 
-  if (isLoading) {
+  // Show the skeleton placeholder when either the session itself is still
+  // resolving OR the org-list query is in flight. For unauthenticated users
+  // (session resolved as null), the skeleton stays up while DashboardGate
+  // redirects to /login — better than briefly flashing a "Select org"
+  // dropdown that the user is about to be navigated away from.
+  if (sessionPending || !session || isLoading) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
