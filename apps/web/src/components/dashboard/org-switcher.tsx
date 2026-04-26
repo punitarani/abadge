@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, ChevronsUpDown, TicketCheck } from "lucide-react";
 import { useState } from "react";
 import { CreateOrgForm } from "@/components/onboarding/create-org-form";
@@ -77,7 +77,6 @@ function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.
 export function OrgSwitcher(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
-  const queryClient = useQueryClient();
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
@@ -107,8 +106,14 @@ export function OrgSwitcher(): React.ReactElement {
   function handleSelect(org: Org): void {
     if (org.id !== activeOrgId) {
       setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo });
-      // Invalidate all org-scoped queries so they refetch with the new org header
-      queryClient.invalidateQueries();
+      // Org-scoped queries are keyed by orgId (see dashboardQueryKeys.orgItems
+      // / orgAgents / orgPermissions / orgAudit / etc.), so the new active
+      // org's queries have completely different cache keys — they will mount
+      // and fetch on first use without any invalidation. Old-org entries age
+      // out via gcTime, which keeps back-navigation snappy if the user flips
+      // between orgs. The previous nuke (`queryClient.invalidateQueries()`
+      // with no key) caused a refetch storm across every cached query in the
+      // app, including ones unrelated to org scope.
     }
   }
 
