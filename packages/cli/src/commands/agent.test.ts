@@ -59,7 +59,7 @@ describe("buildMcpConfigSnippet", () => {
     expect(snippet).toContain('"mcpServers"');
   });
 
-  test("buildMcpConfigObject returns the same shape as the parsed snippet (canonical for JSON embedding)", () => {
+  test("buildMcpConfigObject returns the same structured shape as the parsed snippet", () => {
     const input = {
       agentId: "agent_abc123",
       apiUrl: "https://api.abadge.io",
@@ -67,28 +67,6 @@ describe("buildMcpConfigSnippet", () => {
       binaryPath: "/Users/punit/.abadge/bin/abadge-mcp",
     };
     expect(buildMcpConfigObject(input)).toEqual(JSON.parse(buildMcpConfigSnippet(input)));
-  });
-
-  test("buildMcpConfigObject can be embedded inside another JSON object cleanly", () => {
-    // Reproduces the --mcp-config + --json combined output: a single parent
-    // payload with mcpConfig nested under it, instead of two concatenated JSON
-    // documents on stdout (the previous bug).
-    const mcpConfig = buildMcpConfigObject({
-      agentId: "agent_x",
-      apiUrl: "https://api.abadge.io",
-      privateKeyPath: "/k.jwk",
-      binaryPath: "/b/abadge-mcp",
-    });
-    const combined = {
-      agent: { id: "agent_x", name: "test" },
-      privateKeyPath: "/k.jwk",
-      mcpConfig,
-    };
-
-    // Parses cleanly as a single document.
-    const reparsed = JSON.parse(JSON.stringify(combined)) as typeof combined;
-    expect(reparsed.mcpConfig.mcpServers.abadge.command).toBe("/b/abadge-mcp");
-    expect(reparsed.mcpConfig.mcpServers.abadge.env.ABADGE_AGENT_ID).toBe("agent_x");
   });
 });
 

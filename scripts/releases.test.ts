@@ -403,8 +403,13 @@ describe("installer helpers", () => {
 
       expect(installProc.exitCode).toBe(0);
       const stdout = decoder.decode(installProc.stdout);
+      const stderr = decoder.decode(installProc.stderr);
       expect(stdout).toContain("Installed abadge to");
       expect(stdout).toMatch(/No release found for abadge MCP server.*skipping/);
+      // BASE_URL is set without a scoped MCP version, so resolve_version_for_package
+      // must warn explicitly on stderr instead of falling through silently.
+      expect(stderr).toContain("ABADGE_INSTALL_BASE_URL is set but no version was supplied");
+      expect(stderr).toContain("ABADGE_MCP_VERSION");
       expect(readFileSync(join(installDir, "abadge"), "utf8")).toContain("abadge-skip-test");
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });

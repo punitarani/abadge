@@ -128,37 +128,32 @@ async function registerKeypairAgent(
     });
   }
 
-  // The action handler validates that loadConfig()?.apiUrl is set BEFORE
-  // calling registerKeypairAgent when --mcp-config is requested, so the
-  // ?? "" fallback below is defensive only — it should never resolve to "".
-  const mcpConfig = opts.mcpConfig
-    ? buildMcpConfigObject({
-        agentId: result.agent.id,
-        apiUrl: loadConfig()?.apiUrl ?? "",
-        privateKeyPath: keyPath,
-        binaryPath: defaultMcpBinaryPath(),
-      })
-    : undefined;
-
   if (opts.json) {
-    json({
-      agent: result.agent,
+    // --mcp-config is rejected up-front in the action handler when --json is
+    // also passed, so we never need to embed mcpConfig in the JSON payload.
+    json({ agent: result.agent, privateKeyPath: keyPath });
+    return;
+  }
+
+  success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+  success(`Private key saved to ${keyPath}`);
+  if (!configSlot) {
+    warn(
+      "Remote agent registered. Configure the remote service with the credentials shown above; no local config was written.",
+    );
+  }
+  if (opts.mcpConfig) {
+    // The action handler verifies loadConfig()?.apiUrl is non-empty before we
+    // get here, so the ?? "" fallback is defensive only.
+    const snippet = buildMcpConfigSnippet({
+      agentId: result.agent.id,
+      apiUrl: loadConfig()?.apiUrl ?? "",
       privateKeyPath: keyPath,
-      ...(mcpConfig ? { mcpConfig } : {}),
+      binaryPath: defaultMcpBinaryPath(),
     });
-  } else {
-    success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-    success(`Private key saved to ${keyPath}`);
-    if (!configSlot) {
-      warn(
-        "Remote agent registered. Configure the remote service with the credentials shown above; no local config was written.",
-      );
-    }
-    if (mcpConfig) {
-      console.log("");
-      console.log("Add to your MCP client config (e.g. Claude Desktop):");
-      console.log(JSON.stringify(mcpConfig, null, 2));
-    }
+    console.log("");
+    console.log("Add to your MCP client config (e.g. Claude Desktop):");
+    console.log(snippet);
   }
 }
 
@@ -219,6 +214,15 @@ export function createAgentCommand(): Command {
         }
         if (opts.mcpConfig && opts.legacyApiKey) {
           error("--mcp-config cannot be combined with --legacy-api-key.");
+          process.exit(1);
+        }
+        if (opts.mcpConfig && opts.json) {
+          // --mcp-config is a human-paste workflow; --json is for script consumers.
+          // Mixing them would emit two top-level JSON documents on stdout. Prefer
+          // running `abadge agent register --json` and then `abadge agent mcp-config <id>`.
+          error(
+            "--mcp-config cannot be combined with --json. Run `abadge agent register --json` first, then `abadge agent mcp-config <id>` to print the snippet.",
+          );
           process.exit(1);
         }
         if (opts.mcpConfig && !loadConfig()?.apiUrl) {
