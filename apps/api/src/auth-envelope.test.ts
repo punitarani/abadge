@@ -58,4 +58,54 @@ describe("auth envelope middleware (§ENV2b)", () => {
     // Should not be wrapped by this middleware (5xx pass-through).
     expect(body).toEqual({ message: "crash" });
   });
+
+  test("preserves RFC 8628 device-flow fields and maps them into the envelope", async () => {
+    const app = new Hono();
+    app.use("*", authEnvelopeMiddleware);
+    app.get("/device-token", (c) =>
+      c.json(
+        {
+          error: "authorization_pending",
+          error_description: "User has not yet approved the device.",
+        },
+        400,
+      ),
+    );
+    const res = await app.request("/device-token");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as AnyObject;
+    expect(body).toEqual({
+      error: "authorization_pending",
+      error_description: "User has not yet approved the device.",
+      code: "authorization_pending",
+      message: "User has not yet approved the device.",
+      hint: null,
+      meta: null,
+    });
+  });
+
+  test("strips upstream fields outside the envelope and RFC 8628 allowlist", async () => {
+    const app = new Hono();
+    app.use("*", authEnvelopeMiddleware);
+    app.get("/leaky", (c) =>
+      c.json(
+        {
+          message: "Bad input",
+          code: "BAD_AUTH",
+          // Hypothetical upstream-only fields that must not reach clients.
+          traceId: "trace-123",
+          internalState: { scope: "private" },
+        },
+        400,
+      ),
+    );
+    const res = await app.request("/leaky");
+    const body = (await res.json()) as AnyObject;
+    expect(body).toEqual({
+      code: "BAD_AUTH",
+      message: "Bad input",
+      hint: null,
+      meta: null,
+    });
+  });
 });
