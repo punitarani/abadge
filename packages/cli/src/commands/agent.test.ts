@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -6,6 +6,7 @@ import {
   buildMcpConfigObject,
   buildMcpConfigSnippet,
   configSlotForKind,
+  createAgentCommand,
   defaultMcpBinaryPath,
 } from "./agent";
 
@@ -93,5 +94,44 @@ describe("defaultMcpBinaryPath", () => {
   test("respects ABADGE_INSTALL_DIR when the operator has a custom install location", () => {
     process.env.ABADGE_INSTALL_DIR = "/opt/abadge/bin";
     expect(defaultMcpBinaryPath()).toBe("/opt/abadge/bin/abadge-mcp");
+  });
+});
+
+describe("agent register action handler", () => {
+  // Sentinel error thrown by the mocked process.exit so we can detect the
+  // exit call without actually terminating the test runner.
+  const EXIT_SENTINEL = "__test_process_exit__";
+
+  test("rejects --mcp-config combined with --json before any I/O", async () => {
+    let exitCode: number | undefined;
+    const exitSpy = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      exitCode = code;
+      throw new Error(EXIT_SENTINEL);
+    }) as never);
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const cmd = createAgentCommand();
+      // The guard ordering in agent.ts means --kind local_mcp + --mcp-config +
+      // --json trips the new --json rejection BEFORE the apiUrl/loadConfig
+      // check, so we don't need to mock the local config or the API client.
+      await expect(
+        cmd.parseAsync(
+          ["register", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"],
+          { from: "user" },
+        ),
+      ).rejects.toThrow(EXIT_SENTINEL);
+
+      expect(exitCode).toBe(1);
+
+      const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+      expect(errorOutput).toContain("--mcp-config cannot be combined with --json");
+      // Verify the error message points users at the correct two-step pattern
+      // so we don't regress the UX hint if someone refactors the message.
+      expect(errorOutput).toContain("abadge agent mcp-config");
+    } finally {
+      exitSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
