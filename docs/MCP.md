@@ -151,6 +151,42 @@ Security:
 - Each stream is bounded to 8 KB (`STREAM_CAP_BYTES`) to prevent OOM from a misbehaving subprocess.
 - If the model needs to inspect subprocess output, the operator should route output through a separate audited channel (e.g. write to a file via `mount_secret`, then read back explicitly).
 
+### `run_with_all_secrets`
+
+Runs a command with **every env-var-shaped item in the named profile** injected as a separate environment variable. Profile is the trust boundary: items in other profiles are NEVER injected, even if the agent has grants on them. Returns the same redaction-safe shape as `run_with_secret` plus an `injectedCount` for operational signal.
+
+Each item's label is normalized to a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`). Only items with exactly one string field participate; multi-field items (logins, certs, ssh_keys) are silently skipped — use `run_with_secret` with `field` for those.
+
+| Input field | Type | Required | Description |
+|------|------|----------|-------------|
+| `profileId` | string | yes | Profile to bulk-mount from |
+| `command` | string | yes | Command to run |
+| `args` | string[] | no | Command arguments |
+| `purpose` | string | no | Why these credentials are needed |
+
+Output:
+
+```json
+{
+  "exitCode": 0,
+  "durationMs": 73,
+  "outputLineCount": { "stdout": 5, "stderr": 0 },
+  "truncated": false,
+  "injectedCount": 7
+}
+```
+
+Security and failure modes:
+
+- **Subprocess stdout/stderr text is never forwarded to the model**, same §RED1 contract as `run_with_secret`.
+- **Per-item secret-size guard.** Each individual injected secret must fit in 4 KB; oversize secrets cause the whole call to error with the offending env-var name. Use `mount_secret` for large credentials.
+- **Reserved-env-key hard-reject.** A label normalizing to `LD_PRELOAD`, `NODE_OPTIONS`, etc. fails the call with the offending item id. Refusing to silently skip — the user's app would otherwise launch with the wrong env.
+- **Collision hard-reject.** Two items normalizing to the same env var name fail with both ids. Refusing to silently override.
+- **Capped at 256 items per call** (server-enforced). Scope further if you hit that limit.
+- **Local-only.** `mount_env` is local-only, so remote MCP agents cannot use this tool.
+- **Profile-scoped, not org-wide.** A `profileId` belonging to another org returns `PROFILE_NOT_FOUND` (existence is not leaked).
+- Each included item produces one `access.mount_env` audit row tagged `meta.viaBulk = true`.
+
 ### `mount_secret`
 
 Mounts a secret as a temporary file with 0600 permissions. Returns an opaque `mountId` — the file
