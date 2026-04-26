@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, ChevronsUpDown, TicketCheck } from "lucide-react";
 import { useState } from "react";
 import { CreateOrgForm } from "@/components/onboarding/create-org-form";
@@ -78,15 +78,21 @@ function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.
 export function OrgSwitcher(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
-  const { data: session } = authClient.useSession();
-  const userId = session?.user?.id ?? null;
-  const queryClient = useQueryClient();
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // The persistent shell renders OrgSwitcher before DashboardGate confirms
+  // auth, so guard the org-list fetch on session presence to avoid firing a
+  // guaranteed 401 against the API on any unauthenticated dashboard URL hit.
+  // Mirrors the same guard in DashboardGate's organizations.list query — both
+  // consumers share `dashboardQueryKeys.organizations()`, so React Query
+  // dedupes the network request.
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const userId = session?.user?.id ?? null;
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
+    enabled: !!session,
   });
 
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
@@ -111,12 +117,23 @@ export function OrgSwitcher(): React.ReactElement {
     if (!userId) return;
     if (org.id !== activeOrgId) {
       setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo });
-      // Invalidate all org-scoped queries so they refetch with the new org header
-      queryClient.invalidateQueries();
+      // Org-scoped queries are keyed by orgId (see dashboardQueryKeys.orgItems
+      // / orgAgents / orgPermissions / orgAudit / etc.), so the new active
+      // org's queries have completely different cache keys — they will mount
+      // and fetch on first use without any invalidation. Old-org entries age
+      // out via gcTime, which keeps back-navigation snappy if the user flips
+      // between orgs. The previous nuke (`queryClient.invalidateQueries()`
+      // with no key) caused a refetch storm across every cached query in the
+      // app, including ones unrelated to org scope.
     }
   }
 
-  if (isLoading) {
+  // Show the skeleton placeholder when either the session itself is still
+  // resolving OR the org-list query is in flight. For unauthenticated users
+  // (session resolved as null), the skeleton stays up while DashboardGate
+  // redirects to /login — better than briefly flashing a "Select org"
+  // dropdown that the user is about to be navigated away from.
+  if (sessionPending || !session || isLoading) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>

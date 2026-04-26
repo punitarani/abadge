@@ -4,8 +4,8 @@ import type { ItemSummary } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { debounce, useQueryStates } from "nuqs";
+import { useMemo } from "react";
 import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,11 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { itemsFilterParsers, type StorageFilter } from "@/lib/query-state";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
-
-type StorageFilter = "all" | "zero_knowledge" | "server_managed";
 
 function storageLabel(mode: string): string {
   return mode === "zero_knowledge" ? "Zero-knowledge" : "Server-managed";
@@ -42,13 +41,15 @@ function StorageDot({ mode }: { mode: string }): React.ReactElement {
 }
 
 export default function ItemsListPage(): React.ReactElement {
-  const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
-  const [search, setSearch] = useState("");
-  const [storageFilter, setStorageFilter] = useState<StorageFilter>("all");
-  const [createOpen, setCreateOpen] = useState(searchParams.get("create") === "true");
+  const [filters, setFilters] = useQueryStates(itemsFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
+  });
+  const { q: search, storage: storageFilter, create: createOpen } = filters;
 
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
@@ -93,8 +94,7 @@ export default function ItemsListPage(): React.ReactElement {
   const hasActiveFilters = search !== "" || storageFilter !== "all";
 
   function clearFilters(): void {
-    setSearch("");
-    setStorageFilter("all");
+    void setFilters({ q: "", storage: "all" });
   }
 
   return (
@@ -116,7 +116,7 @@ export default function ItemsListPage(): React.ReactElement {
             Encrypted credentials and secrets stored in your vault.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={() => void setFilters({ create: true })}>
           <Plus className="mr-1 h-3.5 w-3.5" />
           Add item
         </Button>
@@ -129,14 +129,14 @@ export default function ItemsListPage(): React.ReactElement {
           <Input
             placeholder="Search items..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="pl-8"
           />
         </div>
 
         <select
           value={storageFilter}
-          onChange={(e) => setStorageFilter(e.target.value as StorageFilter)}
+          onChange={(e) => void setFilters({ storage: e.target.value as StorageFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All storage</option>
@@ -150,8 +150,8 @@ export default function ItemsListPage(): React.ReactElement {
         <FilterChips
           search={search}
           storageFilter={storageFilter}
-          onClearSearch={() => setSearch("")}
-          onClearStorage={() => setStorageFilter("all")}
+          onClearSearch={() => void setFilters({ q: "" })}
+          onClearStorage={() => void setFilters({ storage: "all" })}
           onClearAll={clearFilters}
         />
       )}
@@ -164,7 +164,7 @@ export default function ItemsListPage(): React.ReactElement {
         agentCountsByItem={agentCountsByItem}
       />
 
-      <CreateItemPanel open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreateItemPanel open={createOpen} onClose={() => void setFilters({ create: false })} />
     </div>
   );
 }
