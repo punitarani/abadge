@@ -16,23 +16,36 @@ type McpConfigSnippetInput = {
   binaryPath: string;
 };
 
-export function buildMcpConfigSnippet(input: McpConfigSnippetInput): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        abadge: {
-          command: input.binaryPath,
-          env: {
-            ABADGE_API_URL: input.apiUrl,
-            ABADGE_AGENT_ID: input.agentId,
-            ABADGE_PRIVATE_KEY_PATH: input.privateKeyPath,
-          },
+export type McpConfigObject = {
+  mcpServers: {
+    abadge: {
+      command: string;
+      env: {
+        ABADGE_API_URL: string;
+        ABADGE_AGENT_ID: string;
+        ABADGE_PRIVATE_KEY_PATH: string;
+      };
+    };
+  };
+};
+
+export function buildMcpConfigObject(input: McpConfigSnippetInput): McpConfigObject {
+  return {
+    mcpServers: {
+      abadge: {
+        command: input.binaryPath,
+        env: {
+          ABADGE_API_URL: input.apiUrl,
+          ABADGE_AGENT_ID: input.agentId,
+          ABADGE_PRIVATE_KEY_PATH: input.privateKeyPath,
         },
       },
     },
-    null,
-    2,
-  );
+  };
+}
+
+export function buildMcpConfigSnippet(input: McpConfigSnippetInput): string {
+  return JSON.stringify(buildMcpConfigObject(input), null, 2);
 }
 
 export function defaultMcpBinaryPath(): string {
@@ -115,8 +128,24 @@ async function registerKeypairAgent(
     });
   }
 
+  // The action handler validates that loadConfig()?.apiUrl is set BEFORE
+  // calling registerKeypairAgent when --mcp-config is requested, so the
+  // ?? "" fallback below is defensive only — it should never resolve to "".
+  const mcpConfig = opts.mcpConfig
+    ? buildMcpConfigObject({
+        agentId: result.agent.id,
+        apiUrl: loadConfig()?.apiUrl ?? "",
+        privateKeyPath: keyPath,
+        binaryPath: defaultMcpBinaryPath(),
+      })
+    : undefined;
+
   if (opts.json) {
-    json({ agent: result.agent, privateKeyPath: keyPath });
+    json({
+      agent: result.agent,
+      privateKeyPath: keyPath,
+      ...(mcpConfig ? { mcpConfig } : {}),
+    });
   } else {
     success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
     success(`Private key saved to ${keyPath}`);
@@ -125,25 +154,11 @@ async function registerKeypairAgent(
         "Remote agent registered. Configure the remote service with the credentials shown above; no local config was written.",
       );
     }
-  }
-
-  if (opts.mcpConfig) {
-    const apiUrl = loadConfig()?.apiUrl;
-    if (!apiUrl) {
-      error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
-      process.exit(1);
-    }
-    const snippet = buildMcpConfigSnippet({
-      agentId: result.agent.id,
-      apiUrl,
-      privateKeyPath: keyPath,
-      binaryPath: defaultMcpBinaryPath(),
-    });
-    if (!opts.json) {
+    if (mcpConfig) {
       console.log("");
       console.log("Add to your MCP client config (e.g. Claude Desktop):");
+      console.log(JSON.stringify(mcpConfig, null, 2));
     }
-    console.log(snippet);
   }
 }
 
@@ -204,6 +219,12 @@ export function createAgentCommand(): Command {
         }
         if (opts.mcpConfig && opts.legacyApiKey) {
           error("--mcp-config cannot be combined with --legacy-api-key.");
+          process.exit(1);
+        }
+        if (opts.mcpConfig && !loadConfig()?.apiUrl) {
+          // Validate before createAgent so a missing apiUrl doesn't strand a
+          // server-side agent record with no usable client config.
+          error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
           process.exit(1);
         }
 

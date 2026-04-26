@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import { buildMcpConfigSnippet, configSlotForKind, defaultMcpBinaryPath } from "./agent";
+import {
+  buildMcpConfigObject,
+  buildMcpConfigSnippet,
+  configSlotForKind,
+  defaultMcpBinaryPath,
+} from "./agent";
 
 describe("configSlotForKind", () => {
   test("local_cli maps to the cli slot", () => {
@@ -52,6 +57,38 @@ describe("buildMcpConfigSnippet", () => {
     });
     expect(snippet).toContain("\n  ");
     expect(snippet).toContain('"mcpServers"');
+  });
+
+  test("buildMcpConfigObject returns the same shape as the parsed snippet (canonical for JSON embedding)", () => {
+    const input = {
+      agentId: "agent_abc123",
+      apiUrl: "https://api.abadge.io",
+      privateKeyPath: "/Users/punit/.abadge/agents/agent_abc123.ed25519.jwk",
+      binaryPath: "/Users/punit/.abadge/bin/abadge-mcp",
+    };
+    expect(buildMcpConfigObject(input)).toEqual(JSON.parse(buildMcpConfigSnippet(input)));
+  });
+
+  test("buildMcpConfigObject can be embedded inside another JSON object cleanly", () => {
+    // Reproduces the --mcp-config + --json combined output: a single parent
+    // payload with mcpConfig nested under it, instead of two concatenated JSON
+    // documents on stdout (the previous bug).
+    const mcpConfig = buildMcpConfigObject({
+      agentId: "agent_x",
+      apiUrl: "https://api.abadge.io",
+      privateKeyPath: "/k.jwk",
+      binaryPath: "/b/abadge-mcp",
+    });
+    const combined = {
+      agent: { id: "agent_x", name: "test" },
+      privateKeyPath: "/k.jwk",
+      mcpConfig,
+    };
+
+    // Parses cleanly as a single document.
+    const reparsed = JSON.parse(JSON.stringify(combined)) as typeof combined;
+    expect(reparsed.mcpConfig.mcpServers.abadge.command).toBe("/b/abadge-mcp");
+    expect(reparsed.mcpConfig.mcpServers.abadge.env.ABADGE_AGENT_ID).toBe("agent_x");
   });
 });
 
