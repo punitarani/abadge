@@ -84,9 +84,9 @@ app.notFound((c) =>
 
 // §ENV2c — canonical envelope for unhandled errors.
 app.onError((err, c) => {
-  console.error("[onError]", err);
   if (err instanceof HTTPException) {
     const status = err.status;
+    if (status >= 500) console.error("[onError]", err);
     return c.json(
       {
         code: status === 500 ? "INTERNAL_SERVER_ERROR" : "ERROR",
@@ -97,6 +97,7 @@ app.onError((err, c) => {
       status,
     );
   }
+  console.error("[onError]", err);
   return c.json(
     {
       code: "INTERNAL_SERVER_ERROR",
