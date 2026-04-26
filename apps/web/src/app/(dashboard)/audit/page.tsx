@@ -7,8 +7,8 @@ import {
   type AuditResult,
   type Profile,
 } from "@abadge/core";
-import { MagnifyingGlass } from "@phosphor-icons/react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { ArrowClockwise, MagnifyingGlass } from "@phosphor-icons/react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
@@ -174,6 +174,7 @@ function AuditTableBody({
 export default function AuditPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
+  const queryClient = useQueryClient();
 
   const [filters, setFilters] = useQueryStates(auditFilterParsers, {
     history: "replace",
@@ -224,6 +225,18 @@ export default function AuditPage(): React.ReactElement {
 
   function handleLoadMore(): void {
     void auditQuery.fetchNextPage();
+  }
+
+  function handleRefresh(): void {
+    if (!activeOrgId) return;
+    // Wipe every cached audit page for this org so useInfiniteQuery refetches
+    // from page 1. Plain invalidateQueries would refetch each cached page in
+    // place, which is worse: more requests, and any new rows that landed
+    // mid-window would be missed.
+    queryClient.removeQueries({ queryKey: dashboardQueryKeys.orgAuditPrefix(activeOrgId) });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgAgents(activeOrgId) });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgItems(activeOrgId) });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profiles(activeOrgId) });
   }
 
   // Lookup data
@@ -361,6 +374,21 @@ export default function AuditPage(): React.ReactElement {
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
         </select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={!activeOrgId || auditQuery.isFetching}
+          aria-label="Refresh audit log"
+          className="ml-auto h-9"
+        >
+          <ArrowClockwise
+            className={cn("h-4 w-4", auditQuery.isFetching && "animate-spin")}
+            aria-hidden="true"
+          />
+          Refresh
+        </Button>
       </div>
 
       {/* Table */}
