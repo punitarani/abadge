@@ -8,8 +8,8 @@ import {
   type AuditResult,
   type Profile,
 } from "@abadge/core";
-import { MagnifyingGlass } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { ArrowClockwise, MagnifyingGlass } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -177,6 +177,7 @@ function AuditTableBody({
 export default function AuditPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
+  const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
   const [eventTypeFilter, setEventTypeFilter] = useState<"all" | AuditEventType>("all");
@@ -235,6 +236,15 @@ export default function AuditPage(): React.ReactElement {
       setCursor(nextCursor);
     }
   }
+
+  const handleRefresh = useCallback((): void => {
+    if (!activeOrgId) return;
+    resetPagination();
+    void queryClient.invalidateQueries({ queryKey: ["audit", activeOrgId] });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgAgents(activeOrgId) });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgItems(activeOrgId) });
+    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profiles(activeOrgId) });
+  }, [activeOrgId, queryClient, resetPagination]);
 
   // Lookup data
   const agentsQuery = useQuery({
@@ -383,6 +393,21 @@ export default function AuditPage(): React.ReactElement {
           <option value="7d">Last 7 days</option>
           <option value="30d">Last 30 days</option>
         </select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleRefresh}
+          disabled={!activeOrgId || auditQuery.isFetching}
+          aria-label="Refresh audit log"
+          className="ml-auto h-9"
+        >
+          <ArrowClockwise
+            className={cn("h-4 w-4", auditQuery.isFetching && "animate-spin")}
+            aria-hidden="true"
+          />
+          Refresh
+        </Button>
       </div>
 
       {/* Table */}
