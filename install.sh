@@ -13,6 +13,12 @@ say() {
   printf '%s\n' "$*"
 }
 
+warn() {
+  # stderr-only so callers that capture function stdout (e.g.
+  # `version="$(resolve_version_for_package …)"`) don't slurp the warning.
+  printf 'warning: %s\n' "$*" >&2
+}
+
 fail() {
   printf 'error: %s\n' "$*" >&2
   exit 1
@@ -251,6 +257,12 @@ resolve_version_for_package() {
     latest_version_for_package "$pkg"
     return
   fi
+
+  # BASE_URL is set, so we don't query GitHub for the "latest" tag — but the
+  # operator didn't pin a version either. Warn explicitly so a multi-package
+  # install with ABADGE_INSTALL_PACKAGE=all doesn't silently skip every
+  # package without explanation.
+  warn "ABADGE_INSTALL_BASE_URL is set but no version was supplied for $(pkg_display_name "$pkg"); set ABADGE_$(printf '%s' "$pkg" | tr '[:lower:]' '[:upper:]')_VERSION (or ABADGE_VERSION for single-package installs) to install from the mirror."
 }
 
 install_package() {

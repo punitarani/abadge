@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -6,6 +6,7 @@ import {
   buildMcpConfigObject,
   buildMcpConfigSnippet,
   configSlotForKind,
+  createAgentCommand,
   defaultMcpBinaryPath,
 } from "./agent";
 
@@ -59,7 +60,7 @@ describe("buildMcpConfigSnippet", () => {
     expect(snippet).toContain('"mcpServers"');
   });
 
-  test("buildMcpConfigObject returns the same shape as the parsed snippet (canonical for JSON embedding)", () => {
+  test("buildMcpConfigObject returns the same structured shape as the parsed snippet", () => {
     const input = {
       agentId: "agent_abc123",
       apiUrl: "https://api.abadge.io",
@@ -67,28 +68,6 @@ describe("buildMcpConfigSnippet", () => {
       binaryPath: "/Users/punit/.abadge/bin/abadge-mcp",
     };
     expect(buildMcpConfigObject(input)).toEqual(JSON.parse(buildMcpConfigSnippet(input)));
-  });
-
-  test("buildMcpConfigObject can be embedded inside another JSON object cleanly", () => {
-    // Reproduces the --mcp-config + --json combined output: a single parent
-    // payload with mcpConfig nested under it, instead of two concatenated JSON
-    // documents on stdout (the previous bug).
-    const mcpConfig = buildMcpConfigObject({
-      agentId: "agent_x",
-      apiUrl: "https://api.abadge.io",
-      privateKeyPath: "/k.jwk",
-      binaryPath: "/b/abadge-mcp",
-    });
-    const combined = {
-      agent: { id: "agent_x", name: "test" },
-      privateKeyPath: "/k.jwk",
-      mcpConfig,
-    };
-
-    // Parses cleanly as a single document.
-    const reparsed = JSON.parse(JSON.stringify(combined)) as typeof combined;
-    expect(reparsed.mcpConfig.mcpServers.abadge.command).toBe("/b/abadge-mcp");
-    expect(reparsed.mcpConfig.mcpServers.abadge.env.ABADGE_AGENT_ID).toBe("agent_x");
   });
 });
 
@@ -115,5 +94,44 @@ describe("defaultMcpBinaryPath", () => {
   test("respects ABADGE_INSTALL_DIR when the operator has a custom install location", () => {
     process.env.ABADGE_INSTALL_DIR = "/opt/abadge/bin";
     expect(defaultMcpBinaryPath()).toBe("/opt/abadge/bin/abadge-mcp");
+  });
+});
+
+describe("agent register action handler", () => {
+  // Sentinel error thrown by the mocked process.exit so we can detect the
+  // exit call without actually terminating the test runner.
+  const EXIT_SENTINEL = "__test_process_exit__";
+
+  test("rejects --mcp-config combined with --json before any I/O", async () => {
+    let exitCode: number | undefined;
+    const exitSpy = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      exitCode = code;
+      throw new Error(EXIT_SENTINEL);
+    }) as never);
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const cmd = createAgentCommand();
+      // The guard ordering in agent.ts means --kind local_mcp + --mcp-config +
+      // --json trips the new --json rejection BEFORE the apiUrl/loadConfig
+      // check, so we don't need to mock the local config or the API client.
+      await expect(
+        cmd.parseAsync(
+          ["register", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"],
+          { from: "user" },
+        ),
+      ).rejects.toThrow(EXIT_SENTINEL);
+
+      expect(exitCode).toBe(1);
+
+      const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+      expect(errorOutput).toContain("--mcp-config cannot be combined with --json");
+      // Verify the error message points users at the correct two-step pattern
+      // so we don't regress the UX hint if someone refactors the message.
+      expect(errorOutput).toContain("abadge agent mcp-config");
+    } finally {
+      exitSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
