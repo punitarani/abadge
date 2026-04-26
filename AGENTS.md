@@ -256,7 +256,7 @@ Does not own:
 
 * signup redirects the user to `/onboarding`; no personal org is auto-created
 * `/onboarding` presents two options:
-  * **Create a new organization** — two screens in a single page:
+  * **Create a new organization** — two screens in a single page. (The split looks like the previous step-1/step-2 onboarding, but each screen now does real work: step 1 creates only the org, step 2 creates the org's first profile. There is no auto-seeded profile to collide with.)
     1. **Name your organization** — name + slug. `organizations.create` transactionally inserts the org row and the owner `member` row. **It does NOT seed a profile** — that was the source of a duplicate-name conflict with the explicit profile step and is no longer the server's responsibility.
     2. **Set up your first profile** — name (defaults to `internal`), storage mode (`server_managed` default; `zero_knowledge` with client-side KDF + ZK password as an option), then `profiles.create` (+ `profiles.bootstrap` for ZK). On success the user lands at `/overview`.
   * **Join with an invite code** — paste a raw invite token (`abi_…`) or a full invite URL; the form calls `organizations.members.getInviteInfo` to preview, then `organizations.members.acceptInvite` on confirmation

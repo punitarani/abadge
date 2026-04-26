@@ -1,7 +1,6 @@
 /**
- * Pure helper for deciding whether an existing profile counts as
- * "bootstrapped" (usable). Kept free of React and network calls so it is
- * trivially testable.
+ * Pure helpers for the onboarding flow. Kept free of React and network
+ * calls so they are trivially testable.
  */
 
 export interface TriageProfile {
@@ -25,4 +24,39 @@ export interface TriageProfile {
 export function isProfileBootstrapped(p: TriageProfile): boolean {
   if (p.storageMode === "server_managed") return true;
   return p.wrappedRootKey !== null;
+}
+
+export interface ResumeOrgSummary {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  hasBootstrappedProfile: boolean;
+}
+
+export type ResumeAction =
+  | { kind: "redirect" }
+  | { kind: "resume-profile"; org: ResumeOrgSummary }
+  | { kind: "fall-through" };
+
+/**
+ * Decide what the onboarding page should do on mount when the user already
+ * has one or more orgs:
+ * - any usable org (bootstrapped profile)  -> redirect to the dashboard
+ * - org exists but no usable profile        -> resume on the create-profile step
+ * - no orgs                                 -> fall through to the choose screen
+ *
+ * Note on multi-org behavior: the previous `decideOnboardingStateFromList`
+ * eagerly resumed the first INCOMPLETE org even when other orgs were
+ * bootstrapped. This version prefers redirect — if you have any usable
+ * org you are not blocked, and the dashboard's org switcher lets you
+ * fix the incomplete one later. This is more permissive on purpose;
+ * `tests/onboarding-triage.test.ts` pins the new behavior.
+ */
+export function decideResumeAction(orgs: ReadonlyArray<ResumeOrgSummary>): ResumeAction {
+  const usable = orgs.find((o) => o.hasBootstrappedProfile);
+  if (usable) return { kind: "redirect" };
+  const incomplete = orgs[0];
+  if (incomplete) return { kind: "resume-profile", org: incomplete };
+  return { kind: "fall-through" };
 }
