@@ -10,7 +10,7 @@ import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import { authClient } from "@/lib/auth-client";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { useOrgStore } from "@/stores/org-store";
-import { decideOnboardingStateFromList, type ListedOrg } from "./onboarding-triage";
+import { decideResumeAction } from "./onboarding-triage";
 
 type OnboardingMode = "choose" | "create" | "join";
 
@@ -58,41 +58,31 @@ export default function OnboardingPage(): React.ReactElement | null {
     if (sessionPending || !userId) return;
 
     let cancelled = false;
+    const applyResume = (action: ReturnType<typeof decideResumeAction>): void => {
+      if (action.kind === "redirect") {
+        router.replace("/overview");
+        return;
+      }
+      if (action.kind === "resume-profile") {
+        const { org } = action;
+        setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo });
+        setResumeState({
+          orgId: org.id,
+          orgName: org.name,
+          orgSlug: org.slug,
+          step: 1,
+        });
+        // An org already exists for this user (they abandoned after step 1).
+        // Skip the choose screen and resume on the profile-setup step.
+        setMode("create");
+      }
+      setIsCheckingOrgs(false);
+    };
     (async () => {
       try {
         const listResult = await browserTrpcClient.organizations.list.query();
         if (cancelled) return;
-
-        const summaries: ListedOrg[] = listResult.organizations ?? [];
-        if (summaries.length === 0) {
-          setIsCheckingOrgs(false);
-          return;
-        }
-
-        const decision = decideOnboardingStateFromList(summaries);
-        if (decision.step === "redirect") {
-          router.replace("/overview");
-          return;
-        }
-        if (decision.step === "step2") {
-          const logo = summaries.find((s) => s.id === decision.orgId)?.logo ?? null;
-          setActiveOrg({
-            id: decision.orgId,
-            slug: decision.orgSlug,
-            name: decision.orgName,
-            logo,
-          });
-          setResumeState({
-            orgId: decision.orgId,
-            orgName: decision.orgName,
-            orgSlug: decision.orgSlug,
-            step: 1,
-          });
-          // An org already exists for this user (they abandoned after step 1).
-          // Skip the choose screen and resume on the profile-setup step.
-          setMode("create");
-        }
-        setIsCheckingOrgs(false);
+        applyResume(decideResumeAction(listResult.organizations ?? []));
       } catch (err) {
         // If the resume probe fails (network, auth race, etc.), fall through
         // to the choose screen. Users can still create a new org.

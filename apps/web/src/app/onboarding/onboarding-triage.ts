@@ -1,7 +1,6 @@
 /**
- * Pure logic for deciding how to resume onboarding when the user already has
- * one or more orgs. Kept free of React and network calls so it is testable
- * with bun:test.
+ * Pure helpers for the onboarding flow. Kept free of React and network
+ * calls so they are trivially testable.
  */
 
 export interface TriageProfile {
@@ -10,65 +9,24 @@ export interface TriageProfile {
   wrappedRootKey: string | null;
 }
 
-export interface TriageOrg {
-  id: string;
-  name: string;
-  slug: string;
-  profiles: TriageProfile[];
-}
-
-export type OnboardingDecision =
-  | { step: "step1" }
-  | { step: "step2"; orgId: string; orgSlug: string; orgName: string }
-  | { step: "redirect" };
-
 /**
  * A profile is considered "bootstrapped" (usable) when:
  * - it is server_managed (no client-side key needed), OR
  * - it is zero_knowledge and has a wrappedRootKey set.
  *
- * Profiles auto-created by `organizations.create` start as zero_knowledge
- * with wrappedRootKey === null and are therefore treated as unbootstrapped.
+ * Mirrors the server-side gate in
+ * `packages/trpc/src/server/onboarding-gate.ts`; they must stay in sync.
+ *
+ * Used by `resolve-profile.ts` to decide whether an "already exists"
+ * profile is an unbootstrapped orphan we may adopt, or a real profile we
+ * must never clobber.
  */
 export function isProfileBootstrapped(p: TriageProfile): boolean {
   if (p.storageMode === "server_managed") return true;
   return p.wrappedRootKey !== null;
 }
 
-/** An org needs bootstrapping when none of its profiles is bootstrapped. */
-export function orgNeedsBootstrap(org: TriageOrg): boolean {
-  if (org.profiles.length === 0) return true;
-  return !org.profiles.some(isProfileBootstrapped);
-}
-
-/**
- * Decide how to render onboarding given the user's current orgs:
- * - no orgs -> show step 1 (create org)
- * - any org is incomplete -> resume at step 2 for that org
- * - all orgs are complete -> redirect to overview
- */
-export function decideOnboardingState(orgs: TriageOrg[]): OnboardingDecision {
-  if (orgs.length === 0) return { step: "step1" };
-
-  const incomplete = orgs.find(orgNeedsBootstrap);
-  if (incomplete) {
-    return {
-      step: "step2",
-      orgId: incomplete.id,
-      orgSlug: incomplete.slug,
-      orgName: incomplete.name,
-    };
-  }
-
-  return { step: "redirect" };
-}
-
-/**
- * The shape `organizations.list` returns: enough to triage onboarding
- * without a follow-up profiles.list per org. The boolean is computed
- * server-side; see `listOrgs` in packages/trpc/src/server/routers/organizations.ts.
- */
-export interface ListedOrg {
+export interface ResumeOrgSummary {
   id: string;
   name: string;
   slug: string;
@@ -76,22 +34,29 @@ export interface ListedOrg {
   hasBootstrappedProfile: boolean;
 }
 
+export type ResumeAction =
+  | { kind: "redirect" }
+  | { kind: "resume-profile"; org: ResumeOrgSummary }
+  | { kind: "fall-through" };
+
 /**
- * Same triage as `decideOnboardingState`, but consumes the listOrgs response
- * shape directly (one round trip) rather than the per-org-profiles array.
+ * Decide what the onboarding page should do on mount when the user already
+ * has one or more orgs:
+ * - any usable org (bootstrapped profile)  -> redirect to the dashboard
+ * - org exists but no usable profile        -> resume on the create-profile step
+ * - no orgs                                 -> fall through to the choose screen
+ *
+ * Note on multi-org behavior: the previous `decideOnboardingStateFromList`
+ * eagerly resumed the first INCOMPLETE org even when other orgs were
+ * bootstrapped. This version prefers redirect — if you have any usable
+ * org you are not blocked, and the dashboard's org switcher lets you
+ * fix the incomplete one later. This is more permissive on purpose;
+ * `tests/onboarding-triage.test.ts` pins the new behavior.
  */
-export function decideOnboardingStateFromList(orgs: ListedOrg[]): OnboardingDecision {
-  if (orgs.length === 0) return { step: "step1" };
-
-  const incomplete = orgs.find((o) => !o.hasBootstrappedProfile);
-  if (incomplete) {
-    return {
-      step: "step2",
-      orgId: incomplete.id,
-      orgSlug: incomplete.slug,
-      orgName: incomplete.name,
-    };
-  }
-
-  return { step: "redirect" };
+export function decideResumeAction(orgs: ReadonlyArray<ResumeOrgSummary>): ResumeAction {
+  const usable = orgs.find((o) => o.hasBootstrappedProfile);
+  if (usable) return { kind: "redirect" };
+  const incomplete = orgs[0];
+  if (incomplete) return { kind: "resume-profile", org: incomplete };
+  return { kind: "fall-through" };
 }

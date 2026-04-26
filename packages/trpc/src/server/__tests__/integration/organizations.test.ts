@@ -26,7 +26,9 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
  * `organizations.create` tests cover:
- *   - atomicity: org + member + default profile all or nothing
+ *   - atomicity: org + owner-member all or nothing (no default profile is
+ *     seeded — callers create profiles explicitly via `profiles.create`,
+ *     and the onboarding gate blocks scoped/agent calls until they do)
  *   - slug-race translation: the insert-time unique violation surfaces as
  *     SLUG_TAKEN, not a raw INTERNAL_SERVER_ERROR
  *
@@ -47,7 +49,7 @@ describe("organizations.create atomicity + slug translation", () => {
     await truncateAll();
   });
 
-  test("always creates a default profile on success", async () => {
+  test("creates org + owner-member, leaves the org without any profile", async () => {
     const owner = await seedUser(auth);
     const bootstrap = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, bootstrap.orgId);
@@ -58,17 +60,6 @@ describe("organizations.create atomicity + slug translation", () => {
     });
 
     expect(result.organization.slug).toBe("acme-ok");
-    expect(result.profileId).toBeTruthy();
-
-    // Default profile must exist — the dashboard assumes this invariant.
-    const [profile] = await db
-      .select()
-      .from(profiles)
-      .where(eq(profiles.id, result.profileId))
-      .limit(1);
-    expect(profile).toBeDefined();
-    expect(profile?.organizationId).toBe(result.organization.id);
-    expect(profile?.name).toBe("internal");
 
     // Caller is registered as owner of the new org.
     const [ownerMember] = await db
@@ -78,6 +69,14 @@ describe("organizations.create atomicity + slug translation", () => {
       .limit(1);
     expect(ownerMember?.userId).toBe(owner.userId);
     expect(ownerMember?.role).toBe("owner");
+
+    // No default profile is seeded — the org is intentionally unbootstrapped
+    // until the user creates one through `profiles.create`.
+    const profileRows = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.organizationId, result.organization.id));
+    expect(profileRows).toHaveLength(0);
   });
 
   test("returns SLUG_TAKEN when two concurrent creates race for the same slug", async () => {
@@ -107,17 +106,15 @@ describe("organizations.create atomicity + slug translation", () => {
     expect(err.code).toBe("CONFLICT");
     expect(err.cause?.code).toBe("SLUG_TAKEN");
 
-    // DB state: exactly one org with the raced slug.
+    // DB state: exactly one org with the raced slug, with no auto-seeded profile.
     const orgRows = await db.select().from(organization).where(eq(organization.slug, slug));
     expect(orgRows.length).toBe(1);
 
-    // Atomicity: the winner's default profile exists.
     const profileRows = await db
       .select()
       .from(profiles)
       .where(eq(profiles.organizationId, orgRows[0]?.id ?? ""));
-    expect(profileRows.length).toBe(1);
-    expect(profileRows[0]?.name).toBe("internal");
+    expect(profileRows.length).toBe(0);
   });
 
   test("pre-check slug collision returns SLUG_TAKEN (non-racing path)", async () => {
@@ -208,15 +205,16 @@ describe("organizations.list ordering + pagination", () => {
 /**
  * `organizations.list` carries a `hasBootstrappedProfile` boolean per org so
  * the dashboard's onboarding-resume flow can decide whether to redirect to
- * /overview or back to step 2 without paying an N+1 profiles.list per org.
+ * the overview or back to a "create your first profile" prompt without
+ * paying an N+1 profiles.list per org.
  *
  * Definition (mirrors `isProfileBootstrapped` in apps/web/src/app/onboarding):
  *   - server_managed profile: always counted as bootstrapped
  *   - zero_knowledge profile: bootstrapped iff wrappedRootKey IS NOT NULL
  *
- * `organizations.create` auto-creates a default zero_knowledge profile with
- * wrappedRootKey == null, so a freshly-created org is unbootstrapped until
- * `profiles.bootstrap` runs.
+ * `organizations.create` no longer seeds a default profile, so a freshly-
+ * created org has zero profiles and is unbootstrapped until `profiles.create`
+ * (and, for ZK profiles, `profiles.bootstrap`) run.
  */
 describe("organizations.list hasBootstrappedProfile flag", () => {
   const db = getTestDb();
@@ -233,7 +231,7 @@ describe("organizations.list hasBootstrappedProfile flag", () => {
   test("flag reflects per-org bootstrap state across all profile shapes", async () => {
     const user = await seedUser(auth);
 
-    // org A: only the auto-created zk-no-root profile -> unbootstrapped
+    // org A: only an unbootstrapped zk profile (no wrappedRootKey) -> unbootstrapped
     // (opt out of seedOrg's default server_managed profile so this org's
     // state is controlled purely by the seedProfile call below.)
     const orgA = await seedOrg(auth, user.userId, {

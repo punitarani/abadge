@@ -92,11 +92,15 @@ export async function seedOrg(
     slug?: string;
     /**
      * When `false`, skips the default `server_managed` profile seed so the
-     * org is left in the pre-step2 "no bootstrapped profile" state. Use this
-     * for tests that specifically exercise the `ONBOARDING_INCOMPLETE` gate
-     * or the onboarding-triage logic. Defaults to `true` because real-world
-     * orgs always have at least one profile after onboarding completes, and
-     * `scopedSessionProcedure` enforces that at-use.
+     * org is left in the "no bootstrapped profile" state. Use this for tests
+     * that specifically exercise the `ONBOARDING_INCOMPLETE` gate or the
+     * onboarding flow. Defaults to `true` because most tests need a usable
+     * org and `scopedSessionProcedure` enforces "at least one bootstrapped
+     * profile" at-use.
+     *
+     * Note: `organizations.create` itself does NOT seed a profile (that
+     * behavior was removed); this helper still seeds one by default purely
+     * as a convenience for the bulk of integration tests.
      */
     withDefaultProfile?: boolean;
   },

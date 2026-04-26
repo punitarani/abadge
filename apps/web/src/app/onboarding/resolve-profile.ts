@@ -1,14 +1,15 @@
 /**
- * Pure helper for the onboarding "create internal profile" step. Extracted so
- * the conflict-resolution branches can be unit-tested without React/network.
+ * Pure helper used by the dashboard `ProfileCreateDrawer`. Extracted so the
+ * conflict-resolution branches can be unit-tested without React/network.
  *
- * Why "resolve or create": if a user creates an org but closes the tab before
- * bootstrapping the auto-created default profile, the next attempt to call
+ * Why "resolve or create": if the user closes the tab between `profiles.create`
+ * and `profiles.bootstrap` while creating a zero_knowledge profile, an
+ * orphan profile row is left behind. The next attempt to call
  * `profiles.create` for the same `(orgId, name)` rejects with
  * PROFILE_ALREADY_EXISTS. That is the *correct* server response in steady
- * state, but during onboarding we want to adopt the orphan rather than force
- * the user to invent a new name. The adoption is gated on the existing profile
- * being unbootstrapped — clobbering a real profile with random `wrappedRootKey`
+ * state, but here we want to adopt the orphan rather than force the user to
+ * invent a new name. The adoption is gated on the existing profile being
+ * unbootstrapped — clobbering a real profile with random `wrappedRootKey`
  * data is a destructive operation we never want here.
  */
 
