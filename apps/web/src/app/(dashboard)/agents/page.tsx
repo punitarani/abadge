@@ -4,8 +4,8 @@ import type { Agent, AgentAuthMethod, AgentKind } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { debounce, useQueryStates } from "nuqs";
+import { useMemo } from "react";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,13 +19,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import {
+  type AgentAuthFilter,
+  type AgentKindFilter,
+  type AgentStatusFilter,
+  agentsFilterParsers,
+} from "@/lib/query-state";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
-
-type KindFilter = "all" | AgentKind;
-type AuthFilter = "all" | AgentAuthMethod;
-type StatusFilter = "all" | "active" | "revoked";
 
 const KIND_LABELS: Record<AgentKind, string> = {
   local_cli: "CLI",
@@ -60,15 +62,21 @@ function StatusBadge({ agent }: { agent: Agent }): React.ReactElement {
 }
 
 export default function AgentsListPage(): React.ReactElement {
-  const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
-  const [search, setSearch] = useState("");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
-  const [authFilter, setAuthFilter] = useState<AuthFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [createOpen, setCreateOpen] = useState(searchParams.get("create") === "true");
+  const [filters, setFilters] = useQueryStates(agentsFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
+  });
+  const {
+    q: search,
+    kind: kindFilter,
+    auth: authFilter,
+    status: statusFilter,
+    create: createOpen,
+  } = filters;
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
@@ -109,10 +117,7 @@ export default function AgentsListPage(): React.ReactElement {
     search !== "" || kindFilter !== "all" || authFilter !== "all" || statusFilter !== "all";
 
   function clearFilters(): void {
-    setSearch("");
-    setKindFilter("all");
-    setAuthFilter("all");
-    setStatusFilter("all");
+    void setFilters({ q: "", kind: "all", auth: "all", status: "all" });
   }
 
   return (
@@ -135,7 +140,7 @@ export default function AgentsListPage(): React.ReactElement {
             been explicitly granted permission for.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={() => void setFilters({ create: true })}>
           <Plus className="mr-1 h-3.5 w-3.5" />
           Register agent
         </Button>
@@ -148,14 +153,14 @@ export default function AgentsListPage(): React.ReactElement {
           <Input
             placeholder="Search agents..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="pl-8"
           />
         </div>
 
         <select
           value={kindFilter}
-          onChange={(e) => setKindFilter(e.target.value as KindFilter)}
+          onChange={(e) => void setFilters({ kind: e.target.value as AgentKindFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All kinds</option>
@@ -166,7 +171,7 @@ export default function AgentsListPage(): React.ReactElement {
 
         <select
           value={authFilter}
-          onChange={(e) => setAuthFilter(e.target.value as AuthFilter)}
+          onChange={(e) => void setFilters({ auth: e.target.value as AgentAuthFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All auth</option>
@@ -176,7 +181,7 @@ export default function AgentsListPage(): React.ReactElement {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          onChange={(e) => void setFilters({ status: e.target.value as AgentStatusFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All status</option>
@@ -192,10 +197,10 @@ export default function AgentsListPage(): React.ReactElement {
           kindFilter={kindFilter}
           authFilter={authFilter}
           statusFilter={statusFilter}
-          onClearSearch={() => setSearch("")}
-          onClearKind={() => setKindFilter("all")}
-          onClearAuth={() => setAuthFilter("all")}
-          onClearStatus={() => setStatusFilter("all")}
+          onClearSearch={() => void setFilters({ q: "" })}
+          onClearKind={() => void setFilters({ kind: "all" })}
+          onClearAuth={() => void setFilters({ auth: "all" })}
+          onClearStatus={() => void setFilters({ status: "all" })}
           onClearAll={clearFilters}
         />
       )}
@@ -207,7 +212,7 @@ export default function AgentsListPage(): React.ReactElement {
         totalCount={agents.length}
       />
 
-      <CreateAgentPanel open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreateAgentPanel open={createOpen} onClose={() => void setFilters({ create: false })} />
     </div>
   );
 }
@@ -226,9 +231,9 @@ function FilterChips({
   onClearAll,
 }: {
   search: string;
-  kindFilter: KindFilter;
-  authFilter: AuthFilter;
-  statusFilter: StatusFilter;
+  kindFilter: AgentKindFilter;
+  authFilter: AgentAuthFilter;
+  statusFilter: AgentStatusFilter;
   onClearSearch: () => void;
   onClearKind: () => void;
   onClearAuth: () => void;

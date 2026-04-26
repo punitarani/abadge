@@ -4,8 +4,8 @@ import type { Profile } from "@abadge/core";
 import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { debounce, useQueryStates } from "nuqs";
+import { useMemo } from "react";
 import { ProfileCreateDrawer } from "@/components/dashboard/profile-create-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,33 +19,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import {
+  profilesFilterParsers,
+  type StorageFilter,
+  type VaultStatusFilter,
+} from "@/lib/query-state";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
-
-type StorageFilter = "all" | "zero_knowledge" | "server_managed";
-type VaultStatusFilter = "all" | "unlocked" | "locked";
 
 const TABLE_COL_COUNT = 5;
 
 export default function ProfilesListPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const { isProfileUnlocked } = useVault();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const createOpen = searchParams.get("create") === "true";
 
-  function closeDrawer(): void {
-    const params = new URLSearchParams(searchParams);
-    params.delete("create");
-    const qs = params.toString();
-    router.replace(qs ? `/profiles?${qs}` : "/profiles", { scroll: false });
-  }
-
-  const [search, setSearch] = useState("");
-  const [storageFilter, setStorageFilter] = useState<StorageFilter>("all");
-  const [vaultFilter, setVaultFilter] = useState<VaultStatusFilter>("all");
+  const [filters, setFilters] = useQueryStates(profilesFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
+  });
+  const { q: search, storage: storageFilter, vault: vaultFilter, create: createOpen } = filters;
 
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
@@ -68,8 +63,11 @@ export default function ProfilesListPage(): React.ReactElement {
     }
 
     if (vaultFilter !== "all") {
+      // Vault status only applies to zero-knowledge profiles. Server-managed
+      // profiles have no vault to lock or unlock (they show "N/A" in the UI),
+      // so they are excluded from both "unlocked" and "locked" filters.
       result = result.filter((p: Profile) => {
-        if (p.storageMode !== "zero_knowledge") return vaultFilter === "locked";
+        if (p.storageMode !== "zero_knowledge") return false;
         return vaultFilter === "unlocked" ? isProfileUnlocked(p.id) : !isProfileUnlocked(p.id);
       });
     }
@@ -89,11 +87,9 @@ export default function ProfilesListPage(): React.ReactElement {
             Credential namespaces under your custody — one per user or entity.
           </p>
         </div>
-        <Button size="sm" asChild>
-          <Link href="/profiles?create=true">
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New profile
-          </Link>
+        <Button size="sm" onClick={() => void setFilters({ create: true })}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          New profile
         </Button>
       </div>
 
@@ -104,14 +100,14 @@ export default function ProfilesListPage(): React.ReactElement {
           <Input
             placeholder="Search profiles..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="h-8 pl-8 text-sm"
           />
         </div>
 
         <select
           value={storageFilter}
-          onChange={(e) => setStorageFilter(e.target.value as StorageFilter)}
+          onChange={(e) => void setFilters({ storage: e.target.value as StorageFilter })}
           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
         >
           <option value="all">All storage</option>
@@ -121,7 +117,7 @@ export default function ProfilesListPage(): React.ReactElement {
 
         <select
           value={vaultFilter}
-          onChange={(e) => setVaultFilter(e.target.value as VaultStatusFilter)}
+          onChange={(e) => void setFilters({ vault: e.target.value as VaultStatusFilter })}
           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
         >
           <option value="all">All vault status</option>
@@ -189,9 +185,7 @@ export default function ProfilesListPage(): React.ReactElement {
       {activeOrgId && (
         <ProfileCreateDrawer
           open={createOpen}
-          onOpenChange={(next) => {
-            if (!next) closeDrawer();
-          }}
+          onOpenChange={(next) => void setFilters({ create: next })}
           orgId={activeOrgId}
         />
       )}

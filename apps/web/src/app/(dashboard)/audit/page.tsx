@@ -4,14 +4,14 @@ import {
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   type AuditEntry,
-  type AuditEventType,
   type AuditResult,
   type Profile,
 } from "@abadge/core";
 import { ArrowClockwise, MagnifyingGlass } from "@phosphor-icons/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { debounce, useQueryStates } from "nuqs";
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,16 +31,15 @@ import {
   resolveAuditDisplayValue,
 } from "@/lib/audit-display";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { type AuditDateRangeFilter, auditFilterParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
-type DateRangeFilter = "7d" | "30d" | "all";
-
 const PAGE_SIZE = 25;
 const COLUMN_COUNT = 7;
 
-function dateRangeThreshold(range: DateRangeFilter): Date | null {
+function dateRangeThreshold(range: AuditDateRangeFilter): Date | null {
   if (range === "all") return null;
   const now = Date.now();
   const ms = range === "7d" ? 7 * 86_400_000 : 30 * 86_400_000;
@@ -112,7 +111,6 @@ function AuditRow({
 function AuditTableBody({
   error,
   isPending,
-  isInitialLoad,
   entries,
   agentNames,
   itemLabels,
@@ -120,7 +118,6 @@ function AuditTableBody({
 }: {
   error: Error | null;
   isPending: boolean;
-  isInitialLoad: boolean;
   entries: AuditEntry[];
   agentNames: Map<string, string>;
   itemLabels: Map<string, string>;
@@ -136,7 +133,7 @@ function AuditTableBody({
     );
   }
 
-  if (isPending && isInitialLoad) {
+  if (isPending) {
     return (
       <TableRow>
         <TableCell colSpan={COLUMN_COUNT} className="py-8 text-center text-muted-foreground">
@@ -179,80 +176,68 @@ export default function AuditPage(): React.ReactElement {
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
   const queryClient = useQueryClient();
 
-  const [search, setSearch] = useState("");
-  const [eventTypeFilter, setEventTypeFilter] = useState<"all" | AuditEventType>("all");
-  const [resultFilter, setResultFilter] = useState<"all" | AuditResult>("all");
-  const [profileFilter, setProfileFilter] = useState("all");
-  const [dateRange, setDateRange] = useState<DateRangeFilter>("all");
+  const [filters, setFilters] = useQueryStates(auditFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+    limitUrlUpdates: debounce(250),
+  });
+  const {
+    q: search,
+    event: eventTypeFilter,
+    result: resultFilter,
+    profile: profileFilter,
+    range: dateRange,
+  } = filters;
 
-  // Accumulated entries for "Load more" pattern
-  const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-
-  const apiInput = useMemo(
+  // Server-side filter slice — drives the queryKey. When this changes,
+  // useInfiniteQuery resets pages atomically (no manual cursor/initialLoad
+  // bookkeeping, no race between filter and cursor state).
+  const serverFilters = useMemo(
     () => ({
-      limit: PAGE_SIZE,
-      cursor,
       ...(eventTypeFilter !== "all" ? { eventType: eventTypeFilter } : {}),
       ...(resultFilter !== "all" ? { result: resultFilter } : {}),
       ...(profileFilter !== "all" ? { profileId: profileFilter } : {}),
     }),
-    [cursor, eventTypeFilter, resultFilter, profileFilter],
+    [eventTypeFilter, resultFilter, profileFilter],
   );
 
-  const auditQuery = useQuery({
-    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", apiInput),
-    queryFn: async () => {
-      const result = await browserTrpcClient.audit.list.query(apiInput);
-      if (isInitialLoad) {
-        setAllEntries(result.entries);
-        setIsInitialLoad(false);
-      } else {
-        setAllEntries((prev) => [...prev, ...result.entries]);
-      }
-      setNextCursor(result.nextCursor ?? null);
-      return result;
-    },
+  const auditQuery = useInfiniteQuery({
+    queryKey: dashboardQueryKeys.orgAudit(activeOrgId ?? "", serverFilters),
+    queryFn: ({ pageParam }) =>
+      browserTrpcClient.audit.list.query({
+        limit: PAGE_SIZE,
+        ...(pageParam ? { cursor: pageParam } : {}),
+        ...serverFilters,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeOrgId,
-    // Prevent automatic refetches from duplicating accumulated entries.
-    // Each cursor-based page is a distinct query key, so pagination still works.
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
 
-  // Reset pagination when filters change
-  const resetPagination = useCallback(() => {
-    setAllEntries([]);
-    setCursor(undefined);
-    setNextCursor(null);
-    setIsInitialLoad(true);
-  }, []);
+  const allEntries = useMemo<AuditEntry[]>(
+    () => auditQuery.data?.pages.flatMap((p) => p.entries) ?? [],
+    [auditQuery.data?.pages],
+  );
+  const hasMore = auditQuery.hasNextPage;
 
   function handleLoadMore(): void {
-    if (nextCursor) {
-      setCursor(nextCursor);
-    }
+    void auditQuery.fetchNextPage();
   }
 
-  const handleRefresh = useCallback((): void => {
+  function handleRefresh(): void {
     if (!activeOrgId) return;
-    // Drop every cached audit page before resetPagination switches the observer
-    // to the page-1 key. Two reasons:
-    //   1. Any other cached page would otherwise be refetched with its stale
-    //      queryFn closure (cursor=N, isInitialLoad=false) and append page-N
-    //      entries on top of fresh page-1 entries via setAllEntries in queryFn.
-    //   2. With no cached data on the page-1 key, the new observer triggers an
-    //      initial fetch — refetchOnMount: false only suppresses refetches
-    //      against existing cached data, not initial fetches.
+    // Wipe every cached audit page for this org so useInfiniteQuery refetches
+    // from page 1. Plain invalidateQueries would refetch each cached page in
+    // place, which is worse: more requests, and any new rows that landed
+    // mid-window would be missed.
     queryClient.removeQueries({ queryKey: dashboardQueryKeys.orgAuditPrefix(activeOrgId) });
-    resetPagination();
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgAgents(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgItems(activeOrgId) });
     void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.profiles(activeOrgId) });
-  }, [activeOrgId, queryClient, resetPagination]);
+  }
 
   // Lookup data
   const agentsQuery = useQuery({
@@ -309,9 +294,6 @@ export default function AuditPage(): React.ReactElement {
     return entries;
   }, [allEntries, search, dateRange, agentNames, itemLabels]);
 
-  const totalLoaded = allEntries.length;
-  const hasMore = Boolean(nextCursor);
-
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -339,17 +321,14 @@ export default function AuditPage(): React.ReactElement {
           <Input
             placeholder="Search agent, item, or IP..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="pl-8"
           />
         </div>
 
         <select
           value={eventTypeFilter}
-          onChange={(e) => {
-            setEventTypeFilter(e.target.value as "all" | AuditEventType);
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ event: e.target.value as typeof eventTypeFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All events</option>
@@ -362,10 +341,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={resultFilter}
-          onChange={(e) => {
-            setResultFilter(e.target.value as "all" | AuditResult);
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ result: e.target.value as typeof resultFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All results</option>
@@ -378,10 +354,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={profileFilter}
-          onChange={(e) => {
-            setProfileFilter(e.target.value);
-            resetPagination();
-          }}
+          onChange={(e) => void setFilters({ profile: e.target.value })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All profiles</option>
@@ -394,7 +367,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as DateRangeFilter)}
+          onChange={(e) => void setFilters({ range: e.target.value as typeof dateRange })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All time</option>
@@ -436,7 +409,6 @@ export default function AuditPage(): React.ReactElement {
             <AuditTableBody
               error={auditQuery.error}
               isPending={auditQuery.isPending}
-              isInitialLoad={isInitialLoad}
               entries={filteredEntries}
               agentNames={agentNames}
               itemLabels={itemLabels}
@@ -450,16 +422,17 @@ export default function AuditPage(): React.ReactElement {
       {filteredEntries.length > 0 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Showing {filteredEntries.length} of {hasMore ? `${totalLoaded}+` : totalLoaded} events
+            Showing {filteredEntries.length} of{" "}
+            {hasMore ? `${allEntries.length}+` : allEntries.length} events
           </span>
           {hasMore && (
             <Button
               variant="outline"
               size="sm"
               onClick={handleLoadMore}
-              disabled={auditQuery.isFetching}
+              disabled={auditQuery.isFetchingNextPage}
             >
-              {auditQuery.isFetching ? "Loading..." : "Load more"}
+              {auditQuery.isFetchingNextPage ? "Loading..." : "Load more"}
             </Button>
           )}
         </div>
