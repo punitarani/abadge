@@ -377,17 +377,16 @@ export default function AuditPage(): React.ReactElement {
 
         <Button
           variant="outline"
-          size="sm"
+          size="icon"
           onClick={handleRefresh}
           disabled={!activeOrgId || auditQuery.isFetching}
           aria-label="Refresh audit log"
-          className="ml-auto h-9"
+          className="ml-auto"
         >
           <ArrowClockwise
             className={cn("h-4 w-4", auditQuery.isFetching && "animate-spin")}
             aria-hidden="true"
           />
-          Refresh
         </Button>
       </div>
 
