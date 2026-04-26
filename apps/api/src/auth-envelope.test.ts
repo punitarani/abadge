@@ -58,4 +58,29 @@ describe("auth envelope middleware (§ENV2b)", () => {
     // Should not be wrapped by this middleware (5xx pass-through).
     expect(body).toEqual({ message: "crash" });
   });
+
+  test("preserves RFC 8628 device-flow fields and maps them into the envelope", async () => {
+    const app = new Hono();
+    app.use("*", authEnvelopeMiddleware);
+    app.get("/device-token", (c) =>
+      c.json(
+        {
+          error: "authorization_pending",
+          error_description: "User has not yet approved the device.",
+        },
+        400,
+      ),
+    );
+    const res = await app.request("/device-token");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as AnyObject;
+    // RFC 8628 fields survive so OAuth2 clients (and the CLI) keep working.
+    expect(body.error).toBe("authorization_pending");
+    expect(body.error_description).toBe("User has not yet approved the device.");
+    // Envelope fields are populated from the OAuth2 fields.
+    expect(body.code).toBe("authorization_pending");
+    expect(body.message).toBe("User has not yet approved the device.");
+    expect(body.hint).toBeNull();
+    expect(body.meta).toBeNull();
+  });
 });
