@@ -201,8 +201,7 @@ describe("handler secret size guard — W3P4-001", () => {
    * throwing, this test would fail, exposing the original vulnerability.
    */
   test("9KB PEM-shaped secret rejected before spawn — no plaintext reaches LLM (W3P4-001 discrimination)", async () => {
-    const pemLikeSecret =
-      "-----BEGIN PRIVATE KEY-----\n" + "A".repeat(8500) + "\n-----END PRIVATE KEY-----\n";
+    const pemLikeSecret = `-----BEGIN PRIVATE KEY-----\n${"A".repeat(8500)}\n-----END PRIVATE KEY-----\n`;
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
     const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(pemLikeSecret);
 

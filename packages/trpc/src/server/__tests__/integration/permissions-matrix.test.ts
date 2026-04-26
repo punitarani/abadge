@@ -6,13 +6,13 @@
  * web dashboard, CLI, and MCP all funnel through (the tRPC `permissions.create`
  * mutation), so a green run here proves the contract for every consumer.
  */
-import type { Permission } from "@abadge/core";
+
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { Permission } from "@abadge/core";
 import {
   seedAgent,
   seedMember,
   seedOrg,
-  seedPermission,
   seedProfile,
   seedServerItem,
   seedUser,
@@ -468,7 +468,7 @@ describe("permissions-matrix", () => {
     expect(bResult.permissions).toHaveLength(1);
 
     // Revoke one of A's caps; B's cap is untouched.
-    await caller.permissions.revoke({ permissionId: aResult.permissions[0]!.id });
+    await caller.permissions.revoke({ permissionId: aResult.permissions[0]?.id });
     const aAfter = await caller.permissions.list({ agentId: agentA.agentId });
     const bAfter = await caller.permissions.list({ agentId: agentB.agentId });
     expect(aAfter.permissions).toHaveLength(1);
@@ -699,7 +699,7 @@ describe("permissions-matrix", () => {
       itemId: item.itemId,
       capabilities: ["mount_env"],
     });
-    await caller.permissions.revoke({ permissionId: created.permissions[0]!.id });
+    await caller.permissions.revoke({ permissionId: created.permissions[0]?.id });
     const reGrant = await caller.permissions.create({
       agentId: agent.agentId,
       itemId: item.itemId,

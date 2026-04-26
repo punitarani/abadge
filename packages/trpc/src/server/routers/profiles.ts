@@ -452,7 +452,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
           .from(profiles)
           .where(eq(profiles.id, profileId));
 
-        if (!locked || !locked.wrappedRootKey) {
+        if (!locked?.wrappedRootKey) {
           throw new NotFoundError({
             code: "PROFILE_NOT_FOUND",
             message: "Profile is not bootstrapped",
