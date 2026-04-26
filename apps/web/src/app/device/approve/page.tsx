@@ -215,7 +215,7 @@ function DeviceApprovalPageContent(): React.ReactElement {
             set-up profile. Create or join an organization and bootstrap a profile, then come back
             to approve the device.
           </p>
-          <div className="flex w-full flex-col gap-2 sm:flex-row">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
             <Button asChild className="w-full">
               <Link href="/onboarding">Go to onboarding</Link>
             </Button>
