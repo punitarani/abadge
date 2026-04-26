@@ -1,11 +1,11 @@
 "use client";
 
-import type { Agent, Capability, ItemSummary, Permission } from "@abadge/core";
+import type { Agent, ItemSummary, Permission } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useQueryStates } from "nuqs";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
 import {
@@ -32,12 +32,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import {
+  type CapabilityFilter,
+  type ExpiryFilter,
+  permissionsFilterParsers,
+} from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn, formatDate } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
-
-type CapabilityFilter = "all" | Capability;
-type ExpiryFilter = "all" | "permanent" | "expiring" | "expired";
 
 const PAGE_SIZE = 25;
 
@@ -240,16 +242,27 @@ function PermissionsTable({
 /* ---- Main page ---- */
 
 export default function PermissionsListPage(): React.ReactElement {
-  const searchParams = useSearchParams();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
-  const [search, setSearch] = useState("");
-  const [agentFilter, setAgentFilter] = useState("all");
-  const [capabilityFilter, setCapabilityFilter] = useState<CapabilityFilter>("all");
-  const [expiryFilter, setExpiryFilter] = useState<ExpiryFilter>("all");
-  const [createOpen, setCreateOpen] = useState(searchParams.get("create") === "true");
+  const [filters, setFilters] = useQueryStates(permissionsFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+  });
+  const {
+    q: search,
+    agent: agentFilter,
+    capability: capabilityFilter,
+    expiry: expiryFilter,
+    create: createOpen,
+  } = filters;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Reset pagination when any filter changes (incl. via URL/back-forward)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on filter change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, agentFilter, capabilityFilter, expiryFilter]);
 
   const queryClient = useQueryClient();
 
@@ -303,11 +316,12 @@ export default function PermissionsListPage(): React.ReactElement {
     search !== "" || agentFilter !== "all" || capabilityFilter !== "all" || expiryFilter !== "all";
 
   function clearFilters(): void {
-    setSearch("");
-    setAgentFilter("all");
-    setCapabilityFilter("all");
-    setExpiryFilter("all");
-    setVisibleCount(PAGE_SIZE);
+    void setFilters({
+      q: "",
+      agent: "all",
+      capability: "all",
+      expiry: "all",
+    });
   }
 
   const revokeMutation = useMutation({
@@ -351,7 +365,7 @@ export default function PermissionsListPage(): React.ReactElement {
             Explicit capability grants — each links one agent to one item with one capability.
           </p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" onClick={() => void setFilters({ create: true })}>
           <Plus className="mr-1 h-3.5 w-3.5" />
           Grant permission
         </Button>
@@ -364,17 +378,14 @@ export default function PermissionsListPage(): React.ReactElement {
           <Input
             placeholder="Search agent or item..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="pl-8"
           />
         </div>
 
         <select
           value={agentFilter}
-          onChange={(e) => {
-            setAgentFilter(e.target.value);
-            setVisibleCount(PAGE_SIZE);
-          }}
+          onChange={(e) => void setFilters({ agent: e.target.value })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All agents</option>
@@ -387,10 +398,7 @@ export default function PermissionsListPage(): React.ReactElement {
 
         <select
           value={capabilityFilter}
-          onChange={(e) => {
-            setCapabilityFilter(e.target.value as CapabilityFilter);
-            setVisibleCount(PAGE_SIZE);
-          }}
+          onChange={(e) => void setFilters({ capability: e.target.value as CapabilityFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All capabilities</option>
@@ -402,10 +410,7 @@ export default function PermissionsListPage(): React.ReactElement {
 
         <select
           value={expiryFilter}
-          onChange={(e) => {
-            setExpiryFilter(e.target.value as ExpiryFilter);
-            setVisibleCount(PAGE_SIZE);
-          }}
+          onChange={(e) => void setFilters({ expiry: e.target.value as ExpiryFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All expiry</option>
@@ -423,10 +428,10 @@ export default function PermissionsListPage(): React.ReactElement {
           capabilityFilter={capabilityFilter}
           expiryFilter={expiryFilter}
           agentNameMap={agentNameMap}
-          onClearSearch={() => setSearch("")}
-          onClearAgent={() => setAgentFilter("all")}
-          onClearCapability={() => setCapabilityFilter("all")}
-          onClearExpiry={() => setExpiryFilter("all")}
+          onClearSearch={() => void setFilters({ q: "" })}
+          onClearAgent={() => void setFilters({ agent: "all" })}
+          onClearCapability={() => void setFilters({ capability: "all" })}
+          onClearExpiry={() => void setFilters({ expiry: "all" })}
           onClearAll={clearFilters}
         />
       )}
@@ -465,7 +470,7 @@ export default function PermissionsListPage(): React.ReactElement {
         </div>
       )}
 
-      <CreatePermissionPanel open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreatePermissionPanel open={createOpen} onClose={() => void setFilters({ create: false })} />
     </div>
   );
 }

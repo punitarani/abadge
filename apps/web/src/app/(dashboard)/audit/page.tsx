@@ -4,14 +4,14 @@ import {
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
   type AuditEntry,
-  type AuditEventType,
   type AuditResult,
   type Profile,
 } from "@abadge/core";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useQueryStates } from "nuqs";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,16 +31,15 @@ import {
   resolveAuditDisplayValue,
 } from "@/lib/audit-display";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { type AuditDateRangeFilter, auditFilterParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
-type DateRangeFilter = "7d" | "30d" | "all";
-
 const PAGE_SIZE = 25;
 const COLUMN_COUNT = 7;
 
-function dateRangeThreshold(range: DateRangeFilter): Date | null {
+function dateRangeThreshold(range: AuditDateRangeFilter): Date | null {
   if (range === "all") return null;
   const now = Date.now();
   const ms = range === "7d" ? 7 * 86_400_000 : 30 * 86_400_000;
@@ -178,11 +177,17 @@ export default function AuditPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
 
-  const [search, setSearch] = useState("");
-  const [eventTypeFilter, setEventTypeFilter] = useState<"all" | AuditEventType>("all");
-  const [resultFilter, setResultFilter] = useState<"all" | AuditResult>("all");
-  const [profileFilter, setProfileFilter] = useState("all");
-  const [dateRange, setDateRange] = useState<DateRangeFilter>("all");
+  const [filters, setFilters] = useQueryStates(auditFilterParsers, {
+    history: "replace",
+    clearOnDefault: true,
+  });
+  const {
+    q: search,
+    event: eventTypeFilter,
+    result: resultFilter,
+    profile: profileFilter,
+    range: dateRange,
+  } = filters;
 
   // Accumulated entries for "Load more" pattern
   const [allEntries, setAllEntries] = useState<AuditEntry[]>([]);
@@ -222,13 +227,18 @@ export default function AuditPage(): React.ReactElement {
     refetchOnMount: false,
   });
 
-  // Reset pagination when filters change
+  // Reset pagination when server-side filters change (incl. via URL/back-forward)
   const resetPagination = useCallback(() => {
     setAllEntries([]);
     setCursor(undefined);
     setNextCursor(null);
     setIsInitialLoad(true);
   }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset when server-side filters change
+  useEffect(() => {
+    resetPagination();
+  }, [eventTypeFilter, resultFilter, profileFilter]);
 
   function handleLoadMore(): void {
     if (nextCursor) {
@@ -321,7 +331,7 @@ export default function AuditPage(): React.ReactElement {
           <Input
             placeholder="Search agent, item, or IP..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => void setFilters({ q: e.target.value })}
             className="pl-8"
           />
         </div>
@@ -329,7 +339,7 @@ export default function AuditPage(): React.ReactElement {
         <select
           value={eventTypeFilter}
           onChange={(e) => {
-            setEventTypeFilter(e.target.value as "all" | AuditEventType);
+            void setFilters({ event: e.target.value as typeof eventTypeFilter });
             resetPagination();
           }}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -345,7 +355,7 @@ export default function AuditPage(): React.ReactElement {
         <select
           value={resultFilter}
           onChange={(e) => {
-            setResultFilter(e.target.value as "all" | AuditResult);
+            void setFilters({ result: e.target.value as typeof resultFilter });
             resetPagination();
           }}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -361,7 +371,7 @@ export default function AuditPage(): React.ReactElement {
         <select
           value={profileFilter}
           onChange={(e) => {
-            setProfileFilter(e.target.value);
+            void setFilters({ profile: e.target.value });
             resetPagination();
           }}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -376,7 +386,7 @@ export default function AuditPage(): React.ReactElement {
 
         <select
           value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as DateRangeFilter)}
+          onChange={(e) => void setFilters({ range: e.target.value as typeof dateRange })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All time</option>
