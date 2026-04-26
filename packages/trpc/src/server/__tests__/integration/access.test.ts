@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { BulkMountEnvItem } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
-import { auditLogs } from "@abadge/db/schema";
+import { auditLogs, items } from "@abadge/db/schema";
 import type { AppBindings, BaseRequestContext } from "../../context";
 import { createTrpcCallerFactory } from "../../init";
 import { appRouter } from "../../router";
@@ -810,6 +810,86 @@ describe("access", () => {
         expect(r.profileId).toBe(profile.profileId);
         expect(r.result).toBe("allowed");
       }
+    });
+
+    test("does NOT write phantom 'allowed' audit rows when a later item fails (Greptile P1)", async () => {
+      // Regression for Greptile P1: if the bulk loop wrote audit rows
+      // inline, the earlier ZK items would leave "allowed" rows when a
+      // later item triggered IntegrityError mid-loop, claiming successful
+      // delivery for items the agent never received. The staging fix
+      // discards those rows when Effect.fail short-circuits.
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+
+      const goodZk = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "good-zk",
+      });
+      const corruptZk = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "corrupt-zk",
+      });
+      // Force one item into the corrupt-envelope branch that bulkMountEnv
+      // hard-fails on. encryptedItemKey is nullable in the schema, so
+      // clearing it leaves the row visible to the JOIN (still has profileId
+      // and a permission row) but the bulk loop's integrity check rejects
+      // it mid-iteration. This is the exact crash window the staging fix
+      // is supposed to protect against.
+      await db.update(items).set({ encryptedItemKey: null }).where(eq(items.id, corruptZk.itemId));
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: goodZk.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: corruptZk.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+        throw new Error("expected bulk call to fail on corrupt item");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("INTEGRITY_ERROR");
+      }
+
+      // Audit invariant: ZERO "allowed" rows should exist for either item.
+      // The corrupt item should have one "denied" row (factually correct);
+      // the good item should have NO audit row at all (its staged "allowed"
+      // was discarded when the integrity error short-circuited the gen).
+      const rows = await db
+        .select()
+        .from(auditLogs)
+        .where(
+          and(eq(auditLogs.eventType, "access.mount_env"), eq(auditLogs.agentId, agent.agentId)),
+        );
+      const allowed = rows.filter((r) => r.result === "allowed");
+      const denied = rows.filter((r) => r.result === "denied");
+      expect(allowed.length).toBe(0);
+      expect(denied.length).toBe(1);
+      expect(denied[0]?.itemId).toBe(corruptZk.itemId);
     });
 
     test("returns mixed ZK + server-managed items in one response", async () => {

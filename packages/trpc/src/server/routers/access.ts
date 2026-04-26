@@ -661,6 +661,16 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     }
 
     const responseItems: BulkMountEnvItem[] = [];
+    // Greptile P1 / phantom-audit fix: stage every "allowed" audit row for
+    // the call and flush only after responseItems is fully built. If a later
+    // item's decrypt fails (server-managed IntegrityError, ZK envelope
+    // corruption mid-loop, etc.), Effect.fail short-circuits the gen and
+    // the staged rows disappear — so the audit log never claims "allowed"
+    // for items the agent never received. Denied rows are factually correct
+    // ("the agent attempted access on a corrupt item") and can still flush
+    // immediately at their failure site.
+    type StagedAudit = Parameters<typeof logAgentAudit>[0];
+    const pendingAllowedAudits: StagedAudit[] = [];
 
     for (const row of rows) {
       const item = row.item;
@@ -669,7 +679,8 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
         if (!item.profileId || !item.encryptedItemKey || !item.ciphertext) {
           // Per-item audit: this access was attempted (granted) but failed
           // due to data corruption. Hard-fail the whole bulk call so the
-          // user notices, rather than silently dropping the item.
+          // user notices, rather than silently dropping the item. Flush
+          // the denied row immediately — it is factually correct.
           yield* logAgentAudit({
             organizationId: ctx.identity.agentOrganizationId,
             userId: ctx.identity.agentUserId,
@@ -691,7 +702,7 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
           );
         }
 
-        yield* logAgentAudit({
+        pendingAllowedAudits.push({
           organizationId: ctx.identity.agentOrganizationId,
           userId: ctx.identity.agentUserId,
           agentId: ctx.identity.agentId,
@@ -717,11 +728,16 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
         continue;
       }
 
-      // server_managed branch — decrypt and ship the payload.
+      // server_managed branch — decrypt and ship the payload. If decrypt
+      // fails (e.g., failMissingServerManagedData writes its own denied
+      // audit then aborts), the gen short-circuits and pendingAllowedAudits
+      // never flushes — so any earlier ZK items that were staged as
+      // "allowed" do NOT leave audit rows. This is the load-bearing
+      // property of the staging pattern.
       const decrypted = yield* decryptServerManagedItem(item, "access.mount_env");
       const payload = decodeServerManagedPayload(item.id, decrypted);
 
-      yield* logAgentAudit({
+      pendingAllowedAudits.push({
         organizationId: ctx.identity.agentOrganizationId,
         userId: ctx.identity.agentUserId,
         agentId: ctx.identity.agentId,
@@ -740,6 +756,14 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
         label: item.label,
         payload,
       });
+    }
+
+    // All items resolved successfully — flush the staged audit rows. Any
+    // earlier failure short-circuited via Effect.fail, in which case
+    // pendingAllowedAudits is discarded with the gen frame and no phantom
+    // "allowed" rows hit the audit table.
+    for (const auditRow of pendingAllowedAudits) {
+      yield* logAgentAudit(auditRow);
     }
 
     return { items: responseItems };
