@@ -26,7 +26,7 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
-import { countProfilesByStorage } from "./count-profiles-by-storage";
+import { countProfilesByStorage, type ProfilesByStorage } from "./count-profiles-by-storage";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "outline";
 
@@ -50,7 +50,7 @@ const AUDIT_COLUMN_COUNT = 6;
 function SummaryCards({
   isLoading,
   profileCount,
-  defaultProfileCount,
+  profilesByStorage,
   itemCount,
   agentCount,
   activeAgentCount,
@@ -62,7 +62,7 @@ function SummaryCards({
 }: {
   isLoading: boolean;
   profileCount: number;
-  defaultProfileCount: number;
+  profilesByStorage: ProfilesByStorage;
   itemCount: number;
   agentCount: number;
   activeAgentCount: number;
@@ -324,7 +324,7 @@ export default function OverviewPage(): React.ReactElement {
       <SummaryCards
         isLoading={isLoading}
         profileCount={profiles.length}
-        defaultProfileCount={defaultProfileCount}
+        profilesByStorage={profilesByStorage}
         itemCount={items.length}
         agentCount={agents.length}
         activeAgentCount={activeAgents.length}
