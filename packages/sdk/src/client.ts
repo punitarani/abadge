@@ -23,7 +23,6 @@ import type {
   MountAccessResponse,
   PermissionFilters,
   PermissionListResult,
-  PermissionResult,
   RevealAccessResponse,
   RotateKeyInput,
   SetupRecoveryInput,
@@ -165,7 +164,7 @@ interface SdkTrpcClient {
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
   permissions: {
-    create: TrpcMutation<CreatePermissionInput, PermissionResult>;
+    create: TrpcMutation<CreatePermissionInput, PermissionListResult>;
     list: TrpcQuery<PermissionFilters, PermissionListResult>;
     revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
@@ -517,13 +516,20 @@ export class AbadgeUserClient {
   // -- Permissions ----------------------------------------------------------
 
   /**
-   * Grant a capability to an agent for a specific item.
+   * Grant one or more capabilities to an agent for a specific item.
    *
-   * @param data - Agent ID, item ID, capability, and optional expiration
-   * @returns The created permission
-   * @throws {AbadgeApiError} AGENT_NOT_FOUND, ITEM_NOT_FOUND, INVALID_CAPABILITY
+   * Supplying multiple capabilities is atomic: either every row lands or none
+   * does. Duplicates are detected up-front, and the error envelope's `meta`
+   * carries the full list of offending capabilities (`invalidCapabilities` or
+   * `duplicateCapabilities`) so callers can recover precisely.
+   *
+   * @param data - Agent ID, item ID, capabilities (non-empty), and optional batch-wide expiration
+   * @returns The created permission rows (one per capability)
+   * @throws {AbadgeApiError} AGENT_NOT_FOUND, ITEM_NOT_FOUND,
+   *   INVALID_CAPABILITY_LOCALITY, INVALID_CAPABILITY_STORAGE,
+   *   PERMISSION_ALREADY_EXISTS
    */
-  async createPermission(data: CreatePermissionInput): Promise<PermissionResult> {
+  async createPermission(data: CreatePermissionInput): Promise<PermissionListResult> {
     return call(() => this.client.permissions.create.mutate(data), "Failed to create permission");
   }
 

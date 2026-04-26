@@ -38,7 +38,6 @@ import type {
   MountAccessResponseSchema,
   MountAccessSchema,
   PermissionListResultSchema,
-  PermissionResultSchema,
   PermissionSchema,
   ProfileListResultSchema,
   ProfileResultSchema,
@@ -103,7 +102,6 @@ export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
 export type AgentResult = TypeOf<typeof AgentResultSchema>;
 export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
-export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
 export type PermissionListResult = TypeOf<typeof PermissionListResultSchema>;
 export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
 export type ProfileResult = TypeOf<typeof ProfileResultSchema>;

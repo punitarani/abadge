@@ -28,8 +28,22 @@ const itemOptions = [
 function PermissionStory(): React.ReactElement {
   const [selectedAgent, setSelectedAgent] = useState(agentOptions[0]?.value ?? "");
   const [selectedItem, setSelectedItem] = useState(itemOptions[0]?.value ?? "");
-  const [selectedCapability, setSelectedCapability] = useState<Capability | "">("");
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<Capability>>(
+    () => new Set(),
+  );
   const [expiresAt, setExpiresAt] = useState("");
+
+  function toggleCapability(cap: Capability): void {
+    setSelectedCapabilities((prev) => {
+      const next = new Set(prev);
+      if (next.has(cap)) {
+        next.delete(cap);
+      } else {
+        next.add(cap);
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 rounded-lg border border-border bg-background p-5">
@@ -37,7 +51,8 @@ function PermissionStory(): React.ReactElement {
         formId="storybook-create-permission"
         selectedAgent={selectedAgent}
         selectedItem={selectedItem}
-        selectedCapability={selectedCapability}
+        selectedCapabilities={selectedCapabilities}
+        alreadyGrantedCapabilities={new Set()}
         optionsLoading={false}
         agentOptions={agentOptions}
         itemOptions={itemOptions}
@@ -48,7 +63,7 @@ function PermissionStory(): React.ReactElement {
         expiresAt={expiresAt}
         onAgentChange={setSelectedAgent}
         onItemChange={setSelectedItem}
-        onCapabilityChange={setSelectedCapability}
+        onCapabilityToggle={toggleCapability}
         onExpiresAtChange={setExpiresAt}
         onSubmit={(event) => event.preventDefault()}
       />
@@ -56,8 +71,10 @@ function PermissionStory(): React.ReactElement {
         <Button variant="outline" size="sm">
           Cancel
         </Button>
-        <Button size="sm" disabled={!selectedCapability}>
-          Grant permission
+        <Button size="sm" disabled={selectedCapabilities.size === 0}>
+          {selectedCapabilities.size > 1
+            ? `Grant ${selectedCapabilities.size} capabilities`
+            : "Grant permission"}
         </Button>
       </div>
     </div>

@@ -57,7 +57,6 @@ export type {
   Permission,
   PermissionFilters,
   PermissionListResult,
-  PermissionResult,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,

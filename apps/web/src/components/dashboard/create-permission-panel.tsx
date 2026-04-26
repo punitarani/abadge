@@ -27,12 +27,12 @@ const CAPABILITY_META: Record<
   read_ciphertext: {
     label: "Read ciphertext",
     description: "Returns the encrypted blob for local decryption",
-    constraint: "local only \u00b7 ZK only",
+    constraint: "local only · ZK only",
   },
   reveal_plaintext: {
     label: "Reveal plaintext",
     description: "Server decrypts and returns the field value",
-    constraint: "all agents \u00b7 all storage",
+    constraint: "all agents · all storage",
   },
   mount_env: {
     label: "Mount as env var",
@@ -54,22 +54,28 @@ interface CapabilityCardProps {
   capability: Capability;
   selected: boolean;
   disabled: boolean;
-  onSelect: () => void;
+  alreadyGranted: boolean;
+  onToggle: () => void;
 }
 
 function CapabilityCard({
   capability,
   selected,
   disabled,
-  onSelect,
+  alreadyGranted,
+  onToggle,
 }: CapabilityCardProps): React.ReactElement {
   const meta = CAPABILITY_META[capability];
+  const trailingTag = alreadyGranted ? "already granted" : meta.constraint;
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: rich card layout (label + description + constraint chip) can't fit inside a native input; ARIA checkbox role is the standard pattern for clickable toggle cards.
     <button
       type="button"
+      role="checkbox"
+      aria-checked={selected}
       disabled={disabled}
-      onClick={onSelect}
+      onClick={onToggle}
       className={cn(
         "flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors",
         selected && "border-foreground bg-accent",
@@ -78,9 +84,20 @@ function CapabilityCard({
       )}
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">{meta.label}</span>
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-flex h-4 w-4 items-center justify-center rounded border",
+              selected ? "border-foreground bg-foreground text-background" : "border-border",
+            )}
+          >
+            {selected ? "✓" : ""}
+          </span>
+          {meta.label}
+        </span>
         <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-          {meta.constraint}
+          {trailingTag}
         </span>
       </div>
       <span className="text-xs text-muted-foreground">{meta.description}</span>
@@ -92,7 +109,8 @@ interface CreatePermissionPanelViewProps {
   formId: string;
   selectedAgent: string;
   selectedItem: string;
-  selectedCapability: Capability | "";
+  selectedCapabilities: ReadonlySet<Capability>;
+  alreadyGrantedCapabilities: ReadonlySet<Capability>;
   optionsLoading: boolean;
   agentOptions: SearchableSelectOption[];
   itemOptions: SearchableSelectOption[];
@@ -103,7 +121,7 @@ interface CreatePermissionPanelViewProps {
   expiresAt: string;
   onAgentChange: (value: string) => void;
   onItemChange: (value: string) => void;
-  onCapabilityChange: (value: Capability) => void;
+  onCapabilityToggle: (value: Capability) => void;
   onExpiresAtChange: (value: string) => void;
   onSubmit: React.FormEventHandler<HTMLFormElement>;
 }
@@ -112,7 +130,8 @@ export function CreatePermissionPanelView({
   formId,
   selectedAgent,
   selectedItem,
-  selectedCapability,
+  selectedCapabilities,
+  alreadyGrantedCapabilities,
   optionsLoading,
   agentOptions,
   itemOptions,
@@ -123,11 +142,11 @@ export function CreatePermissionPanelView({
   expiresAt,
   onAgentChange,
   onItemChange,
-  onCapabilityChange,
+  onCapabilityToggle,
   onExpiresAtChange,
   onSubmit,
 }: CreatePermissionPanelViewProps): React.ReactElement {
-  const allSelected = selectedAgent && selectedItem && selectedCapability;
+  const previewVisible = selectedAgent && selectedItem && selectedCapabilities.size > 0;
 
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
@@ -157,22 +176,27 @@ export function CreatePermissionPanelView({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <LabelLike>Capability</LabelLike>
+          <LabelLike>Capabilities</LabelLike>
           {incompatibleMessage ? (
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
               {incompatibleMessage}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {CAPABILITIES.map((cap) => (
-                <CapabilityCard
-                  key={cap}
-                  capability={cap}
-                  selected={selectedCapability === cap}
-                  disabled={!allowedCapabilities.includes(cap)}
-                  onSelect={() => onCapabilityChange(cap)}
-                />
-              ))}
+              {CAPABILITIES.map((cap) => {
+                const allowedByMatrix = allowedCapabilities.includes(cap);
+                const alreadyGranted = alreadyGrantedCapabilities.has(cap);
+                return (
+                  <CapabilityCard
+                    key={cap}
+                    capability={cap}
+                    selected={selectedCapabilities.has(cap)}
+                    disabled={!allowedByMatrix || alreadyGranted}
+                    alreadyGranted={alreadyGranted && allowedByMatrix}
+                    onToggle={() => onCapabilityToggle(cap)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -203,12 +227,21 @@ export function CreatePermissionPanelView({
       </div>
 
       {/* Permission preview */}
-      {allSelected && (
+      {previewVisible && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
           <span className="font-medium">{agentName}</span> can{" "}
-          <span className="font-mono text-xs">{selectedCapability}</span> on{" "}
-          <span className="font-medium">{itemLabel}</span>
-          {" \u00b7 "}
+          <span className="inline-flex flex-wrap gap-1">
+            {CAPABILITIES.filter((cap) => selectedCapabilities.has(cap)).map((cap) => (
+              <span
+                key={cap}
+                className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs dark:bg-amber-900/40"
+              >
+                {cap}
+              </span>
+            ))}
+          </span>{" "}
+          on <span className="font-medium">{itemLabel}</span>
+          {" · "}
           {expiresAt ? `expires ${expiresAt}` : "permanent"}
         </div>
       )}
@@ -230,7 +263,9 @@ export function CreatePermissionPanel({
   const formId = useId();
   const [selectedAgent, setSelectedAgent] = useState("");
   const [selectedItem, setSelectedItem] = useState("");
-  const [selectedCapability, setSelectedCapability] = useState<Capability | "">("");
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<Capability>>(
+    () => new Set(),
+  );
   const [expiresAt, setExpiresAt] = useState("");
 
   const agentsQuery = useQuery({
@@ -241,19 +276,33 @@ export function CreatePermissionPanel({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.items.list.query(),
   });
+
+  // Existing grants on this exact (agent, item) pair — drives the
+  // "already granted" disabled state on each capability checkbox.
+  const existingPairQuery = useQuery({
+    queryKey: ["permissions", "pair", activeOrgId ?? "", selectedAgent, selectedItem],
+    queryFn: () =>
+      browserTrpcClient.permissions.list.query({
+        agentId: selectedAgent,
+        itemId: selectedItem,
+      }),
+    enabled: Boolean(selectedAgent && selectedItem),
+  });
+
   const createPermission = useMutation({
     mutationFn: (input: {
       agentId: string;
       itemId: string;
-      capability: Capability;
+      capabilities: Capability[];
       expiresAt?: string;
     }) => browserTrpcClient.permissions.create.mutate(input),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      const count = result.permissions.length;
       resetForm();
       await queryClient.invalidateQueries({
         queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
       });
-      toast.success("Permission granted.");
+      toast.success(`Granted ${count} ${count === 1 ? "capability" : "capabilities"}.`);
       handleClose();
     },
   });
@@ -319,10 +368,18 @@ export function CreatePermissionPanel({
     return { allowedCapabilities: allowed, incompatibleMessage: "" };
   }, [selectedAgentObj, selectedItemObj]);
 
+  const alreadyGrantedCapabilities = useMemo<Set<Capability>>(() => {
+    const set = new Set<Capability>();
+    for (const p of existingPairQuery.data?.permissions ?? []) {
+      set.add(p.capability as Capability);
+    }
+    return set;
+  }, [existingPairQuery.data]);
+
   function resetForm(): void {
     setSelectedAgent("");
     setSelectedItem("");
-    setSelectedCapability("");
+    setSelectedCapabilities(new Set());
     setExpiresAt("");
   }
 
@@ -333,26 +390,42 @@ export function CreatePermissionPanel({
 
   function handleAgentChange(value: string): void {
     setSelectedAgent(value);
-    setSelectedCapability("");
+    setSelectedCapabilities(new Set());
   }
 
   function handleItemChange(value: string): void {
     setSelectedItem(value);
-    setSelectedCapability("");
+    setSelectedCapabilities(new Set());
+  }
+
+  function handleCapabilityToggle(cap: Capability): void {
+    setSelectedCapabilities((prev) => {
+      const next = new Set(prev);
+      if (next.has(cap)) {
+        next.delete(cap);
+      } else {
+        next.add(cap);
+      }
+      return next;
+    });
   }
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
 
-    if (!selectedAgent || !selectedItem || !selectedCapability) {
+    if (!selectedAgent || !selectedItem || selectedCapabilities.size === 0) {
       return;
     }
+
+    // Stable order: emit in the canonical CAPABILITIES order so the audit
+    // log reads the same way regardless of UI click order.
+    const capabilities = CAPABILITIES.filter((cap) => selectedCapabilities.has(cap));
 
     try {
       await createPermission.mutateAsync({
         agentId: selectedAgent,
         itemId: selectedItem,
-        capability: selectedCapability,
+        capabilities,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       });
     } catch (mutationError) {
@@ -364,24 +437,24 @@ export function CreatePermissionPanel({
   const queryErrorMessage = queryError
     ? getClientErrorMessage(queryError, "Failed to load form options")
     : "";
+  const submitDisabled =
+    !selectedAgent ||
+    !selectedItem ||
+    selectedCapabilities.size === 0 ||
+    createPermission.isPending ||
+    optionsLoading ||
+    existingPairQuery.isPending;
   const footer = (
     <div className="flex justify-end gap-2">
       <Button type="button" variant="outline" size="sm" onClick={handleClose}>
         Cancel
       </Button>
-      <Button
-        form={formId}
-        type="submit"
-        size="sm"
-        disabled={
-          !selectedAgent ||
-          !selectedItem ||
-          !selectedCapability ||
-          createPermission.isPending ||
-          optionsLoading
-        }
-      >
-        {createPermission.isPending ? "Granting..." : "Grant permission"}
+      <Button form={formId} type="submit" size="sm" disabled={submitDisabled}>
+        {createPermission.isPending
+          ? "Granting..."
+          : selectedCapabilities.size > 1
+            ? `Grant ${selectedCapabilities.size} capabilities`
+            : "Grant permission"}
       </Button>
     </div>
   );
@@ -395,7 +468,7 @@ export function CreatePermissionPanel({
         }
       }}
       title="Grant permission"
-      description="Grant an agent access to an item with a specific capability."
+      description="Grant an agent access to an item with one or more capabilities."
       footer={footer}
       contentClassName="sm:max-w-3xl"
     >
@@ -403,7 +476,8 @@ export function CreatePermissionPanel({
         formId={formId}
         selectedAgent={selectedAgent}
         selectedItem={selectedItem}
-        selectedCapability={selectedCapability}
+        selectedCapabilities={selectedCapabilities}
+        alreadyGrantedCapabilities={alreadyGrantedCapabilities}
         optionsLoading={optionsLoading}
         agentOptions={activeAgentOptions}
         itemOptions={itemOptions}
@@ -414,7 +488,7 @@ export function CreatePermissionPanel({
         expiresAt={expiresAt}
         onAgentChange={handleAgentChange}
         onItemChange={handleItemChange}
-        onCapabilityChange={setSelectedCapability}
+        onCapabilityToggle={handleCapabilityToggle}
         onExpiresAtChange={setExpiresAt}
         onSubmit={(event) => {
           if (queryErrorMessage) {

@@ -291,7 +291,11 @@ export const RevokeAgentSessionSchema = Schema.Struct({
 export const CreatePermissionSchema = Schema.Struct({
   agentId: NonEmptyString,
   itemId: NonEmptyString,
-  capability: CapabilitySchema,
+  capabilities: Schema.NonEmptyArray(CapabilitySchema).pipe(
+    Schema.filter((arr) =>
+      new Set(arr).size === arr.length ? undefined : "capabilities must not contain duplicates",
+    ),
+  ),
   expiresAt: Schema.optional(IsoDateString),
 });
 
@@ -569,10 +573,6 @@ export const AgentResultSchema = Schema.Struct({
 
 export const AgentListResultSchema = Schema.Struct({
   agents: Schema.Array(AgentSchema),
-});
-
-export const PermissionResultSchema = Schema.Struct({
-  permission: PermissionSchema,
 });
 
 export const PermissionListResultSchema = Schema.Struct({

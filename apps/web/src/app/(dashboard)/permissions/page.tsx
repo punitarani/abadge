@@ -1,6 +1,12 @@
 "use client";
 
-import type { Agent, ItemSummary, Permission } from "@abadge/core";
+import {
+  type Agent,
+  CAPABILITIES,
+  type Capability,
+  type ItemSummary,
+  type Permission,
+} from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -42,6 +48,50 @@ import { cn, formatDate } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
 const PAGE_SIZE = 25;
+
+interface PermissionGroup {
+  agentId: string;
+  itemId: string;
+  permissions: Permission[];
+}
+
+const CAPABILITY_ORDER: ReadonlyMap<Capability, number> = new Map(
+  CAPABILITIES.map((cap, idx) => [cap, idx]),
+);
+
+function groupPermissionsByPair(
+  permissions: Permission[],
+  agentNameMap: Map<string, string>,
+  itemLabelMap: Map<string, string>,
+): PermissionGroup[] {
+  const groups = new Map<string, PermissionGroup>();
+  for (const p of permissions) {
+    const key = `${p.agentId}::${p.itemId}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { agentId: p.agentId, itemId: p.itemId, permissions: [] };
+      groups.set(key, group);
+    }
+    group.permissions.push(p);
+  }
+
+  for (const group of groups.values()) {
+    group.permissions.sort((a, b) => {
+      const ai = CAPABILITY_ORDER.get(a.capability as Capability) ?? 99;
+      const bi = CAPABILITY_ORDER.get(b.capability as Capability) ?? 99;
+      return ai - bi;
+    });
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    const an = agentNameMap.get(a.agentId) ?? a.agentId;
+    const bn = agentNameMap.get(b.agentId) ?? b.agentId;
+    if (an !== bn) return an.localeCompare(bn);
+    const ai = itemLabelMap.get(a.itemId) ?? a.itemId;
+    const bi = itemLabelMap.get(b.itemId) ?? b.itemId;
+    return ai.localeCompare(bi);
+  });
+}
 
 function isExpiringSoon(expiresAt: string | null): boolean {
   if (!expiresAt) return false;
@@ -171,16 +221,16 @@ function FilterChips({
 
 function PermissionsTable({
   isPending,
-  visiblePermissions,
-  totalCount,
+  visibleGroups,
+  totalGroupCount,
   agentNameMap,
   itemLabelMap,
   onRevoke,
   isRevoking,
 }: {
   isPending: boolean;
-  visiblePermissions: Permission[];
-  totalCount: number;
+  visibleGroups: PermissionGroup[];
+  totalGroupCount: number;
   agentNameMap: Map<string, string>;
   itemLabelMap: Map<string, string>;
   onRevoke: (permissionId: string) => void;
@@ -193,28 +243,29 @@ function PermissionsTable({
           <TableRow>
             <TableHead>Agent</TableHead>
             <TableHead>Item</TableHead>
-            <TableHead>Capability</TableHead>
+            <TableHead>Capabilities</TableHead>
             <TableHead>Expires</TableHead>
-            <TableHead>Granted by</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
         <TableBody>
           {isPending ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+              <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                 Loading...
               </TableCell>
             </TableRow>
-          ) : visiblePermissions.length === 0 ? (
+          ) : visibleGroups.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+              <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
                 <div className="space-y-2">
                   <div className="font-medium text-foreground">
-                    {totalCount === 0 ? "No permissions yet" : "No permissions match your filters"}
+                    {totalGroupCount === 0
+                      ? "No permissions yet"
+                      : "No permissions match your filters"}
                   </div>
                   <div>
-                    {totalCount === 0
+                    {totalGroupCount === 0
                       ? "Grant your first permission to get started."
                       : "Try adjusting your search or filters."}
                   </div>
@@ -222,13 +273,13 @@ function PermissionsTable({
               </TableCell>
             </TableRow>
           ) : (
-            visiblePermissions.map((perm: Permission) => (
-              <PermissionRow
-                key={perm.id}
-                permission={perm}
-                agentName={agentNameMap.get(perm.agentId) ?? perm.agentId.slice(0, 12)}
-                itemLabel={itemLabelMap.get(perm.itemId) ?? perm.itemId.slice(0, 12)}
-                onRevoke={() => onRevoke(perm.id)}
+            visibleGroups.map((group) => (
+              <PermissionGroupRow
+                key={`${group.agentId}::${group.itemId}`}
+                group={group}
+                agentName={agentNameMap.get(group.agentId) ?? group.agentId.slice(0, 12)}
+                itemLabel={itemLabelMap.get(group.itemId) ?? group.itemId.slice(0, 12)}
+                onRevoke={onRevoke}
                 isRevoking={isRevoking}
               />
             ))
@@ -257,12 +308,12 @@ export default function PermissionsListPage(): React.ReactElement {
     expiry: expiryFilter,
     create: createOpen,
   } = filters;
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [visibleGroupCount, setVisibleGroupCount] = useState(PAGE_SIZE);
 
   // Reset pagination when any filter changes (incl. via URL/back-forward)
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on filter change
   useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
+    setVisibleGroupCount(PAGE_SIZE);
   }, [search, agentFilter, capabilityFilter, expiryFilter]);
 
   const queryClient = useQueryClient();
@@ -310,8 +361,13 @@ export default function PermissionsListPage(): React.ReactElement {
     [permissions, search, agentFilter, capabilityFilter, expiryFilter, agentNameMap, itemLabelMap],
   );
 
-  const visiblePermissions = filteredPermissions.slice(0, visibleCount);
-  const hasMore = visibleCount < filteredPermissions.length;
+  const groupedPermissions = useMemo(
+    () => groupPermissionsByPair(filteredPermissions, agentNameMap, itemLabelMap),
+    [filteredPermissions, agentNameMap, itemLabelMap],
+  );
+
+  const visibleGroups = groupedPermissions.slice(0, visibleGroupCount);
+  const hasMore = visibleGroupCount < groupedPermissions.length;
 
   const hasActiveFilters =
     search !== "" || agentFilter !== "all" || capabilityFilter !== "all" || expiryFilter !== "all";
@@ -363,7 +419,8 @@ export default function PermissionsListPage(): React.ReactElement {
         <div>
           <h1 className="text-lg font-semibold">Permissions</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Explicit capability grants — each links one agent to one item with one capability.
+            Each row is one (agent, item) pair. Capabilities are explicit grants — revoke any chip
+            individually.
           </p>
         </div>
         <Button size="sm" onClick={() => void setFilters({ create: true })}>
@@ -439,14 +496,16 @@ export default function PermissionsListPage(): React.ReactElement {
 
       {/* Count */}
       <div className="text-sm text-muted-foreground">
-        {filteredPermissions.length} permission{filteredPermissions.length !== 1 ? "s" : ""}
+        {filteredPermissions.length} permission{filteredPermissions.length !== 1 ? "s" : ""} across{" "}
+        {groupedPermissions.length}{" "}
+        {groupedPermissions.length === 1 ? "agent–item pair" : "agent–item pairs"}
       </div>
 
       {/* Permissions table */}
       <PermissionsTable
         isPending={permissionsQuery.isPending}
-        visiblePermissions={visiblePermissions}
-        totalCount={permissions.length}
+        visibleGroups={visibleGroups}
+        totalGroupCount={groupedPermissions.length}
         agentNameMap={agentNameMap}
         itemLabelMap={itemLabelMap}
         onRevoke={(id) => revokeMutation.mutate(id)}
@@ -454,16 +513,17 @@ export default function PermissionsListPage(): React.ReactElement {
       />
 
       {/* Footer with count and load more */}
-      {visiblePermissions.length > 0 && (
+      {visibleGroups.length > 0 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            Showing {visiblePermissions.length} of {filteredPermissions.length} permissions
+            Showing {visibleGroups.length} of {groupedPermissions.length}{" "}
+            {groupedPermissions.length === 1 ? "pair" : "pairs"}
           </span>
           {hasMore && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+              onClick={() => setVisibleGroupCount((prev) => prev + PAGE_SIZE)}
             >
               Load more
             </Button>
@@ -476,7 +536,85 @@ export default function PermissionsListPage(): React.ReactElement {
   );
 }
 
-function PermissionRow({
+function PermissionGroupRow({
+  group,
+  agentName,
+  itemLabel,
+  onRevoke,
+  isRevoking,
+}: {
+  group: PermissionGroup;
+  agentName: string;
+  itemLabel: string;
+  onRevoke: (permissionId: string) => void;
+  isRevoking: boolean;
+}): React.ReactElement {
+  // Group expiry: use the soonest non-null expiresAt across the group's
+  // capabilities so an operator scanning the column sees the most urgent
+  // deadline first. "Mixed" appears when caps have different expiries.
+  const expiryDisplay = useMemo(() => summarizeGroupExpiry(group.permissions), [group.permissions]);
+
+  return (
+    <TableRow>
+      <TableCell className="font-medium align-top">{agentName}</TableCell>
+      <TableCell className="text-sm align-top">{itemLabel}</TableCell>
+      <TableCell className="align-top">
+        <div className="flex flex-wrap gap-1.5">
+          {group.permissions.map((perm) => (
+            <CapabilityChip
+              key={perm.id}
+              permission={perm}
+              agentName={agentName}
+              itemLabel={itemLabel}
+              onRevoke={() => onRevoke(perm.id)}
+              isRevoking={isRevoking}
+            />
+          ))}
+        </div>
+      </TableCell>
+      <TableCell
+        className={cn(
+          "whitespace-nowrap text-sm align-top",
+          expiryDisplay.tone === "danger" && "text-red-600 dark:text-red-400",
+          expiryDisplay.tone === "neutral" && "text-muted-foreground",
+        )}
+      >
+        {expiryDisplay.label}
+      </TableCell>
+      <TableCell />
+    </TableRow>
+  );
+}
+
+interface ExpirySummary {
+  label: string;
+  tone: "neutral" | "danger";
+}
+
+function summarizeGroupExpiry(permissions: Permission[]): ExpirySummary {
+  const expiries = permissions.map((p) => p.expiresAt);
+  const allPermanent = expiries.every((e) => e === null);
+  if (allPermanent) {
+    return { label: "Never", tone: "neutral" };
+  }
+  const distinct = new Set(expiries.map((e) => e ?? "permanent"));
+  if (distinct.size > 1) {
+    return { label: "Mixed", tone: "neutral" };
+  }
+  const first = expiries.find((e) => e !== null) ?? null;
+  if (!first) {
+    return { label: "Never", tone: "neutral" };
+  }
+  if (isExpired(first)) {
+    return { label: "Expired", tone: "danger" };
+  }
+  if (isExpiringSoon(first)) {
+    return { label: formatDate(first), tone: "danger" };
+  }
+  return { label: formatDate(first), tone: "neutral" };
+}
+
+function CapabilityChip({
   permission,
   agentName,
   itemLabel,
@@ -492,62 +630,58 @@ function PermissionRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const expired = isExpired(permission.expiresAt);
   const expiringSoon = isExpiringSoon(permission.expiresAt);
+  const tooltip = [
+    `Granted by ${permission.grantedBy.slice(0, 12)}`,
+    `Created ${formatDate(permission.createdAt)}`,
+    permission.expiresAt
+      ? `${expired ? "Expired" : "Expires"} ${formatDate(permission.expiresAt)}`
+      : "No expiry",
+  ].join(" · ");
 
   return (
-    <TableRow>
-      <TableCell className="font-medium">{agentName}</TableCell>
-      <TableCell className="text-sm">{itemLabel}</TableCell>
-      <TableCell>
-        <CapabilityBadge capability={permission.capability} />
-      </TableCell>
-      <TableCell
-        className={cn(
-          "whitespace-nowrap text-sm",
-          expired && "text-red-600 dark:text-red-400",
-          expiringSoon && !expired && "text-red-600 dark:text-red-400",
-          !expired && !expiringSoon && "text-muted-foreground",
-        )}
-      >
-        {permission.expiresAt ? (expired ? "Expired" : formatDate(permission.expiresAt)) : "Never"}
-      </TableCell>
-      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-        {permission.grantedBy.slice(0, 12)}
-      </TableCell>
-      <TableCell className="text-right">
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-red-600 hover:text-red-700 dark:text-red-400"
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs",
+        "border-border bg-background",
+        (expired || expiringSoon) && "border-red-300 dark:border-red-900/60",
+      )}
+      title={tooltip}
+    >
+      <CapabilityBadge capability={permission.capability} />
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Revoke ${permission.capability}`}
+            className="rounded-sm p-0.5 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke permission</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will immediately revoke the &ldquo;{permission.capability}&rdquo; capability for
+              &ldquo;{agentName}&rdquo; on &ldquo;{itemLabel}&rdquo;. Other capabilities for this
+              pair will remain. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                onRevoke();
+                setConfirmOpen(false);
+              }}
+              disabled={isRevoking}
             >
-              Revoke
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Revoke permission</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will immediately revoke the &ldquo;{permission.capability}&rdquo; capability
-                for &ldquo;{agentName}&rdquo; on &ldquo;{itemLabel}&rdquo;. This cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={() => {
-                  onRevoke();
-                  setConfirmOpen(false);
-                }}
-                disabled={isRevoking}
-              >
-                {isRevoking ? "Revoking..." : "Revoke"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </TableCell>
-    </TableRow>
+              {isRevoking ? "Revoking..." : "Revoke"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </span>
   );
 }

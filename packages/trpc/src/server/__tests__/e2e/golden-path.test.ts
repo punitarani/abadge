@@ -54,9 +54,10 @@ describe("e2e golden path", () => {
     const permResult = await caller.permissions.create({
       agentId,
       itemId,
-      capability: "reveal_plaintext",
+      capabilities: ["reveal_plaintext"],
     });
-    expect(permResult.permission).toBeDefined();
+    expect(permResult.permissions).toHaveLength(1);
+    expect(permResult.permissions[0]).toBeDefined();
 
     // 7. Create an agent session (inserts a hashed token into agentSessions)
     const session = await seedAgentSession(db, {

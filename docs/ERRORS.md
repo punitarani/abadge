@@ -38,8 +38,8 @@ Validation errors include an additional `issues` array:
 | `INVALID_BOOTSTRAP_TOKEN` | 400 | Bootstrap token is malformed or does not match any agent |
 | `BOOTSTRAP_TOKEN_EXPIRED` | 400 | Bootstrap token has passed its 10-minute TTL |
 | `INVALID_CAPABILITY` | 400 | Requested capability is not a valid enum value |
-| `INVALID_CAPABILITY_LOCALITY` | 400 | Capability is not allowed for this agent locality (e.g. remote agent + `mount_env`) |
-| `INVALID_CAPABILITY_STORAGE` | 400 | Capability is not compatible with the item's storage mode |
+| `INVALID_CAPABILITY_LOCALITY` | 400 | One or more capabilities are not allowed for this agent's locality (e.g. remote agent + `mount_env`); `meta.invalidCapabilities` lists every offender |
+| `INVALID_CAPABILITY_STORAGE` | 400 | One or more capabilities are not compatible with the item's storage mode; `meta.invalidCapabilities` lists every offender |
 | `ORG_HEADER_REQUIRED` | 400 | User belongs to 2+ orgs; set `X-Abadge-Org-Id`. `meta.availableOrgIds` lists the user's orgs |
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile key rotate payload does not rewrap every ZK item in the profile; `meta.missingItemIds` lists the omitted ones |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
@@ -66,6 +66,7 @@ Validation errors include an additional `issues` array:
 | `CONFLICT` | 409 | Generic conflict |
 | `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault already exists |
 | `PROFILE_ALREADY_EXISTS` | 409 | Profile with this name already exists in the org |
+| `PERMISSION_ALREADY_EXISTS` | 409 | One or more capabilities in a `permissions.create` batch are already granted on this `(agent, item)` pair; `meta.duplicateCapabilities` lists every duplicate. The batch is rejected atomically — the non-duplicate caps were not written |
 | `PROFILE_NOT_EMPTY` | 409 | Profile deletion blocked because it still contains items |
 | `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |
 | `RATE_LIMITED` | 429 | Too many requests; back off and retry |
