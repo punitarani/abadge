@@ -1,7 +1,8 @@
 // Build a markdown coverage summary from coverage/<bucket>/lcov.info files
 // and write it to coverage-comment.md for the sticky-comment action.
 //
-// Usage: bun scripts/coverage/comment.ts [out=coverage-comment.md]
+// Usage: bun scripts/coverage/comment.ts [output-path]
+//        (output-path defaults to ./coverage-comment.md)
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
