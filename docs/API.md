@@ -383,23 +383,30 @@ Input: `{ agentId }`. Invalidates all active sessions. Returns `{ ok: true }`.
 
 Auth: `sessionProcedure`
 
+Grants one or more capabilities to an agent on an item in a single atomic operation. Returns `{ permissions }` — one row per capability granted.
+
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `agentId` | string | yes | Agent receiving access |
 | `itemId` | string | yes | Target item |
-| `capability` | enum | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` |
-| `expiresAt` | string | no | ISO timestamp for permission expiry |
+| `capabilities` | enum[] | yes | Non-empty array of distinct capabilities (`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`) |
+| `expiresAt` | string | no | ISO timestamp applied to every capability in this submission |
 
-Creation-time enforcement rejects:
+Atomic batching: every requested capability lands or none does. The schema rejects empty arrays and inputs with duplicate capabilities (rejected as a `VALIDATION_ERROR` before the router runs).
 
-* remote agent + zero-knowledge item (`INVALID_CAPABILITY_STORAGE`)
-* remote agent + capability other than `reveal_plaintext` (`INVALID_CAPABILITY_LOCALITY`)
+Creation-time enforcement rejects the entire batch when:
+
+* any capability is invalid for the agent's locality (`INVALID_CAPABILITY_LOCALITY`) — `meta.invalidCapabilities` lists every offender
+* any capability is invalid for the item's storage mode (`INVALID_CAPABILITY_STORAGE`) — `meta.invalidCapabilities` lists every offender
+* any capability is already granted on this `(agent, item)` pair (`PERMISSION_ALREADY_EXISTS`) — `meta.duplicateCapabilities` lists every duplicate
+
+Single-capability grants use `capabilities: ["reveal_plaintext"]` (an array of one).
 
 ### `permissions.list`
 
 Auth: `sessionProcedure`
 
-Optional filters: `agentId`, `itemId`. Returns `{ permissions }`.
+Optional filters: `agentId`, `itemId`. When both are provided they are AND-combined (returns only permissions matching both). Returns `{ permissions }` — one row per capability.
 
 ### `permissions.revoke`
 

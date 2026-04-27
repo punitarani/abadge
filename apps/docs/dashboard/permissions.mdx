@@ -3,38 +3,41 @@ title: "Permissions"
 description: "Grant capabilities to agents on individual items, with optional expiries."
 ---
 
-The **Permissions** view is where you connect agents to the items they can use. Every grant is one row: agent + item + capability.
+The **Permissions** view is where you connect agents to the items they can use. Each grant is still one row at the storage level (agent + item + capability), but the dashboard groups grants by `(agent, item)` so a single line shows every capability the agent has on that item.
 
 ## Listing permissions
 
-The permissions table shows:
+The permissions table groups rows by `(agent, item)` pair. Each row shows:
 
 - Agent name and kind
 - Item label and storage mode
-- Capability
-- Expires at (or "never")
-- Granted by (user)
+- Capabilities — one chip per granted capability, with the canonical order (`read_ciphertext` → `reveal_plaintext` → `mount_env` → `mount_file`)
+- Expires — the soonest deadline among the group's capabilities, or "Mixed" when capabilities have different expiries
+- A small `✕` on each chip to revoke that one capability without touching the others
 
-Filter by agent or item from the table header. Columns are sortable.
+Filter and search remain row-level (agent / item / capability / expiry), then groups are formed from the filtered rows. The footer shows both the row count and the pair count.
 
 ## Creating a permission
 
 <Steps>
-  <Step title="Click Grant access">
+  <Step title="Click Grant permission">
     Select an agent and an item from the dropdowns.
   </Step>
-  <Step title="Pick a capability">
-    The dashboard shows only capabilities that are valid for the chosen agent + item combination, based on the [capability matrix](/concepts/permissions-and-capabilities).
+  <Step title="Pick one or more capabilities">
+    The dashboard shows only capabilities that are valid for the chosen agent + item combination, based on the [capability matrix](/concepts/permissions-and-capabilities). Tick as many as you need — multi-grant is atomic.
+  </Step>
+  <Step title="Already-granted capabilities">
+    If the agent already has a capability on the chosen item, that capability is dimmed and labelled "already granted" — you can't accidentally re-pick it. (The backend would reject a duplicate with `PERMISSION_ALREADY_EXISTS` anyway.)
   </Step>
   <Step title="(Optional) Set an expiry">
-    ISO timestamp. Leave blank for a non-expiring grant.
+    ISO date. Applies to every capability you ticked in this submission. Leave blank for non-expiring grants. To grant some capabilities with one expiry and others with another, submit two batches.
   </Step>
   <Step title="Save">
-    The grant takes effect immediately. Future access attempts will check this row.
+    The whole batch lands atomically — every ticked capability becomes one row, all in one transaction. Future access attempts check those rows.
   </Step>
 </Steps>
 
-The composite unique constraint `(agentId, itemId, capability)` means each triple has at most one row. Re-granting the same triple updates the existing row.
+The composite unique constraint `(agentId, itemId, capability)` means each triple has at most one row. The router pre-checks for duplicates with one `IN` query so the error envelope can list every conflicting capability up front (`meta.duplicateCapabilities`).
 
 ## Capability cheatsheet
 
@@ -49,7 +52,7 @@ Invalid combinations (for example, a remote agent + `mount_env`) are rejected at
 
 ## Revoking a permission
 
-**Revoke** deletes the permission row immediately. Any in-flight access attempt that hasn't yet checked the row sees the deletion and is denied. Audit entries get `permission.revoke` and `permission.revoke_cascade` for cascaded denials.
+Each capability chip has its own `✕` button. Clicking it deletes that single permission row immediately — sibling capabilities on the same `(agent, item)` pair are untouched. Any in-flight access attempt that hasn't yet checked the row sees the deletion and is denied. Audit entries get `permission.revoke` (one per capability revoked) and `permission.revoke_cascade` for cascaded denials.
 
 ## Expiring permissions
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { Permission } from "@abadge/core";
 import {
   seedAgent,
   seedMember,
@@ -40,16 +41,17 @@ describe("permissions", () => {
     const created = await caller.permissions.create({
       agentId: agent.agentId,
       itemId: item.itemId,
-      capability: "reveal_plaintext",
+      capabilities: ["reveal_plaintext"],
     });
 
-    expect(created.permission.agentId).toBe(agent.agentId);
-    expect(created.permission.itemId).toBe(item.itemId);
-    expect(created.permission.capability).toBe("reveal_plaintext");
+    expect(created.permissions).toHaveLength(1);
+    expect(created.permissions[0]?.agentId).toBe(agent.agentId);
+    expect(created.permissions[0]?.itemId).toBe(item.itemId);
+    expect(created.permissions[0]?.capability).toBe("reveal_plaintext");
 
     const listed = await caller.permissions.list({ agentId: agent.agentId });
     expect(listed.permissions.length).toBe(1);
-    expect(listed.permissions[0]?.id).toBe(created.permission.id);
+    expect(listed.permissions[0]?.id).toBe(created.permissions[0]?.id);
   });
 
   test("revoke permission removes it", async () => {
@@ -67,10 +69,12 @@ describe("permissions", () => {
     const created = await caller.permissions.create({
       agentId: agent.agentId,
       itemId: item.itemId,
-      capability: "reveal_plaintext",
+      capabilities: ["reveal_plaintext"],
     });
 
-    await caller.permissions.revoke({ permissionId: created.permission.id });
+    const id = created.permissions[0]?.id;
+    if (!id) throw new Error("expected permission id");
+    await caller.permissions.revoke({ permissionId: id });
 
     const listed = await caller.permissions.list({ agentId: agent.agentId });
     expect(listed.permissions.length).toBe(0);
@@ -97,7 +101,7 @@ describe("permissions", () => {
       caller.permissions.create({
         agentId: agent.agentId,
         itemId: item.itemId,
-        capability: "read_ciphertext",
+        capabilities: ["read_ciphertext"],
       }),
     ).rejects.toThrow();
   });
@@ -117,10 +121,10 @@ describe("permissions", () => {
     const created = await caller.permissions.create({
       agentId: agent.agentId,
       itemId: item.itemId,
-      capability: "mount_env",
+      capabilities: ["mount_env"],
     });
 
-    expect(created.permission.capability).toBe("mount_env");
+    expect(created.permissions[0]?.capability).toBe("mount_env");
   });
 
   test("permission with expiry", async () => {
@@ -140,12 +144,13 @@ describe("permissions", () => {
     const created = await caller.permissions.create({
       agentId: agent.agentId,
       itemId: item.itemId,
-      capability: "reveal_plaintext",
+      capabilities: ["reveal_plaintext"],
       expiresAt: futureDate.toISOString(),
     });
 
-    expect(created.permission.expiresAt).toBeDefined();
-    expect(new Date(created.permission.expiresAt as string).getTime()).toBeGreaterThan(Date.now());
+    const expiresAt = created.permissions[0]?.expiresAt;
+    expect(expiresAt).toBeDefined();
+    expect(new Date(expiresAt as string).getTime()).toBeGreaterThan(Date.now());
   });
 
   // Regression tests for W1S9-001 / fix: Effect.tryPromise → tryAsync on
@@ -174,7 +179,7 @@ describe("permissions", () => {
       await bobCaller.permissions.create({
         agentId: aliceAgent.agent.id,
         itemId: item.itemId,
-        capability: "reveal_plaintext",
+        capabilities: ["reveal_plaintext"],
       });
       expect.unreachable("should have thrown MEMBER_AGENT_OWNERSHIP on create permission");
     } catch (error: unknown) {
@@ -215,5 +220,197 @@ describe("permissions", () => {
       expect(err.code).toBe("FORBIDDEN");
       expect(err.cause?.code).toBe("MEMBER_AGENT_OWNERSHIP");
     }
+  });
+
+  // ---- Multi-capability batch grants ---------------------------------------
+
+  test("batch grant: 3 capabilities land in one transaction", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    const created = await caller.permissions.create({
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capabilities: ["reveal_plaintext", "mount_env", "mount_file"],
+    });
+
+    expect(created.permissions).toHaveLength(3);
+    const caps = created.permissions.map((p: Permission) => p.capability).sort();
+    expect(caps).toEqual(["mount_env", "mount_file", "reveal_plaintext"]);
+    // Each row gets its own id, even though they share (agent, item, expiry, grantedBy)
+    expect(new Set(created.permissions.map((p: Permission) => p.id)).size).toBe(3);
+
+    const listed = await caller.permissions.list({ agentId: agent.agentId });
+    expect(listed.permissions).toHaveLength(3);
+  });
+
+  test("batch grant: invalid capability rolls back the entire batch", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    // server_managed item — read_ciphertext is invalid for it
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    try {
+      await caller.permissions.create({
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capabilities: ["reveal_plaintext", "read_ciphertext", "mount_env"],
+      });
+      expect.unreachable("should have thrown INVALID_CAPABILITY_STORAGE");
+    } catch (error: unknown) {
+      const err = error as { cause?: { code?: string; meta?: { invalidCapabilities?: string[] } } };
+      expect(err.cause?.code).toBe("INVALID_CAPABILITY_STORAGE");
+      expect(err.cause?.meta?.invalidCapabilities).toEqual(["read_ciphertext"]);
+    }
+
+    // Nothing landed: the two valid caps must NOT have been written.
+    const listed = await caller.permissions.list({ agentId: agent.agentId });
+    expect(listed.permissions).toHaveLength(0);
+  });
+
+  test("batch grant: duplicate capability rolls back and lists every duplicate", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    // Pre-grant two of the three caps we'll try to batch
+    await caller.permissions.create({
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capabilities: ["reveal_plaintext", "mount_env"],
+    });
+
+    try {
+      await caller.permissions.create({
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capabilities: ["reveal_plaintext", "mount_env", "mount_file"],
+      });
+      expect.unreachable("should have thrown PERMISSION_ALREADY_EXISTS");
+    } catch (error: unknown) {
+      const err = error as {
+        cause?: { code?: string; meta?: { duplicateCapabilities?: string[] } };
+      };
+      expect(err.cause?.code).toBe("PERMISSION_ALREADY_EXISTS");
+      const dupes = err.cause?.meta?.duplicateCapabilities?.slice().sort() ?? [];
+      expect(dupes).toEqual(["mount_env", "reveal_plaintext"]);
+    }
+
+    // The third capability (mount_file) must NOT have landed: rollback
+    // means the original two grants are the only rows.
+    const listed = await caller.permissions.list({ agentId: agent.agentId });
+    expect(listed.permissions).toHaveLength(2);
+  });
+
+  test("batch grant: duplicate cap inside the input array is rejected at the schema layer", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    await expect(
+      caller.permissions.create({
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capabilities: ["mount_env", "mount_env"],
+      }),
+    ).rejects.toThrow();
+
+    // Schema rejection means nothing reached the router; no rows written.
+    const listed = await caller.permissions.list({ agentId: agent.agentId });
+    expect(listed.permissions).toHaveLength(0);
+  });
+
+  test("batch grant: per-capability revoke leaves siblings intact", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+
+    const created = await caller.permissions.create({
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capabilities: ["reveal_plaintext", "mount_env", "mount_file"],
+    });
+
+    const target = created.permissions.find((p: Permission) => p.capability === "mount_file");
+    if (!target) throw new Error("expected mount_file row");
+    await caller.permissions.revoke({ permissionId: target.id });
+
+    const listed = await caller.permissions.list({ agentId: agent.agentId });
+    expect(listed.permissions).toHaveLength(2);
+    const remaining = listed.permissions.map((p: Permission) => p.capability).sort();
+    expect(remaining).toEqual(["mount_env", "reveal_plaintext"]);
+  });
+
+  test("permissions.list filters by (agent, item) pair when both provided", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const item1 = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const item2 = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+
+    await caller.permissions.create({
+      agentId: agent.agentId,
+      itemId: item1.itemId,
+      capabilities: ["reveal_plaintext"],
+    });
+    await caller.permissions.create({
+      agentId: agent.agentId,
+      itemId: item2.itemId,
+      capabilities: ["reveal_plaintext"],
+    });
+
+    // Single-filter (agent only) returns both rows
+    const byAgent = await caller.permissions.list({ agentId: agent.agentId });
+    expect(byAgent.permissions).toHaveLength(2);
+
+    // AND-combined filter returns only the row matching both
+    const byPair = await caller.permissions.list({
+      agentId: agent.agentId,
+      itemId: item1.itemId,
+    });
+    expect(byPair.permissions).toHaveLength(1);
+    expect(byPair.permissions[0]?.itemId).toBe(item1.itemId);
   });
 });

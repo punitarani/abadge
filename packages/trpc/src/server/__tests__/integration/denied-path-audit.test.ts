@@ -63,7 +63,7 @@ describe("denied-path audit (W2T12-003)", () => {
       bobCaller.permissions.create({
         agentId,
         itemId,
-        capability: "reveal_plaintext",
+        capabilities: ["reveal_plaintext"],
       }),
     ).rejects.toThrow();
 

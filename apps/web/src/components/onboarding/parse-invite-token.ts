@@ -25,7 +25,7 @@ export function parseInviteToken(input: string): string | null {
     // Allow pasting "/invite/accept?token=abi_..." (no scheme) by prepending a base.
     const url = new URL(trimmed, "https://placeholder.invalid");
     const candidate = url.searchParams.get("token");
-    if (candidate && candidate.startsWith(INVITE_TOKEN_PREFIX)) {
+    if (candidate?.startsWith(INVITE_TOKEN_PREFIX)) {
       return candidate;
     }
   } catch {

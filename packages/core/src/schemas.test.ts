@@ -209,7 +209,7 @@ describe("item write schemas", () => {
 // the schema boundary so they never reach verifyEd25519 → fromBase64 → SyntaxError → 500.
 describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format validation", () => {
   // A realistic challenge: prefix "abc_" + base64url(32 random bytes) = 47 chars.
-  const VALID_CHALLENGE = "abc_" + "A".repeat(43);
+  const VALID_CHALLENGE = `abc_${"A".repeat(43)}`;
   // A realistic Ed25519 signature: 64 bytes → 86 chars unpadded base64url.
   const VALID_SIG = "A".repeat(86);
   const VALID_AGENT_ID = "agt_test";
@@ -233,7 +233,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        signature: "A".repeat(86) + "==",
+        signature: `${"A".repeat(86)}==`,
       }),
     ).toBe(true);
   });
@@ -243,7 +243,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        signature: "!@#$%^&*()" + "A".repeat(76),
+        signature: `!@#$%^&*()${"A".repeat(76)}`,
       }),
     ).toBe(false);
   });
@@ -252,7 +252,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        challenge: "abc_!@#$%^&*()" + "A".repeat(33),
+        challenge: `abc_!@#$%^&*()${"A".repeat(33)}`,
       }),
     ).toBe(false);
   });
@@ -280,7 +280,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        challenge: "abc_" + "A".repeat(300),
+        challenge: `abc_${"A".repeat(300)}`,
       }),
     ).toBe(false);
   });

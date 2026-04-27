@@ -304,20 +304,31 @@ abadge agent revoke <agent-id>
 
 ### `abadge permission create`
 
-Creates an explicit permission createing a capability to an agent for an item.
+Grants one or more capabilities to an agent for an item. Multiple capabilities land atomically — either every row is written or none is.
 
 ```bash
-abadge permission create --agent <agent-id> --item <item-id> --capability reveal_plaintext
-abadge permission create --agent <agent-id> --item <item-id> --capability mount_env
-abadge permission create --agent <agent-id> --item <item-id> --capability mount_env --expires-at 2026-12-31T00:00:00Z
+# Single capability
+abadge permission create --agent-id <id> --item-id <id> --capability reveal_plaintext
+
+# Multiple capabilities — repeat the flag
+abadge permission create --agent-id <id> --item-id <id> \
+  --capability reveal_plaintext --capability mount_env --capability mount_file
+
+# Multiple capabilities — comma-separated
+abadge permission create --agent-id <id> --item-id <id> \
+  --capability reveal_plaintext,mount_env,mount_file
+
+# With expiry (applies to every capability in this batch)
+abadge permission create --agent-id <id> --item-id <id> \
+  --capability mount_env --expires-at 2026-12-31T00:00:00Z
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--agent`, `--agent-id` | Target agent |
-| `--item`, `--item-id` | Target item |
-| `--capability` | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file` |
-| `--expires-at` | Optional ISO timestamp expiry |
+| `--agent-id` | Target agent |
+| `--item-id` | Target item |
+| `--capability` | One of `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`. Repeat the flag or pass a comma-separated list to grant multiple at once. |
+| `--expires-at` | Optional ISO timestamp expiry; applied to every capability in this submission |
 | `--json` | Print raw JSON |
 
 ### `abadge permission list`

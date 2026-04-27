@@ -5,19 +5,30 @@ description: "Grant, list, and revoke capabilities."
 
 ## `abadge permission create`
 
-Grant an explicit capability for an agent on an item.
+Grant one or more capabilities for an agent on an item. Multiple capabilities land atomically — either every row is written or none is.
 
 ```bash
+# Single capability
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
   --capability reveal_plaintext
 
+# Multiple capabilities — repeat the flag
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability mount_env
+  --capability reveal_plaintext \
+  --capability mount_env \
+  --capability mount_file
 
+# Multiple capabilities — comma-separated
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability reveal_plaintext,mount_env,mount_file
+
+# With expiry — applied to every capability in this batch
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
@@ -29,8 +40,8 @@ abadge permission create \
 |---|---|---|
 | `--agent-id <id>` | yes | Target agent |
 | `--item-id <id>` | yes | Target item |
-| `--capability <cap>` | yes | `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file` |
-| `--expires-at <ts>` | no | ISO timestamp expiry |
+| `--capability <cap>` | yes | One of `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file`. Repeat the flag or pass a comma-separated list to grant multiple capabilities at once. |
+| `--expires-at <ts>` | no | ISO timestamp expiry; applied to every capability in this submission |
 | `--json` | no | Print raw JSON |
 
 The CLI rejects invalid combinations at create time. The capability matrix:

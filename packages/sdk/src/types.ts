@@ -42,7 +42,6 @@ export type {
   MountAccessResponse,
   Permission,
   PermissionListResult,
-  PermissionResult,
   RecoverySetupInput as SetupRecoveryInput,
   RevealAccessResponse,
   RevokeAgentSessionInput,
