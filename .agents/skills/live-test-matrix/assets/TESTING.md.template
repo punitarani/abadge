@@ -1,0 +1,78 @@
+# TESTING.md — <feature>
+
+Live test matrix run against `doppler run -- turbo dev --filter='!@abadge/docs'`. Every row has a category prefix (H / E / A / P), a description, an expected outcome, and a pass criterion. Each scenario class gets ≥3 variations (the floor — add more when the feature has more dimensions).
+
+## Setup state
+
+- API: http://localhost:8787
+- Web: http://localhost:3000
+- DB: postgresql://abadge:abadge@localhost:5432/abadge
+- Test user: `<email>`
+- Test org: `<org_id>`
+- Test bearer: from `set-auth-token` header on sign-in
+
+## H — Happy paths
+
+| # | Test | Expected | Pass criterion |
+|---|---|---|---|
+| H.1.1 | <description> | 200 OK + `<output shape>` | `<DB state assertion>` |
+| H.1.2 | <variation 2> | 200 OK | |
+| H.1.3 | <variation 3> | 200 OK | |
+| H.2.1 | <2nd happy scenario> | | |
+| H.2.2 | | | |
+| H.2.3 | | | |
+
+## E — Edge cases
+
+| # | Test | Expected | Pass criterion |
+|---|---|---|---|
+| E.1.1 | <boundary condition> | <code/output> | <state> |
+| E.1.2 | | | |
+| E.1.3 | | | |
+
+## A — Adversarial
+
+These should be REJECTED with a structured error envelope.
+
+| # | Test | Expected | Pass criterion |
+|---|---|---|---|
+| A.1.1 | <invalid input #1> | `BAD_REQUEST` / `<DOMAIN_CODE>` | `meta.X` lists offender(s); 0 rows written |
+| A.1.2 | <invalid input #2> | | |
+| A.1.3 | <invalid input #3> | | |
+
+## P — Pentests
+
+| # | Test | Expected | Pass criterion |
+|---|---|---|---|
+| P.1 | Bogus session token | `UNAUTHORIZED` | |
+| P.2 | No auth header | `UNAUTHORIZED` | |
+| P.3 | Cross-org `<X>` ID injection | `<X>_NOT_FOUND` | row count unchanged in DB |
+| P.4 | Cross-profile within-org (if applicable) | `PERMISSION_DENIED` | `audit_logs.result='denied'` row appears |
+| P.5 | Tampered bearer token (valid prefix, bad body) | `UNAUTHORIZED` | |
+| P.6 | Enumeration: list endpoint excludes denied items | denied items absent from list | |
+| P.7 | DB-write attacker tampers `<encryption-bound column>` | `INTERNAL_SERVER_ERROR/500` (AAD rejects) | ciphertext refuses to decrypt |
+| P.8 | Audit-log captures every denial | `≥N` denied rows after the failed accesses | matches the count of failed P.* scenarios |
+
+## Tally
+
+(filled in by the harness after running)
+
+| Category | Pass | Fail | Notes |
+|---|---|---|---|
+| H — Happy | 0/0 | 0 | |
+| E — Edge | 0/0 | 0 | |
+| A — Adversarial | 0/0 | 0 | |
+| P — Pentests | 0/0 | 0 | |
+| **Total** | **0/0** | **0** | |
+
+### Discovered findings
+
+(any real bugs / unexpected behaviors uncovered during the run)
+
+- (none yet)
+
+### Defence-in-depth properties verified
+
+(security properties the matrix exercised that aren't tested elsewhere)
+
+- (none yet)
