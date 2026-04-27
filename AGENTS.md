@@ -361,7 +361,12 @@ bun run db:push
 bun run cli -- --help        # Run CLI
 bun run mcp                   # Start MCP server
 bun test                      # Run test suite
+bun run test:cov:unit         # Unit tests with coverage (no DB)
+bun run test:cov:integration  # Integration tests with coverage (Postgres)
+bun run test:e2e              # E2E (no coverage by design)
 ```
+
+Test buckets are defined in `scripts/coverage/buckets.ts` (single source of truth: unit / integration / e2e). When adding a new test, place it where its dependencies fit: pure in-process tests are unit; tests that hit Postgres or spawn in-process servers are integration; tests that run against the compiled binaries via wrangler-dev belong in `apps/e2e`.
 
 ## Style rules
 
