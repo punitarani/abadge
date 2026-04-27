@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { Permission } from "@abadge/core";
 import {
   seedAgent,
+  seedAgentSession,
   seedMember,
   seedOrg,
   seedProfile,
@@ -19,7 +20,7 @@ import {
   seedZkItem,
 } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { createOperatorCaller } from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 describe("permissions-matrix", () => {
@@ -763,6 +764,161 @@ describe("permissions-matrix", () => {
       const err = error as { cause?: { code?: string } };
       expect(err.cause?.code).toBe("ITEM_NOT_FOUND");
     }
+  });
+
+  // ===== 2.J Per-profile scope (the AGENTS.md "tokens scoped per profile at most" invariant) =====
+
+  test("2.J.1 agent with grant on profile-A item is denied on profile-B item (same org)", async () => {
+    // The exact case asked about: agent has explicit permission on one item
+    // in profile A; tries to access a sibling item in profile B within the
+    // same org. Per the "no item access without an explicit permission"
+    // invariant, the second item must be denied even though the agent and
+    // item share an org.
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const opCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const profileA = await seedProfile(db, org.orgId, { name: "scope-a" });
+    const profileB = await seedProfile(db, org.orgId, { name: "scope-b" });
+    const itemA = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      profileId: profileA.profileId,
+      fields: { api_key: "sk-A" },
+    });
+    const itemB = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      profileId: profileB.profileId,
+      fields: { api_key: "sk-B" },
+    });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+
+    // Grant the agent ONLY on itemA (in profile A).
+    await opCaller.permissions.create({
+      agentId: agent.agentId,
+      itemId: itemA.itemId,
+      capabilities: ["reveal_plaintext"],
+    });
+
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    // Sanity: the agent CAN reveal itemA (it has the explicit permission).
+    const okA = await agentCaller.access.reveal({ itemId: itemA.itemId });
+    expect(okA.payload.fields.api_key).toBe("sk-A");
+
+    // The actual test: the agent CANNOT reveal itemB even though it lives in
+    // the same org. No permission row exists for (agent, itemB, reveal).
+    try {
+      await agentCaller.access.reveal({ itemId: itemB.itemId });
+      expect.unreachable("cross-profile access on itemB must be denied");
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      expect(err.code).toBe("FORBIDDEN");
+    }
+  });
+
+  test("2.J.2 agent's items.list only returns items it has permissions on (no cross-profile leak)", async () => {
+    // Defence-in-depth: even if access.reveal denies, the agent must not be
+    // able to *enumerate* sibling-profile items it has no business knowing
+    // exist. listItemsForAgent INNER JOINs on permissions, bounding the
+    // agent's view to items it has at least one permission row for.
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const opCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const profileA = await seedProfile(db, org.orgId, { name: "list-a" });
+    const profileB = await seedProfile(db, org.orgId, { name: "list-b" });
+    const itemA = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      profileId: profileA.profileId,
+    });
+    const itemB = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      profileId: profileB.profileId,
+    });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+    await opCaller.permissions.create({
+      agentId: agent.agentId,
+      itemId: itemA.itemId,
+      capabilities: ["reveal_plaintext"],
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    const visible = await agentCaller.items.listForAgent();
+    const ids = visible.items.map((i: { id: string }) => i.id);
+    expect(ids).toContain(itemA.itemId);
+    expect(ids).not.toContain(itemB.itemId);
+  });
+
+  test("2.J.3 revoking the only profile-A permission collapses the agent's reach to zero", async () => {
+    // The whole point of "scoped per agent, agent scoped per profile at
+    // most" is that revoking the agent's permissions for a profile cuts
+    // off the agent's reach into that profile entirely. Multi-cap grant
+    // + per-row revoke must compose to zero reach.
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const opCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const profileA = await seedProfile(db, org.orgId, { name: "revoke-a" });
+    const itemA = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      profileId: profileA.profileId,
+    });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    const created = await opCaller.permissions.create({
+      agentId: agent.agentId,
+      itemId: itemA.itemId,
+      capabilities: ["reveal_plaintext", "mount_env", "mount_file"],
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    // Pre-revoke: agent can reveal.
+    const before = await agentCaller.access.reveal({ itemId: itemA.itemId });
+    expect(before.payload).toBeDefined();
+
+    // Revoke ALL three rows.
+    for (const p of created.permissions) {
+      await opCaller.permissions.revoke({ permissionId: p.id });
+    }
+
+    // Post-revoke: FORBIDDEN, and items.list is empty.
+    try {
+      await agentCaller.access.reveal({ itemId: itemA.itemId });
+      expect.unreachable("agent should not access itemA after full revoke");
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      expect(err.code).toBe("FORBIDDEN");
+    }
+    const visible = await agentCaller.items.listForAgent();
+    expect(visible.items).toHaveLength(0);
   });
 
   test("2.I.3 audit log: 3-cap batch produces exactly 3 permission.create rows", async () => {
