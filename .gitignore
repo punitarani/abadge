@@ -18,6 +18,7 @@ output
 
 # testing
 /coverage
+/coverage-comment.md
 
 # misc
 .DS_Store

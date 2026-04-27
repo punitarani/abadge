@@ -15,7 +15,9 @@ E2E tests boot `wrangler dev` and the compiled CLI/MCP binaries; Bun's coverage 
 
 Bucket assignment (the source of truth) lives in `scripts/coverage/buckets.ts`.
 
-Coverage is informational on this PR — no thresholds gate CI. Download the `coverage-unit` / `coverage-integration` artifacts from a green run to inspect.
+A `coverage-comment` job (PRs only) downloads both lcov artifacts, renders a summary table via `scripts/coverage/comment.ts`, and posts/updates a sticky PR comment via [`marocchino/sticky-pull-request-comment`](https://github.com/marocchino/sticky-pull-request-comment) (header: `coverage`). The job runs even if a test bucket fails (`if: always()`) and continues on missing artifacts so partial info still posts.
+
+Coverage is informational on this PR — no thresholds gate CI. The artifacts (`coverage-unit`, `coverage-integration`) on each run hold the full lcov files for local rendering (`bunx genhtml coverage/unit/lcov.info -o coverage/unit/html`) or editor inline-coverage extensions.
 
 ## Turborepo remote cache (optional)
 
