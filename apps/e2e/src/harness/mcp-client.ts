@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Subprocess } from "bun";
 
@@ -21,6 +22,7 @@ export interface McpClient {
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
 const MCP_ENTRY = join(REPO_ROOT, "packages", "mcp", "src", "index.ts");
+const MCP_COMPILED_BINARY = join(REPO_ROOT, "packages", "mcp", "dist", "abadge-mcp");
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -32,9 +34,12 @@ interface JsonRpcResponse {
 }
 
 /**
- * Spawn `bun packages/mcp/src/index.ts` as an MCP stdio server and drive it
- * over JSON-RPC 2.0. Performs the standard MCP initialize / initialized
- * handshake, then exposes a callTool() method that matches responses by id.
+ * Spawn the MCP stdio server and drive it over JSON-RPC 2.0. Prefers the
+ * compiled binary at packages/mcp/dist/abadge-mcp when present (turbo's
+ * test:e2e dependsOn @abadge/mcp#build builds it in CI) and falls back to
+ * `bun packages/mcp/src/index.ts` for local iteration. Performs the
+ * standard MCP initialize / initialized handshake, then exposes a
+ * callTool() method that matches responses by id.
  */
 export async function startMcpClient(opts: McpClientOptions): Promise<McpClient> {
   const env: Record<string, string> = {
@@ -46,7 +51,8 @@ export async function startMcpClient(opts: McpClientOptions): Promise<McpClient>
     ...opts.env,
   };
 
-  const proc = Bun.spawn(["bun", MCP_ENTRY], {
+  const cmd = existsSync(MCP_COMPILED_BINARY) ? [MCP_COMPILED_BINARY] : ["bun", MCP_ENTRY];
+  const proc = Bun.spawn(cmd, {
     cwd: REPO_ROOT,
     env,
     stdin: "pipe",
@@ -83,6 +89,9 @@ export async function startMcpClient(opts: McpClientOptions): Promise<McpClient>
   }
 
   function request(method: string, params: unknown): Promise<JsonRpcResponse> {
+    if (closed) {
+      return Promise.reject(new Error("mcp client is already closed"));
+    }
     const id = nextId++;
     return new Promise<JsonRpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {

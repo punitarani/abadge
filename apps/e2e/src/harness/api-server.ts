@@ -126,7 +126,12 @@ async function waitForReady(
 
   // Belt-and-suspenders: even after the banner, the listener can race the
   // first request. Poll /health until it returns 200 or the deadline passes.
+  // Bail early if wrangler exited (banner-then-crash gives a clear failure
+  // instead of a 60s timeout of connection-refused fetches).
   while (Date.now() < deadline) {
+    if (proc.exitCode !== null) {
+      throw new Error(`wrangler exited (code ${proc.exitCode}) after the ready banner`);
+    }
     try {
       const res = await fetch(`${url}/health`);
       if (res.ok) return;
@@ -147,18 +152,25 @@ async function drain(
   const decoder = new TextDecoder();
   const reader = stream.getReader();
   let buf = "";
-  while (Date.now() < deadline) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    buf += decoder.decode(value);
-    // biome-ignore lint/style/noRestrictedGlobals: opt-in e2e debug log channel
-    if (process.env.E2E_DEBUG) {
+  try {
+    while (Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buf += decoder.decode(value);
       // biome-ignore lint/style/noRestrictedGlobals: opt-in e2e debug log channel
-      process.stderr.write(`[wrangler:${label}] ${decoder.decode(value)}`);
+      if (process.env.E2E_DEBUG) {
+        // biome-ignore lint/style/noRestrictedGlobals: opt-in e2e debug log channel
+        process.stderr.write(`[wrangler:${label}] ${decoder.decode(value)}`);
+      }
+      if (buf.includes(`Ready on ${url}`) || /\bReady on http:/.test(buf)) {
+        return;
+      }
     }
-    if (buf.includes(`Ready on ${url}`) || /\bReady on http:/.test(buf)) {
+  } finally {
+    try {
       reader.releaseLock();
-      return;
+    } catch {
+      /* already released or stream cancelled */
     }
   }
 }
