@@ -108,6 +108,9 @@ bun run api:clean:worker
 | `bun run cli -- --help` | Run the CLI |
 | `bun run mcp` | Start the MCP server |
 | `bun test` | Run tests |
+| `bun run test:cov:unit` | Unit tests with coverage (no DB) |
+| `bun run test:cov:integration` | Integration tests with coverage (needs Postgres) |
+| `bun run test:cov` | Both coverage buckets, sequentially |
 | `bun run changeset` | Create a changeset |
 | `bun run release:cli:dry-run` | Build CLI release artifacts locally |
 | `bun run release:publish -- --dry-run --package cli` | Dry-run the generic release publisher |
@@ -182,6 +185,16 @@ The repo currently relies on:
 * crypto tests in `packages/crypto`
 * Better Auth tests in `packages/auth`
 * tRPC and consumer smoke coverage in the workspace test suite
+
+### Test buckets and coverage
+
+Three buckets, classified in `scripts/coverage/buckets.ts`:
+
+* **unit** — pure in-process, no DB or spawned services. Run with `bun run test:cov:unit`.
+* **integration** — real Postgres (`TEST_DATABASE_URL`) or in-process spawned servers/sockets (`packages/trpc/src/server/__tests__/integration/**`, daemon socket tests, sdk client stub server). Run with `bun run test:cov:integration`.
+* **e2e** — `apps/e2e` (boots `wrangler dev` + compiled CLI/MCP binaries). Run with `bun run test:e2e`. **No coverage report** — bun's coverage cannot instrument across the workerd / binary boundary; the integration bucket covers the same paths in-process.
+
+`bun run test` (turbo) and `bun run test:e2e` remain the source of truth for "all tests pass." The `test:cov:*` commands are coverage-aware re-runs that write `lcov.info` to `coverage/<bucket>/`.
 
 ### End-to-end suite (apps/e2e)
 

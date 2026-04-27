@@ -1,5 +1,24 @@
 # Continuous integration
 
+## Test jobs and coverage
+
+`.github/workflows/ci-cd.yml` runs three test jobs in parallel after typecheck:
+
+| Job | What runs | Postgres | Coverage artifact |
+|---|---|---|---|
+| `test-unit` | `bun run test:cov:unit` | no | `coverage-unit` (`coverage/unit/lcov.info`) |
+| `test-integration` | `bun run test:cov:integration` | yes | `coverage-integration` (`coverage/integration/lcov.info`) |
+| `test-web` | `bun run --cwd apps/web test` | no | none (web is out of scope) |
+| `e2e` | `bun run test:e2e` | yes | none (see below) |
+
+E2E tests boot `wrangler dev` and the compiled CLI/MCP binaries; Bun's coverage instrumentation only sees JS in the running bun process, so it cannot produce meaningful coverage across the workerd / compiled-binary boundary. The same code paths are exercised in-process by the integration bucket. E2E is kept as a behavioral-fidelity bucket and intentionally excluded from coverage.
+
+Bucket assignment (the source of truth) lives in `scripts/coverage/buckets.ts`.
+
+A `coverage-comment` job (PRs only) downloads both lcov artifacts, renders a summary table via `scripts/coverage/comment.ts`, and posts/updates a sticky PR comment via [`marocchino/sticky-pull-request-comment`](https://github.com/marocchino/sticky-pull-request-comment) (header: `coverage`). The job runs even if a test bucket fails (`if: always()`) and continues on missing artifacts so partial info still posts.
+
+Coverage is informational on this PR — no thresholds gate CI. The artifacts (`coverage-unit`, `coverage-integration`) on each run hold the full lcov files for local rendering (`bunx genhtml coverage/unit/lcov.info -o coverage/unit/html`) or editor inline-coverage extensions.
+
 ## Turborepo remote cache (optional)
 
 GitHub Actions runs `turbo` for `typecheck`, `test`, and filtered `build` / `build:workers` tasks so
