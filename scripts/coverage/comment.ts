@@ -45,10 +45,10 @@ function pct(hit: number, found: number): string {
 function row(bucket: Bucket): string {
   const path = resolve(ROOT, "coverage", bucket, "lcov.info");
   if (!existsSync(path)) {
-    return `| \`${bucket}\` | — | — | — | _missing \`${bucket}/lcov.info\`_ |`;
+    return `| \`${bucket}\` | — | — | — |`;
   }
   const t = parseLcov(readFileSync(path, "utf8"));
-  return `| \`${bucket}\` | ${pct(t.linesHit, t.linesFound)} (${t.linesHit} / ${t.linesFound}) | ${pct(t.funcsHit, t.funcsFound)} (${t.funcsHit} / ${t.funcsFound}) | ${t.files} | |`;
+  return `| \`${bucket}\` | ${pct(t.linesHit, t.linesFound)} (${t.linesHit} / ${t.linesFound}) | ${pct(t.funcsHit, t.funcsFound)} (${t.funcsHit} / ${t.funcsFound}) | ${t.files} |`;
 }
 
 const server = process.env.GITHUB_SERVER_URL ?? "https://github.com";
@@ -59,10 +59,9 @@ const bucketsLink = `${server}/${repo}/blob/${sha}/scripts/coverage/buckets.ts`;
 const body = [
   "## Coverage report",
   "",
-  "| Bucket | Lines | Functions | Files | Notes |",
-  "|---|---|---|---|---|",
+  "| Bucket | Lines | Functions | Files |",
+  "|---|---|---|---|",
   ...BUCKETS.map(row),
-  "| `e2e` | — | — | — | intentionally not instrumented (workerd / compiled-binary boundary; same paths covered by integration) |",
   "",
   `Download the full reports as \`coverage-unit\` / \`coverage-integration\` artifacts on this run. Bucket definitions: [\`scripts/coverage/buckets.ts\`](${bucketsLink}).`,
   "",
