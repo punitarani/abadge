@@ -183,6 +183,24 @@ The repo currently relies on:
 * Better Auth tests in `packages/auth`
 * tRPC and consumer smoke coverage in the workspace test suite
 
+### End-to-end suite (apps/e2e)
+
+`apps/e2e` boots a real `wrangler dev` API against the test Postgres and drives
+it through three surfaces: the SDK over HTTP, the compiled `abadge` CLI binary
+as a subprocess, and the MCP stdio server as a JSON-RPC peer. It is not part of
+`bun run test` (it would race the trpc package's parallel test run on the same
+database). Run it explicitly:
+
+```bash
+docker compose up -d   # or any local Postgres exposing :5432 with abadge_test
+TEST_DATABASE_URL=postgresql://abadge:abadge@localhost:5432/abadge_test \
+  bun run test:e2e
+```
+
+`turbo test:e2e` builds `@abadge/cli` and `@abadge/mcp` first so the tests
+spawn the same compiled artifacts users run. Set `E2E_DEBUG=1` to forward the
+spawned wrangler's stdout/stderr through the test runner for debugging.
+
 ## Working conventions
 
 Keep these repo-level rules in mind:

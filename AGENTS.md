@@ -32,6 +32,7 @@ This repo builds abadge: an agent credential firewall. Users belong to organizat
 apps/
   api/      API worker (Hono + tRPC on Cloudflare Workers)
   cli/      Distributable CLI binary (bun build --compile)
+  e2e/      End-to-end tests (wrangler dev API + real CLI binary + real MCP stdio)
   web/      Dashboard (Next.js App Router)
 packages/
   auth/     Better Auth setup (server + client)

@@ -91,6 +91,39 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run test
 
+  e2e:
+    name: E2E (API + CLI + MCP)
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: abadge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d abadge_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/abadge_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      # Build the CLI binary up-front so cli/*.test.ts spawns the compiled
+      # artifact (faster, and exercises the same binary users run).
+      - name: Build CLI binary
+        run: bun run --cwd packages/cli build
+      - name: Run e2e tests
+        run: bun run test:e2e
+
   build-api:
     name: API Server (Workers)
     runs-on: ubuntu-latest
@@ -163,7 +196,7 @@ jobs:
   db-migrate:
     name: Run Production Migrations
     runs-on: ubuntu-latest
-    needs: [format, lint, typecheck, test, build-api, build-cli, build-web, db-validate]
+    needs: [format, lint, typecheck, test, e2e, build-api, build-cli, build-web, db-validate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
