@@ -2,13 +2,20 @@
  * Unit coverage for getApiClient — caches AbadgeAgentClient by (apiUrl, agentId),
  * loads private keys from inline JWK strings or JWK files, and connects() lazily.
  *
- * Mocks @abadge/sdk's AbadgeAgentClient so the test never touches the network or
- * real Ed25519 crypto.
+ * Uses the `__setAgentClientFactoryForTests` seam (api-client.ts) instead of
+ * `mock.module("@abadge/sdk")` because module mocks are process-sticky and
+ * would corrupt unrelated SDK tests (e.g. sdk/resolve-private-key) that
+ * construct a real AbadgeAgentClient.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  __resetAgentClientFactoryForTests,
+  __setAgentClientFactoryForTests,
+  getApiClient,
+} from "./api-client";
 
 interface AgentClientArgs {
   apiUrl: string;
@@ -28,21 +35,18 @@ class FakeAgentClient {
   };
 }
 
-const realSdk = await import("@abadge/sdk");
-
-mock.module("@abadge/sdk", () => ({
-  ...realSdk,
-  AbadgeAgentClient: FakeAgentClient,
-}));
-
-const { getApiClient } = await import("./api-client");
-
 let tmp: string;
 
 beforeEach(() => {
   constructorCalls.length = 0;
   connectCalls.length = 0;
   tmp = mkdtempSync(join(tmpdir(), "abadge-mcp-"));
+  // Re-install the factory + clear the module-level cache between tests.
+  __setAgentClientFactoryForTests(
+    (opts) =>
+      // biome-ignore lint/suspicious/noExplicitAny: mock factory returns a structural fake
+      new FakeAgentClient(opts) as any,
+  );
 });
 
 afterEach(() => {
@@ -50,10 +54,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
-  // Re-install the real SDK so later test files (which may also import
-  // @abadge/sdk) see the original AbadgeAgentClient. mock.module is
-  // process-sticky; a real restore requires re-mocking.
-  mock.module("@abadge/sdk", () => ({ ...realSdk }));
+  __resetAgentClientFactoryForTests();
 });
 
 describe("getApiClient", () => {
@@ -68,8 +69,6 @@ describe("getApiClient", () => {
   });
 
   test("constructs a new client when apiUrl or agentId changes", async () => {
-    // Use unique keys for this test so the module-level cache from earlier
-    // tests doesn't satisfy the first call here.
     await getApiClient({
       apiUrl: "http://test2-1",
       agentId: "agent_a",

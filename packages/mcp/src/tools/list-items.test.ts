@@ -1,22 +1,28 @@
-import { afterAll, describe, expect, mock, test } from "bun:test";
+/**
+ * Unit coverage for the `list_items` MCP tool — uses spyOn rather than
+ * mock.module so the mock is automatically scoped to this file (and
+ * doesn't leak across the rest of the unit bucket).
+ */
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import * as apiClientModule from "../api-client";
+import { handler, toolDescription, toolInputSchema, toolName } from "./list-items";
 
 const apiClient = {
   listItems: mock(async () => ({ items: [{ id: "item_1", label: "x" }] })),
 };
 
-const realApiClient = await import("../api-client");
+let getApiClientSpy: ReturnType<typeof spyOn>;
 
-mock.module("../api-client", () => ({
-  ...realApiClient,
-  getApiClient: async () => apiClient,
-}));
-
-afterAll(() => {
-  // Re-install the real api-client so later tests see the unmocked module.
-  mock.module("../api-client", () => ({ ...realApiClient }));
+beforeEach(() => {
+  getApiClientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
+    apiClient as unknown as Awaited<ReturnType<typeof apiClientModule.getApiClient>>,
+  );
+  apiClient.listItems = mock(async () => ({ items: [{ id: "item_1", label: "x" }] }));
 });
 
-const { handler, toolName, toolDescription, toolInputSchema } = await import("./list-items");
+afterEach(() => {
+  getApiClientSpy.mockRestore();
+});
 
 describe("list_items tool", () => {
   test("toolName / description are stable", () => {
@@ -27,12 +33,12 @@ describe("list_items tool", () => {
   });
 
   test("happy path returns JSON-serialised items list", async () => {
-    apiClient.listItems.mockResolvedValueOnce({
+    apiClient.listItems = mock(async () => ({
       items: [
         { id: "item_1", label: "alpha" },
         { id: "item_2", label: "beta" },
       ],
-    } as Awaited<ReturnType<typeof apiClient.listItems>>);
+    })) as unknown as typeof apiClient.listItems;
 
     const out = await handler({}, {} as never);
     const parsed = JSON.parse(out) as { items: Array<{ id: string }> };
@@ -40,7 +46,9 @@ describe("list_items tool", () => {
   });
 
   test("client error becomes an error envelope rather than a thrown exception", async () => {
-    apiClient.listItems.mockRejectedValueOnce(new Error("upstream down"));
+    apiClient.listItems = mock(async () => {
+      throw new Error("upstream down");
+    }) as unknown as typeof apiClient.listItems;
 
     const out = await handler({}, {} as never);
     const parsed = JSON.parse(out) as { error?: string };
