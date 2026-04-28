@@ -279,3 +279,236 @@ describe("agent lifecycle", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Edge-case adversarial branches not exercised by the happy-path test above
+// ---------------------------------------------------------------------------
+
+describe("auth router edge cases", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("issueBootstrapToken rejects an agent whose authMethod is legacy_api_key", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    // Insert a legacy_api_key agent — bootstrap tokens are only valid for
+    // public_key_session agents.
+    const agentId = crypto.randomUUID();
+    await db.insert(agents).values({
+      id: agentId,
+      organizationId: org.orgId,
+      createdBy: owner.userId,
+      kind: "remote",
+      locality: "remote",
+      authMethod: "legacy_api_key",
+      name: "legacy-bot",
+    });
+
+    try {
+      await operatorCaller.auth.issueBootstrapToken({ agentId });
+      expect.unreachable("issueBootstrapToken should reject legacy_api_key agent");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      // Server emits BAD_REQUEST/FORBIDDEN depending on the path; both indicate
+      // we hit the guard rather than silently issuing a token.
+      expect(["BAD_REQUEST", "FORBIDDEN"]).toContain(trpcError.code ?? "");
+    }
+  });
+
+  test("issueBootstrapToken rejects an already-enrolled (publicKey-set) agent", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+    const bt = await operatorCaller.auth.issueBootstrapToken({ agentId });
+    const kp = await generateEd25519KeyPair();
+    await publicCaller.auth.enroll({ bootstrapToken: bt.bootstrapToken, publicKey: kp.publicKey });
+
+    try {
+      await operatorCaller.auth.issueBootstrapToken({ agentId });
+      expect.unreachable("issueBootstrapToken should reject enrolled agent");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(["BAD_REQUEST", "FORBIDDEN"]).toContain(trpcError.code ?? "");
+    }
+  });
+
+  test("issueBootstrapToken rejects a revoked agent", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+
+    // Revoke directly: simulate a previously-active agent that was disabled.
+    await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, agentId));
+
+    try {
+      await operatorCaller.auth.issueBootstrapToken({ agentId });
+      expect.unreachable("issueBootstrapToken should reject revoked agent");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(["FORBIDDEN", "BAD_REQUEST"]).toContain(trpcError.code ?? "");
+    }
+  });
+
+  test("enroll rejects a bootstrap token that has already been used", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+    const bt = await operatorCaller.auth.issueBootstrapToken({ agentId });
+
+    // First use succeeds.
+    const kp1 = await generateEd25519KeyPair();
+    await publicCaller.auth.enroll({
+      bootstrapToken: bt.bootstrapToken,
+      publicKey: kp1.publicKey,
+    });
+
+    // Second use of the same token must be rejected (token marked usedAt).
+    const kp2 = await generateEd25519KeyPair();
+    try {
+      await publicCaller.auth.enroll({
+        bootstrapToken: bt.bootstrapToken,
+        publicKey: kp2.publicKey,
+      });
+      expect.unreachable("re-using a bootstrap token should reject");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(trpcError.code).toBe("FORBIDDEN");
+    }
+  });
+
+  test("enroll rejects a wholly unknown bootstrap token", async () => {
+    await seedUser(auth);
+    const publicCaller = createPublicCaller(db, auth);
+    const kp = await generateEd25519KeyPair();
+    try {
+      await publicCaller.auth.enroll({
+        bootstrapToken: "abe_does_not_exist_xxxxxxxxxxxxxxxxxxxxxx",
+        publicKey: kp.publicKey,
+      });
+      expect.unreachable("enroll should reject unknown bootstrap token");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(trpcError.code).toBe("FORBIDDEN");
+    }
+  });
+
+  test("createChallenge rejects an agent that has not yet been enrolled (no public key)", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+
+    try {
+      await publicCaller.auth.createChallenge({ agentId });
+      expect.unreachable("challenge should reject unenrolled agent");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(["FORBIDDEN", "BAD_REQUEST", "NOT_FOUND"]).toContain(trpcError.code ?? "");
+    }
+  });
+
+  test("exchangeSession rejects when the challenge has already been used", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+    const bt = await operatorCaller.auth.issueBootstrapToken({ agentId });
+    const kp = await generateEd25519KeyPair();
+    await publicCaller.auth.enroll({ bootstrapToken: bt.bootstrapToken, publicKey: kp.publicKey });
+
+    const c = await publicCaller.auth.createChallenge({ agentId });
+    const signature = await signEd25519(kp.privateKey, c.challenge);
+
+    // First use succeeds.
+    await publicCaller.auth.exchangeSession({
+      agentId,
+      challengeId: c.challengeId,
+      challenge: c.challenge,
+      signature,
+    });
+
+    // Re-using the same challenge must reject (single-use enforcement).
+    try {
+      await publicCaller.auth.exchangeSession({
+        agentId,
+        challengeId: c.challengeId,
+        challenge: c.challenge,
+        signature,
+      });
+      expect.unreachable("re-using a challenge should reject");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(trpcError.code).toBe("FORBIDDEN");
+    }
+  });
+
+  test("exchangeSession rejects when agent is disabled mid-flow", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const agentId = await insertUnenrolledAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+    });
+    const bt = await operatorCaller.auth.issueBootstrapToken({ agentId });
+    const kp = await generateEd25519KeyPair();
+    await publicCaller.auth.enroll({ bootstrapToken: bt.bootstrapToken, publicKey: kp.publicKey });
+
+    const c = await publicCaller.auth.createChallenge({ agentId });
+    const signature = await signEd25519(kp.privateKey, c.challenge);
+
+    // Operator disables the agent between challenge and exchange.
+    await db.update(agents).set({ enabled: false }).where(eq(agents.id, agentId));
+
+    try {
+      await publicCaller.auth.exchangeSession({
+        agentId,
+        challengeId: c.challengeId,
+        challenge: c.challenge,
+        signature,
+      });
+      expect.unreachable("exchange should reject disabled agent");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(["FORBIDDEN", "UNAUTHORIZED"]).toContain(trpcError.code ?? "");
+    }
+  });
+});
