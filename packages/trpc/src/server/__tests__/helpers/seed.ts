@@ -152,15 +152,40 @@ export interface SeedProfileResult {
 export async function seedProfile(
   db: Database,
   orgId: string,
-  overrides?: { name?: string; storageMode?: "zero_knowledge" | "server_managed" },
+  overrides?: {
+    name?: string;
+    storageMode?: "zero_knowledge" | "server_managed";
+    /**
+     * When true, populates `wrappedRootKey`/`kdfSalt`/`kdfParams` so the
+     * profile passes the "is bootstrapped" precondition guarded by the ZK
+     * mutation procedures (`changePassword`, `setupRecovery`, `rotateKey`).
+     * Defaults to false; pass true for tests that exercise those paths
+     * without driving the client-side KDF.
+     */
+    bootstrapped?: boolean;
+  },
 ): Promise<SeedProfileResult> {
   const profileId = uuid();
+  const bootstrapped = overrides?.bootstrapped === true;
 
   await db.insert(profiles).values({
     id: profileId,
     organizationId: orgId,
     name: overrides?.name ?? `profile-${uuid()}`,
     storageMode: overrides?.storageMode ?? "server_managed",
+    ...(bootstrapped
+      ? {
+          wrappedRootKey: "seed-wrapped-root-key",
+          kdfSalt: "seed-salt",
+          kdfParams: {
+            algorithm: "argon2id" as const,
+            memory: 65536,
+            iterations: 3,
+            parallelism: 1,
+            hashLength: 32,
+          },
+        }
+      : {}),
   });
 
   return { profileId };
