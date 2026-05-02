@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, ChevronsUpDown, TicketCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CreateOrgForm } from "@/components/onboarding/create-org-form";
 import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import {
@@ -89,10 +89,22 @@ export function OrgSwitcher(): React.ReactElement {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const userId = session?.user?.id ?? null;
 
+  // Track Zustand persist rehydration so this query waits for the dashboard
+  // gate's session-user-change scrub to run before firing. Without this,
+  // OrgSwitcher's query can race ahead of the scrub on first paint and fire
+  // with a stale `X-Abadge-Org-Id` header — and because the two consumers
+  // share the same query key, the dedupe machinery would hand the stale
+  // result back to DashboardGate too.
+  const [hydrated, setHydrated] = useState(() => useOrgStore.persist.hasHydrated());
+  useEffect(() => {
+    if (hydrated) return;
+    return useOrgStore.persist.onFinishHydration(() => setHydrated(true));
+  }, [hydrated]);
+
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
-    enabled: !!session,
+    enabled: !!session && hydrated,
   });
 
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];

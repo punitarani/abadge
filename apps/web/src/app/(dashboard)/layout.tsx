@@ -172,10 +172,18 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
     }
   }, [hydrated, sessionPending, userId, clearActiveOrg]);
 
+  // Gate the query on `hydrated` as well as `!!session`: Zustand's persist
+  // middleware restores `activeOrgId` from localStorage synchronously on
+  // first render, but the `hasHydrated` flag only flips after rehydration
+  // completes. The scrub effect above can only run once `hydrated === true`,
+  // so without this gate the query fires with whatever stale `activeOrgId`
+  // was in localStorage on first paint — producing a transient 401 that
+  // React Query then retries past. Waiting for `hydrated` removes the
+  // wasted round-trip on cross-user browser reuse.
   const orgsQuery = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
     queryFn: () => browserTrpcClient.organizations.list.query(),
-    enabled: !!session,
+    enabled: !!session && hydrated,
   });
 
   const orgs = (orgsQuery.data?.organizations ?? []) as OrgSummary[];
