@@ -95,11 +95,19 @@ export function OrgSwitcher(): React.ReactElement {
   // with a stale `X-Abadge-Org-Id` header — and because the two consumers
   // share the same query key, the dedupe machinery would hand the stale
   // result back to DashboardGate too.
-  const [hydrated, setHydrated] = useState(() => useOrgStore.persist.hasHydrated());
+  //
+  // Initialize to `false` rather than reading `persist.hasHydrated()` in a
+  // lazy initializer: that initializer runs during Next.js static prerender
+  // (Node), where `persist` is not fully wired up and accessing it throws.
+  // Mirrors the same pattern in `(dashboard)/layout.tsx`.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    if (hydrated) return;
+    if (useOrgStore.persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
     return useOrgStore.persist.onFinishHydration(() => setHydrated(true));
-  }, [hydrated]);
+  }, []);
 
   const { data, isLoading } = useQuery({
     queryKey: dashboardQueryKeys.organizations(),
