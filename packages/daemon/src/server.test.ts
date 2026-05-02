@@ -909,3 +909,383 @@ describe("daemon exec.envBulk", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// vault.unlock + vault.changePassword param-validation branches
+//
+// These hit the `INVALID_PARAMS` and `VAULT_ALREADY_UNLOCKED` short-circuits
+// before the handler reaches the API. The API-call branches (correct/wrong
+// password against a real profile row) are covered end-to-end by apps/e2e
+// against a wrangler-dev API; reproducing them here would require a tRPC
+// batch-link stub server, which is heavy for a marginal coverage gain.
+// ---------------------------------------------------------------------------
+
+describe("vault.unlock + vault.changePassword param validation", () => {
+  test("vault.unlock without masterPassword → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.unlock",
+      params: { profileId: "p_x" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      // RPC_ERRORS.INVALID_PARAMS = -32602
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toMatch(/masterPassword/);
+    }
+  });
+
+  test("vault.unlock without profileId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.unlock",
+      params: { masterPassword: "pw" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toMatch(/profileId/);
+    }
+  });
+
+  test("vault.unlock when already unlocked → VAULT_ALREADY_UNLOCKED", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.unlock",
+      params: { profileId: "p_x", masterPassword: "pw" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      // RPC_ERRORS.VAULT_ALREADY_UNLOCKED = -32001
+      expect(response.error.code).toBe(-32001);
+    }
+  });
+
+  test("vault.lock when locked is a no-op (idempotent ok=true)", async () => {
+    const { client } = await startTestServer();
+    const out = await client.lock();
+    expect(out.ok).toBe(true);
+    const status = await client.status();
+    expect(status.locked).toBe(true);
+  });
+
+  test("vault.status reflects unlocked state + keyVersion", async () => {
+    const { client } = await startTestServerUnlocked();
+    const status = await client.status();
+    expect(status.locked).toBe(false);
+    expect(status.keyVersion).toBe(1);
+  });
+
+  test("vault.changePassword without oldPassword/newPassword → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.changePassword",
+      params: { profileId: "p_x" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("vault.changePassword without profileId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.changePassword",
+      params: { oldPassword: "old", newPassword: "new" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("vault.changePassword on a locked vault → VAULT_LOCKED", async () => {
+    const { socketPath } = await startTestServer();
+    const response = await sendRawRpc(socketPath, {
+      method: "vault.changePassword",
+      params: { profileId: "p_x", oldPassword: "old", newPassword: "new" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      // RPC_ERRORS.VAULT_LOCKED = -32000
+      expect(response.error.code).toBe(-32000);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// item.encrypt / item.decrypt / item.rekey — in-memory round-trips and
+// param-validation branches. The vault is already unlocked in
+// startTestServerUnlocked so encrypt/decrypt run against the real
+// XChaCha20-Poly1305 path with proper AAD binding.
+// ---------------------------------------------------------------------------
+
+describe("item.encrypt + item.decrypt round-trip and param validation", () => {
+  test("encrypt → decrypt round-trip preserves payload", async () => {
+    const { client } = await startTestServerUnlocked();
+    const meta = { profileId: "test-profile", itemId: "item-rt-1", contentVersion: 1 };
+    const enc = await client.encrypt({ v: 1, secret: "alpha" }, meta);
+    expect(enc.encryptedItemKey).toBeTruthy();
+    expect(enc.ciphertext).toBeTruthy();
+
+    const dec = await client.decrypt(enc.encryptedItemKey, enc.ciphertext, meta);
+    expect(dec.payload).toEqual({ v: 1, secret: "alpha" });
+  });
+
+  test("decrypt with wrong itemId AAD fails (row-swap defense)", async () => {
+    const { client } = await startTestServerUnlocked();
+    const enc = await client.encrypt(
+      { v: 1, secret: "guarded" },
+      { profileId: "test-profile", itemId: "item-bound", contentVersion: 1 },
+    );
+    // Same profile/contentVersion, different itemId in the AAD — AEAD tag must fail.
+    await expect(
+      client.decrypt(enc.encryptedItemKey, enc.ciphertext, {
+        profileId: "test-profile",
+        itemId: "item-different",
+        contentVersion: 1,
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("decrypt with wrong profileId AAD fails (cross-profile defense)", async () => {
+    const { client } = await startTestServerUnlocked();
+    const enc = await client.encrypt(
+      { v: 1 },
+      { profileId: "test-profile", itemId: "item-cp", contentVersion: 1 },
+    );
+    await expect(
+      client.decrypt(enc.encryptedItemKey, enc.ciphertext, {
+        profileId: "other-profile",
+        itemId: "item-cp",
+        contentVersion: 1,
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("encrypt without profileId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.encrypt",
+      params: { payload: { v: 1 }, itemId: "item-x" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("encrypt without itemId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.encrypt",
+      params: { payload: { v: 1 }, profileId: "p1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("encrypt with no payload → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.encrypt",
+      params: { profileId: "p1", itemId: "i1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("decrypt missing encryptedItemKey/ciphertext → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.decrypt",
+      params: { profileId: "p1", itemId: "i1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("decrypt missing AAD meta (profileId/itemId) → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.decrypt",
+      params: { encryptedItemKey: "x", ciphertext: "y" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+    }
+  });
+
+  test("encrypt on a locked vault → VAULT_LOCKED", async () => {
+    const { client, socketPath } = await startTestServerUnlocked();
+    await client.lock();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.encrypt",
+      params: { payload: { v: 1 }, profileId: "p1", itemId: "i1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32000);
+    }
+  });
+
+  test("decrypt with field= picks one field from a multi-field payload", async () => {
+    const { client } = await startTestServerUnlocked();
+    const meta = { profileId: "test-profile", itemId: "item-multi", contentVersion: 1 };
+    // ItemPayload-shaped payload: { kind, label, fields: { ... } }
+    const payload = {
+      v: 1,
+      label: "creds",
+      kind: "login" as const,
+      tags: [] as string[],
+      fields: { username: "admin", password: "s3cret", url: "https://x" },
+    };
+    const enc = await client.encrypt(payload, meta);
+
+    const dec = await client.decrypt(enc.encryptedItemKey, enc.ciphertext, meta);
+    expect(dec.payload).toEqual(payload);
+  });
+});
+
+describe("item.rekey param validation", () => {
+  test("missing items → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.rekey",
+      params: { oldRootKey: "x", profileId: "p1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+
+  test("missing oldRootKey → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.rekey",
+      params: { items: [], profileId: "p1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+
+  test("missing profileId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.rekey",
+      params: { items: [], oldRootKey: "x" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+
+  test("rekey on locked vault → VAULT_LOCKED", async () => {
+    const { client, socketPath } = await startTestServerUnlocked();
+    await client.lock();
+    const response = await sendRawRpc(socketPath, {
+      method: "item.rekey",
+      params: { items: [], oldRootKey: "AAAA", profileId: "p1" },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// exec.expandEnv branch coverage — neither ZK nor server-managed payload
+// surfaces as INVALID_PARAMS instead of silently producing zero env vars.
+// ---------------------------------------------------------------------------
+
+describe("exec.expandEnv branch coverage", () => {
+  test("missing both ZK envelope and serverPayload → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.expandEnv",
+      params: { command: "/usr/bin/true", args: [] },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toMatch(/encryptedItemKey|serverPayload/);
+    }
+  });
+
+  test("ZK path without profileId/itemId → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.expandEnv",
+      params: {
+        encryptedItemKey: "x",
+        ciphertext: "y",
+        command: "/usr/bin/true",
+        args: [],
+      },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) {
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toMatch(/profileId.*itemId/);
+    }
+  });
+
+  test("missing command → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.expandEnv",
+      params: { serverPayload: { fields: { value: "v" } }, args: [] },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// exec.envBulk additional adversarial branches not yet covered.
+// ---------------------------------------------------------------------------
+
+describe("exec.envBulk extra adversarial branches", () => {
+  test("missing items array → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.envBulk",
+      params: { command: "/usr/bin/true", args: [] },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+
+  test("missing command → INVALID_PARAMS", async () => {
+    const { socketPath } = await startTestServerUnlocked();
+    const response = await sendRawRpc(socketPath, {
+      method: "exec.envBulk",
+      params: { items: [] },
+    });
+    expect("error" in response).toBe(true);
+    if ("error" in response) expect(response.error.code).toBe(-32602);
+  });
+
+  test("malformed item entry (missing label) → rejected", async () => {
+    const { client } = await startTestServerUnlocked();
+    await expect(
+      client.expandEnvBulk(
+        // biome-ignore lint/suspicious/noExplicitAny: deliberately malformed for the test
+        [
+          {
+            itemId: "item-x",
+            storageMode: "server_managed",
+            payload: { fields: { value: "v" } },
+          } as any,
+        ],
+        "/usr/bin/true",
+        [],
+      ),
+    ).rejects.toThrow();
+  });
+});

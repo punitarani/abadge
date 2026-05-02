@@ -79,7 +79,7 @@ export function configSlotForKind(kind: AgentKind): "cli" | "mcp" | null {
   }
 }
 
-async function registerKeypairAgent(
+export async function registerKeypairAgent(
   client: AbadgeUserClient,
   opts: {
     name: string;
@@ -113,7 +113,10 @@ async function registerKeypairAgent(
     metadata: opts.description ? { description: opts.description } : {},
   });
 
-  const agentsDir = join(homedir(), ".abadge", "agents");
+  // Resolve $HOME at call time (matches `cli/src/config.ts`) so unit tests
+  // can redirect to a tmpdir.
+  // biome-ignore lint/style/noRestrictedGlobals: cli helper resolves $HOME at call time so tests can redirect to a tmpdir
+  const agentsDir = join(process.env.HOME ?? homedir(), ".abadge", "agents");
   mkdirSync(agentsDir, { recursive: true, mode: 0o700 });
   const keyPath = join(agentsDir, `${result.agent.id}.ed25519.jwk`);
   writeFileSync(keyPath, JSON.stringify(privateKeyJwk), { mode: 0o600 });
@@ -157,7 +160,7 @@ async function registerKeypairAgent(
   }
 }
 
-async function registerLegacyAgent(
+export async function registerLegacyAgent(
   client: AbadgeUserClient,
   opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
 ): Promise<void> {

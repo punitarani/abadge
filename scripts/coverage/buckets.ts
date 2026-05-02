@@ -25,6 +25,7 @@ export const BUCKETS: Record<Bucket, readonly string[]> = {
     "packages/db/**/*.test.ts",
     "packages/env/**/*.test.ts",
     "packages/daemon/src/identity.test.ts",
+    "packages/daemon/src/vault-state.test.ts",
     "packages/mcp/**/*.test.ts",
     "packages/sdk/src/secret-value.test.ts",
     "packages/sdk/src/errors.test.ts",
