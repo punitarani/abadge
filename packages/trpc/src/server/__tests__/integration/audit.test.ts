@@ -189,4 +189,83 @@ describe("audit log integration", () => {
       expect(page1Ids.has(id)).toBe(false);
     }
   });
+
+  test("filters by agentId, itemId, and result combine with AND", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const itemA = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const itemB = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: itemA.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, { agentId: agent.agentId, userId: owner.userId });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    // Generate two allowed reveals (item A) + one denied attempt (item B).
+    await agentCaller.access.reveal({ itemId: itemA.itemId });
+    await agentCaller.access.reveal({ itemId: itemA.itemId });
+    try {
+      await agentCaller.access.reveal({ itemId: itemB.itemId });
+    } catch {
+      /* expected */
+    }
+
+    // (agentId, itemId, result) — should return only the allowed itemA rows.
+    const onlyAllowedA = await caller.audit.list({
+      agentId: agent.agentId,
+      itemId: itemA.itemId,
+      result: "allowed",
+    });
+    expect(onlyAllowedA.entries.length).toBeGreaterThanOrEqual(2);
+    for (const entry of onlyAllowedA.entries) {
+      expect(entry.itemId).toBe(itemA.itemId);
+      expect(entry.result).toBe("allowed");
+    }
+
+    // (agentId, result=denied) — itemB only.
+    const onlyDenied = await caller.audit.list({
+      agentId: agent.agentId,
+      result: "denied",
+    });
+    expect(onlyDenied.entries.length).toBeGreaterThanOrEqual(1);
+    for (const entry of onlyDenied.entries) {
+      expect(entry.result).toBe("denied");
+    }
+  });
+
+  test("nextCursor is null when fewer entries than the limit are returned", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "remote",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, { agentId: agent.agentId, userId: owner.userId });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+    await agentCaller.access.reveal({ itemId: item.itemId });
+
+    // limit=50 against 1 row → nextCursor must be null (no further pages).
+    const out = await caller.audit.list({ limit: 50 });
+    expect(out.nextCursor).toBeNull();
+  });
 });

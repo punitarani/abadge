@@ -91,3 +91,217 @@ describe("runWithAll", () => {
     expect(rendered).toContain("agent's organization");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Happy paths via the CLI daemon DI seam — verify the daemon RPC was
+// invoked with the right shape and process.exit() got the daemon's exit code.
+// ---------------------------------------------------------------------------
+
+import { afterEach, beforeEach, spyOn } from "bun:test";
+import type { DaemonClient } from "@abadge/daemon";
+import { __resetDaemonClientFactoryForTests, __setDaemonClientFactoryForTests } from "../daemon";
+
+class FakeRunDaemonClient {
+  expandEnvCalls: unknown[] = [];
+  expandEnvBulkCalls: unknown[] = [];
+  expandEnv = async (...args: unknown[]): Promise<{ exitCode: number; durationMs: number }> => {
+    this.expandEnvCalls.push(args);
+    return { exitCode: 7, durationMs: 1 };
+  };
+  expandEnvBulk = async (...args: unknown[]): Promise<{ exitCode: number; durationMs: number }> => {
+    this.expandEnvBulkCalls.push(args);
+    return { exitCode: 5, durationMs: 1 };
+  };
+}
+
+describe("runWithExpandEnv happy paths", () => {
+  let exitSpy: ReturnType<typeof spyOn>;
+  let lastFake: FakeRunDaemonClient;
+
+  beforeEach(() => {
+    exitSpy = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`__exit_${code ?? 0}`);
+    }) as never);
+    lastFake = new FakeRunDaemonClient();
+    __setDaemonClientFactoryForTests(() => lastFake as unknown as DaemonClient);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    __resetDaemonClientFactoryForTests();
+  });
+
+  // run.ts's `try { ... process.exit(res.exitCode) }` re-wraps non-Abadge
+  // errors as "--expand-env requires the local daemon". The mocked
+  // process.exit throws a sentinel and is caught + wrapped, so the assertion
+  // pattern is: verify the daemon was called with the right shape, then
+  // verify the wrapped error's `cause` carries the exit-code sentinel.
+  function exitCodeFromError(err: unknown): string | undefined {
+    return (err as { cause?: { message?: string } } | null)?.cause?.message;
+  }
+
+  test("server-managed item: forwards payload (no AAD meta) and exits with daemon's code", async () => {
+    const client = {
+      accessMount: async () => ({
+        storageMode: "server_managed" as const,
+        payload: { fields: { value: "sk-x" } },
+      }),
+    } as unknown as AbadgeAgentClient;
+
+    const { runWithExpandEnv } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithExpandEnv(client, "item_x", "/usr/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect(exitCodeFromError(caught)).toContain("__exit_7");
+
+    expect(lastFake.expandEnvCalls).toHaveLength(1);
+    const args = lastFake.expandEnvCalls[0] as unknown[];
+    // (encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta)
+    expect(args[0]).toBeNull();
+    expect(args[1]).toBeNull();
+    expect(args[2]).toEqual({ fields: { value: "sk-x" } });
+    expect(args[3]).toBe("/usr/bin/true");
+    expect(args[5]).toBeNull();
+  });
+
+  test("zero-knowledge item: forwards encrypted blob + AAD meta", async () => {
+    const client = {
+      accessMount: async () => ({
+        storageMode: "zero_knowledge" as const,
+        encryptedItemKey: "eik_blob",
+        ciphertext: "ct_blob",
+        profileId: "p_1",
+        itemId: "item_x",
+        contentVersion: 3,
+      }),
+    } as unknown as AbadgeAgentClient;
+
+    const { runWithExpandEnv } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithExpandEnv(client, "item_x", "/usr/bin/true", ["arg"]);
+    } catch (err) {
+      caught = err;
+    }
+    expect(exitCodeFromError(caught)).toContain("__exit_7");
+
+    const args = lastFake.expandEnvCalls[0] as unknown[];
+    expect(args[0]).toBe("eik_blob");
+    expect(args[1]).toBe("ct_blob");
+    expect(args[2]).toBeNull();
+    expect(args[5]).toEqual({ profileId: "p_1", itemId: "item_x", contentVersion: 3 });
+  });
+
+  test("daemon failure surfaces a clear --expand-env message + chained cause", async () => {
+    __setDaemonClientFactoryForTests(
+      () =>
+        ({
+          expandEnv: async () => {
+            throw new Error("daemon socket connect refused");
+          },
+        }) as unknown as DaemonClient,
+    );
+    const client = {
+      accessMount: async () => ({
+        storageMode: "server_managed" as const,
+        payload: { fields: { value: "v" } },
+      }),
+    } as unknown as AbadgeAgentClient;
+
+    const { runWithExpandEnv } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithExpandEnv(client, "item_x", "/bin/echo", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("--expand-env requires the local daemon");
+    expect((caught as { cause?: Error }).cause?.message).toMatch(/daemon socket connect refused/);
+  });
+});
+
+describe("runWithAll happy paths", () => {
+  let exitSpy: ReturnType<typeof spyOn>;
+  let lastFake: FakeRunDaemonClient;
+
+  beforeEach(() => {
+    exitSpy = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`__exit_${code ?? 0}`);
+    }) as never);
+    lastFake = new FakeRunDaemonClient();
+    __setDaemonClientFactoryForTests(() => lastFake as unknown as DaemonClient);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    __resetDaemonClientFactoryForTests();
+  });
+
+  test("forwards bulk items + command + args to the daemon and exits with daemon's code", async () => {
+    const client = {
+      bulkAccessMountEnv: async () => ({
+        items: [
+          {
+            itemId: "i1",
+            label: "openai-api-key",
+            storageMode: "server_managed" as const,
+            payload: { fields: { value: "sk-1" } },
+          },
+          {
+            itemId: "i2",
+            label: "DATABASE_URL",
+            storageMode: "server_managed" as const,
+            payload: { fields: { value: "postgres://x" } },
+          },
+        ],
+      }),
+    } as unknown as AbadgeAgentClient;
+
+    const { runWithAll } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithAll(client, "p_1", "/usr/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    // Same pattern as runWithExpandEnv — the catch block re-wraps the
+    // process.exit sentinel; verify the args (the actual contract under test)
+    // and that the wrapped cause carries the daemon's exit code.
+    expect(lastFake.expandEnvBulkCalls).toHaveLength(1);
+    const args = lastFake.expandEnvBulkCalls[0] as unknown[];
+    const items = args[0] as Array<{ itemId: string }>;
+    expect(items.map((i) => i.itemId)).toEqual(["i1", "i2"]);
+    expect(args[1]).toBe("/usr/bin/true");
+    expect((caught as { cause?: { message?: string } }).cause?.message).toContain("__exit_5");
+  });
+
+  test("daemon failure surfaces a clear --all message + chained cause", async () => {
+    __setDaemonClientFactoryForTests(
+      () =>
+        ({
+          expandEnvBulk: async () => {
+            throw new Error("ECONNREFUSED /run/abadge/vaultd.sock");
+          },
+        }) as unknown as DaemonClient,
+    );
+
+    const client = {
+      bulkAccessMountEnv: async () => ({ items: [] }),
+    } as unknown as AbadgeAgentClient;
+
+    const { runWithAll } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithAll(client, "p_1", "/usr/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("--all requires the local daemon");
+    expect((caught as { cause?: Error }).cause?.message).toMatch(/ECONNREFUSED/);
+  });
+});

@@ -959,4 +959,158 @@ describe("access", () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Coverage-focused edge-case branches that the happy path does not hit.
+  // -------------------------------------------------------------------------
+  describe("access.ciphertext branch coverage", () => {
+    test("remote agent cannot read ciphertext (PERMISSION_DENIED + audit)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "remote",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("remote agent should be denied ciphertext");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(e.cause?.code).toBe("PERMISSION_DENIED");
+      }
+
+      const audits = await db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.itemId, item.itemId), eq(auditLogs.result, "denied")));
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("ciphertext on a server-managed item rejects with BAD_REQUEST", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("ciphertext on a server-managed item should reject");
+      } catch (error: unknown) {
+        const e = error as { code?: string; cause?: { code?: string } };
+        expect(e.code === "BAD_REQUEST" || e.cause?.code === "BAD_REQUEST").toBe(true);
+      }
+    });
+
+    test("ciphertext without permission emits a denied audit row", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      // No permission seeded.
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("ciphertext without permission should reject");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(["PERMISSION_DENIED", "FORBIDDEN"]).toContain(e.cause?.code ?? "");
+      }
+
+      const audits = await db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.itemId, item.itemId), eq(auditLogs.result, "denied")));
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("ZK item with NULL profileId surfaces as INTEGRITY_ERROR (data-integrity branch)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      // Simulate corruption: clear profileId on the row. The router's defensive
+      // branch (item.profileId == null) must catch this rather than NPE.
+      await db.update(items).set({ profileId: null }).where(eq(items.id, item.itemId));
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("orphaned ZK item should fail with INTEGRITY_ERROR");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(e.cause?.code).toBe("INTEGRITY_ERROR");
+      }
+    });
+  });
 });

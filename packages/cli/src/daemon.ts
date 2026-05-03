@@ -29,7 +29,7 @@ import {
  * restarts — the daemon package itself deliberately doesn't import CLI
  * storage to keep the layering clean (W3P12-001 / Critical C-2).
  */
-function createClient(): DaemonClient {
+function defaultCreateClient(): DaemonClient {
   return new DaemonClient({
     getPinnedFingerprint: readPinnedDaemonFingerprint,
     onFirstContact: async (fingerprint) => {
@@ -50,8 +50,23 @@ function createClient(): DaemonClient {
   });
 }
 
+// Test seam: unit tests can swap `clientFactory` to inject a fake client
+// without going through `mock.module("@abadge/daemon")`, which is sticky
+// across the whole test process and would leak into unrelated suites.
+let clientFactory: () => DaemonClient = defaultCreateClient;
+
+/** @internal */
+export function __setDaemonClientFactoryForTests(factory: () => DaemonClient): void {
+  clientFactory = factory;
+}
+
+/** @internal */
+export function __resetDaemonClientFactoryForTests(): void {
+  clientFactory = defaultCreateClient;
+}
+
 async function withDaemonClient<T>(run: (client: DaemonClient) => Promise<T>): Promise<T> {
-  const client = createClient();
+  const client = clientFactory();
   return run(client);
 }
 

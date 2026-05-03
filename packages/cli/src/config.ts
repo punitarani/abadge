@@ -24,8 +24,19 @@ export interface CliConfig {
   daemonFingerprint?: string;
 }
 
-const CONFIG_DIR = join(homedir(), ".abadge");
-const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+// Resolve at call time, not at module load. This keeps tests honest: a test
+// can swap `process.env.HOME` after the module is imported and have it take
+// effect. (homedir() ignores HOME on Linux/macOS by design — `os.homedir()`
+// reads `getpwuid(2)` first — but resolving the dir lazily means we don't
+// have to mock node:os just to use a tmpdir per test.)
+function getConfigDir(): string {
+  // biome-ignore lint/style/noRestrictedGlobals: the cli config helper resolves $HOME at call time so tests can redirect to a tmpdir
+  const home = process.env.HOME ?? homedir();
+  return join(home, ".abadge");
+}
+function getConfigPath(): string {
+  return join(getConfigDir(), "config.json");
+}
 
 const LEGACY_FIELDS = ["principalId", "principalSecret", "operatorUserId", "authToken"] as const;
 
@@ -62,7 +73,7 @@ function stripLegacyFields(parsed: Record<string, unknown>): boolean {
 export function loadConfig(): CliConfig | null {
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as Record<string, unknown>;
+    parsed = JSON.parse(readFileSync(getConfigPath(), "utf-8")) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -81,9 +92,9 @@ export function loadConfig(): CliConfig | null {
 }
 
 function writeConfig(normalized: CliConfig): void {
-  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  mkdirSync(getConfigDir(), { recursive: true, mode: 0o700 });
   writeFileSync(
-    CONFIG_PATH,
+    getConfigPath(),
     JSON.stringify(
       {
         apiUrl: normalized.apiUrl,
@@ -121,7 +132,7 @@ export function updateConfig(patch: Partial<CliConfig>): void {
 
 export function clearConfig(): void {
   try {
-    rmSync(CONFIG_PATH);
+    rmSync(getConfigPath());
   } catch {
     // File doesn't exist — nothing to clear
   }

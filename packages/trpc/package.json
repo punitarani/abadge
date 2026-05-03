@@ -19,6 +19,10 @@
     "./server": {
       "types": "./src/server/index.ts",
       "default": "./src/server/index.ts"
+    },
+    "./test-helpers": {
+      "types": "./src/server/__tests__/helpers/index.ts",
+      "default": "./src/server/__tests__/helpers/index.ts"
     }
   },
   "scripts": {

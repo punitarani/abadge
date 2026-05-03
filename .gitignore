@@ -17,7 +17,8 @@ output
 *.tsbuildinfo
 
 # testing
-coverage
+/coverage
+/coverage-comment.md
 
 # misc
 .DS_Store
