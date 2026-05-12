@@ -1,12 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { permissions } from "@abadge/db/schema";
-import {
-  seedAgent,
-  seedOrg,
-  seedProfile,
-  seedServerItem,
-  seedUser,
-} from "../helpers/seed";
+import { seedAgent, seedOrg, seedProfile, seedServerItem, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
