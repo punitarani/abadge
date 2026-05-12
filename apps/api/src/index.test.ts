@@ -112,4 +112,21 @@ describe("api app", () => {
     const body = (await response.json()) as { pong: boolean };
     expect(body.pong).toBe(true);
   });
+
+  test("GET /v1/openapi.json returns an OpenAPI 3.1 document", async () => {
+    const response = await app.request("http://localhost/v1/openapi.json", undefined, testEnv);
+    expect(response.status).toBe(200);
+    const doc = (await response.json()) as {
+      openapi: string;
+      info: { title: string };
+      paths: Record<string, unknown>;
+      components: { securitySchemes: Record<string, unknown> };
+    };
+    expect(doc.openapi).toBe("3.1.0");
+    expect(doc.info.title).toBe("abadge API");
+    // The mocked router contributes exactly 1 path; the real router
+    // contributes 30+ in production (verified by smoke test).
+    expect(Object.keys(doc.paths).length).toBeGreaterThanOrEqual(1);
+    expect(doc.components.securitySchemes.bearerAuth).toBeDefined();
+  });
 });
