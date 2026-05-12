@@ -12,6 +12,7 @@ import { createOrgCommand } from "./commands/org";
 import { createPermissionCommand } from "./commands/permission";
 import { createProfileCommand } from "./commands/profile";
 import { createRunCommand } from "./commands/run";
+import { createUseCommand } from "./commands/use";
 
 const program = new Command()
   .name("abadge")
@@ -30,6 +31,7 @@ program.addCommand(createMountCommand());
 program.addCommand(createAuditCommand());
 program.addCommand(createOrgCommand());
 program.addCommand(createProfileCommand());
+program.addCommand(createUseCommand());
 program.addCommand(createImportCommand());
 program.addCommand(createExportCommand());
 
