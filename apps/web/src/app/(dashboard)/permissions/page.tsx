@@ -241,6 +241,7 @@ function PermissionsTable({
   totalGroupCount,
   agentNameMap,
   itemLabelMap,
+  profileNameMap,
   onRevoke,
   isRevoking,
 }: {
@@ -249,6 +250,7 @@ function PermissionsTable({
   totalGroupCount: number;
   agentNameMap: Map<string, string>;
   itemLabelMap: Map<string, string>;
+  profileNameMap: Map<string, string>;
   onRevoke: (permissionId: string) => void;
   isRevoking: boolean;
 }): React.ReactElement {
@@ -293,7 +295,9 @@ function PermissionsTable({
               const targetKey = group.itemId ?? `profile:${group.profileId ?? "?"}`;
               const targetLabel = group.itemId
                 ? (itemLabelMap.get(group.itemId) ?? group.itemId.slice(0, 12))
-                : `profile:${group.profileId?.slice(0, 12) ?? "?"}`;
+                : group.profileId
+                  ? `profile:${profileNameMap.get(group.profileId) ?? group.profileId.slice(0, 12)}`
+                  : "profile:?";
               return (
                 <PermissionGroupRow
                   key={`${group.agentId}::${targetKey}`}
@@ -355,10 +359,18 @@ export default function PermissionsListPage(): React.ReactElement {
     queryFn: () => browserTrpcClient.items.list.query(),
     enabled: !!activeOrgId,
   });
+  // §REVAMP-PR5 — Look up profile names so profile-target grants render
+  // as `profile:<name>` rather than `profile:<id-prefix>`.
+  const profilesQuery = useQuery({
+    queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
+    queryFn: () => browserTrpcClient.profiles.list.query({ orgId: activeOrgId ?? "" }),
+    enabled: !!activeOrgId,
+  });
 
   const permissions = permissionsQuery.data?.permissions ?? [];
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
+  const profilesList = profilesQuery.data?.profiles ?? [];
 
   const agentNameMap = useMemo(
     () => new Map<string, string>(agents.map((a: Agent) => [a.id, a.name])),
@@ -367,6 +379,13 @@ export default function PermissionsListPage(): React.ReactElement {
   const itemLabelMap = useMemo(
     () => new Map<string, string>(items.map((i: ItemSummary) => [i.id, i.label])),
     [items],
+  );
+  const profileNameMap = useMemo(
+    () =>
+      new Map<string, string>(
+        profilesList.map((p: { id: string; name: string }) => [p.id, p.name]),
+      ),
+    [profilesList],
   );
 
   const filteredPermissions = useMemo(
@@ -531,6 +550,7 @@ export default function PermissionsListPage(): React.ReactElement {
         totalGroupCount={groupedPermissions.length}
         agentNameMap={agentNameMap}
         itemLabelMap={itemLabelMap}
+        profileNameMap={profileNameMap}
         onRevoke={(id) => revokeMutation.mutate(id)}
         isRevoking={revokeMutation.isPending}
       />
