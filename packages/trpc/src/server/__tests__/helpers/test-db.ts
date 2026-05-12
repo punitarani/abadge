@@ -34,6 +34,7 @@ export async function truncateAll(): Promise<void> {
       agent_sessions,
       agent_session_challenges,
       agent_enrollment_tokens,
+      mount_reservations,
       permissions,
       items,
       agents,

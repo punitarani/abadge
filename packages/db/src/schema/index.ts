@@ -7,6 +7,7 @@ export * from "./audit-log";
 export * from "./audit-logs";
 export * from "./auth";
 export * from "./items";
+export * from "./mount-reservations";
 export * from "./organization";
 export * from "./permissions";
 export * from "./profiles";
