@@ -790,18 +790,22 @@ const ProfileUseAccessResponseSchema = Schema.Struct({
 });
 
 export const accessRouter = createTrpcRouter({
+  /** @deprecated Use `access.read` (canonical). Removal target: v0.6. */
   ciphertext: agentProcedure
     .input(strictSchema(CiphertextAccessSchema))
     .output(strictSchema(CiphertextAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessCiphertext(input))),
+  /** @deprecated Use `access.read` (canonical). Removal target: v0.6. */
   reveal: agentProcedure
     .input(strictSchema(RevealAccessSchema))
     .output(strictSchema(RevealAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessReveal(input))),
+  /** @deprecated Use `access.use` (canonical). Removal target: v0.6. */
   mount: agentProcedure
     .input(strictSchema(MountAccessSchema))
     .output(strictSchema(MountAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessMount(input))),
+  /** @deprecated Use `access.useProfile` (canonical). Removal target: v0.6. */
   bulkMountEnv: agentProcedure
     .input(strictSchema(BulkMountEnvSchema))
     .output(strictSchema(BulkMountEnvResponseSchema))
