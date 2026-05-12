@@ -75,13 +75,15 @@ async function setup(): Promise<{
   };
 }
 
-describe("mcp run_with_secret", () => {
+describe("mcp use_secret", () => {
   test("response has only the four §RED1 keys and never echoes the secret", async () => {
     const env = await setup();
     const mcp = await startMcpClient(env);
 
     try {
-      const resp = await mcp.callTool("run_with_secret", {
+      // PR 4 unifies run_with_secret + run_with_all_secrets into use_secret.
+      // The §RED1 return-shape guarantee carries through unchanged.
+      const resp = await mcp.callTool("use_secret", {
         itemId: env.itemId,
         // Deliberately echo the secret to stdout — the response shape MUST
         // still be plaintext-free. Use bun (always present in the harness env).
