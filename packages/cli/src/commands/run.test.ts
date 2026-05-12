@@ -425,6 +425,44 @@ describe("runWithUseRedeem (§RM-PR4)", () => {
     expect(caught).toBeInstanceOf(AbadgeApiError);
     expect((caught as AbadgeApiError).code).toBe("MOUNT_NOT_FOUND");
   });
+
+  // Regression for PR4 review C1: when the daemon is unavailable the hint
+  // must point at the canonical `abadge profile unlock` command — the
+  // `abadge vault unlock` command was deleted in this PR.
+  test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
+    // Replace the daemon factory with one whose expandEnv throws a non-Abadge
+    // error — that is exactly the "daemon down / socket missing" path the
+    // hint is intended for.
+    __setDaemonClientFactoryForTests(
+      () =>
+        ({
+          expandEnv: async () => {
+            throw new Error("ECONNREFUSED");
+          },
+          expandEnvBulk: async () => {
+            throw new Error("ECONNREFUSED");
+          },
+        }) as unknown as DaemonClient,
+    );
+    const client = makeAgentClientWithAccess({
+      redeemMount: async () => ({
+        storageMode: "server_managed",
+        delivery: "env",
+        payload: { fields: { value: "x" } },
+        label: "openai",
+        itemId: "item_x",
+      }),
+    });
+    const { runWithUseRedeem } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithUseRedeem(client, "item_x", "/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as Error).message).toContain("abadge profile unlock");
+    expect((caught as Error).message).not.toContain("abadge vault unlock");
+  });
 });
 
 describe("runWithUseRedeemBulk (§RM-PR4)", () => {
@@ -503,5 +541,42 @@ describe("runWithUseRedeemBulk (§RM-PR4)", () => {
     expect(lastFake.expandEnvBulkCalls).toHaveLength(0);
     // exit code should be the real true (0), not the daemon's fake 5.
     expect((caught as Error).message).toContain("__exit_0");
+  });
+
+  // Regression for PR4 review C1: bulk variant must also point at the
+  // canonical `abadge profile unlock` command in its daemon-unavailable hint.
+  test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
+    __setDaemonClientFactoryForTests(
+      () =>
+        ({
+          expandEnv: async () => {
+            throw new Error("ECONNREFUSED");
+          },
+          expandEnvBulk: async () => {
+            throw new Error("ECONNREFUSED");
+          },
+        }) as unknown as DaemonClient,
+    );
+    const client = makeAgentClientWithAccess({
+      use: async () => ({
+        items: [{ itemId: "i1", mountId: "mnt_1", delivery: "env", expiresAt: "" }],
+      }),
+      redeemMount: async () => ({
+        storageMode: "server_managed",
+        delivery: "env",
+        payload: { fields: { value: "x" } },
+        label: "openai",
+        itemId: "i1",
+      }),
+    });
+    const { runWithUseRedeemBulk } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithUseRedeemBulk(client, "p_1", "/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as Error).message).toContain("abadge profile unlock");
+    expect((caught as Error).message).not.toContain("abadge vault unlock");
   });
 });

@@ -61,7 +61,7 @@ export async function runWithUseRedeem(
     }
     throw new Error(
       "abadge run requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge vault unlock",
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
       { cause: err },
     );
   }
@@ -136,7 +136,7 @@ export async function runWithUseRedeemBulk(
     }
     throw new Error(
       "abadge run --all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge vault unlock",
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
       { cause: err },
     );
   }
@@ -229,7 +229,7 @@ export async function runWithAll(
     }
     throw new Error(
       "--all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge vault unlock",
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
       { cause: err },
     );
   }
