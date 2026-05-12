@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
+import { registerDeprecatedAliases } from "./commands/aliases";
 import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand } from "./commands/daemon";
 import { createExportCommand } from "./commands/export-cmd";
@@ -34,6 +35,10 @@ program.addCommand(createProfileCommand());
 program.addCommand(createUseCommand());
 program.addCommand(createImportCommand());
 program.addCommand(createExportCommand());
+
+// Attach hidden deprecated-verb aliases (create -> add, delete -> rm, etc.).
+// Must run after every primary command is registered.
+registerDeprecatedAliases(program);
 
 export { program };
 

@@ -117,7 +117,7 @@ describe("agent register action handler", () => {
       // check, so we don't need to mock the local config or the API client.
       await expect(
         cmd.parseAsync(
-          ["register", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"],
+          ["add", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"],
           { from: "user" },
         ),
       ).rejects.toThrow(EXIT_SENTINEL);

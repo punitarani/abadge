@@ -185,7 +185,7 @@ export function createAgentCommand(): Command {
   const cmd = new Command("agent").description("Manage agents");
 
   cmd
-    .command("register")
+    .command("add")
     .description("Register a new agent")
     .requiredOption("-n, --name <name>", "Agent name")
     .option("-k, --kind <kind>", "Agent kind", "local_cli")
@@ -342,7 +342,7 @@ export function createAgentCommand(): Command {
     });
 
   cmd
-    .command("revoke")
+    .command("rm")
     .description("Revoke an agent")
     .argument("<id>", "Agent ID")
     .action(async (id: string) => {
