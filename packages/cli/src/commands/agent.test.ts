@@ -116,10 +116,9 @@ describe("agent register action handler", () => {
       // --json trips the new --json rejection BEFORE the apiUrl/loadConfig
       // check, so we don't need to mock the local config or the API client.
       await expect(
-        cmd.parseAsync(
-          ["add", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"],
-          { from: "user" },
-        ),
+        cmd.parseAsync(["add", "--name", "test", "--kind", "local_mcp", "--mcp-config", "--json"], {
+          from: "user",
+        }),
       ).rejects.toThrow(EXIT_SENTINEL);
 
       expect(exitCode).toBe(1);

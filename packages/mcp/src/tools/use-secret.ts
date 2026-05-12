@@ -11,15 +11,11 @@ export const toolDescription =
 
 /**
  * Discriminated input: exactly one of itemId / profileLabel / profileExternalId.
- * MCP clients (and Zod's zodToJsonSchema for tool registration) need a single
- * object schema; we enforce the "exactly one" constraint via a refinement so
- * the JSON schema stays flat for the LLM but the runtime still rejects bad
- * combinations.
+ * MCP tool registration consumes `.shape`, so we keep the base ZodObject as
+ * the exported schema and enforce the "exactly one of" constraint in the
+ * handler body. This keeps the JSON-schema surface flat for the LLM while
+ * still rejecting bad combinations at runtime.
  */
-// MCP tool registration consumes `.shape`, so we keep the base ZodObject as
-// the exported schema and enforce the "exactly one of" constraint in the
-// handler body. Splitting the constraint out also keeps the JSON schema
-// surface flat for tool callers.
 export const toolInputSchema = z.object({
   itemId: z
     .string()
@@ -68,7 +64,9 @@ export async function handler(
       if (v.reason === "reserved") {
         throw new Error(`Refusing to inject secret into reserved env var: ${input.envVarName}`);
       }
-      throw new Error(`Invalid env var name: ${input.envVarName}. Must match /^[A-Z_][A-Z0-9_]*$/.`);
+      throw new Error(
+        `Invalid env var name: ${input.envVarName}. Must match /^[A-Z_][A-Z0-9_]*$/.`,
+      );
     }
   }
 
