@@ -22,12 +22,49 @@ export const AGENT_AUTH_METHODS = ["public_key_session", "legacy_api_key"] as co
 export type AgentAuthMethod = (typeof AGENT_AUTH_METHODS)[number];
 
 export const CAPABILITIES = [
+  // §RM-PR1 — Canonical capabilities (post-collapse).
+  "read",
+  "use",
+  // Legacy capabilities — still accepted on the wire and stored in existing
+  // rows; mapped to canonical at access-time via `LEGACY_TO_CANONICAL`.
   "read_ciphertext",
   "reveal_plaintext",
   "mount_env",
   "mount_file",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
+
+/**
+ * Canonical capabilities — the only shape new code should produce. `read`
+ * covers both ciphertext-only and plaintext reveal access; `use` covers env
+ * and file mount delivery. Locality + storage-mode constraints are enforced
+ * at the access boundary rather than encoded in the capability name.
+ */
+export const CANONICAL_CAPABILITIES = ["read", "use"] as const satisfies readonly Capability[];
+
+/**
+ * Legacy capabilities — retained because existing `permissions` rows already
+ * use these names, and existing access procedures key off them. New writes
+ * should prefer the canonical pair.
+ */
+export const LEGACY_CAPABILITIES = [
+  "read_ciphertext",
+  "reveal_plaintext",
+  "mount_env",
+  "mount_file",
+] as const satisfies readonly Capability[];
+
+/**
+ * Maps each legacy capability to its canonical equivalent. Used by the
+ * upcoming unified access pipeline to evaluate legacy grants and canonical
+ * grants under one rule set.
+ */
+export const LEGACY_TO_CANONICAL: Record<(typeof LEGACY_CAPABILITIES)[number], Capability> = {
+  read_ciphertext: "read",
+  reveal_plaintext: "read",
+  mount_env: "use",
+  mount_file: "use",
+};
 
 export const AUDIT_EVENT_TYPES = [
   // profile events
@@ -99,6 +136,13 @@ export const STANDARD_FIELDS_BY_KIND = {
   opaque: ["value"],
 } as const satisfies Record<ItemKind, readonly string[]>;
 
+/**
+ * @deprecated As of the §RM-PR1 capability collapse, runtime legality of an
+ * access attempt is determined by the unified access pipeline (locality +
+ * storage mode + canonical capability), not by lookup in this table. The
+ * matrix is retained only for the legacy access endpoints during the
+ * deprecation window and will be removed once those endpoints are deleted.
+ */
 export const CAPABILITY_MATRIX = {
   local: {
     zero_knowledge: ["read_ciphertext", "mount_env", "mount_file"],
@@ -109,6 +153,14 @@ export const CAPABILITY_MATRIX = {
     server_managed: ["reveal_plaintext"],
   },
 } as const satisfies Record<AgentLocality, Record<StorageMode, readonly Capability[]>>;
+
+/**
+ * Delivery modes for the canonical `use` capability. Locality + storage-mode
+ * still restrict which mode is acceptable for a given (agent, item) pair;
+ * those checks live in the access pipeline.
+ */
+export const DELIVERY_MODES = ["env", "file"] as const;
+export type DeliveryMode = (typeof DELIVERY_MODES)[number];
 
 export function getAllowedCapabilities(
   locality: AgentLocality,

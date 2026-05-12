@@ -4,6 +4,7 @@ import {
   AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
+  CANONICAL_CAPABILITIES,
   CAPABILITIES,
   ITEM_KINDS,
   MAX_AGENT_METADATA_DEPTH,
@@ -99,6 +100,12 @@ export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
 export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
 export const AgentAuthMethodSchema = Schema.Literal(...AGENT_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
+/**
+ * §RM-PR1 — Canonical capabilities only. New API surfaces should validate
+ * with this schema; legacy capability values are accepted via
+ * `CapabilitySchema` for backward compatibility.
+ */
+export const CanonicalCapabilitySchema = Schema.Literal(...CANONICAL_CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
 
