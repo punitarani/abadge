@@ -7,28 +7,32 @@ import * as runWithSecret from "./run-with-secret.js";
 export const toolName = "use_secret";
 
 export const toolDescription =
-  "Run a command with a secret (or every env-var-shaped secret in a profile) injected as environment variables. Provide exactly one of `itemId`, `profileLabel`, or `profileExternalId`. Returns only the exit code, duration, output-line count, and a truncation flag. Subprocess stdout/stderr text is NEVER returned to the model — use mount_secret + a separate audited channel if output inspection is required.";
+  "Run a command with a secret (or every env-var-shaped secret in a profile) injected as environment variables. Provide exactly one of `itemId` or `profileId`. Returns only the exit code, duration, output-line count, and a truncation flag. Subprocess stdout/stderr text is NEVER returned to the model — use mount_secret + a separate audited channel if output inspection is required.";
 
 /**
- * Discriminated input: exactly one of itemId / profileLabel / profileExternalId.
- * MCP tool registration consumes `.shape`, so we keep the base ZodObject as
- * the exported schema and enforce the "exactly one of" constraint in the
- * handler body. This keeps the JSON-schema surface flat for the LLM while
- * still rejecting bad combinations at runtime.
+ * Discriminated input: exactly one of itemId / profileId. MCP tool registration
+ * consumes `.shape`, so we keep the base ZodObject as the exported schema and
+ * enforce the "exactly one of" constraint in the handler body. This keeps the
+ * JSON-schema surface flat for the LLM while still rejecting bad combinations
+ * at runtime.
+ *
+ * Label and externalId addressing land in PR 5 alongside the server-side
+ * profile-externalId lookup. Shipping `profileLabel` / `profileExternalId`
+ * without the lookup would be a dishonest API surface (an LLM that follows the
+ * JSON schema and supplies "default" would hit `PROFILE_NOT_FOUND` instead of
+ * the rich error the rename guards against).
  */
 export const toolInputSchema = z.object({
   itemId: z
     .string()
     .optional()
-    .describe("Run with a single item by id. Mutually exclusive with profile* fields."),
-  profileLabel: z
+    .describe("Run with a single item by id. Mutually exclusive with profileId."),
+  profileId: z
     .string()
     .optional()
-    .describe("Run with every env-shaped item in this profile (by id). Trust boundary."),
-  profileExternalId: z
-    .string()
-    .optional()
-    .describe("Run with every env-shaped item in this profile (by externalId). Trust boundary."),
+    .describe(
+      "Run with every env-shaped item in this profile. Trust boundary — items in other profiles are NEVER injected.",
+    ),
   command: z.string().describe("Command to run"),
   args: z.array(z.string()).optional().describe("Command arguments"),
   envVarName: z
@@ -48,12 +52,9 @@ export async function handler(
   input: z.infer<typeof toolInputSchema>,
   config: McpConfig,
 ): Promise<string> {
-  const targetCount =
-    (input.itemId ? 1 : 0) + (input.profileLabel ? 1 : 0) + (input.profileExternalId ? 1 : 0);
+  const targetCount = (input.itemId ? 1 : 0) + (input.profileId ? 1 : 0);
   if (targetCount !== 1) {
-    throw new Error(
-      "Provide exactly one of itemId, profileLabel, or profileExternalId. They are mutually exclusive.",
-    );
+    throw new Error("Provide exactly one of itemId or profileId. They are mutually exclusive.");
   }
 
   if (input.envVarName) {
@@ -84,19 +85,16 @@ export async function handler(
     );
   }
 
-  // Profile mode: profileLabel and profileExternalId both resolve to a profile
-  // identifier the bulk endpoint accepts. The current SDK + REST surface keys
-  // on profileId; treat profileLabel as a profileId for now (callers passing
-  // an externalId will get a clear server-side error). When the access.use*
-  // surface lands (PR 2/3 follow-up), the externalId branch will route through
-  // /v1/access/use-profile-by-external-id.
-  const profileId = input.profileLabel ?? input.profileExternalId;
-  if (!profileId) {
+  // Profile mode: server expects a profileId (UUID). Label / externalId
+  // addressing arrives in PR 5 with the server-side externalId column on
+  // profiles; the corresponding `profileLabel` / `profileExternalId` inputs
+  // will be added back at that time.
+  if (!input.profileId) {
     throw new Error("Internal: profile mode reached without a profile identifier.");
   }
   return runWithAllSecrets.handler(
     {
-      profileId,
+      profileId: input.profileId,
       command: input.command,
       args: input.args,
       purpose: input.purpose,
