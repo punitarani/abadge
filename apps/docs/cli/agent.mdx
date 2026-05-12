@@ -3,18 +3,21 @@ title: "abadge agent"
 description: "Register, list, rotate, and revoke automated callers."
 ---
 
-## `abadge agent register`
+## `abadge agent add`
 
-Register a new agent. Defaults to `public_key_session` auth: generates an Ed25519 keypair on-device, stores the private key in `~/.abadge/agents/`, and uploads the public key directly. For `local_cli` and `local_mcp` kinds, the agent ID and private-key path are written to the matching `localAgents.*` config slot so that `abadge run` and the MCP server find them automatically.
-
-Pass `--legacy-api-key` to opt into legacy API-key auth instead.
+Register a new agent. Generates an Ed25519 keypair on-device, stores the
+private key in `~/.abadge/agents/`, and uploads the public key. For
+`local_cli` and `local_mcp` kinds, the agent ID and private-key path are
+also written to the matching `localAgents.*` config slot so that
+`abadge run` and the MCP server find them automatically.
 
 ```bash
-abadge agent register --name dev-laptop
-abadge agent register --name dev-laptop --kind local_cli
-abadge agent register --name mcp-host --kind local_mcp
-abadge agent register --name ci-bot --kind remote
-abadge agent register --name legacy-bot --kind remote --legacy-api-key
+abadge agent add --name dev-laptop
+abadge agent add --name dev-laptop --kind local_cli
+abadge agent add --name mcp-host --kind local_mcp
+abadge agent add --name ci-bot --kind remote
+abadge agent add --name ci-bot --kind remote --bootstrap     # issue a one-time bootstrap token
+abadge agent add --name ci-bot --kind remote --public-key ./key.jwk
 ```
 
 | Flag | Required | Description |
@@ -22,17 +25,21 @@ abadge agent register --name legacy-bot --kind remote --legacy-api-key
 | `-n, --name <name>` | yes | Agent display name |
 | `-k, --kind <kind>` | no | `local_cli` (default), `local_mcp`, or `remote` |
 | `-d, --description <text>` | no | Optional description (stored in `metadata.description`) |
-| `--legacy-api-key` | no | Opt into legacy API-key auth instead of Ed25519 keypair |
+| `--bootstrap` | no | Issue a one-time bootstrap token instead of generating a local keypair |
+| `--public-key <path>` | no | Path to an existing Ed25519 public-key JWK to enroll |
 | `--mcp-config` | no | After registering a `local_mcp` agent, print a Claude Desktop config snippet |
 | `--json` | no | Print raw JSON |
 
+<Note>
+  Legacy API-key auth is not creatable from the CLI. Use the dashboard or
+  `POST /v1/agents` with `authMethod: "legacy_api_key"` if you need one
+  for migration.
+</Note>
+
 ### `--mcp-config` (local_mcp only)
 
-When combined with `--kind local_mcp`, the CLI prints a paste-ready `mcpServers` JSON block after
-registration. The snippet uses absolute paths so it works regardless of `$PATH`:
-
 ```bash
-abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+abadge agent add --kind local_mcp --name claude-desktop --mcp-config
 ```
 
 ```json
@@ -42,43 +49,38 @@ abadge agent register --kind local_mcp --name claude-desktop --mcp-config
       "command": "/Users/you/.abadge/bin/abadge-mcp",
       "env": {
         "ABADGE_API_URL": "https://api.abadge.io",
-        "ABADGE_AGENT_ID": "agent_01HZ...",
-        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/agent_01HZ....ed25519.jwk"
+        "ABADGE_AGENT_ID": "agt_...",
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/agt_....ed25519.jwk"
       }
     }
   }
 }
 ```
 
-The binary path defaults to `${ABADGE_INSTALL_DIR:-~/.abadge/bin}/abadge-mcp`. The CLI reads
-`apiUrl` from `~/.abadge/config.json` (populated by `abadge login`).
+The binary path defaults to `${ABADGE_INSTALL_DIR:-~/.abadge/bin}/abadge-mcp`.
 
-<Warning>
-  For `--legacy-api-key`, the `abl_...` (local) or `abg_...` (remote) key is shown **exactly once**. Save it before the command exits.
-</Warning>
-
-### Keypair registration (default)
+### Keypair registration
 
 <Steps>
   <Step title="Generate keypair">
     The CLI uses WebCrypto to generate an Ed25519 keypair locally.
   </Step>
   <Step title="Upload the public key">
-    `agents.create` is called with `publicKey` (JWK JSON) and the agent's metadata.
+    `agents.create` is called with `publicKey` (JWK JSON) and metadata.
   </Step>
   <Step title="Store the private key">
-    The private key is written to `~/.abadge/agents/<agent-id>.ed25519.jwk` with `0600` permissions inside a `0700` directory.
+    Written to `~/.abadge/agents/<agent-id>.ed25519.jwk` with `0600`
+    permissions inside a `0700` directory.
   </Step>
   <Step title="Update config">
-    For `local_cli` and `local_mcp` agents, `~/.abadge/config.json` gets `localAgents.cli` or `localAgents.mcp` populated with the agent ID and private-key path.
+    For `local_cli` and `local_mcp` agents, `~/.abadge/config.json` gets
+    `localAgents.cli` or `localAgents.mcp` populated.
   </Step>
 </Steps>
 
-Remote agents skip the config step — the CLI prints the agent ID, kind, and path to the private-key file, plus a warning that you need to configure the remote service with those credentials yourself.
-
-### Legacy API-key registration (`--legacy-api-key`)
-
-No keypair is generated. `agents.create` is called with `authMethod: "legacy_api_key"`; the API returns a one-time `abl_/abg_...` key. The CLI prints the key and a save-it-now warning.
+Remote agents skip the config step — the CLI prints the agent ID, kind,
+and path to the private-key file, plus a warning that you must configure
+the remote service with those credentials yourself.
 
 ## `abadge agent list`
 
@@ -91,7 +93,9 @@ Output columns: `ID`, `Name`, `Kind`, `Locality`, `Enabled`, `Created`.
 
 ## `abadge agent rotate <agent-id>`
 
-Rotate a legacy API key. Public-key agents cannot be rotated — instead, revoke and re-register, or have the owner re-enroll with a new keypair via `auth.issueBootstrapToken` + `auth.enroll`.
+Rotate a legacy API key. Public-key agents cannot be rotated — instead
+revoke and re-enroll with a new keypair via `auth.issueBootstrapToken`
+plus `auth.enroll`.
 
 ```bash
 abadge agent rotate <agent-id>
@@ -100,29 +104,38 @@ abadge agent rotate <agent-id> --json
 
 The new key is shown once.
 
-## `abadge agent revoke <agent-id>`
+## `abadge agent rm <agent-id>`
 
-Revoke an agent. Invalidates all active `abs_...` sessions and disables future authentication.
+Revoke an agent. Invalidates all active `abs_...` sessions and disables
+future authentication.
 
 ```bash
-abadge agent revoke <agent-id>
+abadge agent rm <agent-id>
 ```
 
-Permissions are not deleted; they remain visible (and useless) until the agent is rotated, removed, or re-enabled.
+Permissions are not deleted; they remain visible (and useless) until the
+agent is rotated, removed, or re-enabled.
 
 ## `abadge agent mcp-config <agent-id>`
 
-Reprint the Claude Desktop config snippet for an already-registered `local_mcp` agent. Reads the
-agent ID, private-key path, and `apiUrl` from `~/.abadge/config.json` (populated by `abadge login`
-and `abadge agent register --kind local_mcp`). Useful when you've lost the original snippet or are
-re-paste-ing the config on a new MCP client.
+Reprint the Claude Desktop config snippet for an already-registered
+`local_mcp` agent.
 
 ```bash
-abadge agent mcp-config agent_01HZ...
+abadge agent mcp-config agt_...
 ```
 
-The supplied agent ID must match `localAgents.mcp.agentId` in your config. If they differ, the
-command exits non-zero with a clear error — re-register the local MCP agent or pass the correct id.
+## Deprecated aliases
+
+For backwards compatibility:
+
+| Deprecated | Canonical |
+|------------|-----------|
+| `abadge agent register` | `abadge agent add` |
+| `abadge agent revoke` | `abadge agent rm` |
+
+The deprecated verbs print a deprecation notice on stderr and re-dispatch
+to the canonical verb.
 
 ## Related
 

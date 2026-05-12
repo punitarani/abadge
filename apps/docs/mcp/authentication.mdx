@@ -74,7 +74,7 @@ On startup, the MCP server:
 
 ## What gets persisted
 
-- The Ed25519 **private key** lives at `ABADGE_PRIVATE_KEY_PATH` (or wherever you stored it) with `0600` permissions. The CLI's `abadge agent register --kind local_mcp` generates one for you.
+- The Ed25519 **private key** lives at `ABADGE_PRIVATE_KEY_PATH` (or wherever you stored it) with `0600` permissions. The CLI's `abadge agent add --kind local_mcp` generates one for you.
 - The Ed25519 **public key** is stored on the server (`agents.publicKey`).
 - Session tokens (`abs_...`) live in MCP server process memory only. Restarting the MCP server forces a new exchange.
 - Bootstrap tokens (`abe_...`) are consumed during enrollment and never persisted.
@@ -92,5 +92,5 @@ The MCP server emits standard auth audit events:
 
 - [API: authentication](/api/authentication)
 - [API: `auth.*` procedures](/api/procedures/auth)
-- [`abadge agent register`](/cli/agent#abadge-agent-register)
+- [`abadge agent add`](/cli/agent#abadge-agent-add)
 - [Claude Desktop config](/mcp/claude-desktop)

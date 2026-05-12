@@ -5,34 +5,33 @@ description: "Grant, list, and revoke capabilities."
 
 ## `abadge permission create`
 
-Grant one or more capabilities for an agent on an item. Multiple capabilities land atomically — either every row is written or none is.
+Grant one or more capabilities for an agent on an item. Multiple
+capabilities land atomically — either every row is written or none is.
 
 ```bash
-# Single capability
+# Grant `use`
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability reveal_plaintext
+  --capability use
 
-# Multiple capabilities — repeat the flag
+# Grant both canonical capabilities — repeat the flag or comma-separate
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability reveal_plaintext \
-  --capability mount_env \
-  --capability mount_file
+  --capability read \
+  --capability use
 
-# Multiple capabilities — comma-separated
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability reveal_plaintext,mount_env,mount_file
+  --capability read,use
 
 # With expiry — applied to every capability in this batch
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability mount_env \
+  --capability use \
   --expires-at 2026-12-31T00:00:00Z
 ```
 
@@ -40,18 +39,28 @@ abadge permission create \
 |---|---|---|
 | `--agent-id <id>` | yes | Target agent |
 | `--item-id <id>` | yes | Target item |
-| `--capability <cap>` | yes | One of `read_ciphertext`, `reveal_plaintext`, `mount_env`, or `mount_file`. Repeat the flag or pass a comma-separated list to grant multiple capabilities at once. |
+| `--capability <cap>` | yes | `read` or `use`. Repeat the flag or comma-separate to grant multiple. |
 | `--expires-at <ts>` | no | ISO timestamp expiry; applied to every capability in this submission |
 | `--json` | no | Print raw JSON |
 
-The CLI rejects invalid combinations at create time. The capability matrix:
+<Note>
+  Legacy names (`read_ciphertext`, `reveal_plaintext`, `mount_env`,
+  `mount_file`) remain accepted as aliases and are normalized to `read` /
+  `use` server-side.
+</Note>
+
+### Capability matrix
 
 | Capability | Local + ZK | Local + SM | Remote + ZK | Remote + SM |
 |---|---|---|---|---|
-| `read_ciphertext` | ✓ | – | ✗ | – |
-| `reveal_plaintext` | – | ✓ | – | ✓ |
-| `mount_env` | ✓ | ✓ | ✗ | ✗ |
-| `mount_file` | ✓ | ✓ | ✗ | ✗ |
+| `read` | ✓ | ✓ | ✗ (server can't decrypt) | ✓ |
+| `use`  | ✓ | ✓ | ✗ (no local daemon) | ✗ (no local daemon) |
+
+<Warning>
+  Profile-target grants are not available from the CLI. Use the
+  dashboard's profile-grant flow — it surfaces the blast-radius
+  confirmation before granting `read` on a whole profile.
+</Warning>
 
 ## `abadge permission list`
 
@@ -68,11 +77,14 @@ abadge permission list --json
 | `--item-id <id>` | Filter to one item |
 | `--json` | Print raw JSON |
 
-Output columns: `ID`, `Agent`, `Item`, `Capability`, `Expires`, `Created`.
+Output columns: `ID`, `Agent`, `Target`, `Capability`, `Expires`,
+`Created`. `Target` shows either the item ID or `profile:<id>` for
+profile-target grants.
 
 ## `abadge permission revoke <permission-id>`
 
-Revoke a permission immediately. In-flight access attempts that haven't yet checked the row see the deletion and are denied.
+Revoke a permission immediately. In-flight access attempts that haven't
+yet checked the row see the deletion and are denied.
 
 ```bash
 abadge permission revoke <permission-id>

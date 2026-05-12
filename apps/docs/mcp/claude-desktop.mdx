@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh |
 abadge login
 
 # Register an MCP agent and print the Claude Desktop config block
-abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+abadge agent add --kind local_mcp --name claude-desktop --mcp-config
 ```
 
 The last command prints something like:
@@ -77,7 +77,7 @@ Replace:
 
 - `command` with the absolute path to your installed `abadge-mcp` (default `~/.abadge/bin/abadge-mcp`)
 - `ABADGE_API_URL` with your deployment
-- `ABADGE_AGENT_ID` and `ABADGE_PRIVATE_KEY_PATH` with the values from `abadge agent register
+- `ABADGE_AGENT_ID` and `ABADGE_PRIVATE_KEY_PATH` with the values from `abadge agent add
   --kind local_mcp` (or whatever you've stored in `~/.abadge/config.json` under
   `localAgents.mcp`)
 

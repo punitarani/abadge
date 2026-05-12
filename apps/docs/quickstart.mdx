@@ -41,14 +41,14 @@ The CLI starts a device-code flow and opens your browser. Approve the request to
 If you don't have an org yet, create one:
 
 ```bash
-abadge org create --name "Acme"
+abadge org add --name "Acme"
 abadge org use acme
 ```
 
 Then create (or switch to) a profile:
 
 ```bash
-abadge profile create --name default --storage-mode server_managed
+abadge profile add --name default --storage-mode server_managed
 abadge profile use default
 ```
 
@@ -59,7 +59,7 @@ Server-managed is the simplest storage mode. For zero-knowledge profiles, bootst
 `abadge run` needs a `local_cli` agent to authenticate with. The CLI generates an Ed25519 keypair, uploads the public key, and writes the private key to `~/.abadge/agents/` with `0600` permissions:
 
 ```bash
-abadge agent register --kind local_cli --name "dev-laptop"
+abadge agent add --kind local_cli --name "dev-laptop"
 ```
 
 The command updates `~/.abadge/config.json`'s `localAgents.cli` automatically. Re-run it any time you want to rotate the keypair.
@@ -67,7 +67,7 @@ The command updates `~/.abadge/config.json`'s `localAgents.cli` automatically. R
 ## 5. Store a secret
 
 ```bash
-abadge item create \
+abadge item add \
   --label "OpenAI API key" \
   --kind api_key \
   --storage-mode server_managed
@@ -85,7 +85,7 @@ Permissions are explicit: agent + item + capability.
 abadge permission create \
   --agent-id <cli-agent-id> \
   --item-id <item-id> \
-  --capability mount_env
+  --capability use
 ```
 
 Find the `cli-agent-id` with `abadge agent list` (it's the agent with kind `local_cli`).
@@ -122,7 +122,7 @@ The secret lives only in the child's process memory. It never touches disk and n
     The secret was injected into a subprocess env var. It never appeared in your shell history.
   </Step>
   <Step title="Audited">
-    Every step — login, agent register, item create, permission create, mount — was appended to the immutable audit log. View it with `abadge audit`.
+    Every step — login, agent add, item add, permission create, mount — was appended to the immutable audit log. View it with `abadge audit`.
   </Step>
 </Steps>
 
@@ -132,17 +132,19 @@ If you want a remote agent (CI runner, cloud worker) to consume the secret over 
 
 ```bash
 # Register a remote agent with a one-time bootstrap token
-abadge agent register --kind remote --name "ci-bot"
+abadge agent add --kind remote --name "ci-bot"
 # → prints agent ID + abe_... bootstrap token (save it)
 
-# Grant reveal_plaintext instead of mount_env
+# Grant `read` (remote agents can't use `use` — there's no local daemon)
 abadge permission create \
   --agent-id <remote-agent-id> \
   --item-id <item-id> \
-  --capability reveal_plaintext
+  --capability read
 ```
 
-The remote agent enrolls with the bootstrap token (via the SDK or API), then calls `access.reveal` for the plaintext. See [AbadgeAgentClient](/api/sdk/agent-client) for the SDK side.
+The remote agent enrolls with the bootstrap token (via the SDK or API),
+then calls `POST /v1/access/{itemId}/read` for the plaintext. See
+[AbadgeAgentClient](/api/sdk/agent-client) for the SDK side.
 
 ## Next steps
 
