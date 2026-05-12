@@ -128,6 +128,7 @@ export function CreateOrgForm({
     setOrgSlug(toSlugPreview(value));
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pre-submit validation, slug-status gating, and the post-create logo fix-up are co-located so the create-org happy path reads top-to-bottom.
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
@@ -212,9 +213,8 @@ export function CreateOrgForm({
           <div className="space-y-1">
             <h2 className="text-xl font-semibold tracking-tight">Name your organization</h2>
             <p className="text-sm text-muted-foreground">
-              Your organization is the top-level boundary for all secrets, profiles, and agents.
-              A default profile is created automatically so you can start storing secrets right
-              away.
+              Your organization is the top-level boundary for all secrets, profiles, and agents. A
+              default profile is created automatically so you can start storing secrets right away.
             </p>
           </div>
 

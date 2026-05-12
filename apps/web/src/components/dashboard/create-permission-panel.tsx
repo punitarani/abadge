@@ -137,6 +137,7 @@ interface CreatePermissionPanelViewProps {
   onSubmit: React.FormEventHandler<HTMLFormElement>;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pure render component; branching mirrors the form's state machine (target type, incompatibility, preview). Splitting would create equally-complex props plumbing.
 export function CreatePermissionPanelView({
   formId,
   targetType,
@@ -202,9 +203,7 @@ export function CreatePermissionPanelView({
               />
               <div className="space-y-0.5">
                 <div className="font-medium">Single item</div>
-                <p className="text-xs text-muted-foreground">
-                  Grant access to one credential.
-                </p>
+                <p className="text-xs text-muted-foreground">Grant access to one credential.</p>
               </div>
             </label>
             <label
@@ -344,6 +343,7 @@ interface CreatePermissionPanelProps {
   onClose: () => void;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: orchestrator component — branches are unavoidable (item vs profile target, multiple query states, blast-radius confirmation). Each branch is small and named; splitting would obscure the orchestration.
 export function CreatePermissionPanel({
   open,
   onClose,
@@ -397,9 +397,7 @@ export function CreatePermissionPanel({
         agentId: selectedAgent,
         ...(targetType === "item" ? { itemId: selectedItem } : { profileId: selectedProfile }),
       }),
-    enabled: Boolean(
-      selectedAgent && (targetType === "item" ? selectedItem : selectedProfile),
-    ),
+    enabled: Boolean(selectedAgent && (targetType === "item" ? selectedItem : selectedProfile)),
   });
 
   const createPermission = useMutation({
@@ -419,8 +417,7 @@ export function CreatePermissionPanel({
   const agents = agentsQuery.data?.agents ?? [];
   const items = itemsQuery.data?.items ?? [];
   const profilesList = profilesQuery.data?.profiles ?? [];
-  const optionsLoading =
-    agentsQuery.isPending || itemsQuery.isPending || profilesQuery.isPending;
+  const optionsLoading = agentsQuery.isPending || itemsQuery.isPending || profilesQuery.isPending;
 
   const activeAgentOptions = useMemo<SearchableSelectOption[]>(
     () =>
@@ -474,6 +471,7 @@ export function CreatePermissionPanel({
     [profilesList, selectedProfile],
   );
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: enumerates the (agent locality, target type, storage mode) constraint matrix in one place. Server enforces the same matrix; splitting would just relocate the same branches.
   const { allowedCapabilities, incompatibleMessage } = useMemo(() => {
     if (!selectedAgentObj) {
       return {
@@ -603,6 +601,7 @@ export function CreatePermissionPanel({
     });
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pre-submit validation, payload shape selection (item vs profile), and blast-radius confirmation are intentionally co-located so the flow reads top-to-bottom.
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
 
@@ -742,14 +741,14 @@ export function CreatePermissionPanel({
             <DialogTitle>Grant `read` on an entire profile?</DialogTitle>
             <DialogDescription>
               This grants the agent every credential currently and ever stored in this profile.
-              Consider <span className="font-mono">use</span> instead — the agent invokes
-              processes with the secret but never sees it.
+              Consider <span className="font-mono">use</span> instead — the agent invokes processes
+              with the secret but never sees it.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
             <div>
-              <span className="font-medium">{selectedAgentObj?.name ?? "Agent"}</span> →
-              profile <span className="font-medium">{profileLabel}</span>
+              <span className="font-medium">{selectedAgentObj?.name ?? "Agent"}</span> → profile{" "}
+              <span className="font-medium">{profileLabel}</span>
             </div>
             <div className="mt-1 text-xs">
               {profilesList.length > 0 && selectedProfileObj

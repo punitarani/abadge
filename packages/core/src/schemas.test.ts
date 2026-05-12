@@ -25,6 +25,7 @@ describe("ProfileSchema", () => {
         id: "prof_default_user-1",
         organizationId: "org_personal_user-1",
         name: "default",
+        externalId: null,
         description: null,
         storageMode: "zero_knowledge",
         wrappedRootKey: "wrapped-root-key",

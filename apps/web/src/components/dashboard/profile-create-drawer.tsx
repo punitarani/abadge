@@ -65,6 +65,7 @@ export function ProfileCreateDrawer({
     onOpenChange(false);
   }
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation, ZK bootstrap, and orphan rollback are intentionally co-located so the failure paths are obvious in one read.
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError("");
@@ -173,8 +174,8 @@ export function ProfileCreateDrawer({
           className="font-mono text-sm"
         />
         <p className="text-xs text-muted-foreground">
-          A stable identifier your system controls (per-customer, per-tenant). Unique within the
-          org when set; leave blank if you don't need one.
+          A stable identifier your system controls (per-customer, per-tenant). Unique within the org
+          when set; leave blank if you don't need one.
         </p>
       </div>
 
@@ -189,8 +190,8 @@ export function ProfileCreateDrawer({
           <div className="font-medium">Zero-knowledge encryption (advanced)</div>
           <p className="text-xs text-muted-foreground">
             The server stores only ciphertext. You set a profile password that the server never
-            sees. Required for secrets you don't trust the server to read. Default is
-            server-managed AES-256-GCM.
+            sees. Required for secrets you don't trust the server to read. Default is server-managed
+            AES-256-GCM.
           </p>
         </div>
       </label>
