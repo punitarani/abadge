@@ -546,11 +546,17 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
   expiresAt: Schema.NullOr(IsoDateString),
 });
 
+/**
+ * §RM-PR2 — A permission row's target is now nullable on both columns: each
+ * row sets exactly one of (itemId, profileId), enforced by the DB CHECK. The
+ * wire shape mirrors the row shape so callers can branch on which is null.
+ */
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
   agentId: NonEmptyString,
-  itemId: NonEmptyString,
+  itemId: Schema.NullOr(NonEmptyString),
+  profileId: Schema.NullOr(NonEmptyString),
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
   grantedBy: NonEmptyString,

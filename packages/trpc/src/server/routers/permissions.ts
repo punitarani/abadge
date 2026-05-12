@@ -19,6 +19,7 @@ import {
   auditLogs,
   items,
   permissions as permissionRecords,
+  profiles as profileRecords,
 } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -49,20 +50,7 @@ const PermissionListQuerySchema = Schema.Struct({
 const createPermission = (input: CreatePermissionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-
-    // §RM-PR1 — CreatePermissionSchema is now a discriminated union over
-    // (item target, profile target). PR1 is structural; profile-target
-    // grants land in PR2 alongside the unified access pipeline. Reject them
-    // here so callers get a deterministic error rather than a partial path.
-    if ("profileId" in input) {
-      return yield* Effect.fail(
-        new BadRequestError({
-          code: "BAD_REQUEST",
-          message: "Profile-target permissions are not yet supported",
-          hint: "Grant capabilities per item for now; profile-target grants ship in the upcoming access revamp.",
-        }),
-      );
-    }
+    const isProfileTarget = "profileId" in input;
 
     const [agent] = yield* tryAsync(() =>
       ctx.db
@@ -135,6 +123,139 @@ const createPermission = (input: CreatePermissionInput) =>
           : Effect.void,
       ),
     );
+
+    // §RM-PR2 — Profile-target branch.
+    // The locality x storage matrix lookup that gates item-target grants
+    // doesn't apply here: a profile holds N items, and the unified access
+    // pipeline runs the per-item constraint check at access time. Validate
+    // existence in-org, pre-check duplicates, then insert atomically.
+    if (isProfileTarget) {
+      const [profile] = yield* tryAsync(() =>
+        ctx.db
+          .select({ id: profileRecords.id })
+          .from(profileRecords)
+          .where(
+            and(
+              eq(profileRecords.id, input.profileId),
+              eq(profileRecords.organizationId, ctx.identity.organizationId),
+            ),
+          )
+          .limit(1),
+      );
+      if (!profile) {
+        return yield* auditDeniedSession(
+          {
+            organizationId: ctx.identity.organizationId,
+            userId: ctx.identity.userId,
+            agentId: input.agentId,
+            profileId: input.profileId,
+            eventType: "permission.create",
+            reason: "profile_not_found",
+            ipAddress: ctx.ipAddress,
+          },
+          new NotFoundError({
+            code: "PROFILE_NOT_FOUND",
+            message: "Profile not found",
+            hint: "Check the profile ID and make sure it belongs to this organization.",
+          }),
+        );
+      }
+
+      const requested = input.capabilities as readonly Capability[];
+
+      // Pre-check duplicates for profile-target rows.
+      const existingProfileRows = yield* tryAsync(() =>
+        ctx.db
+          .select({ capability: permissionRecords.capability })
+          .from(permissionRecords)
+          .where(
+            and(
+              eq(permissionRecords.agentId, input.agentId),
+              eq(permissionRecords.profileId, input.profileId),
+              inArray(permissionRecords.capability, requested),
+            ),
+          ),
+      );
+
+      if (existingProfileRows.length > 0) {
+        const duplicates = existingProfileRows.map((r) => r.capability as Capability);
+        return yield* auditDeniedSession(
+          {
+            organizationId: ctx.identity.organizationId,
+            userId: ctx.identity.userId,
+            agentId: input.agentId,
+            profileId: input.profileId,
+            eventType: "permission.create",
+            reason: "permission_already_exists",
+            ipAddress: ctx.ipAddress,
+            meta: { duplicateCapabilities: duplicates },
+          },
+          new ConflictError({
+            code: "PERMISSION_ALREADY_EXISTS",
+            message:
+              duplicates.length === 1
+                ? `Permission already exists for capability '${duplicates[0]}' on this agent and profile`
+                : `Permissions already exist for capabilities: ${duplicates.join(", ")}`,
+            hint: "Revoke the existing permission(s) first, or omit those capabilities from this grant.",
+            meta: { duplicateCapabilities: duplicates },
+          }),
+        );
+      }
+
+      const createdAt = new Date();
+      const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+      const profileRows = requested.map((capability) => ({
+        id: crypto.randomUUID(),
+        organizationId: ctx.identity.organizationId,
+        agentId: input.agentId,
+        itemId: null,
+        profileId: input.profileId,
+        capability,
+        expiresAt,
+        grantedBy: ctx.identity.userId,
+        createdAt,
+      }));
+
+      yield* tryAsync(() =>
+        ctx.db.transaction(async (tx) => {
+          await tx.insert(permissionRecords).values(profileRows);
+          for (const row of profileRows) {
+            await tx.insert(auditLogs).values({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: input.agentId,
+              itemId: null,
+              profileId: input.profileId,
+              surface: "api",
+              eventType: "permission.create",
+              result: "allowed",
+              deliveryMode: null,
+              field: null,
+              purpose: null,
+              meta: { capability: row.capability, target: "profile" },
+              ipAddress: ctx.ipAddress ?? null,
+            });
+          }
+        }),
+      ).pipe(
+        // Race: concurrent grant landed between pre-check and insert.
+        Effect.catchIf(
+          (e: unknown) => isUniqueViolation(e),
+          () =>
+            Effect.fail(
+              new ConflictError({
+                code: "PERMISSION_ALREADY_EXISTS",
+                message: "A concurrent grant created an overlapping permission.",
+                hint: "Refresh the permission list and retry with the remaining capabilities.",
+              }),
+            ),
+        ),
+      );
+
+      return {
+        permissions: profileRows.map((row) => serializePermission(row)),
+      };
+    }
 
     const [item] = yield* tryAsync(() =>
       ctx.db
@@ -332,7 +453,7 @@ const createPermission = (input: CreatePermissionInput) =>
             deliveryMode: null,
             field: null,
             purpose: null,
-            meta: { capability: row.capability },
+            meta: { capability: row.capability, target: "item" },
             ipAddress: ctx.ipAddress ?? null,
           });
         }
