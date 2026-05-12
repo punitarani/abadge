@@ -3,12 +3,30 @@ export type {
   AbadgeAgentApiKeyConfig,
   AbadgeAgentClientConfig,
   AbadgeAgentKeypairConfig,
-  AbadgeClientConfig,
   AbadgeUserClientConfig,
   Ed25519PrivateKeyJwk,
   ErrorCode,
 } from "./client";
-export { AbadgeAgentClient, AbadgeUserClient } from "./client";
+
+import { AbadgeAgentClient, AbadgeUserClient } from "./client";
+
+export { AbadgeAgentClient, AbadgeUserClient };
+
+/**
+ * Namespaced entry point for the SDK clients.
+ *
+ * @example
+ * ```typescript
+ * import { Abadge } from "@abadge/sdk";
+ *
+ * const user = new Abadge.User({ apiUrl, sessionToken });
+ * const agent = new Abadge.Agent({ apiUrl, agentId, privateKey });
+ * ```
+ */
+export const Abadge = {
+  User: AbadgeUserClient,
+  Agent: AbadgeAgentClient,
+} as const;
 export { AbadgeApiError } from "./errors";
 export { SecretValue } from "./secret-value";
 export type {

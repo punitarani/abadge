@@ -102,18 +102,6 @@ export interface AbadgeAgentApiKeyConfig {
 /** Configuration for agent SDK clients. Supports keypair or API key auth. */
 export type AbadgeAgentClientConfig = AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig;
 
-/**
- * Backward-compatible config that accepts either persona.
- *
- * @deprecated Prefer {@link AbadgeUserClientConfig} or {@link AbadgeAgentClientConfig}.
- */
-export interface AbadgeClientConfig {
-  /** API endpoint URL (no trailing slash). */
-  apiUrl: string;
-  /** Session token (user) or agent API key (prefixed `abl_`, `abg_`, `abs_`). */
-  token: string;
-}
-
 // ---------------------------------------------------------------------------
 // SdkTrpcClient — locally declared proxy type
 // ---------------------------------------------------------------------------
@@ -368,10 +356,8 @@ export class AbadgeUserClient {
   /** @internal */
   protected readonly client: SdkTrpcClient;
 
-  constructor(config: AbadgeUserClientConfig | AbadgeClientConfig) {
-    const token = "sessionToken" in config ? config.sessionToken : config.token;
-    const orgId = "orgId" in config ? config.orgId : undefined;
-    this.client = buildTrpcClient(config.apiUrl, token, orgId);
+  constructor(config: AbadgeUserClientConfig) {
+    this.client = buildTrpcClient(config.apiUrl, config.sessionToken, config.orgId);
   }
 
   // -- Items ----------------------------------------------------------------
@@ -908,19 +894,17 @@ export const REFRESH_RETRY_SCHEDULE_MS: readonly number[] = [
 
 export class AbadgeAgentClient {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly config: AbadgeAgentClientConfig | AbadgeClientConfig;
+  private readonly config: AbadgeAgentClientConfig;
   private sessionExpired = false;
   private lastExpiresAtMs = 0;
 
   /** @internal */
   protected client: SdkTrpcClient;
 
-  constructor(config: AbadgeAgentClientConfig | AbadgeClientConfig) {
+  constructor(config: AbadgeAgentClientConfig) {
     this.config = config;
     if ("apiKey" in config) {
       this.client = buildTrpcClient(config.apiUrl, config.apiKey);
-    } else if ("token" in config) {
-      this.client = buildTrpcClient(config.apiUrl, config.token);
     } else {
       // Keypair config — build an unauth client; connect() will set the token
       this.client = buildUnauthTrpcClient(config.apiUrl);
