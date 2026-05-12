@@ -482,10 +482,11 @@ export default function PermissionsListPage(): React.ReactElement {
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All capabilities</option>
-          <option value="read_ciphertext">read_ciphertext</option>
-          <option value="reveal_plaintext">reveal_plaintext</option>
-          <option value="mount_env">mount_env</option>
-          <option value="mount_file">mount_file</option>
+          {CAPABILITIES.map((cap) => (
+            <option key={cap} value={cap}>
+              {cap}
+            </option>
+          ))}
         </select>
 
         <select
