@@ -1,6 +1,7 @@
 import {
   type AgentLocality,
   BadRequestError,
+  CANONICAL_CAPABILITIES,
   type Capability,
   ConflictError,
   type CreatePermissionInput,
@@ -162,6 +163,26 @@ const createPermission = (input: CreatePermissionInput) =>
           hint: "Check the item ID and make sure it belongs to this organization.",
         }),
       );
+    }
+
+    // §RM-PR1 — CAPABILITIES was widened to include the canonical `read`/`use`
+    // pair so the wire schema is forward-compatible, but permissions.create
+    // still routes through CAPABILITY_MATRIX which only carries the legacy
+    // entries. Without this short-circuit, a caller submitting "read" or "use"
+    // would fall through to the matrix check below and receive a misleading
+    // INVALID_CAPABILITY_LOCALITY error. Reject explicitly here so the failure
+    // mode names the real cause and points at the upcoming PR2 wiring.
+    for (const capability of input.capabilities) {
+      if ((CANONICAL_CAPABILITIES as readonly string[]).includes(capability)) {
+        return yield* Effect.fail(
+          new BadRequestError({
+            code: "BAD_REQUEST",
+            message: `Capability '${capability}' is not yet routed by permissions.create.`,
+            hint: "PR 1 accepts canonical 'read'/'use' at the schema level but does not yet route them. Use a legacy capability (read_ciphertext, reveal_plaintext, mount_env, mount_file); PR 2 enables the canonical pair.",
+            meta: { capability, canonical: true },
+          }),
+        );
+      }
     }
 
     const agentLocality = agent.locality as AgentLocality;
