@@ -166,6 +166,18 @@ export function serializeAgent(row: AgentRow): Agent {
 }
 
 export function serializePermission(row: PermissionRow): Permission {
+  // §RM-PR1 — `permissions.item_id` became nullable when `profile_id` was
+  // added as an alternate target. The wire-level Permission response schema
+  // still types itemId as a non-null string because no code path currently
+  // emits profile-target rows; that is gated on PR2 once readers learn to
+  // serialize either target shape. Until then a NULL itemId here would mean
+  // a row inserted by some future writer landed before PermissionSchema was
+  // widened — surface that loudly rather than coerce to an empty string.
+  if (row.itemId === null) {
+    throw new Error(
+      "serializePermission: profile-target permissions cannot be serialized yet; widen PermissionSchema first",
+    );
+  }
   return {
     id: row.id,
     organizationId: row.organizationId,

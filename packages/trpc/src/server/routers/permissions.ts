@@ -268,6 +268,10 @@ const createPermission = (input: CreatePermissionInput) =>
       organizationId: ctx.identity.organizationId,
       agentId: input.agentId,
       itemId: input.itemId,
+      // §RM-PR1 — profile-target grants are not wired through this router
+      // yet (PR2); item-target rows must explicitly set profileId=null to
+      // satisfy the new exactly-one-target CHECK constraint.
+      profileId: null,
       capability,
       expiresAt,
       grantedBy: ctx.identity.userId,
@@ -447,7 +451,7 @@ const revokePermission = (permissionId: string) =>
               organizationId: ctx.identity.organizationId,
               userId: ctx.identity.userId,
               agentId: permission.agentId,
-              itemId: permission.itemId,
+              itemId: permission.itemId ?? undefined,
               eventType: "permission.revoke",
               result: "denied",
               ipAddress: ctx.ipAddress,
@@ -471,7 +475,7 @@ const revokePermission = (permissionId: string) =>
               organizationId: ctx.identity.organizationId,
               userId: ctx.identity.userId,
               agentId: permission.agentId,
-              itemId: permission.itemId,
+              itemId: permission.itemId ?? undefined,
               eventType: "permission.revoke",
               result: "denied",
               ipAddress: ctx.ipAddress,
@@ -489,7 +493,7 @@ const revokePermission = (permissionId: string) =>
       organizationId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       agentId: permission.agentId,
-      itemId: permission.itemId,
+      itemId: permission.itemId ?? undefined,
       eventType: "permission.revoke",
       result: "allowed",
       ipAddress: ctx.ipAddress,
