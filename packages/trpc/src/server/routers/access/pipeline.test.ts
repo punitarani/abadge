@@ -471,4 +471,89 @@ describe("access pipeline (unified read/use)", () => {
       .where(and(eq(auditLogs.itemId, i3.itemId), eq(auditLogs.result, "denied")));
     expect(denied.length).toBe(1);
   });
+
+  // -------------------------------------------------------------------------
+  // use: persists field + envVarName on mount_reservations row
+  //
+  // Audit meta records the user-requested field/envVarName, but the row also
+  // needs to carry them so redeem (PR4) is a deterministic lookup rather
+  // than re-deriving from scratch and risking divergence.
+  // -------------------------------------------------------------------------
+  test("use persists field + envVarName on mount_reservations row", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      fields: { password: "db-secret-1" },
+    });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const caller = createAgentCaller(db, auth, session.rawToken);
+
+    const result = await caller.access.use({
+      itemId: item.itemId,
+      delivery: "env",
+      field: "password",
+      envVarName: "DB_PASSWORD",
+    });
+
+    const [row] = await db
+      .select()
+      .from(mountReservations)
+      .where(eq(mountReservations.mountId, result.mountId));
+    expect(row).toBeDefined();
+    expect(row?.field).toBe("password");
+    expect(row?.envVarName).toBe("DB_PASSWORD");
+  });
+
+  // -------------------------------------------------------------------------
+  // use without field/envVarName persists NULLs (preserves nullable shape)
+  // -------------------------------------------------------------------------
+  test("use without field/envVarName persists NULLs", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const caller = createAgentCaller(db, auth, session.rawToken);
+
+    const result = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+
+    const [row] = await db
+      .select()
+      .from(mountReservations)
+      .where(eq(mountReservations.mountId, result.mountId));
+    expect(row).toBeDefined();
+    expect(row?.field).toBeNull();
+    expect(row?.envVarName).toBeNull();
+  });
 });

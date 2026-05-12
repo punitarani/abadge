@@ -276,7 +276,7 @@ export const resolveAccess = (
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: resolveAccess is the load-bearing unified pipeline: load item → constraint check → permission lookup (item-or-profile) → audit-staging → storage-mode branch → return. Splitting it would scatter the audit-before-decrypt invariant across helpers.
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const { itemId, action, delivery, field, purpose } = input;
+    const { itemId, action, delivery, field, envVarName, purpose } = input;
     const eventType = eventTypeForAction(action, delivery);
 
     // 1. Load item
@@ -465,6 +465,8 @@ export const resolveAccess = (
         itemId,
         agentId: ctx.identity.agentId,
         delivery,
+        field: field ?? null,
+        envVarName: envVarName ?? null,
         expiresAt,
       }),
     );

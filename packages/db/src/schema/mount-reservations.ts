@@ -23,6 +23,8 @@ export const mountReservations = pgTable(
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     delivery: text("delivery", { enum: ["env", "file"] }).notNull(),
+    field: text("field"),
+    envVarName: text("env_var_name"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
