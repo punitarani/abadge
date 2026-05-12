@@ -445,6 +445,10 @@ export const ProfileSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
   name: NonEmptyString,
+  // §REVAMP-PR5 — stable, customer/tenant-supplied identifier scoped
+  // per-org (partial-unique index, NULL allowed). The auto-default
+  // profile created with each org has `externalId: "default"`.
+  externalId: Schema.NullOr(Schema.String),
   description: Schema.NullOr(Schema.String),
   storageMode: StorageModeSchema,
   wrappedRootKey: Schema.NullOr(Schema.String),

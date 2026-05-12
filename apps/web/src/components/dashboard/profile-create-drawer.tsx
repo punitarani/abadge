@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
-import { StorageModePicker } from "@/components/onboarding/storage-mode-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +20,19 @@ export interface ProfileCreateDrawerProps {
   orgId: string;
 }
 
+/**
+ * §REVAMP-PR5 (Task 9.2) — Profile create form.
+ *
+ * Default storage mode is `server_managed`; the operator opts into
+ * zero-knowledge with an "advanced" toggle. The ZK code path is the
+ * same as before: derive a KEK from a profile password, encrypt a fresh
+ * root key client-side, and call `profiles.bootstrap` with the
+ * wrapped key.
+ *
+ * External ID is optional. It's surfaced because per-customer or
+ * per-tenant provisioning often wants a stable identifier the API
+ * caller controls.
+ */
 export function ProfileCreateDrawer({
   open,
   onOpenChange,
@@ -30,15 +42,19 @@ export function ProfileCreateDrawer({
   const formId = useId();
 
   const [profileName, setProfileName] = useState("");
-  const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
+  const [externalId, setExternalId] = useState("");
+  const [zkEnabled, setZkEnabled] = useState(false);
   const [profilePassword, setProfilePassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const storageMode: StorageMode = zkEnabled ? "zero_knowledge" : "server_managed";
+
   function resetForm(): void {
     setProfileName("");
-    setStorageMode("zero_knowledge");
+    setExternalId("");
+    setZkEnabled(false);
     setProfilePassword("");
     setConfirmPassword("");
     setError("");
@@ -74,6 +90,7 @@ export function ProfileCreateDrawer({
         orgId,
         name: profileName.trim(),
         storageMode,
+        externalId: externalId.trim() || undefined,
       });
 
       // If bootstrap fails after the profile row is created, delete the orphan
@@ -114,11 +131,7 @@ export function ProfileCreateDrawer({
         Cancel
       </Button>
       <Button form={formId} type="submit" disabled={loading}>
-        {loading
-          ? "Creating..."
-          : storageMode === "zero_knowledge"
-            ? "Encrypt & save"
-            : "Create profile"}
+        {loading ? "Creating..." : zkEnabled ? "Encrypt & save" : "Create profile"}
       </Button>
     </div>
   );
@@ -149,9 +162,40 @@ export function ProfileCreateDrawer({
         </p>
       </div>
 
-      <StorageModePicker value={storageMode} onChange={setStorageMode} />
+      <div className="space-y-1.5">
+        <Label htmlFor="drawer-profile-external-id">External ID (optional)</Label>
+        <Input
+          id="drawer-profile-external-id"
+          type="text"
+          placeholder="cust_acme_001"
+          value={externalId}
+          onChange={(e) => setExternalId(e.target.value)}
+          className="font-mono text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          A stable identifier your system controls (per-customer, per-tenant). Unique within the
+          org when set; leave blank if you don't need one.
+        </p>
+      </div>
 
-      {storageMode === "zero_knowledge" && (
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm">
+        <input
+          type="checkbox"
+          checked={zkEnabled}
+          onChange={(e) => setZkEnabled(e.target.checked)}
+          className="mt-0.5 h-4 w-4 cursor-pointer"
+        />
+        <div className="space-y-0.5">
+          <div className="font-medium">Zero-knowledge encryption (advanced)</div>
+          <p className="text-xs text-muted-foreground">
+            The server stores only ciphertext. You set a profile password that the server never
+            sees. Required for secrets you don't trust the server to read. Default is
+            server-managed AES-256-GCM.
+          </p>
+        </div>
+      </label>
+
+      {zkEnabled && (
         <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
           <div className="flex items-center gap-2 text-amber-700">
             <svg
@@ -186,7 +230,7 @@ export function ProfileCreateDrawer({
               onChange={(e) => setProfilePassword(e.target.value)}
               placeholder="Min 12 characters"
               minLength={12}
-              required={storageMode === "zero_knowledge"}
+              required={zkEnabled}
             />
             <PasswordStrength password={profilePassword} />
           </div>
@@ -203,7 +247,7 @@ export function ProfileCreateDrawer({
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Repeat password"
-              required={storageMode === "zero_knowledge"}
+              required={zkEnabled}
             />
           </div>
         </div>

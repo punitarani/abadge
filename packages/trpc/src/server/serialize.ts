@@ -89,6 +89,7 @@ export function serializeProfile(row: ProfileRow): Profile {
     id: row.id,
     organizationId: row.organizationId,
     name: row.name,
+    externalId: row.externalId ?? null,
     description: row.description ?? null,
     storageMode: row.storageMode,
     wrappedRootKey: row.wrappedRootKey ?? null,

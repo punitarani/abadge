@@ -38,6 +38,10 @@ const CreateProfileSchema = Schema.Struct({
   orgId: NonEmptyString,
   name: BoundedNameString,
   description: Schema.optional(Schema.String),
+  // §REVAMP-PR5 — optional, stable, customer-supplied identifier.
+  // Scoped per-org via the partial-unique index added in PR1; NULL means
+  // "no external id" and is always allowed.
+  externalId: Schema.optional(Schema.String),
   storageMode: Schema.Literal("zero_knowledge", "server_managed"),
 });
 
@@ -193,7 +197,7 @@ const loadProfileForWrite = (
 const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const { orgId, name, description, storageMode } = input;
+    const { orgId, name, description, externalId, storageMode } = input;
     const userId = ctx.identity.userId;
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, userId, "admin"));
@@ -206,6 +210,7 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
         id,
         organizationId: orgId,
         name,
+        externalId: externalId ?? null,
         description: description ?? null,
         storageMode,
         createdAt: now,
