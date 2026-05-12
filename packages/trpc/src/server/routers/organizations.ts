@@ -105,8 +105,23 @@ const OrgListItemSchema = Schema.Struct({
   hasBootstrappedProfile: Schema.Boolean,
 });
 
+const DefaultProfileDataSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  externalId: Schema.NullOr(Schema.String),
+  storageMode: Schema.Literal("server_managed", "zero_knowledge"),
+  keyVersion: Schema.Int,
+});
+
+// §REVAMP-PR3 (Task 5.1) — `organizations.create` now seeds a default
+// `server_managed` profile in the same transaction. The response shape
+// returns both so the client can route straight to the dashboard without a
+// follow-up `profiles.create` round trip and without a "profile setup"
+// step. The onboarding gate is dropped in the next commit; until then,
+// auto-seeding is the only way an org is immediately usable after create.
 const CreateOrgResultSchema = Schema.Struct({
   organization: OrgDataSchema,
+  defaultProfile: DefaultProfileDataSchema,
 });
 
 const OrgResultSchema = Schema.Struct({
@@ -251,12 +266,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       );
     }
 
-    // Org + owner-member must succeed or fail together. The slug-race loser's
-    // unique-violation is translated below to SLUG_TAKEN (mirrors
-    // profiles.create / permissions.create). No default profile is seeded —
-    // callers create profiles explicitly via `profiles.create`, and the
-    // onboarding gate (`assertOrgOnboardingComplete`) blocks scoped /
-    // agent calls until at least one bootstrapped profile exists.
+    // Org + owner-member + default profile must succeed or fail together. The
+    // slug-race loser's unique-violation is translated below to SLUG_TAKEN
+    // (mirrors profiles.create / permissions.create). The auto-seeded
+    // server_managed profile makes the org immediately usable — no
+    // separate `profiles.create` round trip on the happy path.
+    const profileId = crypto.randomUUID();
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx.insert(organization).values({
@@ -273,6 +288,21 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
           userId,
           role: "owner",
           createdAt: now,
+        });
+
+        // §REVAMP-PR3 (Task 5.1) — default profile is `server_managed` so
+        // no client-side KDF / ZK password is required to provision. Users
+        // can add ZK profiles later via `profiles.create`. `externalId` is
+        // `"default"` so external provisioning tools have a stable handle.
+        await tx.insert(profiles).values({
+          id: profileId,
+          organizationId: orgId,
+          name: "default",
+          externalId: "default",
+          storageMode: "server_managed",
+          keyVersion: 1,
+          createdAt: now,
+          updatedAt: now,
         });
       }),
     ).pipe(
@@ -295,7 +325,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       eventType: "org.create",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { slug },
+      meta: { slug, autoDefaultProfile: profileId },
     });
 
     return {
@@ -305,6 +335,13 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
         slug,
         logo: input.logo ?? null,
         createdAt: now.toISOString(),
+      },
+      defaultProfile: {
+        id: profileId,
+        name: "default",
+        externalId: "default",
+        storageMode: "server_managed" as const,
+        keyVersion: 1,
       },
     };
   });
