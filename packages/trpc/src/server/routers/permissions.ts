@@ -287,21 +287,22 @@ const createPermission = (input: CreatePermissionInput) =>
       );
     }
 
-    // §RM-PR1 — CAPABILITIES was widened to include the canonical `read`/`use`
-    // pair so the wire schema is forward-compatible, but permissions.create
-    // still routes through CAPABILITY_MATRIX which only carries the legacy
-    // entries. Without this short-circuit, a caller submitting "read" or "use"
-    // would fall through to the matrix check below and receive a misleading
-    // INVALID_CAPABILITY_LOCALITY error. Reject explicitly here so the failure
-    // mode names the real cause and points at the upcoming PR2 wiring.
+    // Item-target grants admit legacy capabilities only — CAPABILITY_MATRIX
+    // is keyed by (locality, storageMode) and carries only the legacy four
+    // (read_ciphertext / reveal_plaintext / mount_env / mount_file). Profile-
+    // target grants accept canonical `read`/`use` via the early-return branch
+    // above; item-target keeps legacy because per-item locality x storage
+    // matching has no canonical analogue. Reject explicitly here so the
+    // failure mode names the workaround instead of bottoming out in a
+    // misleading INVALID_CAPABILITY_LOCALITY from the matrix check below.
     for (const capability of input.capabilities) {
       if ((CANONICAL_CAPABILITIES as readonly string[]).includes(capability)) {
         return yield* Effect.fail(
           new BadRequestError({
             code: "BAD_REQUEST",
-            message: `Capability '${capability}' is not yet routed by permissions.create.`,
-            hint: "PR 1 accepts canonical 'read'/'use' at the schema level but does not yet route them. Use a legacy capability (read_ciphertext, reveal_plaintext, mount_env, mount_file); PR 2 enables the canonical pair.",
-            meta: { capability, canonical: true },
+            message: `Item-target grants do not accept canonical capability '${capability}'.`,
+            hint: "Item-target permissions admit legacy capabilities only (read_ciphertext, reveal_plaintext, mount_env, mount_file). To grant canonical 'read' or 'use', target a profile instead.",
+            meta: { capability, target: "item" },
           }),
         );
       }
