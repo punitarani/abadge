@@ -89,6 +89,7 @@ export function serializeProfile(row: ProfileRow): Profile {
     id: row.id,
     organizationId: row.organizationId,
     name: row.name,
+    externalId: row.externalId ?? null,
     description: row.description ?? null,
     storageMode: row.storageMode,
     wrappedRootKey: row.wrappedRootKey ?? null,
@@ -104,7 +105,14 @@ export function serializeProfile(row: ProfileRow): Profile {
 export function serializeItemSummary(
   row: Pick<
     ItemRow,
-    "id" | "label" | "storageMode" | "cryptoVersion" | "contentVersion" | "createdAt" | "updatedAt"
+    | "id"
+    | "label"
+    | "storageMode"
+    | "cryptoVersion"
+    | "contentVersion"
+    | "profileId"
+    | "createdAt"
+    | "updatedAt"
   >,
 ): ItemSummary {
   return {
@@ -113,6 +121,7 @@ export function serializeItemSummary(
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,
+    profileId: row.profileId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -166,11 +175,14 @@ export function serializeAgent(row: AgentRow): Agent {
 }
 
 export function serializePermission(row: PermissionRow): Permission {
+  // §RM-PR2 — A row sets exactly one of (itemId, profileId); both nullable.
+  // The wire shape now mirrors the row shape so callers can branch.
   return {
     id: row.id,
     organizationId: row.organizationId,
     agentId: row.agentId,
     itemId: row.itemId,
+    profileId: row.profileId,
     capability: row.capability,
     expiresAt: row.expiresAt?.toISOString() ?? null,
     grantedBy: row.grantedBy,

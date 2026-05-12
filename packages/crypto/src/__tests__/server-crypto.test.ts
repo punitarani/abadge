@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { serverDecrypt, serverEncrypt } from "../server/encrypt";
-import { toBase64 } from "../shared/encoding";
+import { fromBase64, toBase64 } from "../shared/encoding";
 
 // Generate a test server key (32 bytes, base64url)
 const TEST_SERVER_KEY = toBase64(crypto.getRandomValues(new Uint8Array(32)));
@@ -32,7 +32,18 @@ describe("Server-managed encryption", () => {
     const plaintext = new TextEncoder().encode("secret");
     const encrypted = await serverEncrypt(plaintext, TEST_SERVER_KEY, 1);
 
-    const tampered = { ...encrypted, ciphertext: `${encrypted.ciphertext.slice(0, -2)}AA` };
+    // Flip the FIRST byte of the underlying ciphertext, then re-encode. Editing
+    // base64url chars directly is fragile because the trailing characters often
+    // contain padding bits that decode to the same byte sequence under multiple
+    // base64 inputs — that produced a no-op tampering and intermittent CI
+    // failures. Operating on the decoded bytes guarantees a real bit flip in
+    // the AES-GCM authenticated payload.
+    const bytes = fromBase64(encrypted.ciphertext);
+    bytes[0] = bytes[0] ^ 0x01;
+    const tampered = {
+      ...encrypted,
+      ciphertext: toBase64(bytes),
+    };
     expect(serverDecrypt(tampered, TEST_SERVER_KEY)).rejects.toThrow();
   });
 

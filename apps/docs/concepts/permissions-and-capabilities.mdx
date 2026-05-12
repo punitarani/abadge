@@ -1,37 +1,74 @@
 ---
 title: "Permissions and capabilities"
-description: "Capability-based access control. Every grant is one row: agent + item + capability."
+description: "Capability-based access control. Two actions (read, use), two targets (item, profile)."
 ---
 
-abadge uses **capability-based** access control. There are no roles, no groups, and no wildcards. To access an item, an agent must have an explicit `permissions` row matching the requested capability.
+abadge uses **capability-based** access control. There are no roles, no
+groups, and no wildcards. To access an item, an agent must have an
+explicit `permissions` row matching the requested capability — either on
+the item itself or on the profile that holds it.
 
-## The four capabilities
+The data model is one row per `(agent, target, capability)` triple. UI
+and API surfaces let you grant multiple capabilities to one
+`(agent, target)` pair atomically — the router writes one row per
+capability inside a single transaction — but every row remains
+independently revokable, with its own `expiresAt`, `createdAt`, and
+`grantedBy`.
 
-| Capability | What it returns | Storage modes | Localities |
-|---|---|---|---|
-| `read_ciphertext` | Encrypted blob for daemon decryption | `zero_knowledge` | local |
-| `reveal_plaintext` | Decrypted plaintext over HTTPS | `server_managed` | any |
-| `mount_env` | Data for environment-variable injection | any | local |
-| `mount_file` | Data for temp-file injection | any | local |
+## The two capabilities
 
-## Capability matrix
+| Capability | What the agent can do | What the agent sees |
+|------------|----------------------|---------------------|
+| `read` | Read the credential plaintext (`POST /v1/access/{itemId}/read`). | The decrypted payload (server-managed) or the ZK envelope it must decrypt locally. |
+| `use`  | Reserve a mount handle (`POST /v1/access/{itemId}/use`) and redeem it through the local daemon. The daemon injects the secret via env var or `0600` temp file. | An opaque `mountId` and an `expiresAt`. Never the plaintext. |
 
-The API enforces this matrix at permission-create time and again at every access:
+Legacy capability names continue to work as aliases and are stored as
+canonical on write:
 
-| | ZK + local | ZK + remote | Server-managed + local | Server-managed + remote |
-|---|---|---|---|---|
-| `read_ciphertext` | ✓ Allowed | ✗ Denied | N/A | N/A |
-| `reveal_plaintext` | N/A | N/A | ✓ Allowed | ✓ Allowed |
-| `mount_env` | ✓ Allowed | ✗ Denied | ✓ Allowed | ✗ Denied |
-| `mount_file` | ✓ Allowed | ✗ Denied | ✓ Allowed | ✗ Denied |
+| Legacy | Canonical |
+|--------|-----------|
+| `read_ciphertext` | `read` |
+| `reveal_plaintext` | `read` |
+| `mount_env` | `use` |
+| `mount_file` | `use` |
 
-Key restrictions:
+## The two grant targets
 
-- Remote agents can never access zero-knowledge items.
-- Remote agents on server-managed items get only `reveal_plaintext`.
-- Mount capabilities require a local runtime to inject into.
+A grant targets either a single item or an entire profile.
 
-Invalid combinations return `INVALID_CAPABILITY_LOCALITY` or `INVALID_CAPABILITY_STORAGE`.
+| Target | Body shape | Scope |
+|--------|-----------|-------|
+| Item | `{ agentId, itemId, capabilities }` | The named item only. |
+| Profile | `{ agentId, profileId, capabilities }` | Every item currently in the profile **and every item added to it in the future**. |
+
+Profile-target grants are powerful — they cover items that don't yet
+exist. Use them when you want a stable contract with an agent
+("Acme Robotics gets `use` on the `acme-corp` profile") and you don't
+want to add a grant every time you rotate a credential.
+
+<Warning>
+  **Profile + `read` is the highest-blast-radius grant in abadge.** It
+  hands the agent the plaintext of every credential currently in the
+  profile and every credential added later. The dashboard surfaces a
+  confirmation dialog before creating one. Prefer `use` or an
+  item-target grant when you can.
+</Warning>
+
+## Runtime constraints
+
+Some `(agent locality, storage mode, capability)` tuples are unreachable
+at runtime. The server pre-checks and rejects them at grant-create time
+with `INVALID_CAPABILITY_LOCALITY` or `INVALID_CAPABILITY_STORAGE`:
+
+| Agent locality | Item storage | `read` | `use` |
+|----------------|--------------|--------|-------|
+| local | server_managed | allowed | allowed |
+| local | zero_knowledge | allowed | allowed |
+| remote | server_managed | allowed | denied (no local daemon) |
+| remote | zero_knowledge | denied (server can't decrypt) | denied |
+
+Profile-target grants pre-check every storage mode present in the
+profile.
 
 ## Permission shape
 
@@ -40,13 +77,15 @@ Invalid combinations return `INVALID_CAPABILITY_LOCALITY` or `INVALID_CAPABILITY
 | `id` | text (PK) | Permission ID |
 | `organizationId` | text | Owning org |
 | `agentId` | text | Agent receiving access |
-| `itemId` | text | Target item |
-| `capability` | text | One of the four capabilities |
+| `itemId` | text \| null | Item target (null if `profileId` is set) |
+| `profileId` | text \| null | Profile target (null if `itemId` is set) |
+| `capability` | text | `read` or `use` (or a legacy alias) |
 | `expiresAt` | timestamptz | Optional auto-expiration |
 | `grantedBy` | text | User who created the grant |
 | `createdAt` | timestamptz | Creation time |
 
-Composite unique index on `(agentId, itemId, capability)` — one permission per triple.
+Composite unique index ensures one permission per
+`(agentId, itemId | profileId, capability)` triple.
 
 ## Decision flow
 
@@ -54,51 +93,34 @@ Every access request follows this exact order:
 
 <Steps>
   <Step title="Authenticate">
-    Resolve the bearer token: `abs_...` session, `abl_/abg_...` API key, or legacy fallback.
+    Resolve the bearer token: `abs_...` session or legacy API key.
   </Step>
   <Step title="Resolve item">
     The item must belong to the same organization as the agent.
   </Step>
   <Step title="Check permission">
-    A row matching `(agentId, itemId, capability)` must exist.
+    A row matching the canonical capability must exist either on the
+    item itself or on its profile.
   </Step>
   <Step title="Check expiry">
     `expiresAt` must be null or in the future.
   </Step>
   <Step title="Enforce matrix">
-    Locality and storage mode must match the capability.
+    Locality + storage mode must match the capability.
   </Step>
   <Step title="Audit">
     Append the attempt — allowed or denied — before returning a response.
   </Step>
-  <Step title="Decrypt">
+  <Step title="Decrypt / reserve">
     Only if every preceding check passed.
   </Step>
 </Steps>
-
-## Procedure mapping
-
-| Procedure | Required capability | Item mode | Locality |
-|---|---|---|---|
-| `access.ciphertext` | `read_ciphertext` | `zero_knowledge` | local |
-| `access.reveal` | `reveal_plaintext` | `server_managed` | any |
-| `access.mount` | `mount_env` or `mount_file` | any | local |
-
-## Delivery flow by scenario
-
-| Scenario | Flow |
-|---|---|
-| User views ZK item in browser | Browser decrypts locally with the in-memory root key |
-| CLI runs command with ZK secret | CLI → daemon (IPC) → daemon decrypts → daemon spawns subprocess with env var |
-| Local MCP uses ZK secret | MCP → daemon (IPC) → daemon decrypts → daemon injects |
-| Remote agent reveals SM secret | Agent → API (HTTPS) → server decrypts → returns plaintext |
-| Remote agent tries ZK | Denied at permission-create or access route |
 
 ## Cascades
 
 | Trigger | Effect |
 |---|---|
-| Agent revoked | Permissions remain (useless until agent re-enabled or removed). Audit gets `result: cascade`. |
+| Agent revoked | Permissions remain (useless until the agent is re-enabled or removed). Audit rows get `result: cascade`. |
 | Item soft-deleted | All access attempts return `ITEM_DELETED` with `result: cascade`. |
 | Member removed | Agents owned by that member are revoked. |
 | Profile deleted | Blocked by `PROFILE_NOT_EMPTY` if any items remain. |

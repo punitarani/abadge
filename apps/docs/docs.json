@@ -74,6 +74,12 @@
             "pages": [
               "workflows/flows"
             ]
+          },
+          {
+            "group": "Migration",
+            "pages": [
+              "migration/v0-to-v1"
+            ]
           }
         ]
       },
@@ -161,7 +167,7 @@
             "group": "Local daemon",
             "pages": [
               "cli/daemon",
-              "cli/vault"
+              "cli/profile-security"
             ]
           },
           {
@@ -207,7 +213,7 @@
             "group": "Tools",
             "pages": [
               "mcp/tools/list_items",
-              "mcp/tools/run_with_secret",
+              "mcp/tools/use_secret",
               "mcp/tools/mount_secret",
               "mcp/tools/release_mount",
               "mcp/tools/get_audit"

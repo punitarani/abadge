@@ -1,6 +1,6 @@
 {
   "name": "@abadge/mcp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "build": "bun run --cwd ../sdk build && bun build --compile ./src/index.ts --outfile ./dist/abadge-mcp",
     "test": "bun test",
     "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
     "start": "bun src/index.ts"

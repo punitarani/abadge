@@ -71,7 +71,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     const existingItemId = crypto.randomUUID();
     await db.insert(items).values({
       id: existingItemId,
-      userId: user.userId,
+      createdBy: user.userId,
       organizationId: org.orgId,
       profileId: profile.profileId,
       label: "existing item",
@@ -259,7 +259,7 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
     const orphanId = crypto.randomUUID();
     await db.insert(items).values({
       id: orphanId,
-      userId: user.userId,
+      createdBy: user.userId,
       organizationId: org.orgId,
       profileId: profile.profileId,
       label: "orphan",

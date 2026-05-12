@@ -26,9 +26,10 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
  * `organizations.create` tests cover:
- *   - atomicity: org + owner-member all or nothing (no default profile is
- *     seeded — callers create profiles explicitly via `profiles.create`,
- *     and the onboarding gate blocks scoped/agent calls until they do)
+ *   - atomicity: org + owner-member + default server_managed profile all
+ *     succeed or fail together (§REVAMP-PR3 Task 5.1 — the default profile
+ *     is auto-seeded so the org is immediately usable; the onboarding gate
+ *     is removed in the same revamp)
  *   - slug-race translation: the insert-time unique violation surfaces as
  *     SLUG_TAKEN, not a raw INTERNAL_SERVER_ERROR
  *
@@ -49,7 +50,7 @@ describe("organizations.create atomicity + slug translation", () => {
     await truncateAll();
   });
 
-  test("creates org + owner-member, leaves the org without any profile", async () => {
+  test("creates org + owner-member + default server_managed profile", async () => {
     const owner = await seedUser(auth);
     const bootstrap = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, bootstrap.orgId);
@@ -60,6 +61,9 @@ describe("organizations.create atomicity + slug translation", () => {
     });
 
     expect(result.organization.slug).toBe("acme-ok");
+    expect(result.defaultProfile.name).toBe("default");
+    expect(result.defaultProfile.externalId).toBe("default");
+    expect(result.defaultProfile.storageMode).toBe("server_managed");
 
     // Caller is registered as owner of the new org.
     const [ownerMember] = await db
@@ -70,13 +74,34 @@ describe("organizations.create atomicity + slug translation", () => {
     expect(ownerMember?.userId).toBe(owner.userId);
     expect(ownerMember?.role).toBe("owner");
 
-    // No default profile is seeded — the org is intentionally unbootstrapped
-    // until the user creates one through `profiles.create`.
+    // §REVAMP-PR3 Task 5.1 — exactly one auto-seeded server_managed profile
+    // exists, with externalId="default" so external provisioning has a stable
+    // handle. The org is immediately usable on first call.
     const profileRows = await db
       .select()
       .from(profiles)
       .where(eq(profiles.organizationId, result.organization.id));
-    expect(profileRows).toHaveLength(0);
+    expect(profileRows).toHaveLength(1);
+    expect(profileRows[0]?.id).toBe(result.defaultProfile.id);
+    expect(profileRows[0]?.name).toBe("default");
+    expect(profileRows[0]?.externalId).toBe("default");
+    expect(profileRows[0]?.storageMode).toBe("server_managed");
+    expect(profileRows[0]?.keyVersion).toBe(1);
+
+    // Audit row carries `meta.autoDefaultProfile` so the seeded profile can be
+    // traced back to the org-create event.
+    const auditRows = await db
+      .select()
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.organizationId, result.organization.id),
+          eq(auditLogs.eventType, "org.create"),
+        ),
+      );
+    expect(auditRows).toHaveLength(1);
+    const meta = auditRows[0]?.meta as { autoDefaultProfile?: string } | null;
+    expect(meta?.autoDefaultProfile).toBe(result.defaultProfile.id);
   });
 
   test("returns SLUG_TAKEN when two concurrent creates race for the same slug", async () => {
@@ -106,7 +131,9 @@ describe("organizations.create atomicity + slug translation", () => {
     expect(err.code).toBe("CONFLICT");
     expect(err.cause?.code).toBe("SLUG_TAKEN");
 
-    // DB state: exactly one org with the raced slug, with no auto-seeded profile.
+    // DB state: exactly one org with the raced slug, with exactly one
+    // auto-seeded default profile (the txn is atomic — winner gets a profile,
+    // loser gets nothing).
     const orgRows = await db.select().from(organization).where(eq(organization.slug, slug));
     expect(orgRows.length).toBe(1);
 
@@ -114,7 +141,8 @@ describe("organizations.create atomicity + slug translation", () => {
       .select()
       .from(profiles)
       .where(eq(profiles.organizationId, orgRows[0]?.id ?? ""));
-    expect(profileRows.length).toBe(0);
+    expect(profileRows.length).toBe(1);
+    expect(profileRows[0]?.externalId).toBe("default");
   });
 
   test("pre-check slug collision returns SLUG_TAKEN (non-racing path)", async () => {

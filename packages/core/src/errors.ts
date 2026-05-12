@@ -55,7 +55,7 @@ const ErrorCodeSchema = Schema.Literal(
   "VALIDATION_ERROR",
   "INTEGRITY_ERROR",
   "SESSION_REFRESH_FAILED",
-  "ONBOARDING_INCOMPLETE",
+  "MOUNT_NOT_FOUND",
 );
 
 export const ValidationIssueSchema = Schema.Struct({

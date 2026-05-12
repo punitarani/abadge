@@ -155,8 +155,9 @@ Org-scoped encryption boundaries. Each profile has a `storageMode` (`zero_knowle
 `server_managed`) and, for zero-knowledge profiles, a `wrappedRootKey` (encrypted by the user's
 master password). Items belong to a profile.
 
-Profiles replace the old single-user `vault` concept. The legacy `vault.*` procedures are retained
-for web app compatibility but will be removed in a future release.
+Profiles replace the old single-user vault concept. All profile management
+flows through `profiles.*` procedures and `POST /v1/orgs/{orgId}/profiles`
+(see [`docs/API.md`](./API.md)).
 
 ### Items
 

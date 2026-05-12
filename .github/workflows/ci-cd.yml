@@ -64,8 +64,25 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
 
-  test:
-    name: Test
+  test-unit:
+    name: Test (unit, with coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - run: bun run test:cov:unit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-unit
+          path: coverage/unit/lcov.info
+          if-no-files-found: error
+
+  test-integration:
+    name: Test (integration, with coverage)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -89,7 +106,87 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      - run: bun run test
+      - run: bun run test:cov:integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-integration
+          path: coverage/integration/lcov.info
+          if-no-files-found: error
+
+  test-web:
+    name: Test (web, no coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd apps/web test
+
+  coverage-comment:
+    name: Coverage PR comment
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration]
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage/unit
+        continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: coverage/integration
+        continue-on-error: true
+      - name: Build coverage comment
+        run: bun scripts/coverage/comment.ts
+      - uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage
+          path: coverage-comment.md
+
+  e2e:
+    name: E2E (API + CLI + MCP)
+    runs-on: ubuntu-latest
+    needs: [typecheck]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: abadge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d abadge_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/abadge_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      # Build the CLI binary up-front so cli/*.test.ts spawns the compiled
+      # artifact (faster, and exercises the same binary users run).
+      - name: Build CLI binary
+        run: bun run --cwd packages/cli build
+      - name: Run e2e tests
+        run: bun run test:e2e
 
   build-api:
     name: API Server (Workers)
@@ -163,7 +260,7 @@ jobs:
   db-migrate:
     name: Run Production Migrations
     runs-on: ubuntu-latest
-    needs: [format, lint, typecheck, test, build-api, build-cli, build-web, db-validate]
+    needs: [format, lint, typecheck, test-unit, test-integration, test-web, e2e, build-api, build-cli, build-web, db-validate]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}

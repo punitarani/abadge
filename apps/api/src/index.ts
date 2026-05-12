@@ -10,6 +10,9 @@ import { trimTrailingSlash } from "hono/trailing-slash";
 import { getConnectionString, getDb } from "./lib/db";
 import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
+import { requestId } from "./middleware/request-id";
+import { getOpenApiDocument } from "./rest/openapi";
+import { handleV1Request } from "./rest/v1";
 import type { Bindings } from "./types";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -35,6 +38,9 @@ app.use(
 
 // Global middleware
 app.use(trimTrailingSlash());
+// X-Request-Id: echo a valid caller-supplied id or mint one. Runs before
+// CORS/auth so every response — including 4xx/5xx — carries the header.
+app.use("*", requestId);
 app.use("*", secureHeaders());
 app.use("*", async (c, next) =>
   cors({
@@ -48,6 +54,9 @@ app.use("*", async (c, next) =>
 // Rate limiting
 app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
 app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
+// `/v1/*` rate limit matches `/trpc/*` — both surfaces hit the same
+// procedures via the same caller factory.
+app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 
 // Wrap bare Better Auth 4xx responses into the canonical {code, message, hint, meta} envelope.
 app.use("/api/auth/*", authEnvelopeMiddleware);
@@ -65,6 +74,13 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 });
 
 app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
+
+// Canonical REST surface. Routes are derived from the tRPC router's
+// `.meta({ openapi })` annotations — see `apps/api/src/rest/v1.ts`.
+// `/v1/openapi.json` must be registered BEFORE the `/v1/*` catch-all so
+// the spec endpoint isn't shadowed.
+app.get("/v1/openapi.json", (c) => c.json(getOpenApiDocument()));
+app.all("/v1/*", (c) => handleV1Request(c));
 
 // Health check
 app.get("/health", (c) => c.json({ status: "ok" }));

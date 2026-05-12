@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import packageJson from "../package.json";
 import { createAgentCommand } from "./commands/agent";
+import { registerDeprecatedAliases } from "./commands/aliases";
 import { createAuditCommand } from "./commands/audit";
 import { createDaemonCommand } from "./commands/daemon";
 import { createExportCommand } from "./commands/export-cmd";
@@ -12,7 +13,7 @@ import { createOrgCommand } from "./commands/org";
 import { createPermissionCommand } from "./commands/permission";
 import { createProfileCommand } from "./commands/profile";
 import { createRunCommand } from "./commands/run";
-import { createVaultCommand } from "./commands/vault";
+import { createUseCommand } from "./commands/use";
 
 const program = new Command()
   .name("abadge")
@@ -23,14 +24,6 @@ const program = new Command()
 program.addCommand(createLoginCommand());
 program.addCommand(createLogoutCommand());
 program.addCommand(createDaemonCommand());
-// vault is a deprecated alias for 'profile'. _hidden removes it from
-// `abadge --help` while keeping the subcommands functional for backwards
-// compat. commander 13 does not expose a public hideHelp() method at runtime
-// (only in typings); _hidden is the internal instance property that the Help
-// formatter checks. Remove when the vault alias is dropped.
-const vaultCmd = createVaultCommand();
-(vaultCmd as unknown as { _hidden: boolean })._hidden = true;
-program.addCommand(vaultCmd);
 program.addCommand(createItemCommand());
 program.addCommand(createAgentCommand());
 program.addCommand(createPermissionCommand());
@@ -39,8 +32,13 @@ program.addCommand(createMountCommand());
 program.addCommand(createAuditCommand());
 program.addCommand(createOrgCommand());
 program.addCommand(createProfileCommand());
+program.addCommand(createUseCommand());
 program.addCommand(createImportCommand());
 program.addCommand(createExportCommand());
+
+// Attach hidden deprecated-verb aliases (create -> add, delete -> rm, etc.).
+// Must run after every primary command is registered.
+registerDeprecatedAliases(program);
 
 export { program };
 

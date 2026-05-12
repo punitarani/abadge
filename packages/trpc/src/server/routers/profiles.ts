@@ -10,7 +10,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, isNull, sql } from "@abadge/db";
-import { items, profiles } from "@abadge/db/schema";
+import { auditLogs, items, permissions as permissionRecords, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -38,6 +38,10 @@ const CreateProfileSchema = Schema.Struct({
   orgId: NonEmptyString,
   name: BoundedNameString,
   description: Schema.optional(Schema.String),
+  // §REVAMP-PR5 — optional, stable, customer-supplied identifier.
+  // Scoped per-org via the partial-unique index added in PR1; NULL means
+  // "no external id" and is always allowed.
+  externalId: Schema.optional(Schema.String),
   storageMode: Schema.Literal("zero_knowledge", "server_managed"),
 });
 
@@ -193,7 +197,7 @@ const loadProfileForWrite = (
 const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const { orgId, name, description, storageMode } = input;
+    const { orgId, name, description, externalId, storageMode } = input;
     const userId = ctx.identity.userId;
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, userId, "admin"));
@@ -206,6 +210,7 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
         id,
         organizationId: orgId,
         name,
+        externalId: externalId ?? null,
         description: description ?? null,
         storageMode,
         createdAt: now,
@@ -452,7 +457,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
           .from(profiles)
           .where(eq(profiles.id, profileId));
 
-        if (!locked || !locked.wrappedRootKey) {
+        if (!locked?.wrappedRootKey) {
           throw new NotFoundError({
             code: "PROFILE_NOT_FOUND",
             message: "Profile is not bootstrapped",
@@ -561,7 +566,46 @@ const deleteProfile = (profileId: string) =>
       );
     }
 
-    yield* tryAsync(() => ctx.db.delete(profiles).where(eq(profiles.id, profileId)));
+    // §RM-PR2 — Before deleting the profile, snapshot every permission
+    // targeting it so we can write one permission.revoke_cascade audit row
+    // per implicitly-invalidated grant. The DB ON DELETE CASCADE handles
+    // the actual row removal; the audit table has no FK so the rows survive.
+    // All three steps land in a single transaction so a deleted-without-audit
+    // state is unreachable.
+    yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        const grants = await tx
+          .select({
+            id: permissionRecords.id,
+            agentId: permissionRecords.agentId,
+            capability: permissionRecords.capability,
+          })
+          .from(permissionRecords)
+          .where(eq(permissionRecords.profileId, profileId));
+
+        if (grants.length > 0) {
+          await tx.insert(auditLogs).values(
+            grants.map((g) => ({
+              organizationId: profile.organizationId,
+              userId,
+              agentId: g.agentId,
+              profileId,
+              eventType: "permission.revoke_cascade" as const,
+              result: "cascade" as const,
+              meta: {
+                reason: "profile_deleted",
+                permissionId: g.id,
+                agentId: g.agentId,
+                capability: g.capability,
+              },
+              ipAddress: ctx.ipAddress ?? null,
+            })),
+          );
+        }
+
+        await tx.delete(profiles).where(eq(profiles.id, profileId));
+      }),
+    );
 
     yield* logSessionAudit({
       organizationId: profile.organizationId,
@@ -582,21 +626,53 @@ const KeyVersionResultSchema = Schema.Struct({
 
 export const profilesRouter = createTrpcRouter({
   create: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/orgs/{orgId}/profiles",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(CreateProfileSchema))
     .output(strictSchema(ProfileResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createProfile(input))),
 
   list: sessionProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/orgs/{orgId}/profiles",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(ProfileListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listProfiles(input.orgId))),
 
   get: sessionProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/profiles/{profileId}",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileIdSchema))
     .output(strictSchema(ProfileResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getProfile(input.profileId))),
 
   bootstrap: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/profiles/{profileId}/bootstrap",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileBootstrapSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, bootstrapProfile(input))),
@@ -612,11 +688,27 @@ export const profilesRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, setupProfileRecovery(input))),
 
   rotateKey: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/profiles/{profileId}/rotate",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileRotateKeySchema))
     .output(strictSchema(KeyVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateProfileKey(input))),
 
   delete: sessionProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/profiles/{profileId}",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteProfile(input.profileId))),

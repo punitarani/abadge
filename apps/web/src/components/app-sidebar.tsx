@@ -58,8 +58,8 @@ const navGroups = [
 }>;
 
 const secondaryNavItems = [
-  { path: "support", label: "Support", icon: LifeBuoy },
-  { path: "feedback", label: "Feedback", icon: Send },
+  { href: "mailto:support@abadge.io", label: "Support", icon: LifeBuoy },
+  { href: "https://abadge.userjot.com/", label: "Feedback", icon: Send },
 ] as const;
 
 const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
@@ -171,15 +171,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {secondaryNavItems.map((item) => {
-                const href = `/${item.path}`;
-                const isActive = pathname.startsWith(href);
+                const isMailto = item.href.startsWith("mailto:");
                 return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href}>
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild>
+                      <a
+                        href={item.href}
+                        {...(isMailto ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+                      >
                         <item.icon />
                         <span>{item.label}</span>
-                      </Link>
+                      </a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

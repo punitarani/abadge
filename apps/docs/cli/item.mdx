@@ -5,14 +5,14 @@ description: "Create, list, get, update, and delete credentials."
 
 The `item` subcommands operate against the active profile.
 
-## `abadge item create`
+## `abadge item add`
 
 Create a new item interactively.
 
 ```bash
-abadge item create
-abadge item create --label "OpenAI" --kind api_key --storage-mode server_managed
-abadge item create --label "Deploy SSH key" --kind ssh_key --storage-mode zero_knowledge
+abadge item add
+abadge item add --label "OpenAI" --kind api_key --storage-mode server_managed
+abadge item add --label "Deploy SSH key" --kind ssh_key --storage-mode zero_knowledge
 ```
 
 | Flag | Description |
@@ -67,13 +67,13 @@ abadge item update <item-id>
 abadge item update <item-id> --json
 ```
 
-## `abadge item delete <id>`
+## `abadge item rm <id>`
 
 Soft-delete the item. Ciphertext is retained but inaccessible; permissions cascade-deny.
 
 ```bash
-abadge item delete <item-id>
-abadge item delete <item-id> --force
+abadge item rm <item-id>
+abadge item rm <item-id> --force
 ```
 
 `--force` skips the confirmation prompt.

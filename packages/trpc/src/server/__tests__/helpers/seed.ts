@@ -92,15 +92,14 @@ export async function seedOrg(
     slug?: string;
     /**
      * When `false`, skips the default `server_managed` profile seed so the
-     * org is left in the "no bootstrapped profile" state. Use this for tests
-     * that specifically exercise the `ONBOARDING_INCOMPLETE` gate or the
-     * onboarding flow. Defaults to `true` because most tests need a usable
-     * org and `scopedSessionProcedure` enforces "at least one bootstrapped
-     * profile" at-use.
+     * org is left in the "no profile" state. Used by the few tests that
+     * exercise the rare "all profiles deleted" code paths. Defaults to
+     * `true` so seeded orgs are immediately usable.
      *
-     * Note: `organizations.create` itself does NOT seed a profile (that
-     * behavior was removed); this helper still seeds one by default purely
-     * as a convenience for the bulk of integration tests.
+     * Note: the onboarding-completeness gate was removed in §REVAMP-PR3
+     * Task 5.2; production `organizations.create` auto-seeds a default
+     * profile (Task 5.1). This helper mirrors that behaviour for tests
+     * that bypass the tRPC layer.
      */
     withDefaultProfile?: boolean;
   },
@@ -152,15 +151,40 @@ export interface SeedProfileResult {
 export async function seedProfile(
   db: Database,
   orgId: string,
-  overrides?: { name?: string; storageMode?: "zero_knowledge" | "server_managed" },
+  overrides?: {
+    name?: string;
+    storageMode?: "zero_knowledge" | "server_managed";
+    /**
+     * When true, populates `wrappedRootKey`/`kdfSalt`/`kdfParams` so the
+     * profile passes the "is bootstrapped" precondition guarded by the ZK
+     * mutation procedures (`changePassword`, `setupRecovery`, `rotateKey`).
+     * Defaults to false; pass true for tests that exercise those paths
+     * without driving the client-side KDF.
+     */
+    bootstrapped?: boolean;
+  },
 ): Promise<SeedProfileResult> {
   const profileId = uuid();
+  const bootstrapped = overrides?.bootstrapped === true;
 
   await db.insert(profiles).values({
     id: profileId,
     organizationId: orgId,
     name: overrides?.name ?? `profile-${uuid()}`,
     storageMode: overrides?.storageMode ?? "server_managed",
+    ...(bootstrapped
+      ? {
+          wrappedRootKey: "seed-wrapped-root-key",
+          kdfSalt: "seed-salt",
+          kdfParams: {
+            algorithm: "argon2id" as const,
+            memory: 65536,
+            iterations: 3,
+            parallelism: 1,
+            hashLength: 32,
+          },
+        }
+      : {}),
   });
 
   return { profileId };
@@ -199,7 +223,7 @@ export async function seedServerItem(
     id: itemId,
     organizationId: opts.orgId,
     profileId: opts.profileId ?? null,
-    userId: opts.userId,
+    createdBy: opts.userId,
     label,
     storageMode: "server_managed",
     serverCiphertext: encrypted.ciphertext,
@@ -235,7 +259,7 @@ export async function seedZkItem(
     id: itemId,
     organizationId: opts.orgId,
     profileId: opts.profileId,
-    userId: opts.userId,
+    createdBy: opts.userId,
     label,
     storageMode: "zero_knowledge",
     encryptedItemKey: fakeBlob(56),

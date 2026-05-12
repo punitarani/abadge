@@ -1,4 +1,5 @@
 import { STORAGE_MODES } from "@abadge/core";
+import { sql } from "drizzle-orm";
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
@@ -11,6 +12,11 @@ export const profiles = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    // §RM-PR1 — Optional caller-supplied identifier used for idempotent
+    // provisioning of profiles from an external system. Nullable for backward
+    // compat with profiles created before this column existed; required only
+    // for API-created profiles in the upcoming v1 REST surface.
+    externalId: text("external_id"),
     storageMode: text("storage_mode", { enum: STORAGE_MODES }).notNull(),
     wrappedRootKey: text("wrapped_root_key"),
     kdfSalt: text("kdf_salt"),
@@ -23,5 +29,11 @@ export const profiles = pgTable(
   (table) => [
     index("profiles_organization_id_idx").on(table.organizationId),
     uniqueIndex("profiles_name_idx").on(table.organizationId, table.name),
+    // §RM-PR1 — Partial unique index: enforce uniqueness only when externalId
+    // is set, so multiple legacy profiles per org without an externalId remain
+    // valid.
+    uniqueIndex("profiles_org_external_id_idx")
+      .on(table.organizationId, table.externalId)
+      .where(sql`${table.externalId} IS NOT NULL`),
   ],
 );

@@ -14,13 +14,6 @@ import { decideResumeAction } from "./onboarding-triage";
 
 type OnboardingMode = "choose" | "create" | "join";
 
-interface ResumeState {
-  orgId: string;
-  orgName: string;
-  orgSlug: string;
-  step: 0 | 1;
-}
-
 export default function OnboardingPage(): React.ReactElement | null {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = authClient.useSession();
@@ -28,20 +21,20 @@ export default function OnboardingPage(): React.ReactElement | null {
   // reference per render. Depending on session.user.id keeps effects from
   // re-firing (and redoing organizations.list) on unrelated renders.
   const userId = session?.user?.id ?? null;
-  const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
+  // Only need `clearActiveOrg` here: the active-org adoption path that used
+  // to call setActiveOrg(userId, org) on a resume-profile branch was deleted
+  // by main's PR3 (server auto-provisions a default profile, so onboarding
+  // never resumes mid-org-creation). The session-user-change scrub guard
+  // below still needs clearActiveOrg.
   const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
 
   // Mode selects which surface to render: a two-option choose screen for
-  // fresh signups, the existing create-org flow, or the invite-paste form.
+  // fresh signups, the create-org form, or the invite-paste form.
   const [mode, setMode] = useState<OnboardingMode>("choose");
 
-  // Tracks the resume-triage mount effect so we don't flash step 1 while we
-  // decide whether the user should resume step 2 or redirect to overview.
+  // Tracks the resume-triage mount effect so we don't flash the form while
+  // we decide whether the user should redirect to overview.
   const [isCheckingOrgs, setIsCheckingOrgs] = useState(true);
-
-  // Seed for CreateOrgForm when resuming a partial onboarding (org row exists
-  // but profile wasn't bootstrapped). null means "fresh create".
-  const [resumeState, setResumeState] = useState<ResumeState | null>(null);
 
   // Auth guard — unauthenticated visitors shouldn't see the create-org form.
   // Redirect happens in an effect to avoid side-effects during render.
@@ -51,10 +44,10 @@ export default function OnboardingPage(): React.ReactElement | null {
     }
   }, [sessionPending, userId, router]);
 
-  // Resume-triage: if the user abandoned onboarding (tab close after org
-  // create but before profile bootstrap), skip straight to step 2 for that
-  // org. If they are fully onboarded, redirect to /overview. If they have no
-  // orgs, fall through to the choose screen.
+  // Resume-triage: if the user already has any org, redirect to /overview.
+  // PR3's auto-default profile makes every fresh org immediately usable;
+  // an admin who deletes the default profile recovers from the profiles
+  // page, not from this onboarding flow.
   useEffect(() => {
     if (sessionPending || !userId) return;
 
@@ -75,34 +68,19 @@ export default function OnboardingPage(): React.ReactElement | null {
     }
 
     let cancelled = false;
-    const applyResume = (action: ReturnType<typeof decideResumeAction>): void => {
-      if (action.kind === "redirect") {
-        router.replace("/overview");
-        return;
-      }
-      if (action.kind === "resume-profile") {
-        const { org } = action;
-        setActiveOrg(userId, { id: org.id, slug: org.slug, name: org.name, logo: org.logo });
-        setResumeState({
-          orgId: org.id,
-          orgName: org.name,
-          orgSlug: org.slug,
-          step: 1,
-        });
-        // An org already exists for this user (they abandoned after step 1).
-        // Skip the choose screen and resume on the profile-setup step.
-        setMode("create");
-      }
-      setIsCheckingOrgs(false);
-    };
     (async () => {
       try {
         const listResult = await browserTrpcClient.organizations.list.query();
         if (cancelled) return;
-        applyResume(decideResumeAction(listResult.organizations ?? []));
+        const action = decideResumeAction(listResult.organizations ?? []);
+        if (action.kind === "redirect") {
+          router.replace("/overview");
+          return;
+        }
+        setIsCheckingOrgs(false);
       } catch (err) {
-        // If the resume probe fails (network, auth race, etc.), fall through
-        // to the choose screen. Users can still create a new org.
+        // If the resume probe fails (network, auth race, etc.), fall
+        // through to the choose screen. Users can still create a new org.
         console.warn("[onboarding] Failed to detect existing org state:", err);
         if (!cancelled) setIsCheckingOrgs(false);
       }
@@ -111,7 +89,7 @@ export default function OnboardingPage(): React.ReactElement | null {
     return () => {
       cancelled = true;
     };
-  }, [sessionPending, userId, router, setActiveOrg, clearActiveOrg]);
+  }, [sessionPending, userId, router, clearActiveOrg]);
 
   if (sessionPending || !session?.user || isCheckingOrgs) {
     return (
@@ -146,10 +124,7 @@ export default function OnboardingPage(): React.ReactElement | null {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setMode("create");
-                      setResumeState(null);
-                    }}
+                    onClick={() => setMode("create")}
                     className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
@@ -158,7 +133,8 @@ export default function OnboardingPage(): React.ReactElement | null {
                     <div className="space-y-1">
                       <div className="text-base font-semibold">Create a new organization</div>
                       <p className="text-sm text-muted-foreground">
-                        You'll be the owner. Set up profiles, items, and agents.
+                        You'll be the owner. A default profile is created so you can store secrets
+                        right away.
                       </p>
                     </div>
                   </button>
@@ -204,15 +180,11 @@ export default function OnboardingPage(): React.ReactElement | null {
               </div>
             )}
 
-            {/* Create path: shared CreateOrgForm. */}
+            {/* Create path: single-step CreateOrgForm. */}
             {mode === "create" && (
               <CreateOrgForm
                 variant="card"
-                initialOrg={resumeState ?? undefined}
-                onBack={() => {
-                  setMode("choose");
-                  setResumeState(null);
-                }}
+                onBack={() => setMode("choose")}
                 onSuccess={() => {
                   router.push("/overview");
                 }}

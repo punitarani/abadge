@@ -29,6 +29,7 @@ export interface ProfileResolverClient {
         orgId: string;
         name: string;
         storageMode: "zero_knowledge" | "server_managed";
+        externalId?: string;
       }) => Promise<{ profile: { id: string } }>;
     };
     list: {
@@ -41,6 +42,7 @@ export interface ResolveProfileInput {
   orgId: string;
   name: string;
   storageMode: "zero_knowledge" | "server_managed";
+  externalId?: string;
 }
 
 /**

@@ -201,8 +201,7 @@ describe("handler secret size guard — W3P4-001", () => {
    * throwing, this test would fail, exposing the original vulnerability.
    */
   test("9KB PEM-shaped secret rejected before spawn — no plaintext reaches LLM (W3P4-001 discrimination)", async () => {
-    const pemLikeSecret =
-      "-----BEGIN PRIVATE KEY-----\n" + "A".repeat(8500) + "\n-----END PRIVATE KEY-----\n";
+    const pemLikeSecret = `-----BEGIN PRIVATE KEY-----\n${"A".repeat(8500)}\n-----END PRIVATE KEY-----\n`;
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
     const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(pemLikeSecret);
 
@@ -469,13 +468,34 @@ describe("buildChildEnv ABADGE_* stripping", () => {
   });
 
   test("child subprocess launched via runCommand does not inherit ABADGE_SESSION_TOKEN", async () => {
-    // Inject the sentinel and one explicitly-allowed secret.
-    const childEnv = { ...buildChildEnv(), ABADGE_SECRET: "the-injected-secret-value" };
-    const { stdout } = await runCommand("/usr/bin/env", [], childEnv);
-    // Only ABADGE_SECRET should appear — sentinels must be stripped.
+    // Use a deliberately small env so `/usr/bin/env` output stays under the
+    // runCommand STREAM_CAP_BYTES (8KB) limit — otherwise the receive buffer
+    // can be truncated mid-output and the assertion becomes flaky on hosts
+    // whose PATH alone exceeds the cap (CI/IDE env vars are large).
+    process.env.UNRELATED_VAR = "ok";
+    const childEnv: Record<string, string | undefined> = {
+      ...buildChildEnv(),
+      ABADGE_SECRET: "the-injected-secret-value",
+    };
+    // Strip everything except the sentinels + the explicitly-allowed
+    // ABADGE_SECRET so the assertion has a deterministic, bounded payload.
+    const trimmed: Record<string, string | undefined> = {};
+    for (const key of [
+      "PATH",
+      "UNRELATED_VAR",
+      "ABADGE_SECRET",
+      "ABADGE_SESSION_TOKEN",
+      "ABADGE_API_KEY",
+      "ABADGE_AGENT_ID",
+    ]) {
+      if (key in childEnv) trimmed[key] = childEnv[key];
+    }
+    const { stdout } = await runCommand("/usr/bin/env", [], trimmed);
     expect(stdout).toContain("ABADGE_SECRET=the-injected-secret-value");
+    expect(stdout).toContain("UNRELATED_VAR=ok");
     expect(stdout).not.toContain("ABADGE_SESSION_TOKEN");
     expect(stdout).not.toContain("ABADGE_API_KEY");
     expect(stdout).not.toContain("ABADGE_AGENT_ID");
+    delete process.env.UNRELATED_VAR;
   });
 });

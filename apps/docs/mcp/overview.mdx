@@ -20,7 +20,7 @@ The model **never receives raw secret material**. Tools either operate on metada
 | Tool | Purpose |
 |---|---|
 | [`list_items`](/mcp/tools/list_items) | Item metadata only |
-| [`run_with_secret`](/mcp/tools/run_with_secret) | Run a command with a secret injected as an env var. Output redacted, capped at 4 KB. |
+| [`use_secret`](/mcp/tools/use_secret) | Run a command with a secret injected as an env var. Subprocess output is never returned to the model (only exit code, duration, line counts). |
 | [`mount_secret`](/mcp/tools/mount_secret) | Mount a secret as a `0600` temp file. Returns an opaque `mountId`. Auto-deletes after 5 minutes. |
 | [`release_mount`](/mcp/tools/release_mount) | Release a mounted secret early. |
 | [`get_audit`](/mcp/tools/get_audit) | Fetch recent audit entries. |

@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import type { BulkMountEnvItem } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
-import { auditLogs } from "@abadge/db/schema";
+import { auditLogs, items } from "@abadge/db/schema";
 import type { AppBindings, BaseRequestContext } from "../../context";
 import { createTrpcCallerFactory } from "../../init";
 import { appRouter } from "../../router";
@@ -560,6 +561,555 @@ describe("access", () => {
         expect(trpcError.cause?.code).toBe("FIELD_NOT_FOUND");
         const availableFields = trpcError.cause?.meta?.availableFields ?? [];
         expect(availableFields).toContain("username");
+      }
+    });
+  });
+
+  describe("access.bulkMountEnv", () => {
+    test("returns only items in the input profile that the agent has mount_env on", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+
+      const profileA = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+      const profileB = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      // Two items in profile A: one granted, one not.
+      const grantedA = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileA.profileId,
+        label: "openai-key",
+        fields: { value: "sk-A" },
+      });
+      const ungranted = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileA.profileId,
+        fields: { value: "should-not-appear" },
+      });
+
+      // One item in profile B that the agent DOES have mount_env on — must
+      // NOT come back when scoping to profile A. Profile is the trust boundary.
+      const grantedB = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profileB.profileId,
+        label: "redis-url",
+        fields: { value: "redis://b" },
+      });
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: grantedA.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: grantedB.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profileA.profileId });
+      const items = result.items as ReadonlyArray<BulkMountEnvItem>;
+      const ids = items.map((i) => i.itemId).sort();
+      expect(ids).toEqual([grantedA.itemId].sort());
+      expect(ids).not.toContain(ungranted.itemId);
+      expect(ids).not.toContain(grantedB.itemId);
+    });
+
+    test("excludes items granted only read_ciphertext (capability filter)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        fields: { value: "x" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      // ZK-style read capability — not mount_env. ZK items aren't even
+      // applicable here but the capability filter still applies generally.
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+      expect(result.items).toEqual([]);
+    });
+
+    test("excludes items where the mount_env permission has expired", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        fields: { value: "stale" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+        expiresAt: new Date(Date.now() - 60_000), // expired 1 min ago
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+      expect(result.items).toEqual([]);
+    });
+
+    test("rejects remote agents at the gate with PERMISSION_DENIED", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "remote",
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+        throw new Error("Expected bulkMountEnv to reject remote agent");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("PERMISSION_DENIED");
+      }
+    });
+
+    test("returns PROFILE_NOT_FOUND for a profileId in another org (no existence leak)", async () => {
+      const owner = await seedUser(auth);
+      const org1 = await seedOrg(auth, owner.userId);
+      const org2 = await seedOrg(auth, owner.userId);
+      const otherProfile = await seedProfile(db, org2.orgId, { storageMode: "server_managed" });
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org1.orgId,
+        kind: "local_cli",
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: otherProfile.profileId });
+        throw new Error("Expected bulkMountEnv to reject cross-org profile lookup");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("PROFILE_NOT_FOUND");
+      }
+    });
+
+    test("writes one access.mount_env audit row per included item with meta.viaBulk = true", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "server_managed" });
+
+      const item1 = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "key1",
+        fields: { value: "v1" },
+      });
+      const item2 = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "key2",
+        fields: { value: "v2" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item1.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item2.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+
+      const rows = await db
+        .select()
+        .from(auditLogs)
+        .where(
+          and(eq(auditLogs.eventType, "access.mount_env"), eq(auditLogs.agentId, agent.agentId)),
+        );
+      expect(rows.length).toBe(2);
+      for (const r of rows) {
+        const meta = (r.meta as { viaBulk?: boolean } | null) ?? {};
+        expect(meta.viaBulk).toBe(true);
+        expect(r.profileId).toBe(profile.profileId);
+        expect(r.result).toBe("allowed");
+      }
+    });
+
+    test("does NOT write phantom 'allowed' audit rows when a later item fails (Greptile P1)", async () => {
+      // Regression for Greptile P1: if the bulk loop wrote audit rows
+      // inline, the earlier ZK items would leave "allowed" rows when a
+      // later item triggered IntegrityError mid-loop, claiming successful
+      // delivery for items the agent never received. The staging fix
+      // discards those rows when Effect.fail short-circuits.
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+
+      const goodZk = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "good-zk",
+      });
+      const corruptZk = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+        label: "corrupt-zk",
+      });
+      // Force one item into the corrupt-envelope branch that bulkMountEnv
+      // hard-fails on. encryptedItemKey is nullable in the schema, so
+      // clearing it leaves the row visible to the JOIN (still has profileId
+      // and a permission row) but the bulk loop's integrity check rejects
+      // it mid-iteration. This is the exact crash window the staging fix
+      // is supposed to protect against.
+      await db.update(items).set({ encryptedItemKey: null }).where(eq(items.id, corruptZk.itemId));
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: goodZk.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: corruptZk.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await agentCaller.access.bulkMountEnv({ profileId: profile.profileId });
+        throw new Error("expected bulk call to fail on corrupt item");
+      } catch (error) {
+        const trpcError = error as { cause?: { code?: string } };
+        expect(trpcError.cause?.code).toBe("INTEGRITY_ERROR");
+      }
+
+      // Audit invariant: ZERO "allowed" rows should exist for either item.
+      // The corrupt item should have one "denied" row (factually correct);
+      // the good item should have NO audit row at all (its staged "allowed"
+      // was discarded when the integrity error short-circuited the gen).
+      const rows = await db
+        .select()
+        .from(auditLogs)
+        .where(
+          and(eq(auditLogs.eventType, "access.mount_env"), eq(auditLogs.agentId, agent.agentId)),
+        );
+      const allowed = rows.filter((r) => r.result === "allowed");
+      const denied = rows.filter((r) => r.result === "denied");
+      expect(allowed.length).toBe(0);
+      expect(denied.length).toBe(1);
+      expect(denied[0]?.itemId).toBe(corruptZk.itemId);
+    });
+
+    test("returns mixed ZK + server-managed items in one response", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const zkProfile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+
+      const zkItem = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: zkProfile.profileId,
+        label: "zk-secret",
+      });
+      // server-managed items can also live alongside ZK items in a profile
+      // (profile.storageMode is the "default" — items can override). Seed one
+      // here and grant mount_env on both.
+      const smItem = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: zkProfile.profileId,
+        label: "sm-secret",
+        fields: { value: "v-sm" },
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: zkItem.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: smItem.itemId,
+        capability: "mount_env",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+      const result = await agentCaller.access.bulkMountEnv({ profileId: zkProfile.profileId });
+      expect(result.items.length).toBe(2);
+      // strictSchema's output type collapses unions into `{}` at the trpc-caller
+      // boundary; the runtime shape matches BulkMountEnvItem so we re-narrow here.
+      const items = result.items as ReadonlyArray<BulkMountEnvItem>;
+      const byId = new Map(items.map((i) => [i.itemId, i]));
+      const zk = byId.get(zkItem.itemId);
+      const sm = byId.get(smItem.itemId);
+      expect(zk?.storageMode).toBe("zero_knowledge");
+      expect(sm?.storageMode).toBe("server_managed");
+      if (zk?.storageMode === "zero_knowledge") {
+        // ZK envelope passes through to the daemon for in-process decryption.
+        expect(zk.encryptedItemKey).toBeTruthy();
+        expect(zk.ciphertext).toBeTruthy();
+        expect(zk.profileId).toBe(zkProfile.profileId);
+      }
+      if (sm?.storageMode === "server_managed") {
+        expect(sm.payload.fields.value).toBe("v-sm");
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Coverage-focused edge-case branches that the happy path does not hit.
+  // -------------------------------------------------------------------------
+  describe("access.ciphertext branch coverage", () => {
+    test("remote agent cannot read ciphertext (PERMISSION_DENIED + audit)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "remote",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("remote agent should be denied ciphertext");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(e.cause?.code).toBe("PERMISSION_DENIED");
+      }
+
+      const audits = await db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.itemId, item.itemId), eq(auditLogs.result, "denied")));
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("ciphertext on a server-managed item rejects with BAD_REQUEST", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("ciphertext on a server-managed item should reject");
+      } catch (error: unknown) {
+        const e = error as { code?: string; cause?: { code?: string } };
+        expect(e.code === "BAD_REQUEST" || e.cause?.code === "BAD_REQUEST").toBe(true);
+      }
+    });
+
+    test("ciphertext without permission emits a denied audit row", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      // No permission seeded.
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("ciphertext without permission should reject");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(["PERMISSION_DENIED", "FORBIDDEN"]).toContain(e.cause?.code ?? "");
+      }
+
+      const audits = await db
+        .select()
+        .from(auditLogs)
+        .where(and(eq(auditLogs.itemId, item.itemId), eq(auditLogs.result, "denied")));
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test("ZK item with NULL profileId surfaces as INTEGRITY_ERROR (data-integrity branch)", async () => {
+      const owner = await seedUser(auth);
+      const org = await seedOrg(auth, owner.userId);
+      const profile = await seedProfile(db, org.orgId, { storageMode: "zero_knowledge" });
+      const item = await seedZkItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        profileId: profile.profileId,
+      });
+      // Simulate corruption: clear profileId on the row. The router's defensive
+      // branch (item.profileId == null) must catch this rather than NPE.
+      await db.update(items).set({ profileId: null }).where(eq(items.id, item.itemId));
+
+      const agent = await seedAgent(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        kind: "local_cli",
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "read_ciphertext",
+        grantedBy: owner.userId,
+      });
+      const session = await seedAgentSession(db, {
+        agentId: agent.agentId,
+        userId: owner.userId,
+      });
+      const caller = createAgentCaller(db, auth, session.rawToken);
+
+      try {
+        await caller.access.ciphertext({ itemId: item.itemId });
+        expect.unreachable("orphaned ZK item should fail with INTEGRITY_ERROR");
+      } catch (error: unknown) {
+        const e = error as { cause?: { code?: string } };
+        expect(e.cause?.code).toBe("INTEGRITY_ERROR");
       }
     });
   });

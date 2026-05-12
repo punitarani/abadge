@@ -1,0 +1,198 @@
+---
+title: "v0 to v1 migration"
+description: "What changed in the abadge production revamp, and how to update your callers."
+---
+
+The production revamp (PR series #124–#128) ships abadge's canonical
+production surface. Existing tRPC callers keep working. New integrations
+should target the changes below.
+
+## TL;DR
+
+| Area | Before | After |
+|------|--------|-------|
+| Transport | tRPC at `/trpc/*` only | REST at `/v1/*` + tRPC at `/trpc/*` (bridge) |
+| Capabilities | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` | `read`, `use` (legacy names still accepted as aliases) |
+| Grant targets | item only | item or profile |
+| Onboarding | Org create + manual profile bootstrap | Org create auto-creates a default `server_managed` profile |
+| Profiles | Named only | Named + optional `externalId` for stable external addressing |
+| CLI verbs | `create` / `delete` / `register` / `revoke` | `add` / `rm` (old verbs are hidden deprecated aliases) |
+| MCP runtime | `run_with_secret` + `run_with_all_secrets` | unified `use_secret` |
+| SDK | `AbadgeUserClient` / `AbadgeAgentClient` | `Abadge.User` / `Abadge.Agent` namespace |
+
+## REST endpoints
+
+Every tRPC procedure annotated with REST metadata is reachable at
+`/v1/...`. The OpenAPI 3.1 spec is at `/v1/openapi.json`. See the
+[API reference](/api/overview).
+
+| Old tRPC procedure | New REST route |
+|-------------------|----------------|
+| `organizations.create` | `POST /v1/orgs` |
+| `organizations.list` | `GET /v1/orgs` |
+| `profiles.create` | `POST /v1/orgs/{orgId}/profiles` |
+| `profiles.list` | `GET /v1/orgs/{orgId}/profiles` |
+| `items.create` | `POST /v1/items` |
+| `items.list` | `GET /v1/items` |
+| `agents.create` | `POST /v1/agents` |
+| `permissions.create` | `POST /v1/permissions` |
+| `access.reveal` / `access.ciphertext` | `POST /v1/access/{itemId}/read` |
+| `access.mount` | `POST /v1/access/{itemId}/use` |
+| `audit.list` | `GET /v1/audit` |
+
+The tRPC procedures keep working unchanged. The REST surface is a
+parallel front door over the same handlers.
+
+## Capability collapse: `read` and `use`
+
+The four legacy capabilities collapse to two canonical actions:
+
+| Legacy | Canonical |
+|--------|-----------|
+| `read_ciphertext` | `read` |
+| `reveal_plaintext` | `read` |
+| `mount_env` | `use` |
+| `mount_file` | `use` |
+
+The server stores grants with the canonical names; legacy names are
+normalized at the API boundary. Existing rows in `permissions` are
+upgraded on read. New code should write `read` or `use`.
+
+`read` is the higher-privilege capability — the agent sees plaintext.
+`use` is what you grant when the agent only needs to **invoke** a process
+with a secret. The dashboard's permission UI surfaces just the two
+checkboxes.
+
+## Profile-level grants
+
+Grants now have two target shapes:
+
+```json
+// Item target
+{ "agentId": "agt_...", "itemId": "itm_...", "capabilities": ["use"] }
+
+// Profile target — covers every item in the profile, now and later
+{ "agentId": "agt_...", "profileId": "prf_...", "capabilities": ["use"] }
+```
+
+A profile-target grant means the agent has the capability on **every item
+currently in the profile and every item added in the future**. This is
+the right shape when you want a stable contract with an agent and don't
+want to add a grant every time you rotate a credential.
+
+Profile + `read` is the highest-blast-radius grant in abadge. The
+dashboard surfaces a confirmation dialog before creating one. Prefer
+`use` or an item-target grant when you can.
+
+## Profile `externalId`
+
+Profiles now carry an optional `externalId` field — a stable, customer
+or tenant-supplied string scoped per-org with a partial-unique index.
+
+Use it when you provision profiles from an external system (per-customer
+tenancy, per-environment isolation) and want to address them with your
+own identifier instead of abadge's UUID. The default profile created
+when you `POST /v1/orgs` has `externalId: "default"`.
+
+## Onboarding
+
+Creating an org now auto-creates a default `server_managed` profile in
+the same transaction. The response shape:
+
+```json
+{
+  "organization": {
+    "id": "...",
+    "name": "...",
+    "slug": "...",
+    "logo": null,
+    "createdAt": "2026-..."
+  },
+  "defaultProfile": {
+    "id": "prf_...",
+    "name": "default",
+    "externalId": "default",
+    "storageMode": "server_managed",
+    "keyVersion": 1
+  }
+}
+```
+
+The web dashboard's onboarding flow is now a single screen. To start
+storing items immediately, hit `POST /v1/orgs` and use
+`response.defaultProfile.id` directly. Create additional profiles (ZK,
+per-customer, etc.) with `POST /v1/orgs/{orgId}/profiles`.
+
+## CLI verb renames
+
+| Deprecated | Canonical |
+|------------|-----------|
+| `abadge <noun> create` | `abadge <noun> add` (item, agent, profile, org) |
+| `abadge <noun> delete` | `abadge <noun> rm` (item, profile, org) |
+| `abadge agent register` | `abadge agent add` |
+| `abadge agent revoke` | `abadge agent rm` |
+| `abadge vault unlock\|lock\|status\|change-password` | `abadge profile unlock\|lock\|status\|change-password` |
+
+The deprecated verbs print a deprecation notice to stderr and
+re-dispatch to the canonical verb. Hidden from `--help`. Drop them
+whenever you're rewriting a script.
+
+The new top-level `abadge use` verb switches active org/profile:
+
+```bash
+abadge use org acme
+abadge use profile production
+```
+
+## MCP runtime tool unification
+
+`run_with_secret` and `run_with_all_secrets` are replaced by
+[`use_secret`](/mcp/tools/use_secret). It accepts exactly one target:
+
+| Field | Mode |
+|-------|------|
+| `itemId` | single-item |
+| `profileId` | bulk: every env-shaped item in the profile |
+
+The output shape adds `injectedCount` in bulk mode; everything else
+matches the old shapes. Subprocess stdout/stderr is still never returned
+to the model.
+
+The legacy tool names are no longer registered. Clients that hard-coded
+them must switch to `use_secret`.
+
+## SDK namespace
+
+`@abadge/sdk` exports a `Abadge` namespace pointing at the same client
+classes. `Abadge.User` and `Abadge.Agent` are constructors — call them
+with `new`:
+
+```ts
+import { Abadge } from "@abadge/sdk";
+
+const user = new Abadge.User({ apiUrl, sessionToken });
+await user.orgs.list();
+
+const agent = new Abadge.Agent({ apiUrl, agentId, privateKey });
+await agent.connect();
+// Two-arg signature: target object, then options.
+await agent.access.use({ itemId }, { delivery: "env" });
+```
+
+The original `AbadgeUserClient` / `AbadgeAgentClient` names are still
+exported and continue to work — `Abadge.User` is just an alias for
+`AbadgeUserClient` and `Abadge.Agent` for `AbadgeAgentClient`. Migration
+is purely stylistic.
+
+## What still works
+
+* Every tRPC procedure at `/trpc/*` — the web dashboard, CLI, and SDK
+  use it internally.
+* Legacy capability names on the wire (mapped to canonical at write).
+* Existing `permissions` rows with legacy capability names (normalized
+  at read).
+* Better Auth surface at `/api/auth/*` (unchanged).
+* Existing agent enrollments, sessions, API keys.
+
+If you find a behavior that broke without a deprecation path, open an
+issue — that's a bug.

@@ -1,10 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
-import { getImpactedReleasePackages, releasePackages, repoRoot } from "./registry";
+import {
+  getImpactedReleasePackages,
+  type ReleasePackage,
+  releasePackages,
+  repoRoot,
+} from "./registry";
 
-const CLI_PACKAGE_NAME = "@abadge/cli";
-const CLI_PACKAGE_VERSION_SOURCE = join(repoRoot, "packages/cli/package.json");
 const CHANGESET_DIR = join(repoRoot, ".changeset");
 const CHANGESET_FILE_PATTERN = /^\.changeset\/(?!README\.md$)[^/]+\.md$/;
 const CHANGESET_ENTRY_PATTERN = /^(?:"([^"]+)"|([^:\s]+)):\s*(major|minor|patch)$/;
@@ -68,7 +71,7 @@ function readPendingChangesets(): ParsedChangeset[] {
     .map((path) => readChangeset(path));
 }
 
-export function isInitialCliPatchTrain(version: string): boolean {
+export function isInitial0xPatchTrain(version: string): boolean {
   const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
   if (!match) {
     throw new Error(`Invalid version string: ${version}`);
@@ -78,31 +81,33 @@ export function isInitialCliPatchTrain(version: string): boolean {
   return major === "0" && minor === "0";
 }
 
-function readCliVersion(): string {
-  const packageJson = JSON.parse(readFileSync(CLI_PACKAGE_VERSION_SOURCE, "utf8")) as {
+function readPackageVersion(releasePackage: ReleasePackage): string {
+  const versionSourcePath = join(repoRoot, releasePackage.versionSource);
+  const packageJson = JSON.parse(readFileSync(versionSourcePath, "utf8")) as {
     version?: unknown;
   };
 
   if (typeof packageJson.version !== "string") {
-    throw new Error("Missing CLI version in packages/cli/package.json");
+    throw new Error(`Missing version in ${releasePackage.versionSource}`);
   }
 
   return packageJson.version;
 }
 
-export function validateCliChangesetsForInitialPatchTrain(
+export function validateChangesetsForInitial0xPatchTrain(
   changesets: readonly ParsedChangeset[],
-  cliVersion: string,
+  releasePackage: ReleasePackage,
+  version: string,
 ): string[] {
-  if (!isInitialCliPatchTrain(cliVersion)) {
+  if (!isInitial0xPatchTrain(version)) {
     return [];
   }
 
   return changesets.flatMap((changeset) =>
     changeset.releases.flatMap((release) =>
-      release.name === CLI_PACKAGE_NAME && release.type !== "patch"
+      release.name === releasePackage.packageName && release.type !== "patch"
         ? [
-            `${changeset.path}: ${CLI_PACKAGE_NAME} is currently ${cliVersion}, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace ${release.type} with patch.`,
+            `${changeset.path}: ${releasePackage.packageName} is currently ${version}, so it must use a patch changeset until we intentionally leave the 0.0.x train. Replace ${release.type} with patch.`,
           ]
         : [],
     ),
@@ -166,7 +171,13 @@ function getChangedChangesetFiles(changedFiles: readonly string[]): string[] {
 function validateChangesets(changesets: readonly ParsedChangeset[]): void {
   const errors = [
     ...validateChangesetsTargetReleasePackages(changesets),
-    ...validateCliChangesetsForInitialPatchTrain(changesets, readCliVersion()),
+    ...releasePackages.flatMap((releasePackage) =>
+      validateChangesetsForInitial0xPatchTrain(
+        changesets,
+        releasePackage,
+        readPackageVersion(releasePackage),
+      ),
+    ),
   ];
   if (errors.length > 0) {
     throw new Error(errors.join("\n"));

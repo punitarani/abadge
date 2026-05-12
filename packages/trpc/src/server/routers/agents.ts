@@ -461,16 +461,21 @@ const revokeAgent = (agentId: string) =>
 
 export const agentsRouter = createTrpcRouter({
   create: scopedSessionProcedure("agents:write")
+    .meta({ openapi: { method: "POST", path: "/agents", tags: ["agents"], protect: true } })
     .input(strictSchema(CreateAgentSchema))
     .output(strictSchema(AgentWithKeySchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgent(input))),
   list: scopedSessionProcedure("agents:read")
+    .meta({ openapi: { method: "GET", path: "/agents", tags: ["agents"], protect: true } })
     .output(strictSchema(AgentListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listAgents)),
   self: agentProcedure
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx }) => runAgentEffect(ctx, getCurrentAgent)),
   get: scopedSessionProcedure("agents:read")
+    .meta({
+      openapi: { method: "GET", path: "/agents/{agentId}", tags: ["agents"], protect: true },
+    })
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getAgent(input.agentId))),
@@ -479,6 +484,9 @@ export const agentsRouter = createTrpcRouter({
     .output(strictSchema(AgentRotateResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateAgent(input.agentId))),
   revoke: scopedSessionProcedure("agents:write")
+    .meta({
+      openapi: { method: "DELETE", path: "/agents/{agentId}", tags: ["agents"], protect: true },
+    })
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgent(input.agentId))),

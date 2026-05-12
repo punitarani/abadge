@@ -1,4 +1,4 @@
-import { CAPABILITIES, type Capability } from "@abadge/core";
+import { CANONICAL_CAPABILITIES, type Capability } from "@abadge/core";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,30 +25,57 @@ const itemOptions = [
   { value: "item-2", label: "API Token (server)" },
 ];
 
+const profileOptions = [
+  { value: "prof-1", label: "default" },
+  { value: "prof-2", label: "acme-corp (externalId: cust_001)" },
+];
+
 function PermissionStory(): React.ReactElement {
+  const [targetType, setTargetType] = useState<"item" | "profile">("item");
   const [selectedAgent, setSelectedAgent] = useState(agentOptions[0]?.value ?? "");
   const [selectedItem, setSelectedItem] = useState(itemOptions[0]?.value ?? "");
-  const [selectedCapability, setSelectedCapability] = useState<Capability | "">("");
+  const [selectedProfile, setSelectedProfile] = useState("");
+  const [selectedCapabilities, setSelectedCapabilities] = useState<Set<Capability>>(
+    () => new Set(),
+  );
   const [expiresAt, setExpiresAt] = useState("");
+
+  function toggleCapability(cap: Capability): void {
+    setSelectedCapabilities((prev) => {
+      const next = new Set(prev);
+      if (next.has(cap)) {
+        next.delete(cap);
+      } else {
+        next.add(cap);
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 rounded-lg border border-border bg-background p-5">
       <CreatePermissionPanelView
         formId="storybook-create-permission"
+        targetType={targetType}
         selectedAgent={selectedAgent}
         selectedItem={selectedItem}
-        selectedCapability={selectedCapability}
+        selectedProfile={selectedProfile}
+        selectedCapabilities={selectedCapabilities}
+        alreadyGrantedCapabilities={new Set()}
         optionsLoading={false}
         agentOptions={agentOptions}
         itemOptions={itemOptions}
-        allowedCapabilities={CAPABILITIES as readonly Capability[]}
+        profileOptions={profileOptions}
+        allowedCapabilities={CANONICAL_CAPABILITIES as readonly Capability[]}
         incompatibleMessage=""
         agentName="Claude Code"
-        itemLabel="DB Password"
+        targetLabel={targetType === "item" ? "DB Password" : "default"}
         expiresAt={expiresAt}
+        onTargetTypeChange={setTargetType}
         onAgentChange={setSelectedAgent}
         onItemChange={setSelectedItem}
-        onCapabilityChange={setSelectedCapability}
+        onProfileChange={setSelectedProfile}
+        onCapabilityToggle={toggleCapability}
         onExpiresAtChange={setExpiresAt}
         onSubmit={(event) => event.preventDefault()}
       />
@@ -56,8 +83,10 @@ function PermissionStory(): React.ReactElement {
         <Button variant="outline" size="sm">
           Cancel
         </Button>
-        <Button size="sm" disabled={!selectedCapability}>
-          Grant permission
+        <Button size="sm" disabled={selectedCapabilities.size === 0}>
+          {selectedCapabilities.size > 1
+            ? `Grant ${selectedCapabilities.size} capabilities`
+            : "Grant permission"}
         </Button>
       </div>
     </div>

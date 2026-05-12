@@ -14,6 +14,9 @@ import type {
   AuditEntrySchema,
   AuditListResultSchema,
   AuditQuerySchema,
+  BulkMountEnvItemSchema,
+  BulkMountEnvResponseSchema,
+  BulkMountEnvSchema,
   ChangePasswordSchema,
   CiphertextAccessResponseSchema,
   CiphertextAccessSchema,
@@ -38,12 +41,16 @@ import type {
   MountAccessResponseSchema,
   MountAccessSchema,
   PermissionListResultSchema,
-  PermissionResultSchema,
   PermissionSchema,
   ProfileListResultSchema,
   ProfileResultSchema,
   ProfileSchema,
+  ProfileUseAccessSchema,
+  ReadAccessResponseSchema,
+  ReadAccessSchema,
   RecoverySetupSchema,
+  RedeemMountResponseSchema,
+  RedeemMountSchema,
   RekeyedItemSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -51,6 +58,8 @@ import type {
   RotateKeySchema,
   SuccessResultSchema,
   UpdateItemSchema,
+  UseAccessResponseSchema,
+  UseAccessSchema,
   VaultBootstrapSchema,
 } from "./schemas";
 
@@ -98,12 +107,14 @@ export type AuditEntry = TypeOf<typeof AuditEntrySchema>;
 export type CiphertextAccessInput = TypeOf<typeof CiphertextAccessSchema>;
 export type RevealAccessInput = TypeOf<typeof RevealAccessSchema>;
 export type MountAccessInput = TypeOf<typeof MountAccessSchema>;
+export type BulkMountEnvInput = TypeOf<typeof BulkMountEnvSchema>;
+export type BulkMountEnvItem = TypeOf<typeof BulkMountEnvItemSchema>;
+export type BulkMountEnvResponse = TypeOf<typeof BulkMountEnvResponseSchema>;
 
 export type ItemResult = TypeOf<typeof ItemResultSchema>;
 export type ItemListResult = TypeOf<typeof ItemListResultSchema>;
 export type AgentResult = TypeOf<typeof AgentResultSchema>;
 export type AgentListResult = TypeOf<typeof AgentListResultSchema>;
-export type PermissionResult = TypeOf<typeof PermissionResultSchema>;
 export type PermissionListResult = TypeOf<typeof PermissionListResultSchema>;
 export type AuditListResult = TypeOf<typeof AuditListResultSchema>;
 export type ProfileResult = TypeOf<typeof ProfileResultSchema>;
@@ -116,3 +127,25 @@ export type ItemVersionResult = TypeOf<typeof ItemVersionResultSchema>;
 export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSchema>;
 export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
 export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
+
+// §RM-PR2 — unified read/use surfaces
+export type ReadAccessInput = TypeOf<typeof ReadAccessSchema>;
+export type ReadAccessResponse = TypeOf<typeof ReadAccessResponseSchema>;
+export type UseAccessInput = TypeOf<typeof UseAccessSchema>;
+export type UseAccessResponse = TypeOf<typeof UseAccessResponseSchema>;
+export type ProfileUseAccessInput = TypeOf<typeof ProfileUseAccessSchema>;
+export type RedeemMountInput = TypeOf<typeof RedeemMountSchema>;
+export type RedeemMountResponse = TypeOf<typeof RedeemMountResponseSchema>;
+
+/**
+ * Response from `access.useProfile` — a list of mount handles, one per item
+ * in the profile that the agent has the matching capability on.
+ */
+export interface ProfileUseAccessResponse {
+  items: ReadonlyArray<{
+    itemId: string;
+    mountId: string;
+    delivery: "env" | "file";
+    expiresAt: string;
+  }>;
+}

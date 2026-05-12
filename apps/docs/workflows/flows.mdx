@@ -331,13 +331,11 @@ sequenceDiagram
   participant API as API
   participant Proc as Subprocess
 
-  LLM->>MCP: run_with_secret(itemId, command)
+  LLM->>MCP: use_secret(itemId, command)
   MCP->>API: Access mount (item ID)
   API->>API: Auth + permission check
   API-->>MCP: Secret value
   MCP->>Proc: Spawn with secret in env var
-  Proc-->>MCP: stdout + stderr
-  MCP->>MCP: Redact secret from output
-  MCP->>MCP: Truncate to 4 KB
-  MCP-->>LLM: Sanitized output (secret NEVER visible)
+  Proc-->>MCP: stdout + stderr (captured but bounded)
+  MCP-->>LLM: { exitCode, durationMs, outputLineCount, truncated } (no output text)
 ```

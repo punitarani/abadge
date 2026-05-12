@@ -118,20 +118,11 @@ export function OrgSwitcher(): React.ReactElement {
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
   const currentOrg = orgs.find((o) => o.id === activeOrgId);
 
-  // If a previous "Create organization…" attempt left an org row without a
-  // bootstrapped profile (user dismissed the dialog after step 1), seed the
-  // dialog at step 2 for that org instead of letting the user create a fresh
-  // duplicate. Mirrors /onboarding's resume-triage. Radix unmounts dialog
-  // content on close, so CreateOrgForm reads this seed fresh on each open.
-  const incompleteOrg = orgs.find((o) => !o.hasBootstrappedProfile);
-  const createDialogInitialOrg = incompleteOrg
-    ? {
-        orgId: incompleteOrg.id,
-        orgName: incompleteOrg.name,
-        orgSlug: incompleteOrg.slug,
-        step: 1 as const,
-      }
-    : undefined;
+  // §REVAMP-PR5 (Task 9.1) — CreateOrgForm is single-step now. The server
+  // auto-creates a default `server_managed` profile in the same transaction,
+  // so the previous "resume the unbootstrapped org" path is unreachable
+  // under normal flow. If an admin has somehow left an org without a
+  // profile, the profiles page surfaces the recovery flow.
 
   function handleSelect(org: Org): void {
     if (!userId) return;
@@ -239,21 +230,18 @@ export function OrgSwitcher(): React.ReactElement {
       </SidebarMenuItem>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        {/* Wider dialog: the two-step form has a progress bar plus form fields,
-            and at the default width step 2 (storage mode picker + ZK password
-            inputs) gets cramped. */}
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Create an organization</DialogTitle>
             <DialogDescription>
-              You'll be the owner. Set up an internal profile to start storing secrets.
+              You'll be the owner. A default profile is created automatically so you can store
+              secrets immediately.
             </DialogDescription>
           </DialogHeader>
           {/* CreateOrgForm sets the active org and invalidates the organizations
               list on success. We just need to close the dialog here. */}
           <CreateOrgForm
             variant="dialog"
-            initialOrg={createDialogInitialOrg}
             onSuccess={() => {
               setCreateDialogOpen(false);
             }}

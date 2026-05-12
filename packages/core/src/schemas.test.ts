@@ -25,6 +25,7 @@ describe("ProfileSchema", () => {
         id: "prof_default_user-1",
         organizationId: "org_personal_user-1",
         name: "default",
+        externalId: null,
         description: null,
         storageMode: "zero_knowledge",
         wrappedRootKey: "wrapped-root-key",
@@ -102,6 +103,7 @@ describe("ItemSummarySchema", () => {
         storageMode: "server_managed",
         cryptoVersion: 1,
         contentVersion: 2,
+        profileId: "profile-1",
         createdAt: "2026-04-11T00:00:00.000Z",
         updatedAt: "2026-04-11T00:00:00.000Z",
       }),
@@ -113,10 +115,26 @@ describe("ItemSummarySchema", () => {
         storageMode: "server_managed",
         cryptoVersion: 1,
         contentVersion: 2,
+        profileId: "profile-1",
         createdAt: "2026-04-11T00:00:00.000Z",
         updatedAt: "2026-04-11T00:00:00.000Z",
       }),
     ).toBe(false);
+  });
+
+  test("accepts a nullable profileId (legacy items at the org root)", () => {
+    expect(
+      decodeSucceeds(ItemSummarySchema, {
+        id: "item-1",
+        label: "Legacy API key",
+        storageMode: "server_managed",
+        cryptoVersion: 1,
+        contentVersion: 2,
+        profileId: null,
+        createdAt: "2026-04-11T00:00:00.000Z",
+        updatedAt: "2026-04-11T00:00:00.000Z",
+      }),
+    ).toBe(true);
   });
 });
 
@@ -209,7 +227,7 @@ describe("item write schemas", () => {
 // the schema boundary so they never reach verifyEd25519 → fromBase64 → SyntaxError → 500.
 describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format validation", () => {
   // A realistic challenge: prefix "abc_" + base64url(32 random bytes) = 47 chars.
-  const VALID_CHALLENGE = "abc_" + "A".repeat(43);
+  const VALID_CHALLENGE = `abc_${"A".repeat(43)}`;
   // A realistic Ed25519 signature: 64 bytes → 86 chars unpadded base64url.
   const VALID_SIG = "A".repeat(86);
   const VALID_AGENT_ID = "agt_test";
@@ -233,7 +251,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        signature: "A".repeat(86) + "==",
+        signature: `${"A".repeat(86)}==`,
       }),
     ).toBe(true);
   });
@@ -243,7 +261,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        signature: "!@#$%^&*()" + "A".repeat(76),
+        signature: `!@#$%^&*()${"A".repeat(76)}`,
       }),
     ).toBe(false);
   });
@@ -252,7 +270,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        challenge: "abc_!@#$%^&*()" + "A".repeat(33),
+        challenge: `abc_!@#$%^&*()${"A".repeat(33)}`,
       }),
     ).toBe(false);
   });
@@ -280,7 +298,7 @@ describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format val
     expect(
       decodeSucceeds(ExchangeAgentSessionSchema, {
         ...base(),
-        challenge: "abc_" + "A".repeat(300),
+        challenge: `abc_${"A".repeat(300)}`,
       }),
     ).toBe(false);
   });

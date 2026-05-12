@@ -12,6 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import {
   ENV_VAR_NAME_PATTERN,
   expandFieldSelection,
+  labelToEnvKey,
+  listStringFields,
   RESERVED_ENV_KEYS,
   resolveFieldValue,
 } from "@abadge/core";
@@ -20,6 +22,7 @@ import { fetchVaultMeta, updateVaultPassword } from "./api";
 import { type DaemonIdentity, loadOrCreateDaemonIdentity, signChallenge } from "./identity";
 import { defaultPidPath, defaultSocketPath } from "./paths";
 import type {
+  BulkExecItem,
   DaemonAuthHeaders,
   DaemonAuthState,
   DaemonAuthStatus,
@@ -38,6 +41,14 @@ import { VaultState } from "./vault-state";
 
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Defense-in-depth ceiling on `exec.envBulk` items. The API (access.bulkMountEnv)
+ * already caps at 256; matching the cap here means a tampered CLI that
+ * skips the API and goes straight to the daemon still can't blow the
+ * Unix-socket newline-delimited JSON buffer. Trust-but-verify.
+ */
+const BULK_ITEMS_MAX = 256;
 
 // RESERVED_ENV_KEYS and ENV_VAR_NAME_PATTERN are imported from @abadge/core
 // (see import above) — single authoritative source shared with MCP (W3P10-001).
@@ -510,6 +521,132 @@ function buildHandlers(
 
       const proc = Bun.spawn([command, ...args], {
         env: { ...buildChildEnv(), ...extraEnv },
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "inherit",
+      });
+      const exitCode = await proc.exited;
+      return { exitCode, signal: proc.signalCode ?? undefined };
+    },
+
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: exec.envBulk decrypts N items (ZK + SM), validates labels → env-key normalization, detects reserved-key + collision violations, builds env map, and spawns a subprocess — splitting it would scatter the audit/cleanup paths.
+    "exec.envBulk": async (params): Promise<EnvExecResult> => {
+      // W1S6-003 — auth + unlock gate (matches exec.expandEnv).
+      buildAuthHeaders(auth);
+      requireUnlocked(vault);
+
+      const items = params.items as BulkExecItem[] | undefined;
+      const command = params.command as string | undefined;
+      const args = (params.args as string[]) ?? [];
+      if (!command) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "command is required" };
+      }
+      if (!Array.isArray(items)) {
+        throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items must be an array" };
+      }
+      // Defense-in-depth: the API caps at 256, but trust-but-verify here so
+      // a misbehaving CLI can't DoS the daemon by stuffing the socket buffer.
+      if (items.length > BULK_ITEMS_MAX) {
+        throw {
+          code: RPC_ERRORS.INVALID_PARAMS,
+          message: `items exceeds limit of ${BULK_ITEMS_MAX}`,
+        };
+      }
+
+      const envMap: Record<string, string> = {};
+      // Track which item produced which env var so a collision error names
+      // both items, not just the second one.
+      const envSource: Record<string, { itemId: string; label: string }> = {};
+
+      for (const item of items) {
+        if (!item || typeof item !== "object") {
+          throw { code: RPC_ERRORS.INVALID_PARAMS, message: "Malformed bulk item entry" };
+        }
+        if (!item.itemId || !item.label || !item.storageMode) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: "Each bulk item requires itemId, label, and storageMode",
+          };
+        }
+        const storageMode: unknown = item.storageMode;
+        if (storageMode !== "zero_knowledge" && storageMode !== "server_managed") {
+          // Reject malformed input early so the discriminated narrowing below
+          // is sound even when the cast at the param boundary lied.
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: `Unknown storage mode '${String(storageMode)}' for item ${item.itemId}`,
+          };
+        }
+
+        let payload: unknown;
+        if (item.storageMode === "zero_knowledge") {
+          if (!item.encryptedItemKey || !item.ciphertext || !item.profileId) {
+            throw {
+              code: RPC_ERRORS.INVALID_PARAMS,
+              message: `ZK bulk item ${item.itemId} missing encryptedItemKey/ciphertext/profileId`,
+            };
+          }
+          // Re-bind XChaCha20-Poly1305 AAD to (profileId, itemId, contentVersion)
+          // so a row-substitution attack (replacing item A's ciphertext with B's)
+          // fails the tag check.
+          payload = vault.decrypt(item.encryptedItemKey, item.ciphertext, {
+            profileId: item.profileId,
+            itemId: item.itemId,
+            contentVersion: item.contentVersion,
+          });
+        } else {
+          payload = item.payload;
+        }
+
+        // Structural filter: only items with exactly one string field
+        // participate in --all. 0-field items are silently skipped (no useful
+        // injection target). Multi-field items (login/certificate/ssh_key)
+        // are silently skipped — user opts in per-item with --field.
+        // biome-ignore lint/suspicious/noExplicitAny: payload shape validated by callers
+        const stringFields = listStringFields(payload as any);
+        if (stringFields.length !== 1) continue;
+
+        // biome-ignore lint/suspicious/noExplicitAny: same — caller-validated shape
+        const fields = (payload as any)?.fields as Record<string, unknown> | undefined;
+        const fieldName = stringFields[0] as string;
+        const fieldValue = fields?.[fieldName];
+        if (typeof fieldValue !== "string") continue;
+
+        const envKey = labelToEnvKey(item.label);
+        if (envKey.length === 0) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: `Item label '${item.label}' (id=${item.itemId}) cannot be normalized into a valid env var name`,
+          };
+        }
+        if (RESERVED_ENV_KEYS.has(envKey)) {
+          // Hard-reject. Silent-skip would launch the user's app with the
+          // wrong env (e.g. parent's PATH instead of "leaked" PATH from a
+          // secret manager) which is a footgun.
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: `Item label '${item.label}' (id=${item.itemId}) normalizes to reserved env var '${envKey}'. Rename the item or exclude it.`,
+          };
+        }
+        if (!ENV_VAR_NAME_PATTERN.test(envKey)) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: `Item label '${item.label}' (id=${item.itemId}) produces invalid env var '${envKey}'`,
+          };
+        }
+        const existing = envSource[envKey];
+        if (existing) {
+          throw {
+            code: RPC_ERRORS.INVALID_PARAMS,
+            message: `Env var collision on '${envKey}': items ${existing.itemId} ('${existing.label}') and ${item.itemId} ('${item.label}'). Rename one of them.`,
+          };
+        }
+        envMap[envKey] = fieldValue;
+        envSource[envKey] = { itemId: item.itemId, label: item.label };
+      }
+
+      const proc = Bun.spawn([command, ...args], {
+        env: { ...buildChildEnv(), ...envMap },
         stdout: "inherit",
         stderr: "inherit",
         stdin: "inherit",

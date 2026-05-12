@@ -4,6 +4,7 @@ import {
   AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
+  CANONICAL_CAPABILITIES,
   CAPABILITIES,
   ITEM_KINDS,
   MAX_AGENT_METADATA_DEPTH,
@@ -99,6 +100,12 @@ export const ItemKindSchema = Schema.Literal(...ITEM_KINDS);
 export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
 export const AgentAuthMethodSchema = Schema.Literal(...AGENT_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
+/**
+ * §RM-PR1 — Canonical capabilities only. New API surfaces should validate
+ * with this schema; legacy capability values are accepted via
+ * `CapabilitySchema` for backward compatibility.
+ */
+export const CanonicalCapabilitySchema = Schema.Literal(...CANONICAL_CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
 export const AuditResultSchema = Schema.Literal(...AUDIT_RESULTS);
 
@@ -288,12 +295,119 @@ export const RevokeAgentSessionSchema = Schema.Struct({
   token: NonEmptyString,
 });
 
-export const CreatePermissionSchema = Schema.Struct({
+const CreatePermissionCapabilities = Schema.NonEmptyArray(CapabilitySchema).pipe(
+  Schema.filter((arr) =>
+    new Set(arr).size === arr.length ? undefined : "capabilities must not contain duplicates",
+  ),
+);
+
+/**
+ * §RM-PR1 — A permission grant targets EXACTLY one of (item, profile). The
+ * discriminated union mirrors the storage-layer CHECK constraint so the
+ * router cannot construct an illegal row.
+ *
+ * Capabilities remain `CapabilitySchema` (legacy + canonical) for now so
+ * existing item-target grants keep working; PR2 narrows new write paths to
+ * `CanonicalCapabilitySchema` once the unified pipeline lands.
+ */
+export const CreateItemPermissionSchema = Schema.Struct({
   agentId: NonEmptyString,
   itemId: NonEmptyString,
-  capability: CapabilitySchema,
+  capabilities: CreatePermissionCapabilities,
   expiresAt: Schema.optional(IsoDateString),
 });
+
+export const CreateProfilePermissionSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  profileId: NonEmptyString,
+  capabilities: CreatePermissionCapabilities,
+  expiresAt: Schema.optional(IsoDateString),
+});
+
+export const CreatePermissionSchema = Schema.Union(
+  CreateItemPermissionSchema,
+  CreateProfilePermissionSchema,
+);
+
+/**
+ * §RM-PR1 — Unified access shapes. `read` returns either a server-decrypted
+ * payload or a ZK envelope for client decrypt; `use` returns an opaque mount
+ * handle with an expiry. Profile-target reads are not exposed yet because
+ * "read a whole profile" has no single canonical response shape; profile
+ * grants gate per-item access at the policy layer.
+ */
+export const ReadAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const UseAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  field: Schema.optional(NonEmptyString),
+  envVarName: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const ProfileUseAccessSchema = Schema.Struct({
+  profileId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const ReadAccessResponseSchema = Schema.Union(
+  Schema.Struct({
+    storageMode: Schema.Literal("server_managed"),
+    payload: ItemPayloadSchema,
+  }),
+  Schema.Struct({
+    storageMode: Schema.Literal("zero_knowledge"),
+    encryptedItemKey: NonEmptyString,
+    ciphertext: NonEmptyString,
+    cryptoVersion: Schema.Number,
+    itemId: NonEmptyString,
+    profileId: NonEmptyString,
+    contentVersion: Schema.Number,
+  }),
+);
+
+export const UseAccessResponseSchema = Schema.Struct({
+  mountId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  expiresAt: IsoDateString,
+});
+
+/**
+ * §RM-PR4 — Redeem a previously-minted mount handle. The local daemon (or any
+ * authenticated local agent) atomically marks the reservation consumed and
+ * receives the actual envelope / decrypted payload. Cross-agent or repeated
+ * redemption returns NOT_FOUND.
+ */
+export const RedeemMountSchema = Schema.Struct({
+  mountId: NonEmptyString,
+});
+
+export const RedeemMountResponseSchema = Schema.Union(
+  Schema.Struct({
+    storageMode: Schema.Literal("server_managed"),
+    delivery: Schema.Literal("env", "file"),
+    payload: ItemPayloadSchema,
+    label: NonEmptyString,
+    itemId: NonEmptyString,
+  }),
+  Schema.Struct({
+    storageMode: Schema.Literal("zero_knowledge"),
+    delivery: Schema.Literal("env", "file"),
+    encryptedItemKey: NonEmptyString,
+    ciphertext: NonEmptyString,
+    cryptoVersion: Schema.Number,
+    contentVersion: Schema.Number,
+    label: NonEmptyString,
+    itemId: NonEmptyString,
+    profileId: NonEmptyString,
+  }),
+);
 
 export const CiphertextAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
@@ -331,6 +445,10 @@ export const ProfileSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
   name: NonEmptyString,
+  // §REVAMP-PR5 — stable, customer/tenant-supplied identifier scoped
+  // per-org (partial-unique index, NULL allowed). The auto-default
+  // profile created with each org has `externalId: "default"`.
+  externalId: Schema.NullOr(Schema.String),
   description: Schema.NullOr(Schema.String),
   storageMode: StorageModeSchema,
   wrappedRootKey: Schema.NullOr(Schema.String),
@@ -348,6 +466,11 @@ export const ItemSummarySchema = Schema.Struct({
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
+  // §C2 — surfacing this on summaries lets the dashboard's
+  // profile-grant blast-radius dialog count items in a profile without
+  // needing to fetch detail rows. Nullable because items can sit at the
+  // org root (legacy / pre-PR1 rows) until they get assigned to a profile.
+  profileId: Schema.NullOr(Schema.String),
   createdAt: IsoDateString,
   updatedAt: IsoDateString,
 });
@@ -463,11 +586,17 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
   expiresAt: Schema.NullOr(IsoDateString),
 });
 
+/**
+ * §RM-PR2 — A permission row's target is now nullable on both columns: each
+ * row sets exactly one of (itemId, profileId), enforced by the DB CHECK. The
+ * wire shape mirrors the row shape so callers can branch on which is null.
+ */
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
   agentId: NonEmptyString,
-  itemId: NonEmptyString,
+  itemId: Schema.NullOr(NonEmptyString),
+  profileId: Schema.NullOr(NonEmptyString),
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
   grantedBy: NonEmptyString,
@@ -529,6 +658,40 @@ export const MountAccessResponseSchema = Schema.Union(
   ServerManagedMountAccessResponseSchema,
 );
 
+export const BulkMountEnvSchema = Schema.Struct({
+  profileId: NonEmptyString,
+});
+
+const BulkMountEnvItemBaseFields = {
+  itemId: NonEmptyString,
+  label: NonEmptyString,
+} as const;
+
+const ZeroKnowledgeBulkMountEnvItemSchema = Schema.Struct({
+  ...BulkMountEnvItemBaseFields,
+  storageMode: Schema.Literal("zero_knowledge"),
+  encryptedItemKey: NonEmptyString,
+  ciphertext: NonEmptyString,
+  cryptoVersion: Schema.Int,
+  profileId: NonEmptyString,
+  contentVersion: Schema.Int.pipe(Schema.positive()),
+});
+
+const ServerManagedBulkMountEnvItemSchema = Schema.Struct({
+  ...BulkMountEnvItemBaseFields,
+  storageMode: Schema.Literal("server_managed"),
+  payload: ItemPayloadSchema,
+});
+
+export const BulkMountEnvItemSchema = Schema.Union(
+  ZeroKnowledgeBulkMountEnvItemSchema,
+  ServerManagedBulkMountEnvItemSchema,
+);
+
+export const BulkMountEnvResponseSchema = Schema.Struct({
+  items: Schema.Array(BulkMountEnvItemSchema),
+});
+
 export const IdResultSchema = Schema.Struct({
   id: NonEmptyString,
 });
@@ -569,10 +732,6 @@ export const AgentResultSchema = Schema.Struct({
 
 export const AgentListResultSchema = Schema.Struct({
   agents: Schema.Array(AgentSchema),
-});
-
-export const PermissionResultSchema = Schema.Struct({
-  permission: PermissionSchema,
 });
 
 export const PermissionListResultSchema = Schema.Struct({

@@ -105,8 +105,23 @@ const OrgListItemSchema = Schema.Struct({
   hasBootstrappedProfile: Schema.Boolean,
 });
 
+const DefaultProfileDataSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  externalId: Schema.NullOr(Schema.String),
+  storageMode: Schema.Literal("server_managed", "zero_knowledge"),
+  keyVersion: Schema.Int,
+});
+
+// §REVAMP-PR3 (Task 5.1) — `organizations.create` now seeds a default
+// `server_managed` profile in the same transaction. The response shape
+// returns both so the client can route straight to the dashboard without a
+// follow-up `profiles.create` round trip and without a "profile setup"
+// step. The onboarding gate is dropped in the next commit; until then,
+// auto-seeding is the only way an org is immediately usable after create.
 const CreateOrgResultSchema = Schema.Struct({
   organization: OrgDataSchema,
+  defaultProfile: DefaultProfileDataSchema,
 });
 
 const OrgResultSchema = Schema.Struct({
@@ -251,12 +266,12 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       );
     }
 
-    // Org + owner-member must succeed or fail together. The slug-race loser's
-    // unique-violation is translated below to SLUG_TAKEN (mirrors
-    // profiles.create / permissions.create). No default profile is seeded —
-    // callers create profiles explicitly via `profiles.create`, and the
-    // onboarding gate (`assertOrgOnboardingComplete`) blocks scoped /
-    // agent calls until at least one bootstrapped profile exists.
+    // Org + owner-member + default profile must succeed or fail together. The
+    // slug-race loser's unique-violation is translated below to SLUG_TAKEN
+    // (mirrors profiles.create / permissions.create). The auto-seeded
+    // server_managed profile makes the org immediately usable — no
+    // separate `profiles.create` round trip on the happy path.
+    const profileId = crypto.randomUUID();
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         await tx.insert(organization).values({
@@ -273,6 +288,21 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
           userId,
           role: "owner",
           createdAt: now,
+        });
+
+        // §REVAMP-PR3 (Task 5.1) — default profile is `server_managed` so
+        // no client-side KDF / ZK password is required to provision. Users
+        // can add ZK profiles later via `profiles.create`. `externalId` is
+        // `"default"` so external provisioning tools have a stable handle.
+        await tx.insert(profiles).values({
+          id: profileId,
+          organizationId: orgId,
+          name: "default",
+          externalId: "default",
+          storageMode: "server_managed",
+          keyVersion: 1,
+          createdAt: now,
+          updatedAt: now,
         });
       }),
     ).pipe(
@@ -295,7 +325,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
       eventType: "org.create",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { slug },
+      meta: { slug, autoDefaultProfile: profileId },
     });
 
     return {
@@ -305,6 +335,13 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
         slug,
         logo: input.logo ?? null,
         createdAt: now.toISOString(),
+      },
+      defaultProfile: {
+        id: profileId,
+        name: "default",
+        externalId: "default",
+        storageMode: "server_managed" as const,
+        keyVersion: 1,
       },
     };
   });
@@ -1027,6 +1064,7 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
 
 export const organizationsRouter = createTrpcRouter({
   create: userProcedure
+    .meta({ openapi: { method: "POST", path: "/orgs", tags: ["organizations"], protect: true } })
     .input(strictSchema(CreateOrganizationSchema))
     .output(strictSchema(CreateOrgResultSchema))
     .mutation(({ ctx, input }) => runUserEffect(ctx, createOrg(input))),
@@ -1037,31 +1075,57 @@ export const organizationsRouter = createTrpcRouter({
     .query(({ ctx, input }) => runUserEffect(ctx, checkSlug(input.slug))),
 
   list: userProcedure
+    .meta({ openapi: { method: "GET", path: "/orgs", tags: ["organizations"], protect: true } })
     .output(strictSchema(OrgListResultSchema))
     .query(({ ctx }) => runUserEffect(ctx, listOrgs)),
 
   get: sessionProcedure
+    .meta({
+      openapi: { method: "GET", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(OrgResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getOrg(input.orgId))),
 
   update: sessionProcedure
+    .meta({
+      openapi: { method: "PATCH", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(UpdateOrganizationSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateOrg(input))),
 
   delete: sessionProcedure
+    .meta({
+      openapi: { method: "DELETE", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteOrg(input.orgId))),
 
   members: createTrpcRouter({
     list: sessionProcedure
+      .meta({
+        openapi: {
+          method: "GET",
+          path: "/orgs/{orgId}/members",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(OrgIdSchema))
       .output(strictSchema(MemberListResultSchema))
       .query(({ ctx, input }) => runSessionEffect(ctx, listMembers(input.orgId))),
 
     invite: sessionProcedure
+      .meta({
+        openapi: {
+          method: "POST",
+          path: "/orgs/{orgId}/members",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(CreateInviteSchema))
       .output(strictSchema(CreateInviteResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, createInvite(input))),
@@ -1072,6 +1136,9 @@ export const organizationsRouter = createTrpcRouter({
       .query(({ ctx, input }) => runUserEffect(ctx, getInviteInfo(input.token))),
 
     acceptInvite: userProcedure
+      .meta({
+        openapi: { method: "POST", path: "/invites/accept", tags: ["members"], protect: true },
+      })
       .input(strictSchema(InviteTokenSchema))
       .output(strictSchema(AcceptInviteResultSchema))
       .mutation(({ ctx, input }) => runUserEffect(ctx, acceptInvite(input.token))),
@@ -1082,11 +1149,27 @@ export const organizationsRouter = createTrpcRouter({
       .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeInvite(input))),
 
     remove: sessionProcedure
+      .meta({
+        openapi: {
+          method: "DELETE",
+          path: "/orgs/{orgId}/members/{memberId}",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(RemoveMemberSchema))
       .output(strictSchema(SuccessResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, removeMember(input))),
 
     updateRole: sessionProcedure
+      .meta({
+        openapi: {
+          method: "PATCH",
+          path: "/orgs/{orgId}/members/{memberId}",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(UpdateMemberRoleSchema))
       .output(strictSchema(SuccessResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, updateMemberRole(input))),

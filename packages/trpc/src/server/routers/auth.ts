@@ -51,7 +51,6 @@ import {
   sessionProcedure,
   userProcedure,
 } from "../init";
-import { incompleteOrgError, orgHasBootstrappedProfile } from "../onboarding-gate";
 import { serializeAgent } from "../serialize";
 
 type OwnedAgentRow = Pick<
@@ -610,30 +609,11 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     }
     yield* ensureAgentEligibleForSessionExchange(agent);
 
-    // At-issuance onboarding-complete gate: refuse to mint an `abs_` session
-    // for an agent whose org has no bootstrapped profile. The matching
-    // at-use gate lives in `agentProcedure` (init.ts), so a degraded org
-    // also stops serving existing sessions on next request — this early
-    // failure just gives clients a faster, more specific error instead of
-    // letting them succeed here and fail later. Audit-log the denial first
-    // (existing invariant: every denied agent access attempt is logged);
-    // `logBaseAudit` swallows audit-write failures internally so a DB blip
-    // can never invert the auth-fail response.
-    const orgComplete = yield* tryAsync(() =>
-      orgHasBootstrappedProfile(ctx.db, agent.organizationId),
-    );
-    if (!orgComplete) {
-      yield* logBaseAudit({
-        organizationId: agent.organizationId,
-        userId: agent.createdBy,
-        agentId: agent.id,
-        eventType: "agent.session_reject",
-        result: "denied",
-        ipAddress: ctx.ipAddress,
-        meta: { reason: "onboarding_incomplete" },
-      });
-      return yield* Effect.fail(incompleteOrgError(agent.organizationId));
-    }
+    // §REVAMP-PR3 Task 5.2 — the at-issuance onboarding-complete gate was
+    // dropped here. Default profiles are auto-seeded at `organizations.create`
+    // (Task 5.1), so an agent's org is normally bootstrapped by the time it
+    // exchanges its first session. The matching at-use gate in
+    // `agentProcedure` was dropped at the same time.
 
     const challengeHash = yield* tryAsync(() => hashApiKey(input.challenge));
     const [challengeRecord] = (yield* tryAsync(() =>
@@ -836,22 +816,55 @@ export const authRouter = createTrpcRouter({
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx }) => runSessionEffect(ctx, recordLogout)),
   issueBootstrapToken: scopedSessionProcedure("agents:write")
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/bootstrap",
+        tags: ["auth"],
+        protect: true,
+      },
+    })
     .input(strictSchema(IssueAgentBootstrapTokenSchema))
     .output(strictSchema(AgentBootstrapTokenResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, issueBootstrapToken(input))),
   enroll: publicProcedure
+    .meta({ openapi: { method: "POST", path: "/agents/enroll", tags: ["auth"], protect: false } })
     .input(strictSchema(EnrollAgentSchema))
     .output(strictSchema(AgentEnrollmentResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, enrollAgent(input))),
   createChallenge: publicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/sessions/challenge",
+        tags: ["auth"],
+        protect: false,
+      },
+    })
     .input(strictSchema(CreateAgentChallengeSchema))
     .output(strictSchema(AgentChallengeResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, createAgentChallenge(input))),
   exchangeSession: publicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/sessions/exchange",
+        tags: ["auth"],
+        protect: false,
+      },
+    })
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, exchangeAgentSession(input))),
   revokeSession: scopedSessionProcedure("agents:write")
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/agents/sessions/{token}",
+        tags: ["auth"],
+        protect: true,
+      },
+    })
     .input(strictSchema(RevokeAgentSessionSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgentSession(input))),

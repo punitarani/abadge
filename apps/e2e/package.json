@@ -1,0 +1,27 @@
+{
+  "name": "@abadge/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "//": "intentionally no `test` script — e2e is not part of `turbo test`. Use `turbo test:e2e` (it boots a real wrangler-dev API and would race with the trpc package's parallel test run on the same Postgres).",
+    "test:e2e": "bun test src/tests",
+    "test:api": "bun test src/tests/api",
+    "test:cli": "bun test src/tests/cli",
+    "test:mcp": "bun test src/tests/mcp",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@abadge/core": "workspace:*",
+    "@abadge/crypto": "workspace:*",
+    "@abadge/db": "workspace:*",
+    "@abadge/sdk": "workspace:*",
+    "@abadge/trpc": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.0",
+    "wrangler": "latest"
+  }
+}

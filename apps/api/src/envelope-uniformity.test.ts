@@ -2,8 +2,40 @@ import { describe, expect, mock, test } from "bun:test";
 import { makeAllowAllRateLimitStub } from "./test-helpers/rate-limit";
 import type { Bindings } from "./types";
 
+// `@abadge/trpc/server` is mocked here AND in `index.test.ts`. Bun caches
+// `./rest/v1.ts` at first evaluation; later `mock.module` calls in sibling
+// test files do NOT re-evaluate the cached module. To keep `index.test.ts`
+// (which asserts on the mocked `health.ping` route) order-independent on
+// every Bun platform, this mock exposes the same minimal procedure + caller
+// surface — envelope-uniformity's own assertions only check error envelope
+// shape and are unaffected.
 mock.module("@abadge/trpc/server", () => ({
   handleTrpcRequest: () => new Response("mock trpc"),
+  appRouter: {
+    _def: {
+      procedures: {
+        "health.ping": {
+          _def: {
+            type: "query",
+            meta: {
+              openapi: {
+                method: "GET",
+                path: "/_test/ping",
+                tags: ["health"],
+                protect: false,
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  createServerCaller: () => ({
+    health: {
+      ping: async () => ({ pong: true }),
+    },
+  }),
+  createServerCallerContext: () => ({ caller: {}, resHeaders: new Headers() }),
 }));
 
 const { default: app } = await import("./index");

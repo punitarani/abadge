@@ -65,7 +65,7 @@ abadge run --item my-service-env --expand-env -- ./server
 
 ## Using fields in MCP
 
-Pass `field` to `run_with_secret` or `mount_secret`:
+Pass `field` to `use_secret` or `mount_secret`:
 
 ```json
 {
@@ -79,9 +79,9 @@ Pass `field` to `run_with_secret` or `mount_secret`:
 ## Using fields in the SDK
 
 ```typescript
-const { payload } = await agent.accessReveal(itemId, "password");
+const result = await agent.access.read(itemId, { field: "password" });
 
-const data = await agent.accessMount(itemId, "file", "private_key");
+const data = await agent.access.use({ itemId }, { delivery: "file", field: "private_key" });
 ```
 
 ## Multi-field item error

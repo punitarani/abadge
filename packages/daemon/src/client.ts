@@ -3,6 +3,7 @@ import { generateOpaqueToken, verifyEd25519 } from "@abadge/crypto";
 import { computeFingerprint } from "./identity";
 import { defaultSocketPath } from "./paths";
 import type {
+  BulkExecItem,
   DaemonAuthHeaders,
   DaemonAuthState,
   DaemonAuthStatus,
@@ -32,6 +33,7 @@ const SENSITIVE_RPC_METHODS = new Set<string>([
   "item.rekey",
   "exec.env",
   "exec.expandEnv",
+  "exec.envBulk",
   "exec.mount",
 ]);
 
@@ -381,6 +383,28 @@ export class DaemonClient {
       profileId: zkMeta?.profileId,
       itemId: zkMeta?.itemId,
       contentVersion: zkMeta?.contentVersion,
+    })) as EnvExecResult;
+  }
+
+  /**
+   * Spawn a subprocess with env vars derived from many items at once.
+   * Each item is either a ZK envelope (decrypted in-process via XChaCha20-Poly1305
+   * with AAD bound to profileId+itemId+contentVersion) or a server-managed
+   * payload pre-decrypted by the API. The daemon normalizes each item's label
+   * into a POSIX-shaped env var name, applies the structural filter (single
+   * string field), and hard-rejects on collisions or reserved names.
+   *
+   * Used by `abadge run --all`. Cap of 256 items is enforced server-side.
+   */
+  async expandEnvBulk(
+    items: BulkExecItem[],
+    command: string,
+    args?: string[],
+  ): Promise<EnvExecResult> {
+    return (await this.send("exec.envBulk", {
+      items,
+      command,
+      args,
     })) as EnvExecResult;
   }
 }

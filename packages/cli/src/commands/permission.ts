@@ -9,39 +9,85 @@ export function createPermissionCommand(): Command {
 
   cmd
     .command("create")
-    .description("Create a new permission")
+    .description("Grant one or more capabilities to an agent on an item")
     .requiredOption("--agent-id <id>", "Agent ID")
     .requiredOption("--item-id <id>", "Item ID")
-    .requiredOption("--capability <cap>", "Capability")
-    .option("--expires-at <timestamp>", "Optional ISO timestamp expiry")
+    .requiredOption(
+      "--capability <cap>",
+      "Capability (repeat the flag or comma-separate to grant multiple)",
+      (value: string, previous: string[]) => previous.concat([value]),
+      [] as string[],
+    )
+    .option(
+      "--expires-at <timestamp>",
+      "Optional ISO timestamp expiry (applied to every capability)",
+    )
     .option("--json", "Output as JSON")
     .action(
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: permission.grant parses comma-separated capabilities, validates each against the canonical+legacy set, branches on capability-matrix legality per locality+storage-mode, and surfaces detailed per-capability errors — splitting it would obscure the audit trail.
       async (opts: {
         agentId: string;
         itemId: string;
-        capability: string;
+        capability: string[];
         expiresAt?: string;
         json?: boolean;
       }) => {
-        if (!CAPABILITIES.includes(opts.capability as Capability)) {
-          error(`--capability must be one of: ${CAPABILITIES.join(", ")}`);
+        const raw = opts.capability
+          .flatMap((s) => s.split(","))
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (raw.length === 0) {
+          error("--capability is required (repeat the flag or pass a comma-separated list)");
           process.exit(1);
         }
-        const capability = opts.capability as Capability;
+
+        const invalid = raw.filter((c) => !CAPABILITIES.includes(c as Capability));
+        if (invalid.length > 0) {
+          error(
+            `Unknown capability ${invalid.length > 1 ? "values" : "value"}: ${invalid.join(", ")}. Must be one of: ${CAPABILITIES.join(", ")}`,
+          );
+          process.exit(1);
+        }
+
+        const seen = new Set<string>();
+        const duplicates: string[] = [];
+        const capabilities: Capability[] = [];
+        for (const c of raw) {
+          if (seen.has(c)) {
+            duplicates.push(c);
+            continue;
+          }
+          seen.add(c);
+          capabilities.push(c as Capability);
+        }
+        if (duplicates.length > 0) {
+          error(
+            `Duplicate capabilities: ${duplicates.join(", ")}. Each capability may only appear once.`,
+          );
+          process.exit(1);
+        }
 
         try {
           const client = await createUserApiClient();
+          // Length is guarded above; cast narrows to the non-empty tuple
+          // shape demanded by CreatePermissionSchema (Schema.NonEmptyArray).
           const result = await client.createPermission({
             agentId: opts.agentId,
             itemId: opts.itemId,
-            capability,
+            capabilities: capabilities as [Capability, ...Capability[]],
             expiresAt: opts.expiresAt,
           } satisfies CreatePermissionInput);
 
           if (opts.json) {
             json(result);
           } else {
-            success(`Permission ${result.permission.id} created.`);
+            for (const p of result.permissions) {
+              success(`Permission ${p.id} created (${p.capability}).`);
+            }
+            success(
+              `Granted ${result.permissions.length} permission${result.permissions.length === 1 ? "" : "s"}.`,
+            );
           }
         } catch (err) {
           error(errorMessage(err, "Failed to create permission."));
@@ -75,7 +121,7 @@ export function createPermissionCommand(): Command {
           permissions.map((permission) => ({
             ID: permission.id,
             Agent: permission.agentId,
-            Item: permission.itemId,
+            Target: permission.itemId ?? `profile:${permission.profileId ?? "?"}`,
             Capability: permission.capability,
             Expires: permission.expiresAt ?? "-",
             Created: permission.createdAt,

@@ -10,7 +10,7 @@ The MCP server treats the model as **untrusted**. Every tool is designed so the 
 | Surface | Content |
 |---|---|
 | `list_items` | Item metadata (IDs, labels, kinds, storage modes, tags, timestamps) |
-| `run_with_secret` | Exit code, redacted output (≤ 4 KB), truncation flag |
+| `use_secret` | Exit code, duration, output-line count, truncation flag (no stdout/stderr text) |
 | `mount_secret` | Opaque `mountId`, permissions string, expiry window |
 | `release_mount` | Confirmation of release |
 | `get_audit` | Audit metadata (no secrets) |
@@ -18,7 +18,7 @@ The MCP server treats the model as **untrusted**. Every tool is designed so the 
 ## What the model does not see
 
 - Raw plaintext secret values
-- The full stdout / stderr of subprocesses spawned by `run_with_secret`
+- Any stdout / stderr text from subprocesses spawned by `use_secret`
 - The filesystem path of mounted secrets
 - Decrypted zero-knowledge payloads
 - Bearer session tokens, private keys, or any auth material
@@ -28,24 +28,18 @@ The MCP server treats the model as **untrusted**. Every tool is designed so the 
 
 | Guarantee | How |
 |---|---|
-| Secrets never in model context | `list_items` returns metadata only; `run_with_secret` returns redacted output; `mount_secret` returns an opaque ID |
-| Output redaction | `run_with_secret` scans stdout/stderr and replaces every occurrence of the secret with `[REDACTED]` (exact substring match) |
-| Output size cap | Each stream bounded to 8 KB pre-redaction; combined post-redaction output capped at 4 KB |
+| Secrets never in model context | `list_items` returns metadata only; `use_secret` returns no subprocess output text; `mount_secret` returns an opaque ID |
+| No subprocess output forwarded | `use_secret` captures stdout/stderr internally (bounded to 8 KB per stream) but returns only the line count and a truncation flag to the model |
 | Opaque mount IDs | File paths are never returned; mount IDs are random hex tokens |
 | Restricted file permissions | Mounted files use mode `0600` inside a `0700` temp directory |
 | Auto-cleanup | Mounted files are deleted after 5 minutes; orphaned directories are swept on startup |
 | No raw-secret tool | No tool returns raw secret bytes to the model |
 
-## Redaction limitations
+## Why no subprocess output
 
-Output redaction is **best-effort defense in depth**, not a guarantee. The MCP server scans stdout/stderr for the literal bytes of the secret and replaces each occurrence with `[REDACTED]`. It does **not** catch transformed forms:
+Earlier designs returned redacted subprocess output to the model. Redaction was best-effort string matching on the literal secret bytes and could not catch transformed forms — base64-encoded output, URL-encoded output, JSON-escaped output, output split across chunks. Any of those vectors leaked the secret to the model.
 
-- **Base64-encoded** — a subprocess that emits `base64(secret)` leaks the secret
-- **URL-encoded / percent-encoded** — same
-- **JSON-escaped** (e.g., `\u0041`) — same
-- **Split across chunks** — if the subprocess emits the secret with a separator (newline, null byte, ANSI escape) spliced in the middle, redaction may miss that occurrence. The 8 KB pre-redaction buffer mitigates short secrets but doesn't eliminate the issue.
-
-If a tool must emit data derived from the secret, the **subprocess** is responsible for scrubbing it.
+The current design drops subprocess output entirely. If the agent needs to inspect output, route it through a separate audited channel (write to a file via [`mount_secret`](/mcp/tools/mount_secret), then read it explicitly via a tool the model is allowed to call). This collapses the redaction-bypass surface to zero.
 
 ## Zero-knowledge items
 

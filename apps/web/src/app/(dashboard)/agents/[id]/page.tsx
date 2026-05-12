@@ -382,7 +382,11 @@ function GrantedPermissionsSection({
                 <PermissionRow
                   key={perm.id}
                   permission={perm}
-                  itemName={itemLabelMap.get(perm.itemId) ?? perm.itemId.slice(0, 12)}
+                  itemName={
+                    perm.itemId
+                      ? (itemLabelMap.get(perm.itemId) ?? perm.itemId.slice(0, 12))
+                      : `profile:${perm.profileId?.slice(0, 12) ?? "?"}`
+                  }
                   onRevoke={() => revokeMutation.mutate(perm.id)}
                   isRevoking={revokeMutation.isPending}
                 />

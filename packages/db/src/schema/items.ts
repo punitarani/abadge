@@ -12,9 +12,11 @@ export const items = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     profileId: text("profile_id").references(() => profiles.id, { onDelete: "set null" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    // §RM-PR1 — audit metadata, not ownership. Items belong to the
+    // organization (organizationId is the isolation boundary), not to a user.
+    // `createdBy` records who *created* the row for traceability, and is
+    // nullable so deleting the user does not require also deleting the item.
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     label: text("label").notNull(),
     kind: text("kind", { enum: ITEM_KINDS }),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
@@ -45,6 +47,6 @@ export const items = pgTable(
   (table) => [
     index("items_organization_id_idx").on(table.organizationId),
     index("items_profile_id_idx").on(table.profileId),
-    index("items_user_id_idx").on(table.userId),
+    index("items_created_by_idx").on(table.createdBy),
   ],
 );

@@ -16,7 +16,6 @@ function createMockDb(): BaseRequestContext["db"] {
   const results = [
     [{ organizationId: "org_mock" }], // resolveUserOrgId — header lookup
     [{ role: "owner" }], // requireOrgRole — membership + role
-    [{ id: "profile_mock" }], // assertOrgOnboardingComplete — bootstrapped profile
   ];
   const mockQuery = {
     from: () => mockQuery,

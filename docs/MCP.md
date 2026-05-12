@@ -1,102 +1,118 @@
 # MCP Server
 
-The abadge MCP server exposes item-aware tools to AI agents without returning secret values to the
-model. It runs as a subprocess MCP server over stdio.
+The abadge MCP server (`abadge-mcp`) exposes item-aware tools to AI agents
+without returning secret values to the model. It runs as a subprocess MCP
+server over stdio.
+
+## Install
+
+```bash
+# CLI + MCP server
+curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+# MCP only
+ABADGE_INSTALL_PACKAGE=mcp \
+  curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+```
+
+See [docs/release/mcp.md](release/mcp.md) for the underlying release flow.
 
 ## Setup
 
 ### Authentication
 
-Two auth modes are supported.
-
-**Keypair auth (preferred)** — set these environment variables:
+**Keypair auth (preferred)**:
 
 ```bash
 export ABADGE_API_URL=http://localhost:8787
-export ABADGE_AGENT_ID=agent_...
+export ABADGE_AGENT_ID=agt_...
 export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/mcp.ed25519.jwk
 ```
 
-The MCP server performs an Ed25519 session exchange on startup and automatically refreshes the
-session before it expires.
+The server performs an Ed25519 session exchange on startup and refreshes
+the session at T-2 minutes before expiry.
 
-**Legacy API key** — fallback during migration:
+**Legacy API key** (migration fallback):
 
 ```bash
 export ABADGE_AUTH_TOKEN=abl_legacy_agent_key
 ```
 
-The MCP server prints a deprecation warning when the legacy token path is used.
-
-The config file `~/.abadge/config.json` is also read; environment variables take precedence.
+Prints a deprecation warning when used. `~/.abadge/config.json` is also
+read; environment variables take precedence.
 
 ### Running
 
 ```bash
-bun run mcp
-# or directly
-bun packages/mcp/src/index.ts
+abadge-mcp                  # installed binary
+bun run mcp                 # dev (monorepo)
 ```
 
 ## Claude Desktop / MCP client config
+
+The CLI can emit a paste-ready snippet:
+
+```bash
+abadge agent add --kind local_mcp --name claude-desktop --mcp-config
+```
+
+Shape:
 
 ```json
 {
   "mcpServers": {
     "abadge": {
-      "command": "bun",
-      "args": ["packages/mcp/src/index.ts"],
+      "command": "/Users/you/.abadge/bin/abadge-mcp",
       "env": {
-        "ABADGE_API_URL": "http://localhost:8787",
-        "ABADGE_AGENT_ID": "agent_...",
-        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/mcp.ed25519.jwk"
+        "ABADGE_API_URL": "https://api.abadge.io",
+        "ABADGE_AGENT_ID": "agt_...",
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/agt_....ed25519.jwk"
       }
     }
   }
 }
 ```
 
-## Keypair session lifecycle
-
-For keypair-backed agents the MCP server:
-
-1. Creates an anonymous API client
-2. Requests an agent challenge (`abc_...`, 60-second TTL)
-3. Signs the challenge with the configured Ed25519 private key
-4. Exchanges the signature for a short-lived `abs_...` session (15-minute TTL)
-5. Schedules automatic session refresh at T-2 minutes before expiry
-
-## Startup behavior
-
-On startup the server scans the OS temp directory for orphaned `abadge-*` mount directories older
-than 10 minutes and removes them.
+Use the absolute path for `command` — Claude Desktop launches with a
+minimal `$PATH` that does not include `~/.abadge/bin`.
 
 ## Tool reference
 
+The MCP server registers five tools.
+
 ### `list_items`
 
-Lists stored item metadata (IDs, labels, kinds, storage modes, timestamps). Never returns secret
-values.
+Lists stored item metadata (IDs, labels, kinds, storage modes,
+timestamps). Never returns secret values.
 
 Input: none.
-
 Output: JSON array of item summaries.
 
-### `run_with_secret`
+### `use_secret`
 
-Runs a command with a secret injected as an environment variable. Returns only the exit code,
-duration, output-line count, and a truncation flag. **Subprocess stdout/stderr text is never
-returned to the model.** Secrets larger than 4 KB are rejected before spawn — use `mount_secret`
-instead for large secrets (PEMs, kubeconfigs, SSH keys, TLS certificates).
+The unified runtime tool. Runs a command with one secret, or with every
+env-var-shaped secret in a profile, injected as environment variables.
+Returns only the exit code, duration, output-line count, and a
+truncation flag. **Subprocess stdout/stderr text is never returned to the
+model.**
+
+Provide exactly one target field. The three targets are mutually exclusive:
+
+| Field | Mode | Selects |
+|-------|------|---------|
+| `itemId` | single-item | one item by id |
+| `profileLabel` | bulk | every env-shaped item in the profile, by profile id |
+| `profileExternalId` | bulk | every env-shaped item in the profile, by `externalId` |
+
+Common fields:
 
 | Input field | Type | Required | Description |
 |------|------|----------|-------------|
-| `itemId` | string | yes | ID of the item to inject |
-| `field` | string | no | Named field to inject (for multi-field items) |
 | `command` | string | yes | Command to run |
 | `args` | string[] | no | Command arguments |
-| `envVarName` | string | no | Environment variable name (default: `ABADGE_SECRET`) |
-| `purpose` | string | no | Why this credential is needed |
+| `purpose` | string | no | Why this credential is needed (audited) |
+| `field` | string | no | Named field (single-item mode only) |
+| `envVarName` | string | no | Env var name (single-item mode only; default `ABADGE_SECRET`) |
 
 Output:
 
@@ -105,55 +121,58 @@ Output:
   "exitCode": 0,
   "durationMs": 42,
   "outputLineCount": { "stdout": 2, "stderr": 0 },
-  "truncated": false
+  "truncated": false,
+  "injectedCount": 7
 }
 ```
 
-| Field | Description |
-|------|-------------|
-| `exitCode` | Subprocess exit code |
-| `durationMs` | Wall-clock milliseconds from handler entry to subprocess completion |
-| `outputLineCount` | Number of lines captured per stream (for diagnostic use; text is not returned) |
-| `truncated` | `true` if either stream hit the 8 KB per-stream capture cap |
+`injectedCount` is present only in bulk mode.
 
 Security:
-- Subprocess stdout/stderr text is captured internally for line counting but is **never forwarded to the model**. This eliminates all semantic-leakage vectors (base64, hex, URL-encoded, nth-char extraction, byte-split, etc.) that string-based redaction cannot catch (§RED1).
-- Secrets larger than 4 KB are refused before spawn — use `mount_secret` for large credentials.
-- Each stream is bounded to 8 KB (`STREAM_CAP_BYTES`) to prevent OOM from a misbehaving subprocess.
-- If the model needs to inspect subprocess output, the operator should route output through a separate audited channel (e.g. write to a file via `mount_secret`, then read back explicitly).
+
+* Output text is captured for line counting only — never forwarded to
+  the model. Eliminates semantic-leakage vectors (base64, hex,
+  URL-encoded, nth-char extraction, byte-split) that string-based
+  redaction cannot catch (§RED1).
+* Per-secret 4 KB size cap; oversize secrets are refused before spawn —
+  use `mount_secret` for large credentials (PEMs, kubeconfigs).
+* Each stream is bounded to 8 KB to prevent OOM.
+* Bulk mode rules:
+  * Only single-string-field items participate; multi-field items are
+    silently skipped.
+  * Labels normalizing to the same env var (or to reserved keys like
+    `LD_PRELOAD`, `NODE_OPTIONS`) are hard-rejected.
+  * Cap of 256 items per call.
+  * Each included item produces an `access.use` audit row tagged
+    `meta.viaBulk = true`.
+* Bulk mode is local-only (`use` is unavailable to remote agents).
 
 ### `mount_secret`
 
-Mounts a secret as a temporary file with 0600 permissions. Returns an opaque `mountId` — the file
-path is never returned to the model. The file auto-deletes after 5 minutes, or earlier with
-`release_mount`.
+Mounts a secret as a temporary file with `0600` permissions. Returns an
+opaque `mountId` — **the file path is never returned to the model**. The
+file auto-deletes after 5 minutes, or earlier with `release_mount`.
 
 | Input field | Type | Required | Description |
 |------|------|----------|-------------|
-| `itemId` | string | yes | ID of the item to mount |
-| `field` | string | no | Named field to mount (for multi-field items) |
+| `itemId` | string | yes | Item to mount |
+| `field` | string | no | Named field for multi-field items |
 | `filename` | string | no | Custom filename (default: item ID) |
 | `purpose` | string | no | Why this credential is needed |
 
 Output:
 
 ```json
-{
-  "mountId": "3a8f1c...",
-  "permissions": "0600",
-  "expiresIn": "5 minutes"
-}
+{ "mountId": "3a8f1c...", "permissions": "0600", "expiresIn": "5 minutes" }
 ```
-
-The `mountId` is an opaque token. Pass it to `release_mount` to clean up early.
 
 ### `release_mount`
 
-Releases a mounted secret by `mountId`, deleting the temp file immediately.
+Releases a mount by `mountId`, deleting the temp file immediately.
 
 | Input field | Type | Required | Description |
 |------|------|----------|-------------|
-| `mountId` | string | yes | Opaque mount ID returned by `mount_secret` |
+| `mountId` | string | yes | Opaque mount ID from `mount_secret` |
 
 Output: `{ "released": true, "mountId": "..." }`.
 
@@ -161,19 +180,40 @@ Output: `{ "released": true, "mountId": "..." }`.
 
 Fetches recent audit entries from the control plane.
 
-Input: none (optional filters may be supported).
-
+Input: optional filters supported by `GET /v1/audit`.
 Output: JSON array of audit entries.
 
 ## Error responses
 
-Tool errors are returned as JSON text content with the shape:
+Tool errors are JSON text content:
 
 ```json
-{ "error": "Human-readable message", "code": "<domain code>", "hint": "<remediation>", "meta": { ... } }
+{
+  "error": "Human-readable message",
+  "code": "DOMAIN_CODE",
+  "hint": "Remediation",
+  "meta": { }
+}
 ```
 
-`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer errors from the control plane). Non-`AbadgeApiError` failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only. LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
+`error` is always present. `code`, `hint`, and `meta` are populated when
+the underlying failure is an `AbadgeApiError`. LLM integrators can parse
+`code` for deterministic branching.
+
+## Startup behavior
+
+On startup the server scans the OS temp directory for orphaned `abadge-*`
+mount directories older than 10 minutes and removes them.
+
+## Keypair session lifecycle
+
+For keypair-backed agents the MCP server:
+
+1. Creates an anonymous API client.
+2. Requests an agent challenge (`abc_...`, 60 s TTL).
+3. Signs the challenge with the configured Ed25519 private key.
+4. Exchanges the signature for a short-lived `abs_...` session (15 min TTL).
+5. Schedules automatic session refresh at T-2 min before expiry.
 
 ## Security model
 
@@ -181,13 +221,13 @@ The MCP server treats the model as untrusted:
 
 | Guarantee | How it is enforced |
 |---|---|
-| Secrets never in model context | `list_items` returns metadata only; `run_with_secret` returns only redacted output; `mount_secret` returns only an opaque `mountId` |
-| Output redaction | `run_with_secret` scans stdout/stderr and replaces every occurrence of the secret with `[REDACTED]` (exact substring match only; see "Redaction limitations" above) |
-| Output size cap | Each stream bounded to 8 KB pre-redaction (prevents OOM from subprocess flooding); combined stdout+stderr capped at 4 KB post-redaction |
+| Secrets never enter model context | `list_items` returns metadata only; `use_secret` returns only the redacted shape; `mount_secret` returns only an opaque `mountId` |
+| Output never returned to model | `use_secret` captures stdout/stderr internally; only line counts and a truncation flag are returned |
+| Pre-spawn size cap | Each secret must fit in 4 KB before spawn; larger secrets are refused |
 | Opaque mount IDs | File paths are never returned; mount IDs are random hex tokens |
-| Restricted file permissions | Mounted files use mode 0600 inside a 0700 temp directory |
-| Auto-cleanup | Mounted files are deleted after 5 minutes; orphaned directories are swept on startup |
-| No raw secret tool | No tool returns the raw secret bytes to the model |
+| Restricted file permissions | Mounted files use mode `0600` inside a `0700` temp directory |
+| Auto-cleanup | Mounted files are deleted after 5 minutes; orphans are swept on startup |
+| No raw-secret tool | No tool returns the raw secret bytes to the model |
 
-For zero-knowledge items, the MCP server delegates decryption to the local daemon (which holds the
-root key in memory).
+For zero-knowledge items the MCP server delegates decryption to the local
+daemon, which holds the profile root key in memory.

@@ -93,7 +93,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("ProfileCreateDrawer — rendering", () => {
+describe("ProfileCreateDrawer — rendering (§REVAMP-PR5)", () => {
   test("renders nothing when open=false", () => {
     renderDrawer({ open: false });
     expect(screen.queryByLabelText(/profile name/i)).toBeNull();
@@ -104,42 +104,36 @@ describe("ProfileCreateDrawer — rendering", () => {
     expect(screen.getByLabelText(/profile name/i)).toBeTruthy();
   });
 
-  test("renders StorageModePicker radio group when open=true", () => {
+  test("renders optional External ID input when open=true", () => {
     renderDrawer({ open: true });
-    const radios = screen.getAllByRole("radio");
-    expect(radios.length).toBe(2);
+    expect(screen.getByLabelText(/external id/i)).toBeTruthy();
   });
 
-  test("password inputs are in DOM when storageMode=zero_knowledge (default)", () => {
+  test("ZK is OFF by default — server-managed is the default storage mode", () => {
     renderDrawer({ open: true });
-    expect(screen.getByLabelText(/^profile password/i)).toBeTruthy();
-    expect(screen.getByLabelText(/confirm password/i)).toBeTruthy();
-  });
-
-  test("password inputs are NOT in DOM when storageMode=server_managed", () => {
-    renderDrawer({ open: true });
-
-    // Switch to server_managed by clicking the second radio.
-    const radios = screen.getAllByRole("radio");
-    const smRadio = radios[1] as HTMLElement;
-    fireEvent.click(smRadio);
-
+    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
     expect(screen.queryByLabelText(/^profile password/i)).toBeNull();
     expect(screen.queryByLabelText(/confirm password/i)).toBeNull();
   });
 
-  test("amber warning block is visible when storageMode=zero_knowledge", () => {
+  test("toggling ZK on reveals the password inputs and warning block", () => {
     renderDrawer({ open: true });
+    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+    expect(screen.getByLabelText(/^profile password/i)).toBeTruthy();
+    expect(screen.getByLabelText(/confirm password/i)).toBeTruthy();
     expect(screen.getByText(/the server will never see this password/i)).toBeTruthy();
   });
 
-  test("amber warning block is NOT visible when storageMode=server_managed", () => {
+  test("toggling ZK off again hides the password inputs and warning block", () => {
     renderDrawer({ open: true });
-
-    const radios = screen.getAllByRole("radio");
-    const smRadio = radios[1] as HTMLElement;
-    fireEvent.click(smRadio);
-
+    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
+    fireEvent.click(checkbox);
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(false);
+    expect(screen.queryByLabelText(/^profile password/i)).toBeNull();
     expect(screen.queryByText(/the server will never see this password/i)).toBeNull();
   });
 });
