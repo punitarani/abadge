@@ -51,7 +51,11 @@ const PAGE_SIZE = 25;
 
 interface PermissionGroup {
   agentId: string;
-  itemId: string;
+  // §RM-PR2 — itemId is null for profile-target grants. The grouping key
+  // builds in a synthetic "profile:<profileId>" token so item and profile
+  // grants for the same agent never collide.
+  itemId: string | null;
+  profileId: string | null;
   permissions: Permission[];
 }
 
@@ -66,10 +70,16 @@ function groupPermissionsByPair(
 ): PermissionGroup[] {
   const groups = new Map<string, PermissionGroup>();
   for (const p of permissions) {
-    const key = `${p.agentId}::${p.itemId}`;
+    const targetKey = p.itemId ?? `profile:${p.profileId ?? "?"}`;
+    const key = `${p.agentId}::${targetKey}`;
     let group = groups.get(key);
     if (!group) {
-      group = { agentId: p.agentId, itemId: p.itemId, permissions: [] };
+      group = {
+        agentId: p.agentId,
+        itemId: p.itemId,
+        profileId: p.profileId,
+        permissions: [],
+      };
       groups.set(key, group);
     }
     group.permissions.push(p);
@@ -87,9 +97,13 @@ function groupPermissionsByPair(
     const an = agentNameMap.get(a.agentId) ?? a.agentId;
     const bn = agentNameMap.get(b.agentId) ?? b.agentId;
     if (an !== bn) return an.localeCompare(bn);
-    const ai = itemLabelMap.get(a.itemId) ?? a.itemId;
-    const bi = itemLabelMap.get(b.itemId) ?? b.itemId;
-    return ai.localeCompare(bi);
+    const aTarget = a.itemId
+      ? (itemLabelMap.get(a.itemId) ?? a.itemId)
+      : `profile:${a.profileId ?? ""}`;
+    const bTarget = b.itemId
+      ? (itemLabelMap.get(b.itemId) ?? b.itemId)
+      : `profile:${b.profileId ?? ""}`;
+    return aTarget.localeCompare(bTarget);
   });
 }
 
@@ -127,7 +141,9 @@ function filterPermissions(
     const lower = search.toLowerCase();
     result = result.filter((p: Permission) => {
       const agentName = agentNameMap.get(p.agentId)?.toLowerCase() ?? "";
-      const itemLabel = itemLabelMap.get(p.itemId)?.toLowerCase() ?? "";
+      const itemLabel = p.itemId
+        ? (itemLabelMap.get(p.itemId)?.toLowerCase() ?? "")
+        : (p.profileId?.toLowerCase() ?? "");
       return agentName.includes(lower) || itemLabel.includes(lower);
     });
   }
@@ -273,16 +289,22 @@ function PermissionsTable({
               </TableCell>
             </TableRow>
           ) : (
-            visibleGroups.map((group) => (
-              <PermissionGroupRow
-                key={`${group.agentId}::${group.itemId}`}
-                group={group}
-                agentName={agentNameMap.get(group.agentId) ?? group.agentId.slice(0, 12)}
-                itemLabel={itemLabelMap.get(group.itemId) ?? group.itemId.slice(0, 12)}
-                onRevoke={onRevoke}
-                isRevoking={isRevoking}
-              />
-            ))
+            visibleGroups.map((group) => {
+              const targetKey = group.itemId ?? `profile:${group.profileId ?? "?"}`;
+              const targetLabel = group.itemId
+                ? (itemLabelMap.get(group.itemId) ?? group.itemId.slice(0, 12))
+                : `profile:${group.profileId?.slice(0, 12) ?? "?"}`;
+              return (
+                <PermissionGroupRow
+                  key={`${group.agentId}::${targetKey}`}
+                  group={group}
+                  agentName={agentNameMap.get(group.agentId) ?? group.agentId.slice(0, 12)}
+                  itemLabel={targetLabel}
+                  onRevoke={onRevoke}
+                  isRevoking={isRevoking}
+                />
+              );
+            })
           )}
         </TableBody>
       </Table>
@@ -460,10 +482,11 @@ export default function PermissionsListPage(): React.ReactElement {
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
           <option value="all">All capabilities</option>
-          <option value="read_ciphertext">read_ciphertext</option>
-          <option value="reveal_plaintext">reveal_plaintext</option>
-          <option value="mount_env">mount_env</option>
-          <option value="mount_file">mount_file</option>
+          {CAPABILITIES.map((cap) => (
+            <option key={cap} value={cap}>
+              {cap}
+            </option>
+          ))}
         </select>
 
         <select

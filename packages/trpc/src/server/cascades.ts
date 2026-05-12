@@ -19,7 +19,11 @@ export { onMemberRemoved } from "@abadge/db";
 
 /**
  * Called after agent revocation: invalidates all active sessions for the agent
- * and writes one cascade audit entry per invalidated session.
+ * and writes:
+ *   - one agent.revoke_cascade audit row per invalidated session
+ *   - one permission.revoke_cascade audit row per (item-level OR profile-level)
+ *     permission rendered dormant by the revoke (the rows themselves remain;
+ *     the agent's revokedAt makes them ineffective at access time)
  */
 export async function onAgentRevoked(
   tx: Transaction,
@@ -42,19 +46,53 @@ export async function onAgentRevoked(
     )
     .returning({ id: agentSessions.id, userId: agentSessions.userId });
 
-  if (revoked.length === 0) return;
+  if (revoked.length > 0) {
+    await tx.insert(auditLogs).values(
+      revoked.map((session) => ({
+        organizationId: orgId,
+        userId: revokedBy,
+        agentId,
+        eventType: "agent.revoke_cascade" as const,
+        result: "cascade" as const,
+        meta: { sessionId: session.id, revokedSessionUserId: session.userId },
+        ipAddress: ipAddress ?? null,
+      })),
+    );
+  }
 
-  await tx.insert(auditLogs).values(
-    revoked.map((session) => ({
-      organizationId: orgId,
-      userId: revokedBy,
-      agentId,
-      eventType: "agent.revoke_cascade" as const,
-      result: "cascade" as const,
-      meta: { sessionId: session.id, revokedSessionUserId: session.userId },
-      ipAddress: ipAddress ?? null,
-    })),
-  );
+  // §RM-PR2 — Surface every (item-level OR profile-level) permission as
+  // implicitly invalidated. The grant rows themselves remain in place; the
+  // agent's revokedAt makes them dormant at access time.
+  const grants = await tx
+    .select({
+      id: permissions.id,
+      itemId: permissions.itemId,
+      profileId: permissions.profileId,
+      capability: permissions.capability,
+    })
+    .from(permissions)
+    .where(eq(permissions.agentId, agentId));
+
+  if (grants.length > 0) {
+    await tx.insert(auditLogs).values(
+      grants.map((g) => ({
+        organizationId: orgId,
+        userId: revokedBy,
+        agentId,
+        itemId: g.itemId,
+        profileId: g.profileId,
+        eventType: "permission.revoke_cascade" as const,
+        result: "cascade" as const,
+        meta: {
+          reason: "agent_revoked",
+          permissionId: g.id,
+          capability: g.capability,
+          target: g.itemId ? "item" : "profile",
+        },
+        ipAddress: ipAddress ?? null,
+      })),
+    );
+  }
 }
 
 /**

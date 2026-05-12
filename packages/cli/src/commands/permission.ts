@@ -120,7 +120,7 @@ export function createPermissionCommand(): Command {
           permissions.map((permission) => ({
             ID: permission.id,
             Agent: permission.agentId,
-            Item: permission.itemId,
+            Target: permission.itemId ?? `profile:${permission.profileId ?? "?"}`,
             Capability: permission.capability,
             Expires: permission.expiresAt ?? "-",
             Created: permission.createdAt,

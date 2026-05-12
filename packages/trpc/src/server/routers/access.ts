@@ -20,9 +20,14 @@ import {
   MountAccessSchema,
   MultiFieldItemError,
   NotFoundError,
+  ProfileUseAccessSchema,
+  ReadAccessResponseSchema,
+  ReadAccessSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
   resolveFieldValue,
+  UseAccessResponseSchema,
+  UseAccessSchema,
 } from "@abadge/core";
 import { serverDecrypt } from "@abadge/crypto/server";
 import {
@@ -36,11 +41,12 @@ import {
   permissions as permissionRecords,
   profiles as profileRecords,
 } from "@abadge/db/schema";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Schema } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
 
 function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
   if (result === "expired") {
@@ -769,21 +775,117 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     return { items: responseItems };
   });
 
+// §RM-PR2 — ProfileUseAccessResponseSchema is defined here rather than in
+// @abadge/core because it is a thin router-side adapter shape. Each item
+// returns its own mountId; the daemon exchanges them concurrently.
+const ProfileUseAccessResponseSchema = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      itemId: Schema.String.pipe(Schema.minLength(1)),
+      mountId: Schema.String.pipe(Schema.minLength(1)),
+      delivery: Schema.Literal("env", "file"),
+      expiresAt: Schema.String,
+    }),
+  ),
+});
+
 export const accessRouter = createTrpcRouter({
+  /** @deprecated Use `access.read` (canonical). Removal target: v0.6. */
   ciphertext: agentProcedure
     .input(strictSchema(CiphertextAccessSchema))
     .output(strictSchema(CiphertextAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessCiphertext(input))),
+  /** @deprecated Use `access.read` (canonical). Removal target: v0.6. */
   reveal: agentProcedure
     .input(strictSchema(RevealAccessSchema))
     .output(strictSchema(RevealAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessReveal(input))),
+  /** @deprecated Use `access.use` (canonical). Removal target: v0.6. */
   mount: agentProcedure
     .input(strictSchema(MountAccessSchema))
     .output(strictSchema(MountAccessResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessMount(input))),
+  /** @deprecated Use `access.useProfile` (canonical). Removal target: v0.6. */
   bulkMountEnv: agentProcedure
     .input(strictSchema(BulkMountEnvSchema))
     .output(strictSchema(BulkMountEnvResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessBulkMountEnv(input))),
+
+  // §RM-PR2 — Canonical access procedures. Unified pipeline handles both ZK
+  // and server-managed storage, plus item-level AND profile-level grants.
+  read: agentProcedure
+    .input(strictSchema(ReadAccessSchema))
+    .output(strictSchema(ReadAccessResponseSchema))
+    .mutation(({ ctx, input }) =>
+      runAgentEffect(
+        ctx,
+        Effect.gen(function* () {
+          const result = yield* resolveAccess({
+            itemId: input.itemId,
+            action: "read",
+            field: input.field,
+            purpose: input.purpose,
+          });
+          // resolveAccess returns ReadResult | UseResult; narrow to read shape.
+          if ("mountId" in result) {
+            return yield* Effect.fail(
+              new Error("internal: resolveAccess returned use result for read action"),
+            );
+          }
+          return result;
+        }),
+      ),
+    ),
+  use: agentProcedure
+    .input(strictSchema(UseAccessSchema))
+    .output(strictSchema(UseAccessResponseSchema))
+    .mutation(({ ctx, input }) =>
+      runAgentEffect(
+        ctx,
+        Effect.gen(function* () {
+          const result = yield* resolveAccess({
+            itemId: input.itemId,
+            action: "use",
+            delivery: input.delivery,
+            field: input.field,
+            envVarName: input.envVarName,
+            purpose: input.purpose,
+          });
+          if (!("mountId" in result)) {
+            return yield* Effect.fail(
+              new Error("internal: resolveAccess returned read result for use action"),
+            );
+          }
+          return {
+            mountId: result.mountId,
+            delivery: result.delivery,
+            expiresAt: result.expiresAt.toISOString(),
+          };
+        }),
+      ),
+    ),
+  useProfile: agentProcedure
+    .input(strictSchema(ProfileUseAccessSchema))
+    .output(strictSchema(ProfileUseAccessResponseSchema))
+    .mutation(({ ctx, input }) =>
+      runAgentEffect(
+        ctx,
+        Effect.gen(function* () {
+          const result = yield* resolveProfileAccess({
+            profileId: input.profileId,
+            action: "use",
+            delivery: input.delivery,
+            purpose: input.purpose,
+          });
+          return {
+            items: result.items.map((it) => ({
+              itemId: it.itemId,
+              mountId: it.mountId,
+              delivery: it.delivery,
+              expiresAt: it.expiresAt.toISOString(),
+            })),
+          };
+        }),
+      ),
+    ),
 });
