@@ -184,6 +184,7 @@ const listAuditEntriesForAgent = (
 
 export const auditRouter = createTrpcRouter({
   list: scopedSessionProcedure("audit:read")
+    .meta({ openapi: { method: "GET", path: "/audit", tags: ["audit"], protect: true } })
     .input(strictSchema(AuditQueryInputSchema))
     .output(strictSchema(AuditListResultSchema))
     .query(({ ctx, input }) =>

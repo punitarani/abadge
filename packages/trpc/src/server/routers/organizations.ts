@@ -1027,6 +1027,7 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
 
 export const organizationsRouter = createTrpcRouter({
   create: userProcedure
+    .meta({ openapi: { method: "POST", path: "/orgs", tags: ["organizations"], protect: true } })
     .input(strictSchema(CreateOrganizationSchema))
     .output(strictSchema(CreateOrgResultSchema))
     .mutation(({ ctx, input }) => runUserEffect(ctx, createOrg(input))),
@@ -1037,31 +1038,57 @@ export const organizationsRouter = createTrpcRouter({
     .query(({ ctx, input }) => runUserEffect(ctx, checkSlug(input.slug))),
 
   list: userProcedure
+    .meta({ openapi: { method: "GET", path: "/orgs", tags: ["organizations"], protect: true } })
     .output(strictSchema(OrgListResultSchema))
     .query(({ ctx }) => runUserEffect(ctx, listOrgs)),
 
   get: sessionProcedure
+    .meta({
+      openapi: { method: "GET", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(OrgResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getOrg(input.orgId))),
 
   update: sessionProcedure
+    .meta({
+      openapi: { method: "PATCH", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(UpdateOrganizationSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateOrg(input))),
 
   delete: sessionProcedure
+    .meta({
+      openapi: { method: "DELETE", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteOrg(input.orgId))),
 
   members: createTrpcRouter({
     list: sessionProcedure
+      .meta({
+        openapi: {
+          method: "GET",
+          path: "/orgs/{orgId}/members",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(OrgIdSchema))
       .output(strictSchema(MemberListResultSchema))
       .query(({ ctx, input }) => runSessionEffect(ctx, listMembers(input.orgId))),
 
     invite: sessionProcedure
+      .meta({
+        openapi: {
+          method: "POST",
+          path: "/orgs/{orgId}/members",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(CreateInviteSchema))
       .output(strictSchema(CreateInviteResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, createInvite(input))),
@@ -1072,6 +1099,9 @@ export const organizationsRouter = createTrpcRouter({
       .query(({ ctx, input }) => runUserEffect(ctx, getInviteInfo(input.token))),
 
     acceptInvite: userProcedure
+      .meta({
+        openapi: { method: "POST", path: "/invites/accept", tags: ["members"], protect: true },
+      })
       .input(strictSchema(InviteTokenSchema))
       .output(strictSchema(AcceptInviteResultSchema))
       .mutation(({ ctx, input }) => runUserEffect(ctx, acceptInvite(input.token))),
@@ -1082,11 +1112,27 @@ export const organizationsRouter = createTrpcRouter({
       .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeInvite(input))),
 
     remove: sessionProcedure
+      .meta({
+        openapi: {
+          method: "DELETE",
+          path: "/orgs/{orgId}/members/{memberId}",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(RemoveMemberSchema))
       .output(strictSchema(SuccessResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, removeMember(input))),
 
     updateRole: sessionProcedure
+      .meta({
+        openapi: {
+          method: "PATCH",
+          path: "/orgs/{orgId}/members/{memberId}",
+          tags: ["members"],
+          protect: true,
+        },
+      })
       .input(strictSchema(UpdateMemberRoleSchema))
       .output(strictSchema(SuccessResultSchema))
       .mutation(({ ctx, input }) => runSessionEffect(ctx, updateMemberRole(input))),

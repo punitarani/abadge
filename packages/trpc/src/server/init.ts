@@ -81,7 +81,32 @@ export function trpcErrorFormatter({
   };
 }
 
-const t = initTRPC.context<BaseRequestContext>().create({
+/**
+ * Procedure metadata describing the canonical REST surface that exposes the
+ * procedure. Consumed by the hand-written `/v1` adapter in `apps/api/src/rest`
+ * to generate both the request router and the OpenAPI 3.1 document.
+ *
+ * We picked a hand-written adapter over `trpc-to-openapi` because that
+ * package requires `zod ^4` as a peer dep; this codebase uses Effect Schema
+ * exclusively (see `@abadge/core`). Adding a parallel zod schema layer would
+ * duplicate validation. Keeping the table in code is also a single source of
+ * truth for both the router and the spec.
+ *
+ * `path` placeholders use `{paramName}` form and must appear in the procedure
+ * input shape so the REST adapter can splice them in.
+ */
+export interface RestMeta {
+  openapi: {
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+    path: string;
+    tags: string[];
+    /** True when the procedure requires authentication. */
+    protect: boolean;
+    summary?: string;
+  };
+}
+
+const t = initTRPC.context<BaseRequestContext>().meta<RestMeta>().create({
   errorFormatter: trpcErrorFormatter,
 });
 

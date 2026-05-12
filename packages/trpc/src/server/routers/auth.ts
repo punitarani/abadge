@@ -823,22 +823,55 @@ export const authRouter = createTrpcRouter({
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx }) => runSessionEffect(ctx, recordLogout)),
   issueBootstrapToken: scopedSessionProcedure("agents:write")
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/bootstrap",
+        tags: ["auth"],
+        protect: true,
+      },
+    })
     .input(strictSchema(IssueAgentBootstrapTokenSchema))
     .output(strictSchema(AgentBootstrapTokenResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, issueBootstrapToken(input))),
   enroll: publicProcedure
+    .meta({ openapi: { method: "POST", path: "/agents/enroll", tags: ["auth"], protect: false } })
     .input(strictSchema(EnrollAgentSchema))
     .output(strictSchema(AgentEnrollmentResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, enrollAgent(input))),
   createChallenge: publicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/sessions/challenge",
+        tags: ["auth"],
+        protect: false,
+      },
+    })
     .input(strictSchema(CreateAgentChallengeSchema))
     .output(strictSchema(AgentChallengeResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, createAgentChallenge(input))),
   exchangeSession: publicProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/agents/{agentId}/sessions/exchange",
+        tags: ["auth"],
+        protect: false,
+      },
+    })
     .input(strictSchema(ExchangeAgentSessionSchema))
     .output(strictSchema(AgentSessionResultSchema))
     .mutation(({ ctx, input }) => runBaseEffect(ctx, exchangeAgentSession(input))),
   revokeSession: scopedSessionProcedure("agents:write")
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/agents/sessions/{token}",
+        tags: ["auth"],
+        protect: true,
+      },
+    })
     .input(strictSchema(RevokeAgentSessionSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokeAgentSession(input))),

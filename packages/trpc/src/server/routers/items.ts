@@ -514,20 +514,28 @@ const UpdateItemInputEnvelopeSchema = Schema.Struct({
 
 export const itemsRouter = createTrpcRouter({
   create: scopedSessionProcedure("items:write")
+    .meta({ openapi: { method: "POST", path: "/items", tags: ["items"], protect: true } })
     .input(strictSchema(CreateItemSchema))
     .output(strictSchema(IdResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createItem(input))),
   list: scopedSessionProcedure("items:read")
+    .meta({ openapi: { method: "GET", path: "/items", tags: ["items"], protect: true } })
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runSessionEffect(ctx, listItems)),
   listForAgent: agentProcedure
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),
   get: scopedSessionProcedure("items:read")
+    .meta({
+      openapi: { method: "GET", path: "/items/{itemId}", tags: ["items"], protect: true },
+    })
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(ItemResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getItem(input.itemId))),
   update: scopedSessionProcedure("items:write")
+    .meta({
+      openapi: { method: "PATCH", path: "/items/{itemId}", tags: ["items"], protect: true },
+    })
     .input(strictSchema(UpdateItemInputEnvelopeSchema))
     .output(strictSchema(ItemVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, updateItem(input.itemId, input.data))),
@@ -536,6 +544,9 @@ export const itemsRouter = createTrpcRouter({
     .output(strictSchema(RevealAccessResponseSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, ownerReveal(input.itemId))),
   delete: scopedSessionProcedure("items:write")
+    .meta({
+      openapi: { method: "DELETE", path: "/items/{itemId}", tags: ["items"], protect: true },
+    })
     .input(strictSchema(ItemIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteItem(input.itemId))),

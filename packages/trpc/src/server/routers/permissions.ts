@@ -663,14 +663,28 @@ const revokePermission = (permissionId: string) =>
 
 export const permissionsRouter = createTrpcRouter({
   create: scopedSessionProcedure("permissions:write")
+    .meta({
+      openapi: { method: "POST", path: "/permissions", tags: ["permissions"], protect: true },
+    })
     .input(strictSchema(CreatePermissionSchema))
     .output(strictSchema(PermissionListResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createPermission(input))),
   list: scopedSessionProcedure("permissions:read")
+    .meta({
+      openapi: { method: "GET", path: "/permissions", tags: ["permissions"], protect: true },
+    })
     .input(strictSchema(PermissionListQuerySchema))
     .output(strictSchema(PermissionListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listPermissions(input))),
   revoke: scopedSessionProcedure("permissions:write")
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/permissions/{permissionId}",
+        tags: ["permissions"],
+        protect: true,
+      },
+    })
     .input(strictSchema(PermissionIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, revokePermission(input.permissionId))),
