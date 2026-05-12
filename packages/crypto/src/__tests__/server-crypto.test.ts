@@ -32,7 +32,13 @@ describe("Server-managed encryption", () => {
     const plaintext = new TextEncoder().encode("secret");
     const encrypted = await serverEncrypt(plaintext, TEST_SERVER_KEY, 1);
 
-    const tampered = { ...encrypted, ciphertext: `${encrypted.ciphertext.slice(0, -2)}AA` };
+    // Flip the last byte of the base64url ciphertext to a deterministically-
+    // different character. The previous version used a fixed "AA" suffix which
+    // produced a no-op tampering ~1/256 of the time (when the original ciphertext
+    // already ended in "AA"), causing intermittent CI flakes.
+    const last = encrypted.ciphertext.slice(-1);
+    const replacement = last === "A" ? "B" : "A";
+    const tampered = { ...encrypted, ciphertext: `${encrypted.ciphertext.slice(0, -1)}${replacement}` };
     expect(serverDecrypt(tampered, TEST_SERVER_KEY)).rejects.toThrow();
   });
 
