@@ -23,9 +23,9 @@ import {
   ProfileUseAccessSchema,
   ReadAccessResponseSchema,
   ReadAccessSchema,
-  resolveFieldValue,
   RevealAccessResponseSchema,
   RevealAccessSchema,
+  resolveFieldValue,
   UseAccessResponseSchema,
   UseAccessSchema,
 } from "@abadge/core";

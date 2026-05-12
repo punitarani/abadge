@@ -529,6 +529,7 @@ function buildHandlers(
       return { exitCode, signal: proc.signalCode ?? undefined };
     },
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: exec.envBulk decrypts N items (ZK + SM), validates labels → env-key normalization, detects reserved-key + collision violations, builds env map, and spawns a subprocess — splitting it would scatter the audit/cleanup paths.
     "exec.envBulk": async (params): Promise<EnvExecResult> => {
       // W1S6-003 — auth + unlock gate (matches exec.expandEnv).
       buildAuthHeaders(auth);

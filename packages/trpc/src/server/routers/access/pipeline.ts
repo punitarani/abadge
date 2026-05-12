@@ -273,6 +273,7 @@ export const resolveAccess = (
   NotFoundError | ForbiddenError | IntegrityError | Error,
   AgentRequestContextTag
 > =>
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: resolveAccess is the load-bearing unified pipeline: load item → constraint check → permission lookup (item-or-profile) → audit-staging → storage-mode branch → return. Splitting it would scatter the audit-before-decrypt invariant across helpers.
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
     const { itemId, action, delivery, field, purpose } = input;

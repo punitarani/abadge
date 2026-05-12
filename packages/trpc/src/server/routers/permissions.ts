@@ -48,6 +48,7 @@ const PermissionListQuerySchema = Schema.Struct({
 });
 
 const createPermission = (input: CreatePermissionInput) =>
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: createPermission orchestrates target-discriminated validation (item vs profile), agent ownership, capability-matrix legality, atomic batch insert, duplicate detection, and audit row staging — splitting it would obscure the audit-before-mutation invariant.
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const isProfileTarget = "profileId" in input;
