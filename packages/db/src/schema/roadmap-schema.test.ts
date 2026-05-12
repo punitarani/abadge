@@ -12,6 +12,9 @@ describe("roadmap schema foundations", () => {
       "organizationId",
       "name",
       "description",
+      // §RM-PR1 — externalId is the optional, caller-supplied idempotency
+      // key for API-created profiles; partial-unique per organization.
+      "externalId",
       "storageMode",
       "wrappedRootKey",
       "kdfSalt",
@@ -31,9 +34,14 @@ describe("roadmap schema foundations", () => {
     expect(Object.keys(columns)).toContain("label");
     expect(Object.keys(columns)).toContain("kind");
     expect(Object.keys(columns)).toContain("tags");
-    expect(Object.keys(columns)).toContain("userId");
+    // §RM-PR1 — `userId` → `createdBy`: audit metadata, not ownership.
+    expect(Object.keys(columns)).toContain("createdBy");
+    expect(Object.keys(columns)).not.toContain("userId");
     expect(Object.keys(columns)).not.toContain("vaultId");
     expect(columns.label.notNull).toBe(true);
+    // createdBy is nullable so deleting the user keeps the item alive with
+    // a NULL audit trail.
+    expect(columns.createdBy.notNull).toBe(false);
   });
 
   test("items.organization_id is NOT NULL with ON DELETE cascade", () => {
