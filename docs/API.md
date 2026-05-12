@@ -50,7 +50,7 @@ caller's org in this order:
 3. The org embedded in the bearer credential (agent sessions and API keys)
 
 If a user belongs to multiple orgs and omits `X-Abadge-Org-Id`, the server
-returns `400 BAD_REQUEST` with `code: "MULTI_ORG_AMBIGUOUS"`.
+returns `400 BAD_REQUEST` with `code: "ORG_HEADER_REQUIRED"`.
 
 ## Error envelope
 
