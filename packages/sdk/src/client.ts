@@ -26,6 +26,7 @@ import type {
   PermissionListResult,
   ProfileUseAccessResponse,
   ReadAccessResponse,
+  RedeemMountResponse,
   RevealAccessResponse,
   RotateKeyInput,
   SetupRecoveryInput,
@@ -183,6 +184,7 @@ interface SdkTrpcClient {
       { profileId: string; delivery: "env" | "file"; purpose?: string },
       ProfileUseAccessResponse
     >;
+    redeemMount: TrpcMutation<{ mountId: string }, RedeemMountResponse>;
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
@@ -1424,6 +1426,17 @@ export class AbadgeAgentClient {
         "Failed to mint profile mount handles",
       );
     },
+    /**
+     * Atomically consume a previously-minted mount handle. Returns the
+     * underlying ZK envelope or the server-decrypted payload depending on
+     * the item's storage mode. Stolen / expired / double-redeemed handles
+     * fail with `MOUNT_NOT_FOUND`.
+     */
+    redeemMount: (mountId: string): Promise<RedeemMountResponse> =>
+      this.authedCall(
+        () => this.client.access.redeemMount.mutate({ mountId }),
+        "Failed to redeem mount handle",
+      ),
   } as const;
 
   // -- Access (legacy) ------------------------------------------------------

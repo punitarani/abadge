@@ -23,6 +23,8 @@ import {
   ProfileUseAccessSchema,
   ReadAccessResponseSchema,
   ReadAccessSchema,
+  RedeemMountResponseSchema,
+  RedeemMountSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
   resolveFieldValue,
@@ -35,9 +37,10 @@ import {
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
 } from "@abadge/crypto/shared";
-import { and, eq, gt, isNull, or } from "@abadge/db";
+import { and, eq, gt, isNull, or, sql } from "@abadge/db";
 import {
   items,
+  mountReservations,
   permissions as permissionRecords,
   profiles as profileRecords,
 } from "@abadge/db/schema";
@@ -907,4 +910,238 @@ export const accessRouter = createTrpcRouter({
         }),
       ),
     ),
+
+  // §RM-PR4 — Atomically consume a mount handle and return the underlying
+  // envelope (ZK) or decrypted payload (server_managed). Cross-agent and
+  // double-redemption are observable to the audit log as denied events; both
+  // return NOT_FOUND so reservation existence cannot be probed.
+  redeemMount: agentProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/access/mounts/{mountId}/redeem",
+        tags: ["access"],
+        protect: true,
+      },
+    })
+    .input(strictSchema(RedeemMountSchema))
+    .output(strictSchema(RedeemMountResponseSchema))
+    .mutation(({ ctx, input }) => runAgentEffect(ctx, redeemMount(input.mountId))),
 });
+
+// ---------------------------------------------------------------------------
+// redeemMount — atomic consumption + payload delivery
+// ---------------------------------------------------------------------------
+
+/**
+ * Load and atomically consume a mount reservation. The UPDATE filters on
+ * `consumed_at IS NULL`, `expires_at > NOW()`, AND `agent_id = ctx.agent.id`
+ * in a single statement; if 0 rows return, the handle is stolen, expired, or
+ * already consumed — all collapsed to NOT_FOUND so existence isn't leaked.
+ */
+const consumeReservation = (mountId: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+    const now = new Date();
+    const rows = yield* tryAsync(() =>
+      ctx.db
+        .update(mountReservations)
+        .set({ consumedAt: now })
+        .where(
+          and(
+            eq(mountReservations.mountId, mountId),
+            eq(mountReservations.agentId, ctx.identity.agentId),
+            isNull(mountReservations.consumedAt),
+            gt(mountReservations.expiresAt, sql`NOW()`),
+          ),
+        )
+        .returning(),
+    );
+    return rows[0] ?? null;
+  });
+
+/** §RM-PR4 — Exported for unit reuse and for the SDK to call. */
+export const redeemMount = (mountId: string) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+
+    const reservation = yield* consumeReservation(mountId);
+    if (!reservation) {
+      // Failed atomic consume — write a denied audit row so stolen / expired /
+      // double-redeem attempts are observable, then return NOT_FOUND.
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        eventType: "access.mount_env",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { via: "mount_redeem", reason: "reservation_unavailable", mountId },
+      });
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "MOUNT_NOT_FOUND",
+          message: "Mount handle is not valid",
+          hint:
+            "The handle may be expired, already consumed, or owned by a different agent. " +
+            "Mint a new one via access.use.",
+        }),
+      );
+    }
+
+    const eventType =
+      reservation.delivery === "file"
+        ? ("access.mount_file" as const)
+        : ("access.mount_env" as const);
+    const deliveryMode =
+      reservation.delivery === "file" ? ("mount_file" as const) : ("mount_env" as const);
+
+    // Load the item (org-scoped, soft-delete-aware). If the item disappeared
+    // between mint and redeem, treat it as integrity error — the reservation
+    // FK should normally cascade, but a concurrent soft-delete is possible.
+    const [item] = yield* tryAsync(() =>
+      ctx.db
+        .select()
+        .from(items)
+        .where(
+          and(
+            eq(items.id, reservation.itemId),
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
+            isNull(items.deletedAt),
+          ),
+        )
+        .limit(1),
+    );
+    if (!item) {
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: reservation.itemId,
+        eventType,
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { via: "mount_redeem", reason: "item_deleted_after_mint", mountId },
+      });
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "ITEM_NOT_FOUND",
+          message: "The item backing this mount handle is no longer available.",
+          hint: "The item was deleted between mint and redeem. Mint a new handle on a live item.",
+        }),
+      );
+    }
+
+    if (item.storageMode === "zero_knowledge") {
+      if (!item.profileId || !item.encryptedItemKey || !item.ciphertext) {
+        yield* logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId ?? undefined,
+          eventType,
+          result: "denied",
+          ipAddress: ctx.ipAddress,
+          meta: { via: "mount_redeem", reason: "zk item missing envelope or profile binding" },
+        });
+        return yield* Effect.fail(
+          new IntegrityError({
+            code: "INTEGRITY_ERROR",
+            message: "Zero-knowledge item is missing required encryption fields",
+            hint: "This indicates data corruption; contact support.",
+            meta: { itemId: item.id },
+          }),
+        );
+      }
+
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: item.id,
+        profileId: item.profileId,
+        eventType,
+        result: "allowed",
+        deliveryMode,
+        ipAddress: ctx.ipAddress,
+        meta: { via: "mount_redeem", mountId },
+      });
+
+      return {
+        storageMode: "zero_knowledge" as const,
+        delivery: reservation.delivery,
+        encryptedItemKey: item.encryptedItemKey,
+        ciphertext: item.ciphertext,
+        cryptoVersion: item.cryptoVersion,
+        contentVersion: item.contentVersion,
+        label: item.label,
+        itemId: item.id,
+        profileId: item.profileId,
+      };
+    }
+
+    // server_managed — decrypt with AAD bound to (org, profile, item, key version).
+    if (!item.serverCiphertext || !item.serverIv || item.serverKeyVersion == null) {
+      yield* logAgentAudit({
+        organizationId: ctx.identity.agentOrganizationId,
+        userId: ctx.identity.agentUserId,
+        agentId: ctx.identity.agentId,
+        itemId: item.id,
+        profileId: item.profileId ?? undefined,
+        eventType,
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { via: "mount_redeem", reason: "server-managed item has no payload" },
+      });
+      return yield* Effect.fail(
+        new IntegrityError({
+          code: "INTEGRITY_ERROR",
+          message: "Server-managed item has no encrypted payload",
+          hint: "This item may need to be re-created; contact support if this persists.",
+          meta: { itemId: item.id },
+        }),
+      );
+    }
+
+    const keyVersion = item.serverKeyVersion;
+    const aadMeta: ServerAadMeta | undefined =
+      keyVersion >= SERVER_AAD_MIN_VERSION
+        ? {
+            orgId: ctx.identity.agentOrganizationId,
+            profileId: profileIdForServerAad(item.profileId),
+            itemId: item.id,
+            keyVersion,
+          }
+        : undefined;
+
+    const decrypted = yield* tryAsync(() =>
+      serverDecrypt(
+        { ciphertext: item.serverCiphertext as string, iv: item.serverIv as string, keyVersion },
+        ctx.env.ENCRYPTION_KEY,
+        aadMeta,
+      ),
+    );
+    const payload = decodeServerManagedPayload(item.id, decrypted);
+
+    yield* logAgentAudit({
+      organizationId: ctx.identity.agentOrganizationId,
+      userId: ctx.identity.agentUserId,
+      agentId: ctx.identity.agentId,
+      itemId: item.id,
+      profileId: item.profileId ?? undefined,
+      eventType,
+      result: "allowed",
+      deliveryMode,
+      ipAddress: ctx.ipAddress,
+      meta: { via: "mount_redeem", mountId },
+    });
+
+    return {
+      storageMode: "server_managed" as const,
+      delivery: reservation.delivery,
+      payload,
+      label: item.label,
+      itemId: item.id,
+    };
+  });

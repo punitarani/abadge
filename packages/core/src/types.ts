@@ -49,6 +49,8 @@ import type {
   ReadAccessResponseSchema,
   ReadAccessSchema,
   RecoverySetupSchema,
+  RedeemMountResponseSchema,
+  RedeemMountSchema,
   RekeyedItemSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -132,6 +134,8 @@ export type ReadAccessResponse = TypeOf<typeof ReadAccessResponseSchema>;
 export type UseAccessInput = TypeOf<typeof UseAccessSchema>;
 export type UseAccessResponse = TypeOf<typeof UseAccessResponseSchema>;
 export type ProfileUseAccessInput = TypeOf<typeof ProfileUseAccessSchema>;
+export type RedeemMountInput = TypeOf<typeof RedeemMountSchema>;
+export type RedeemMountResponse = TypeOf<typeof RedeemMountResponseSchema>;
 
 /**
  * Response from `access.useProfile` — a list of mount handles, one per item

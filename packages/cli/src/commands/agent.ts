@@ -252,6 +252,7 @@ export function createAgentCommand(): Command {
     .option("--public-key <path>", "Path to an existing Ed25519 public-key JWK to enroll")
     .option("--json", "Output as JSON")
     .action(
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: agent.add orchestrates flag validation + auth-method branching + JSON/text output paths; complexity is intentional and matches the existing convention on permission.ts / run.ts.
       async (opts: {
         name: string;
         kind: string;

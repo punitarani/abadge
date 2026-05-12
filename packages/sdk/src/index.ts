@@ -79,6 +79,8 @@ export type {
   ProfileUseAccessResponse,
   ReadAccessInput,
   ReadAccessResponse,
+  RedeemMountInput,
+  RedeemMountResponse,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,

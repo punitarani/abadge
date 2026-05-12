@@ -47,6 +47,8 @@ export type {
   ReadAccessInput,
   ReadAccessResponse,
   RecoverySetupInput as SetupRecoveryInput,
+  RedeemMountInput,
+  RedeemMountResponse,
   RevealAccessResponse,
   RevokeAgentSessionInput,
   RotateKeyInput,
