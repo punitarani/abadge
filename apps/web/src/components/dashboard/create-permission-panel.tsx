@@ -25,6 +25,20 @@ const CAPABILITY_META: Record<
   Capability,
   { label: string; description: string; constraint: string }
 > = {
+  // Canonical (§RM-PR1). These are surfaced to users for new grants once the
+  // unified access pipeline ships in PR2; legacy entries remain so existing
+  // permissions on older rows still render with copy.
+  read: {
+    label: "Read",
+    description: "Read the secret (plaintext for server-managed, ciphertext for ZK)",
+    constraint: "locality + storage checked at access time",
+  },
+  use: {
+    label: "Use",
+    description: "Use the secret via env var or file mount delivery",
+    constraint: "local only",
+  },
+  // Legacy (deprecation window).
   read_ciphertext: {
     label: "Read ciphertext",
     description: "Returns the encrypted blob for local decryption",

@@ -154,7 +154,7 @@ async function insertZeroKnowledgeItem(
 
   await tx.insert(items).values({
     id: opts.id,
-    userId: opts.userId,
+    createdBy: opts.userId,
     organizationId: opts.organizationId,
     profileId: profile.id,
     label: opts.label,
@@ -228,7 +228,7 @@ const createItem = (input: CreateItemInput) =>
       yield* tryAsync(() =>
         ctx.db.insert(items).values({
           id,
-          userId,
+          createdBy: userId,
           organizationId: ctx.identity.organizationId,
           label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
