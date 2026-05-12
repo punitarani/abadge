@@ -115,4 +115,12 @@ function buildOpenApiDocument(): OpenApiDocument {
   };
 }
 
-export const openApiDocument: OpenApiDocument = buildOpenApiDocument();
+// openApiDocument is built lazily on first request rather than at module load,
+// matching the lazy ROUTES table in `./v1.ts`. This keeps the spec output
+// robust to Bun test-runner ordering where `mock.module` registrations affect
+// only subsequent imports. Production cost: one spec build on cold start.
+let _document: OpenApiDocument | null = null;
+export function getOpenApiDocument(): OpenApiDocument {
+  if (_document === null) _document = buildOpenApiDocument();
+  return _document;
+}

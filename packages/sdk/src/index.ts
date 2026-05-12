@@ -3,12 +3,30 @@ export type {
   AbadgeAgentApiKeyConfig,
   AbadgeAgentClientConfig,
   AbadgeAgentKeypairConfig,
-  AbadgeClientConfig,
   AbadgeUserClientConfig,
   Ed25519PrivateKeyJwk,
   ErrorCode,
 } from "./client";
-export { AbadgeAgentClient, AbadgeUserClient } from "./client";
+
+import { AbadgeAgentClient, AbadgeUserClient } from "./client";
+
+export { AbadgeAgentClient, AbadgeUserClient };
+
+/**
+ * Namespaced entry point for the SDK clients.
+ *
+ * @example
+ * ```typescript
+ * import { Abadge } from "@abadge/sdk";
+ *
+ * const user = new Abadge.User({ apiUrl, sessionToken });
+ * const agent = new Abadge.Agent({ apiUrl, agentId, privateKey });
+ * ```
+ */
+export const Abadge = {
+  User: AbadgeUserClient,
+  Agent: AbadgeAgentClient,
+} as const;
 export { AbadgeApiError } from "./errors";
 export { SecretValue } from "./secret-value";
 export type {
@@ -57,6 +75,12 @@ export type {
   Permission,
   PermissionFilters,
   PermissionListResult,
+  ProfileUseAccessInput,
+  ProfileUseAccessResponse,
+  ReadAccessInput,
+  ReadAccessResponse,
+  RedeemMountInput,
+  RedeemMountResponse,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,
@@ -65,6 +89,8 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
+  UseAccessInput,
+  UseAccessResponse,
   VaultBootstrapInput,
 } from "./types";
 export type { ValidationIssue } from "./validation-issue";

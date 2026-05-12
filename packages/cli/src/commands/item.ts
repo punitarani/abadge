@@ -116,7 +116,7 @@ export function createItemCommand(): Command {
   const cmd = new Command("item").description("Manage vault items");
 
   cmd
-    .command("create")
+    .command("add")
     .description("Create a new vault item")
     .option("--name <name>", "Item label")
     .option("--label <label>", "Item label")
@@ -286,7 +286,7 @@ export function createItemCommand(): Command {
     });
 
   cmd
-    .command("delete")
+    .command("rm")
     .description("Delete a vault item")
     .argument("<id>", "Item ID")
     .option("-f, --force", "Skip confirmation")

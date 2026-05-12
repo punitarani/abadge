@@ -11,7 +11,7 @@ import { getConnectionString, getDb } from "./lib/db";
 import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { requestId } from "./middleware/request-id";
-import { openApiDocument } from "./rest/openapi";
+import { getOpenApiDocument } from "./rest/openapi";
 import { handleV1Request } from "./rest/v1";
 import type { Bindings } from "./types";
 
@@ -79,7 +79,7 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 // `.meta({ openapi })` annotations — see `apps/api/src/rest/v1.ts`.
 // `/v1/openapi.json` must be registered BEFORE the `/v1/*` catch-all so
 // the spec endpoint isn't shadowed.
-app.get("/v1/openapi.json", (c) => c.json(openApiDocument));
+app.get("/v1/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.all("/v1/*", (c) => handleV1Request(c));
 
 // Health check

@@ -8,7 +8,7 @@ export function createOrgCommand(): Command {
   const cmd = new Command("org").description("Manage organizations");
 
   cmd
-    .command("create")
+    .command("add")
     .description("Create a new organization")
     .requiredOption("--name <name>", "Organization name")
     .option("--slug <slug>", "Organization slug (auto-generated if omitted)")

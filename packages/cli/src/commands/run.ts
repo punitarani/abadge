@@ -1,4 +1,4 @@
-import type { BulkMountEnvItem } from "@abadge/core";
+import type { BulkMountEnvItem, RedeemMountResponse } from "@abadge/core";
 import type { BulkExecItem } from "@abadge/daemon";
 import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
@@ -7,6 +7,140 @@ import { loadConfig } from "../config";
 import { daemonExpandEnv, daemonExpandEnvBulk } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
+
+/**
+ * §RM-PR4 — Run an item via the unified `access.use` → `redeemMount` →
+ * daemon path. Mirrors {@link runWithExpandEnv} (which uses the legacy
+ * `accessMount`); kept side-by-side until the legacy method is removed in v0.6.
+ */
+export async function runWithUseRedeem(
+  client: AbadgeAgentClient,
+  itemId: string,
+  executable: string,
+  args: string[],
+): Promise<never> {
+  // 1. Mint a mount handle (server records the reservation + audit row).
+  const handle = await client.access.use({ itemId }, { delivery: "env" });
+  if (!("mountId" in handle)) {
+    // The agent.access.use overload that takes `{ itemId }` always returns a
+    // UseAccessResponse; this branch exists to satisfy the static type union
+    // and should never fire at runtime.
+    throw new AbadgeApiError(
+      500,
+      "INTEGRITY_ERROR",
+      "access.use returned a profile-shaped response for an item target",
+      "This indicates a server/client version skew; report a bug.",
+    );
+  }
+  // 2. Atomically consume the handle and receive the underlying envelope /
+  //    decrypted payload. Stolen / replayed handles fail here with
+  //    MOUNT_NOT_FOUND before any subprocess is spawned.
+  const redeemed: RedeemMountResponse = await client.access.redeemMount(handle.mountId);
+
+  try {
+    const zkMeta =
+      redeemed.storageMode === "zero_knowledge"
+        ? {
+            profileId: redeemed.profileId,
+            itemId: redeemed.itemId,
+            contentVersion: redeemed.contentVersion,
+          }
+        : null;
+    const res = await daemonExpandEnv(
+      redeemed.storageMode === "zero_knowledge" ? redeemed.encryptedItemKey : null,
+      redeemed.storageMode === "zero_knowledge" ? redeemed.ciphertext : null,
+      redeemed.storageMode === "server_managed" ? redeemed.payload : null,
+      executable,
+      args,
+      zkMeta,
+    );
+    process.exit(res.exitCode);
+  } catch (err) {
+    if (err instanceof AbadgeApiError) {
+      throw err;
+    }
+    throw new Error(
+      "abadge run requires the local daemon.\n" +
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
+      { cause: err },
+    );
+  }
+}
+
+/**
+ * §RM-PR4 — Profile-wide bulk variant of {@link runWithUseRedeem}. Mints one
+ * mount handle per item via `access.useProfile`, redeems them concurrently,
+ * then asks the daemon to spawn the subprocess with every secret injected.
+ */
+export async function runWithUseRedeemBulk(
+  client: AbadgeAgentClient,
+  profileId: string,
+  executable: string,
+  args: string[],
+): Promise<never> {
+  const result = await client.access.use({ profileId }, { delivery: "env" });
+  if ("mountId" in result) {
+    throw new AbadgeApiError(
+      500,
+      "INTEGRITY_ERROR",
+      "access.use returned an item-shaped response for a profile target",
+      "This indicates a server/client version skew; report a bug.",
+    );
+  }
+  if (result.items.length === 0) {
+    // Nothing to inject — spawn the bare command with the parent env. This
+    // matches the legacy bulkAccessMountEnv path's behavior on an empty profile.
+    const proc = Bun.spawn([executable, ...args], {
+      env: process.env as Record<string, string>,
+      stdout: "inherit",
+      stderr: "inherit",
+      stdin: "inherit",
+    });
+    const exitCode = await proc.exited;
+    process.exit(exitCode);
+  }
+
+  // Redeem every handle in parallel. Any redemption failure rejects the whole
+  // call — same all-or-nothing semantics as the legacy bulk path. Successfully
+  // redeemed-but-then-failed handles remain consumed in the DB, which is the
+  // correct audit behavior (a redeemed row records "allowed").
+  const redeemed = await Promise.all(
+    result.items.map((handle) => client.access.redeemMount(handle.mountId)),
+  );
+
+  try {
+    const execItems: BulkExecItem[] = redeemed.map((r) => {
+      if (r.storageMode === "zero_knowledge") {
+        return {
+          itemId: r.itemId,
+          label: r.label,
+          storageMode: "zero_knowledge" as const,
+          encryptedItemKey: r.encryptedItemKey,
+          ciphertext: r.ciphertext,
+          profileId: r.profileId,
+          contentVersion: r.contentVersion,
+        };
+      }
+      return {
+        itemId: r.itemId,
+        label: r.label,
+        storageMode: "server_managed" as const,
+        payload: r.payload,
+      };
+    });
+    const res = await daemonExpandEnvBulk(execItems, executable, args);
+    process.exit(res.exitCode);
+  } catch (err) {
+    if (err instanceof AbadgeApiError) {
+      throw err;
+    }
+    throw new Error(
+      "abadge run --all requires the local daemon.\n" +
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
+      { cause: err },
+    );
+  }
+}
 
 export async function runWithExpandEnv(
   client: AbadgeAgentClient,
@@ -95,7 +229,7 @@ export async function runWithAll(
     }
     throw new Error(
       "--all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge vault unlock",
+        "hint: Start it with: abadge daemon start && abadge profile unlock",
       { cause: err },
     );
   }
@@ -167,10 +301,18 @@ export function createRunCommand(): Command {
               );
               process.exit(1);
             }
-            await runWithAll(client, profileId, executable, command.slice(1));
+            // §RM-PR4 — route the bulk path through `access.useProfile` +
+            // `redeemMount` so every mint is recorded in `mount_reservations`
+            // and audited as `via=mount_redeem`. The legacy
+            // `runWithAll`/`bulkAccessMountEnv` path stays for one release
+            // (callers exercising it directly via the SDK).
+            await runWithUseRedeemBulk(client, profileId, executable, command.slice(1));
           } else if (opts.expandEnv) {
+            // §RM-PR4 — same flip as --all, but for the single-item field-
+            // expansion mode. The legacy `runWithExpandEnv`/`accessMount`
+            // path remains importable from this module for one release.
             // opts.item is guaranteed by the mutex check above.
-            await runWithExpandEnv(client, opts.item as string, executable, command.slice(1));
+            await runWithUseRedeem(client, opts.item as string, executable, command.slice(1));
           } else {
             const secretValue = await resolveSecretValue(
               client,

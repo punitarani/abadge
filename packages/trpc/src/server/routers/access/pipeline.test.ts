@@ -556,4 +556,169 @@ describe("access pipeline (unified read/use)", () => {
     expect(row?.field).toBeNull();
     expect(row?.envVarName).toBeNull();
   });
+
+  // ---------------------------------------------------------------------------
+  // §RM-PR4 — redeemMount
+  // ---------------------------------------------------------------------------
+
+  test("redeemMount returns SM payload and marks consumedAt", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      fields: { value: "sk-redeem" },
+    });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const caller = createAgentCaller(db, auth, session.rawToken);
+
+    const minted = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+    const redeemed = await caller.access.redeemMount({ mountId: minted.mountId });
+
+    if (redeemed.storageMode !== "server_managed") throw new Error("expected SM");
+    expect(redeemed.payload.fields.value).toBe("sk-redeem");
+    expect(redeemed.delivery).toBe("env");
+    expect(redeemed.itemId).toBe(item.itemId);
+
+    const [reservation] = await db
+      .select()
+      .from(mountReservations)
+      .where(eq(mountReservations.mountId, minted.mountId));
+    expect(reservation?.consumedAt).not.toBeNull();
+  });
+
+  test("redeemMount double-redemption fails with MOUNT_NOT_FOUND", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const caller = createAgentCaller(db, auth, session.rawToken);
+
+    const minted = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+    await caller.access.redeemMount({ mountId: minted.mountId });
+    await expect(caller.access.redeemMount({ mountId: minted.mountId })).rejects.toMatchObject({
+      message: expect.stringContaining("not valid"),
+    });
+  });
+
+  test("redeemMount cross-agent theft fails with MOUNT_NOT_FOUND", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const grantedAgent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    const otherAgent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: grantedAgent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    // The other agent gets `use` so it can reach the redeem procedure (the
+    // procedure itself is agent-authenticated; the cross-agent block is the
+    // mountReservations.agentId check, not a missing item-level grant).
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: otherAgent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const grantedSession = await seedAgentSession(db, {
+      agentId: grantedAgent.agentId,
+      userId: owner.userId,
+    });
+    const otherSession = await seedAgentSession(db, {
+      agentId: otherAgent.agentId,
+      userId: owner.userId,
+    });
+
+    const grantedCaller = createAgentCaller(db, auth, grantedSession.rawToken);
+    const otherCaller = createAgentCaller(db, auth, otherSession.rawToken);
+
+    const minted = await grantedCaller.access.use({
+      itemId: item.itemId,
+      delivery: "env",
+    });
+    await expect(otherCaller.access.redeemMount({ mountId: minted.mountId })).rejects.toMatchObject(
+      { message: expect.stringContaining("not valid") },
+    );
+
+    // The original agent can still redeem.
+    const redeemed = await grantedCaller.access.redeemMount({ mountId: minted.mountId });
+    expect(redeemed.storageMode).toBe("server_managed");
+  });
+
+  test("redeemMount on expired reservation fails with MOUNT_NOT_FOUND", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, {
+      userId: owner.userId,
+      orgId: org.orgId,
+      kind: "local_cli",
+    });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "use",
+      grantedBy: owner.userId,
+    });
+    const session = await seedAgentSession(db, {
+      agentId: agent.agentId,
+      userId: owner.userId,
+    });
+    const caller = createAgentCaller(db, auth, session.rawToken);
+
+    const minted = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+    // Force-expire the reservation by updating its expiresAt.
+    const past = new Date(Date.now() - 60_000);
+    await db
+      .update(mountReservations)
+      .set({ expiresAt: past })
+      .where(eq(mountReservations.mountId, minted.mountId));
+
+    await expect(caller.access.redeemMount({ mountId: minted.mountId })).rejects.toMatchObject({
+      message: expect.stringContaining("not valid"),
+    });
+  });
 });

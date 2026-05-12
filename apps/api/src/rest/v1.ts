@@ -70,7 +70,19 @@ function compileRoutes(): CompiledRoute[] {
   return routes;
 }
 
-const ROUTES = compileRoutes();
+// ROUTES is compiled lazily on first access rather than at module load. This
+// is robust to Bun test runner ordering: `mock.module(...)` registrations
+// in sibling test files only affect subsequent imports, so capturing the
+// routing table at module-load made test correctness depend on which file's
+// mock won the race to evaluate `./index` first. Lazy compilation defers the
+// read of `appRouter._def.procedures` to the first request, by which point
+// the test's mock has been applied and stays applied for the file's lifetime.
+// Production cost: one route-table compile on cold start (~milliseconds).
+let _routes: CompiledRoute[] | null = null;
+function getRoutes(): CompiledRoute[] {
+  if (_routes === null) _routes = compileRoutes();
+  return _routes;
+}
 
 /** Map a tRPC error code or domain error to an HTTP status. */
 function statusFromError(err: unknown): number {
@@ -162,7 +174,7 @@ function matchRoute(
   pathAfterPrefix: string,
 ): { route: CompiledRoute; params: Record<string, string> } | null {
   const upper = method.toUpperCase() as Method;
-  for (const route of ROUTES) {
+  for (const route of getRoutes()) {
     if (route.method !== upper) continue;
     const m = route.pattern.exec(pathAfterPrefix);
     if (!m) continue;
@@ -276,5 +288,5 @@ export async function handleV1Request(c: Context<{ Bindings: Bindings }>): Promi
 
 /** Exposed for tests + the OpenAPI doc generator. */
 export function getCompiledRoutes(): ReadonlyArray<CompiledRoute> {
-  return ROUTES;
+  return getRoutes();
 }

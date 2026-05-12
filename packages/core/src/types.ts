@@ -45,7 +45,12 @@ import type {
   ProfileListResultSchema,
   ProfileResultSchema,
   ProfileSchema,
+  ProfileUseAccessSchema,
+  ReadAccessResponseSchema,
+  ReadAccessSchema,
   RecoverySetupSchema,
+  RedeemMountResponseSchema,
+  RedeemMountSchema,
   RekeyedItemSchema,
   RevealAccessResponseSchema,
   RevealAccessSchema,
@@ -53,6 +58,8 @@ import type {
   RotateKeySchema,
   SuccessResultSchema,
   UpdateItemSchema,
+  UseAccessResponseSchema,
+  UseAccessSchema,
   VaultBootstrapSchema,
 } from "./schemas";
 
@@ -120,3 +127,25 @@ export type ItemVersionResult = TypeOf<typeof ItemVersionResultSchema>;
 export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSchema>;
 export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
 export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
+
+// §RM-PR2 — unified read/use surfaces
+export type ReadAccessInput = TypeOf<typeof ReadAccessSchema>;
+export type ReadAccessResponse = TypeOf<typeof ReadAccessResponseSchema>;
+export type UseAccessInput = TypeOf<typeof UseAccessSchema>;
+export type UseAccessResponse = TypeOf<typeof UseAccessResponseSchema>;
+export type ProfileUseAccessInput = TypeOf<typeof ProfileUseAccessSchema>;
+export type RedeemMountInput = TypeOf<typeof RedeemMountSchema>;
+export type RedeemMountResponse = TypeOf<typeof RedeemMountResponseSchema>;
+
+/**
+ * Response from `access.useProfile` — a list of mount handles, one per item
+ * in the profile that the agent has the matching capability on.
+ */
+export interface ProfileUseAccessResponse {
+  items: ReadonlyArray<{
+    itemId: string;
+    mountId: string;
+    delivery: "env" | "file";
+    expiresAt: string;
+  }>;
+}

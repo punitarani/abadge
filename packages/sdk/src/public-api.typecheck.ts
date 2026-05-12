@@ -1,21 +1,21 @@
 import type { AbadgeApiError } from "./errors";
-import type {
-  AbadgeAgentApiKeyConfig,
-  AbadgeAgentClient,
-  AbadgeAgentClientConfig,
-  AbadgeAgentKeypairConfig,
-  AbadgeClientConfig,
-  AbadgeUserClient,
-  AbadgeUserClientConfig,
-  Agent,
-  AgentWithKey,
-  CreateAgentInput,
-  CreatePermissionInput,
-  ErrorCode,
-  Permission,
-  PermissionFilters,
-  resolveFieldValue,
-  SecretValue,
+import {
+  Abadge,
+  type AbadgeAgentApiKeyConfig,
+  type AbadgeAgentClient,
+  type AbadgeAgentClientConfig,
+  type AbadgeAgentKeypairConfig,
+  type AbadgeUserClient,
+  type AbadgeUserClientConfig,
+  type Agent,
+  type AgentWithKey,
+  type CreateAgentInput,
+  type CreatePermissionInput,
+  type ErrorCode,
+  type Permission,
+  type PermissionFilters,
+  type resolveFieldValue,
+  type SecretValue,
 } from "./index";
 
 type Assert<T extends true> = T;
@@ -51,6 +51,8 @@ type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInpu
 type _LegacyRevokeOperatorTokenInput = import("./index").RevokeOperatorTokenInput;
 // @ts-expect-error AbadgeClient removed — use AbadgeUserClient or AbadgeAgentClient
 type _LegacyAbadgeClient = import("./index").AbadgeClient;
+// @ts-expect-error AbadgeClientConfig removed — use AbadgeUserClientConfig or AbadgeAgentClientConfig
+type _LegacyAbadgeClientConfig = import("./index").AbadgeClientConfig;
 // @ts-expect-error PrincipalAuthMethod renamed to AgentAuthMethod
 type _LegacyPrincipalAuthMethod = import("./index").PrincipalAuthMethod;
 
@@ -65,14 +67,20 @@ type _AgentApiKeyConfigShape = Assert<
 type _AgentKeypairConfigShape = Assert<
   AbadgeAgentKeypairConfig extends { apiUrl: string; agentId: string } ? true : false
 >;
-type _LegacyClientConfig = Assert<
-  AbadgeClientConfig extends { apiUrl: string; token: string } ? true : false
->;
-
 // AbadgeAgentClientConfig is the union of keypair and apikey configs
 type _AgentClientConfigIsUnion = Assert<
   AbadgeAgentClientConfig extends AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig ? true : false
 >;
+
+// Abadge namespace exposes both client constructors (runtime + type check).
+type _AbadgeNamespaceHasUser = Assert<
+  typeof Abadge.User extends typeof AbadgeUserClient ? true : false
+>;
+type _AbadgeNamespaceHasAgent = Assert<
+  typeof Abadge.Agent extends typeof AbadgeAgentClient ? true : false
+>;
+// Reference the runtime values so the import is not narrowed to `import type`.
+export const _abadgeNamespaceRuntime = { User: Abadge.User, Agent: Abadge.Agent } as const;
 
 type _UserHasCreateItem = Assert<
   AbadgeUserClient["createItem"] extends (...args: never[]) => Promise<{ id: string }>

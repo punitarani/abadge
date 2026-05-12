@@ -9,7 +9,7 @@ export function createProfileCommand(): Command {
   const cmd = new Command("profile").description("Manage credential profiles");
 
   cmd
-    .command("create")
+    .command("add")
     .description("Create a new profile in the active organization")
     .requiredOption("--name <name>", "Profile name")
     .option("--description <desc>", "Profile description")

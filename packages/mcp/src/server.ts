@@ -10,8 +10,7 @@ import * as getAudit from "./tools/get-audit.js";
 import * as listItems from "./tools/list-items.js";
 import * as mountSecret from "./tools/mount-secret.js";
 import * as releaseMount from "./tools/release-mount.js";
-import * as runWithAllSecrets from "./tools/run-with-all-secrets.js";
-import * as runWithSecret from "./tools/run-with-secret.js";
+import * as useSecret from "./tools/use-secret.js";
 
 function cleanupOrphanedMounts(): void {
   const tmp = tmpdir();
@@ -71,14 +70,7 @@ function shape(schema: { shape: Record<string, unknown> }): ZodRawShapeCompat {
   return schema.shape as ZodRawShapeCompat;
 }
 
-const tools = [
-  listItems,
-  runWithSecret,
-  runWithAllSecrets,
-  mountSecret,
-  releaseMount,
-  getAudit,
-] as const;
+const tools = [listItems, useSecret, mountSecret, releaseMount, getAudit] as const;
 
 function registerTools(server: McpServer, config: McpConfig): void {
   for (const tool of tools) {

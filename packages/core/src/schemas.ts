@@ -378,6 +378,37 @@ export const UseAccessResponseSchema = Schema.Struct({
   expiresAt: IsoDateString,
 });
 
+/**
+ * §RM-PR4 — Redeem a previously-minted mount handle. The local daemon (or any
+ * authenticated local agent) atomically marks the reservation consumed and
+ * receives the actual envelope / decrypted payload. Cross-agent or repeated
+ * redemption returns NOT_FOUND.
+ */
+export const RedeemMountSchema = Schema.Struct({
+  mountId: NonEmptyString,
+});
+
+export const RedeemMountResponseSchema = Schema.Union(
+  Schema.Struct({
+    storageMode: Schema.Literal("server_managed"),
+    delivery: Schema.Literal("env", "file"),
+    payload: ItemPayloadSchema,
+    label: NonEmptyString,
+    itemId: NonEmptyString,
+  }),
+  Schema.Struct({
+    storageMode: Schema.Literal("zero_knowledge"),
+    delivery: Schema.Literal("env", "file"),
+    encryptedItemKey: NonEmptyString,
+    ciphertext: NonEmptyString,
+    cryptoVersion: Schema.Number,
+    contentVersion: Schema.Number,
+    label: NonEmptyString,
+    itemId: NonEmptyString,
+    profileId: NonEmptyString,
+  }),
+);
+
 export const CiphertextAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
 });
