@@ -93,6 +93,9 @@ describe("roadmap schema foundations", () => {
       "organizationId",
       "agentId",
       "itemId",
+      // §RM-PR1 — profile-target permissions. The CHECK constraint enforces
+      // exactly one of (itemId, profileId) is non-null.
+      "profileId",
       "capability",
       "expiresAt",
       "grantedBy",
