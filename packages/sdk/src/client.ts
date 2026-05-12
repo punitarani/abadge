@@ -24,11 +24,14 @@ import type {
   MountAccessResponse,
   PermissionFilters,
   PermissionListResult,
+  ProfileUseAccessResponse,
+  ReadAccessResponse,
   RevealAccessResponse,
   RotateKeyInput,
   SetupRecoveryInput,
   SuccessResult,
   UpdateItemInput,
+  UseAccessResponse,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -165,6 +168,21 @@ interface SdkTrpcClient {
       MountAccessResponse
     >;
     bulkMountEnv: TrpcMutation<{ profileId: string }, BulkMountEnvResponse>;
+    read: TrpcMutation<{ itemId: string; field?: string; purpose?: string }, ReadAccessResponse>;
+    use: TrpcMutation<
+      {
+        itemId: string;
+        delivery: "env" | "file";
+        field?: string;
+        envVarName?: string;
+        purpose?: string;
+      },
+      UseAccessResponse
+    >;
+    useProfile: TrpcMutation<
+      { profileId: string; delivery: "env" | "file"; purpose?: string },
+      ProfileUseAccessResponse
+    >;
   };
   audit: {
     list: TrpcQuery<AuditFilters, AuditListResult>;
@@ -1155,7 +1173,97 @@ export class AbadgeAgentClient {
     );
   }
 
-  // -- Access ---------------------------------------------------------------
+  // -- Access (unified) -----------------------------------------------------
+
+  /**
+   * §RM-PR2 canonical access surface. Both `read` and `use` are evaluated by
+   * the unified pipeline server-side; ZK vs server_managed dispatch is implicit
+   * in the response shape.
+   *
+   * @example
+   * ```typescript
+   * const result = await agent.access.read("item_id");
+   * if (result.storageMode === "server_managed") {
+   *   // payload contains decrypted plaintext fields
+   * } else {
+   *   // ZK envelope: decrypt client-side via daemon
+   * }
+   *
+   * const mount = await agent.access.use({ itemId: "item_id" }, { delivery: "env" });
+   * // mount.mountId is an opaque handle; redeem via daemon.
+   * ```
+   */
+  readonly access = {
+    /**
+     * Read an item: ZK items return an encrypted envelope for local decrypt,
+     * server-managed items return the decrypted payload. Local-only for ZK
+     * items (constraint enforced server-side).
+     *
+     * @param itemId - The item to read
+     * @param opts - Optional field selector + purpose audit string
+     * @throws {AbadgeApiError} PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND, INVALID_CAPABILITY
+     */
+    read: (
+      itemId: string,
+      opts?: { field?: string; purpose?: string },
+    ): Promise<ReadAccessResponse> =>
+      this.authedCall(
+        () =>
+          this.client.access.read.mutate({
+            itemId,
+            ...(opts?.field ? { field: opts.field } : {}),
+            ...(opts?.purpose ? { purpose: opts.purpose } : {}),
+          }),
+        "Failed to read item",
+      ),
+    /**
+     * Mint a short-lived mount handle for one item (or every item in a
+     * profile). The local daemon redeems the handle for the actual material;
+     * the SDK never sees plaintext on this path. Local-only (constraint
+     * enforced server-side).
+     *
+     * @param target - Either `{ itemId }` for a single item or `{ profileId }`
+     *   for every item in a profile the agent has `use` grants on.
+     * @param opts - `delivery` (env or file), optional field, env var name, and purpose.
+     * @returns A {@link UseAccessResponse} for item targets, or
+     *   {@link ProfileUseAccessResponse} for profile targets.
+     * @throws {AbadgeApiError} PERMISSION_DENIED, PROFILE_NOT_FOUND, INVALID_CAPABILITY
+     */
+    use: (
+      target: { itemId: string } | { profileId: string },
+      opts: {
+        delivery: "env" | "file";
+        field?: string;
+        envVarName?: string;
+        purpose?: string;
+      },
+    ): Promise<UseAccessResponse | ProfileUseAccessResponse> => {
+      if ("itemId" in target) {
+        return this.authedCall(
+          () =>
+            this.client.access.use.mutate({
+              itemId: target.itemId,
+              delivery: opts.delivery,
+              ...(opts.field ? { field: opts.field } : {}),
+              ...(opts.envVarName ? { envVarName: opts.envVarName } : {}),
+              ...(opts.purpose ? { purpose: opts.purpose } : {}),
+            }),
+          "Failed to mint mount handle",
+        );
+      }
+      return this.authedCall(
+        () =>
+          this.client.access.useProfile.mutate({
+            profileId: target.profileId,
+            delivery: opts.delivery,
+            ...(opts.purpose ? { purpose: opts.purpose } : {}),
+          }),
+        "Failed to mint profile mount handles",
+      );
+    },
+  } as const;
+
+  // -- Access (legacy) ------------------------------------------------------
 
   /**
    * Read the encrypted blob of a zero-knowledge item for local decryption.
@@ -1166,6 +1274,7 @@ export class AbadgeAgentClient {
    * @param itemId - Item ID
    * @returns Encrypted item key, ciphertext, and crypto version
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
+   * @deprecated Use {@link access.read} instead. Removal target: v0.6.
    */
   async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
     return this.authedCall(
@@ -1185,6 +1294,7 @@ export class AbadgeAgentClient {
    * @param field - Optional specific field name to return (for multi-field items)
    * @returns The decrypted item payload
    * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
+   * @deprecated Use {@link access.read} instead. Removal target: v0.6.
    */
   async accessReveal(itemId: string, field?: string): Promise<RevealAccessResponse> {
     return this.authedCall(
@@ -1206,6 +1316,7 @@ export class AbadgeAgentClient {
    * @param field - Optional specific field name to return (for multi-field items)
    * @returns Item data discriminated by storageMode
    * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
+   * @deprecated Use {@link access.use} instead. Removal target: v0.6.
    */
   async accessMount(
     itemId: string,
@@ -1232,6 +1343,7 @@ export class AbadgeAgentClient {
    * @param profileId - The profile to scope the bulk mount to
    * @returns Array of per-item mount responses (ZK envelope or server-managed payload)
    * @throws {AbadgeApiError} PERMISSION_DENIED (remote agent), PROFILE_NOT_FOUND, BAD_REQUEST (>256 items)
+   * @deprecated Use `access.use({ profileId }, { delivery })` instead. Removal target: v0.6.
    */
   async bulkAccessMountEnv(profileId: string): Promise<BulkMountEnvResponse> {
     return this.authedCall(

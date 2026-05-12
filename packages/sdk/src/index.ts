@@ -75,6 +75,10 @@ export type {
   Permission,
   PermissionFilters,
   PermissionListResult,
+  ProfileUseAccessInput,
+  ProfileUseAccessResponse,
+  ReadAccessInput,
+  ReadAccessResponse,
   ReEncryptedItem,
   RevealAccessResponse,
   RevokeAgentSessionInput,
@@ -83,6 +87,8 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
+  UseAccessInput,
+  UseAccessResponse,
   VaultBootstrapInput,
 } from "./types";
 export type { ValidationIssue } from "./validation-issue";

@@ -42,6 +42,10 @@ export type {
   MountAccessResponse,
   Permission,
   PermissionListResult,
+  ProfileUseAccessInput,
+  ProfileUseAccessResponse,
+  ReadAccessInput,
+  ReadAccessResponse,
   RecoverySetupInput as SetupRecoveryInput,
   RevealAccessResponse,
   RevokeAgentSessionInput,
@@ -49,6 +53,8 @@ export type {
   StorageMode,
   SuccessResult,
   UpdateItemInput,
+  UseAccessInput,
+  UseAccessResponse,
   VaultBootstrapInput,
 } from "@abadge/core";
 

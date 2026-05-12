@@ -367,6 +367,61 @@ describe("AbadgeAgentClient happy paths", () => {
     await a.agent.bulkAccessMountEnv("prof_1");
     expect(a.calls[0]?.input).toEqual({ profileId: "prof_1" });
   });
+
+  // §RM-PR2 — unified access namespace
+  test("access.read routes to access.read with optional field/purpose", async () => {
+    const a = makeAgentClient({ storageMode: "server_managed", payload: { fields: {} } });
+    await a.agent.access.read("item_x");
+    expect(a.calls[0]?.path).toBe("access.read");
+    expect(a.calls[0]?.input).toEqual({ itemId: "item_x" });
+
+    const b = makeAgentClient({ storageMode: "server_managed", payload: { fields: {} } });
+    await b.agent.access.read("item_x", { field: "value", purpose: "ci-deploy" });
+    expect(b.calls[0]?.input).toEqual({
+      itemId: "item_x",
+      field: "value",
+      purpose: "ci-deploy",
+    });
+  });
+
+  test("access.use on item target routes to access.use", async () => {
+    const a = makeAgentClient({
+      mountId: "mnt_abc",
+      delivery: "env",
+      expiresAt: "2026-01-01T00:00:00Z",
+    });
+    await a.agent.access.use({ itemId: "item_x" }, { delivery: "env" });
+    expect(a.calls[0]?.path).toBe("access.use");
+    expect(a.calls[0]?.input).toEqual({ itemId: "item_x", delivery: "env" });
+
+    const b = makeAgentClient({
+      mountId: "mnt_abc",
+      delivery: "file",
+      expiresAt: "2026-01-01T00:00:00Z",
+    });
+    await b.agent.access.use(
+      { itemId: "item_y" },
+      { delivery: "file", field: "password", envVarName: "DB_PASS", purpose: "migrate" },
+    );
+    expect(b.calls[0]?.input).toEqual({
+      itemId: "item_y",
+      delivery: "file",
+      field: "password",
+      envVarName: "DB_PASS",
+      purpose: "migrate",
+    });
+  });
+
+  test("access.use on profile target routes to access.useProfile", async () => {
+    const a = makeAgentClient({ items: [] });
+    await a.agent.access.use({ profileId: "prof_x" }, { delivery: "env", purpose: "deploy" });
+    expect(a.calls[0]?.path).toBe("access.useProfile");
+    expect(a.calls[0]?.input).toEqual({
+      profileId: "prof_x",
+      delivery: "env",
+      purpose: "deploy",
+    });
+  });
 });
 
 // -----------------------------------------------------------------------------
