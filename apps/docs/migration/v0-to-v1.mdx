@@ -101,12 +101,19 @@ the same transaction. The response shape:
 
 ```json
 {
-  "organization": { "id": "...", "name": "...", "slug": "..." },
+  "organization": {
+    "id": "...",
+    "name": "...",
+    "slug": "...",
+    "logo": null,
+    "createdAt": "2026-..."
+  },
   "defaultProfile": {
     "id": "prf_...",
-    "name": "internal",
+    "name": "default",
     "externalId": "default",
-    "storageMode": "server_managed"
+    "storageMode": "server_managed",
+    "keyVersion": 1
   }
 }
 ```
@@ -145,8 +152,7 @@ abadge use profile production
 | Field | Mode |
 |-------|------|
 | `itemId` | single-item |
-| `profileLabel` | bulk by profile id |
-| `profileExternalId` | bulk by profile externalId |
+| `profileId` | bulk: every env-shaped item in the profile |
 
 The output shape adds `injectedCount` in bulk mode; everything else
 matches the old shapes. Subprocess stdout/stderr is still never returned
@@ -157,23 +163,26 @@ them must switch to `use_secret`.
 
 ## SDK namespace
 
-`@abadge/sdk` exports a flat namespace:
+`@abadge/sdk` exports a `Abadge` namespace pointing at the same client
+classes. `Abadge.User` and `Abadge.Agent` are constructors — call them
+with `new`:
 
 ```ts
 import { Abadge } from "@abadge/sdk";
 
-const user = Abadge.User.create({ baseUrl, token });
-await user.organizations.list();
+const user = new Abadge.User({ apiUrl, sessionToken });
+await user.orgs.list();
 
-const agent = Abadge.Agent.create({ baseUrl, agentId, privateKey });
+const agent = new Abadge.Agent({ apiUrl, agentId, privateKey });
 await agent.connect();
-await agent.access.use({ itemId, delivery: "env" });
+// Two-arg signature: target object, then options.
+await agent.access.use({ itemId }, { delivery: "env" });
 ```
 
-The old `AbadgeUserClient` / `AbadgeAgentClient` constructors are
-removed. Migration is mechanical: replace the constructor with
-`Abadge.User.create` / `Abadge.Agent.create`. Method shapes are
-unchanged.
+The original `AbadgeUserClient` / `AbadgeAgentClient` names are still
+exported and continue to work — `Abadge.User` is just an alias for
+`AbadgeUserClient` and `Abadge.Agent` for `AbadgeAgentClient`. Migration
+is purely stylistic.
 
 ## What still works
 

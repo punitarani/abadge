@@ -93,7 +93,7 @@ Any MCP-compatible client that supports stdio transport works the same way. Prov
 
 ## Verifying the connection
 
-Once configured, the host client should list the abadge tools (`list_items`, `run_with_secret`,
+Once configured, the host client should list the abadge tools (`list_items`, `use_secret`,
 `mount_secret`, `release_mount`, `get_audit`) under the `abadge` server.
 
 If the tools don't appear:
@@ -117,5 +117,5 @@ abadge permission create \
   --capability mount_env
 ```
 
-`mount_env` and `mount_file` are the typical capabilities for MCP — `run_with_secret` calls
+`mount_env` and `mount_file` are the typical capabilities for MCP — `use_secret` calls
 `access.mount` with `mountType: env`, and `mount_secret` calls it with `mountType: file`.
