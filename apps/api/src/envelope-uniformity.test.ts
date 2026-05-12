@@ -4,6 +4,12 @@ import type { Bindings } from "./types";
 
 mock.module("@abadge/trpc/server", () => ({
   handleTrpcRequest: () => new Response("mock trpc"),
+  // Minimal surface so `apps/api/src/rest/v1.ts` can compile its route table
+  // and the REST adapter can resolve callers. Real procedure behavior is
+  // covered by integration tests in `packages/trpc`.
+  appRouter: { _def: { procedures: {} } },
+  createServerCaller: () => ({}),
+  createServerCallerContext: () => ({ caller: {}, resHeaders: new Headers() }),
 }));
 
 const { default: app } = await import("./index");
