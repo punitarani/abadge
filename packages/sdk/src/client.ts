@@ -374,8 +374,149 @@ export class AbadgeUserClient {
   /** @internal */
   protected readonly client: SdkTrpcClient;
 
+  /**
+   * §RM-PR4 — Namespaced API surface. Prefer these over the top-level
+   * methods, which remain for one release and route through the same tRPC
+   * paths.
+   *
+   * @example
+   * ```typescript
+   * const client = new AbadgeUserClient({ apiUrl, sessionToken });
+   * const { organizations } = await client.orgs.list();
+   * const { profiles } = await client.profiles.list(organizations[0].id);
+   * const { items } = await client.items.list();
+   * ```
+   */
+  readonly orgs: {
+    create: (data: { name: string; slug?: string }) => Promise<{
+      id: string;
+      name: string;
+      slug: string;
+    }>;
+    list: () => ReturnType<AbadgeUserClient["listOrganizations"]>;
+    get: (orgId: string) => Promise<unknown>;
+    update: (orgId: string, data: { name?: string }) => Promise<SuccessResult>;
+    delete: (orgId: string) => Promise<SuccessResult>;
+  };
+
+  readonly profiles: {
+    create: AbadgeUserClient["createProfile"];
+    list: AbadgeUserClient["listProfiles"];
+    get: AbadgeUserClient["getProfile"];
+    update: (profileId: string, data: ChangePasswordInput) => Promise<SuccessResult>;
+    delete: AbadgeUserClient["deleteProfile"];
+  };
+
+  readonly items: {
+    create: AbadgeUserClient["createItem"];
+    list: AbadgeUserClient["listItems"];
+    get: AbadgeUserClient["getItem"];
+    update: AbadgeUserClient["updateItem"];
+    delete: AbadgeUserClient["deleteItem"];
+  };
+
+  readonly agents: {
+    create: AbadgeUserClient["createAgent"];
+    list: AbadgeUserClient["listAgents"];
+    get: (agentId: string) => Promise<AgentResult>;
+    update: (agentId: string) => Promise<AgentRotateResult>;
+    delete: AbadgeUserClient["revokeAgent"];
+  };
+
+  readonly permissions: {
+    create: AbadgeUserClient["createPermission"];
+    list: AbadgeUserClient["listPermissions"];
+    get: (permissionId: string) => Promise<unknown>;
+    update: (permissionId: string) => Promise<SuccessResult>;
+    delete: AbadgeUserClient["revokePermission"];
+  };
+
+  readonly audit: {
+    list: AbadgeUserClient["getAudit"];
+  };
+
   constructor(config: AbadgeUserClientConfig) {
     this.client = buildTrpcClient(config.apiUrl, config.sessionToken, config.orgId);
+
+    // §RM-PR4 — namespaces delegate to the existing top-level methods so there
+    // is exactly one implementation per route. The legacy methods stay on the
+    // surface (marked @deprecated below) until the v0.6 removal.
+    this.orgs = {
+      create: (data) => this.createOrganization(data),
+      list: () => this.listOrganizations(),
+      get: (orgId) => this.getOrganization(orgId),
+      update: (orgId, data) => this.updateOrganization(orgId, data),
+      delete: (orgId) => this.deleteOrganization(orgId),
+    };
+
+    this.profiles = {
+      create: (data) => this.createProfile(data),
+      list: (orgId) => this.listProfiles(orgId),
+      get: (profileId) => this.getProfile(profileId),
+      // Profile metadata is largely immutable; "update" surfaces the password
+      // change path which is the only post-creation mutation a user can do.
+      update: (profileId, data) => this.changeProfilePassword(profileId, data),
+      delete: (profileId) => this.deleteProfile(profileId),
+    };
+
+    this.items = {
+      create: (data) => this.createItem(data),
+      list: () => this.listItems(),
+      get: (id) => this.getItem(id),
+      update: (id, data) => this.updateItem(id, data),
+      delete: (id) => this.deleteItem(id),
+    };
+
+    this.agents = {
+      create: (data) => this.createAgent(data),
+      list: () => this.listAgents(),
+      // No tRPC procedure for fetching a single user-owned agent record by id
+      // today; list-and-find is the documented path.
+      get: async (agentId: string) => {
+        const { agents } = await this.listAgents();
+        const found = agents.find((a) => a.id === agentId);
+        if (!found) {
+          throw new AbadgeApiError(
+            404,
+            "AGENT_NOT_FOUND",
+            `Agent ${agentId} not found`,
+            "Confirm the agent ID and that the agent belongs to the active organization.",
+          );
+        }
+        return { agent: found };
+      },
+      // "update" on an agent rotates its credential (the only mutation
+      // exposed today). Returns the one-time rotated key.
+      update: (agentId) => this.rotateAgent(agentId),
+      delete: (agentId) => this.revokeAgent(agentId),
+    };
+
+    this.permissions = {
+      create: (data) => this.createPermission(data),
+      list: (filters?: PermissionFilters) => this.listPermissions(filters),
+      // No standalone `permissions.get` procedure; list with filters covers it.
+      get: async (permissionId: string) => {
+        const { permissions } = await this.listPermissions();
+        const found = permissions.find((p) => p.id === permissionId);
+        if (!found) {
+          throw new AbadgeApiError(
+            404,
+            "PERMISSION_NOT_FOUND",
+            `Permission ${permissionId} not found`,
+            "Confirm the permission ID is correct and still active.",
+          );
+        }
+        return found;
+      },
+      // Permissions are immutable except for revocation; `update` is an alias
+      // for `delete` so the CRUD shape stays uniform.
+      update: (permissionId) => this.revokePermission(permissionId),
+      delete: (permissionId) => this.revokePermission(permissionId),
+    };
+
+    this.audit = {
+      list: (filters?: AuditFilters) => this.getAudit(filters),
+    };
   }
 
   // -- Items ----------------------------------------------------------------
@@ -387,6 +528,7 @@ export class AbadgeUserClient {
    * @param data - Item data discriminated by storageMode
    * @returns The new item's ID
    * @throws {AbadgeApiError} VALIDATION_ERROR
+   * @deprecated Use `client.items.create(data)` instead. Removal target: v0.6.
    */
   async createItem(data: CreateItemInput): Promise<{ id: string }> {
     return call(() => this.client.items.create.mutate(data), "Failed to create item");
@@ -396,6 +538,7 @@ export class AbadgeUserClient {
    * List all items for the current user (metadata only, no encrypted data).
    *
    * @returns Array of item summaries
+   * @deprecated Use `client.items.list()` instead. Removal target: v0.6.
    */
   async listItems(): Promise<ItemListResult> {
     return call(() => this.client.items.list.query(), "Failed to list items");
@@ -407,6 +550,7 @@ export class AbadgeUserClient {
    *
    * @param id - Item ID
    * @throws {AbadgeApiError} ITEM_NOT_FOUND
+   * @deprecated Use `client.items.get(id)` instead. Removal target: v0.6.
    */
   async getItem(id: string): Promise<ItemResult> {
     return call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
@@ -420,6 +564,7 @@ export class AbadgeUserClient {
    * @param data - Updated item data (includes required contentVersion)
    * @returns The new content version number
    * @throws {AbadgeApiError} ITEM_NOT_FOUND, STALE_VERSION
+   * @deprecated Use `client.items.update(id, data)` instead. Removal target: v0.6.
    */
   async updateItem(
     id: string,
@@ -451,6 +596,7 @@ export class AbadgeUserClient {
    *
    * @param id - Item ID
    * @throws {AbadgeApiError} ITEM_NOT_FOUND
+   * @deprecated Use `client.items.delete(id)` instead. Removal target: v0.6.
    */
   async deleteItem(id: string): Promise<SuccessResult> {
     return call(() => this.client.items.delete.mutate({ itemId: id }), "Failed to delete item");
@@ -467,6 +613,7 @@ export class AbadgeUserClient {
    * @param data - Agent kind, name, and optional metadata
    * @returns The created agent and its one-time API key
    * @throws {AbadgeApiError} VALIDATION_ERROR
+   * @deprecated Use `client.agents.create(data)` instead. Removal target: v0.6.
    */
   async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
     return call(() => this.client.agents.create.mutate(data), "Failed to create agent");
@@ -476,6 +623,7 @@ export class AbadgeUserClient {
    * List all agents for the current user.
    *
    * @returns Array of agents (without API keys)
+   * @deprecated Use `client.agents.list()` instead. Removal target: v0.6.
    */
   async listAgents(): Promise<AgentListResult> {
     return call(() => this.client.agents.list.query(), "Failed to list agents");
@@ -488,6 +636,7 @@ export class AbadgeUserClient {
    * @param id - Agent ID
    * @returns The new API key and key prefix
    * @throws {AbadgeApiError} AGENT_NOT_FOUND
+   * @deprecated Use `client.agents.update(id)` instead. Removal target: v0.6.
    */
   async rotateAgent(id: string): Promise<AgentRotateResult> {
     return call(() => this.client.agents.rotate.mutate({ agentId: id }), "Failed to rotate agent");
@@ -499,6 +648,7 @@ export class AbadgeUserClient {
    *
    * @param id - Agent ID
    * @throws {AbadgeApiError} AGENT_NOT_FOUND
+   * @deprecated Use `client.agents.delete(id)` instead. Removal target: v0.6.
    */
   async revokeAgent(id: string): Promise<SuccessResult> {
     return call(() => this.client.agents.revoke.mutate({ agentId: id }), "Failed to revoke agent");
@@ -534,6 +684,7 @@ export class AbadgeUserClient {
    * @throws {AbadgeApiError} AGENT_NOT_FOUND, ITEM_NOT_FOUND,
    *   INVALID_CAPABILITY_LOCALITY, INVALID_CAPABILITY_STORAGE,
    *   PERMISSION_ALREADY_EXISTS
+   * @deprecated Use `client.permissions.create(data)` instead. Removal target: v0.6.
    */
   async createPermission(data: CreatePermissionInput): Promise<PermissionListResult> {
     return call(() => this.client.permissions.create.mutate(data), "Failed to create permission");
@@ -544,6 +695,7 @@ export class AbadgeUserClient {
    *
    * @param filters - Optional agentId and/or itemId filters
    * @returns Array of permissions
+   * @deprecated Use `client.permissions.list(filters)` instead. Removal target: v0.6.
    */
   async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
     return call(() => this.client.permissions.list.query(filters), "Failed to list permissions");
@@ -554,6 +706,7 @@ export class AbadgeUserClient {
    *
    * @param id - Permission ID
    * @throws {AbadgeApiError} PERMISSION_NOT_FOUND
+   * @deprecated Use `client.permissions.delete(id)` instead. Removal target: v0.6.
    */
   async revokePermission(id: string): Promise<SuccessResult> {
     return call(
@@ -569,6 +722,7 @@ export class AbadgeUserClient {
    *
    * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
    * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
+   * @deprecated Use `client.audit.list(filters)` instead. Removal target: v0.6.
    */
   async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
     return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
@@ -581,6 +735,7 @@ export class AbadgeUserClient {
    *
    * @param data - Organization name and optional slug
    * @returns The created organization
+   * @deprecated Use `client.orgs.create(data)` instead. Removal target: v0.6.
    */
   async createOrganization(data: {
     name: string;
@@ -595,6 +750,7 @@ export class AbadgeUserClient {
 
   /**
    * List organizations the current user belongs to.
+   * @deprecated Use `client.orgs.list()` instead. Removal target: v0.6.
    */
   async listOrganizations(): Promise<{
     organizations: Array<{
@@ -614,6 +770,7 @@ export class AbadgeUserClient {
    * Get a specific organization by ID.
    *
    * @param orgId - Organization ID
+   * @deprecated Use `client.orgs.get(orgId)` instead. Removal target: v0.6.
    */
   async getOrganization(orgId: string): Promise<unknown> {
     return call(
@@ -627,6 +784,7 @@ export class AbadgeUserClient {
    *
    * @param orgId - Organization ID
    * @param data - Fields to update
+   * @deprecated Use `client.orgs.update(orgId, data)` instead. Removal target: v0.6.
    */
   async updateOrganization(orgId: string, data: { name?: string }): Promise<SuccessResult> {
     return call(
@@ -639,6 +797,7 @@ export class AbadgeUserClient {
    * Delete an organization and all its resources.
    *
    * @param orgId - Organization ID
+   * @deprecated Use `client.orgs.delete(orgId)` instead. Removal target: v0.6.
    */
   async deleteOrganization(orgId: string): Promise<SuccessResult> {
     return call(
@@ -751,6 +910,7 @@ export class AbadgeUserClient {
    *
    * @param data - Profile data including orgId, name, and optional fields
    * @returns The new profile's ID
+   * @deprecated Use `client.profiles.create(data)` instead. Removal target: v0.6.
    */
   async createProfile(data: {
     orgId: string;
@@ -769,6 +929,7 @@ export class AbadgeUserClient {
    * List profiles in an organization.
    *
    * @param orgId - Organization ID
+   * @deprecated Use `client.profiles.list(orgId)` instead. Removal target: v0.6.
    */
   async listProfiles(orgId: string): Promise<{
     profiles: Array<{
@@ -788,6 +949,7 @@ export class AbadgeUserClient {
    * Get a specific profile.
    *
    * @param profileId - Profile ID
+   * @deprecated Use `client.profiles.get(profileId)` instead. Removal target: v0.6.
    */
   async getProfile(profileId: string): Promise<unknown> {
     return call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile");
@@ -855,6 +1017,7 @@ export class AbadgeUserClient {
    * Delete a profile.
    *
    * @param profileId - Profile ID
+   * @deprecated Use `client.profiles.delete(profileId)` instead. Removal target: v0.6.
    */
   async deleteProfile(profileId: string): Promise<SuccessResult> {
     return call(

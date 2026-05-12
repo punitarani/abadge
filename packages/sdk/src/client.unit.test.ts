@@ -282,6 +282,157 @@ describe("AbadgeUserClient happy paths", () => {
 });
 
 // -----------------------------------------------------------------------------
+// AbadgeUserClient — namespaced API (§RM-PR4)
+// -----------------------------------------------------------------------------
+
+describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
+  // items
+  test("items.create -> items.create", async () => {
+    const { user, calls } = makeUserClient({ id: "item_x" });
+    await user.items.create({ storageMode: "server_managed", payload: {} } as never);
+    expect(calls[0]?.path).toBe("items.create");
+  });
+  test("items.list -> items.list", async () => {
+    const { user, calls } = makeUserClient({ items: [] });
+    await user.items.list();
+    expect(calls[0]?.path).toBe("items.list");
+  });
+  test("items.get -> items.get", async () => {
+    const { user, calls } = makeUserClient({ item: { id: "item_x" } });
+    await user.items.get("item_x");
+    expect(calls[0]?.path).toBe("items.get");
+    expect(calls[0]?.input).toEqual({ itemId: "item_x" });
+  });
+  test("items.update -> items.update", async () => {
+    const { user, calls } = makeUserClient({ ok: true, contentVersion: 2 });
+    await user.items.update("item_x", { contentVersion: 1 } as never);
+    expect(calls[0]?.path).toBe("items.update");
+  });
+  test("items.delete -> items.delete", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.items.delete("item_x");
+    expect(calls[0]?.path).toBe("items.delete");
+  });
+
+  // orgs
+  test("orgs.list -> organizations.list", async () => {
+    const { user, calls } = makeUserClient({ organizations: [] });
+    await user.orgs.list();
+    expect(calls[0]?.path).toBe("organizations.list");
+  });
+  test("orgs.create -> organizations.create", async () => {
+    const { user, calls } = makeUserClient({ organization: { id: "o_x", name: "x", slug: "x" } });
+    await user.orgs.create({ name: "x" });
+    expect(calls[0]?.path).toBe("organizations.create");
+  });
+  test("orgs.update -> organizations.update", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.orgs.update("o_x", { name: "renamed" });
+    expect(calls[0]?.path).toBe("organizations.update");
+    expect(calls[0]?.input).toEqual({ orgId: "o_x", name: "renamed" });
+  });
+  test("orgs.delete -> organizations.delete", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.orgs.delete("o_x");
+    expect(calls[0]?.path).toBe("organizations.delete");
+  });
+
+  // profiles
+  test("profiles.create -> profiles.create", async () => {
+    const { user, calls } = makeUserClient({
+      profile: { id: "p_x", name: "n", storageMode: "server_managed" },
+    });
+    await user.profiles.create({ orgId: "o_x", name: "n" });
+    expect(calls[0]?.path).toBe("profiles.create");
+  });
+  test("profiles.list -> profiles.list", async () => {
+    const { user, calls } = makeUserClient({ profiles: [] });
+    await user.profiles.list("o_x");
+    expect(calls[0]?.path).toBe("profiles.list");
+  });
+  test("profiles.delete -> profiles.delete", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.profiles.delete("p_x");
+    expect(calls[0]?.path).toBe("profiles.delete");
+  });
+  test("profiles.update -> profiles.changePassword", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.profiles.update("p_x", {
+      oldPassword: "a",
+      newPassword: "b",
+    } as never);
+    expect(calls[0]?.path).toBe("profiles.changePassword");
+  });
+
+  // agents
+  test("agents.create -> agents.create", async () => {
+    const { user, calls } = makeUserClient({ id: "a_x" });
+    await user.agents.create({ kind: "remote", name: "x" } as never);
+    expect(calls[0]?.path).toBe("agents.create");
+  });
+  test("agents.list -> agents.list", async () => {
+    const { user, calls } = makeUserClient({ agents: [] });
+    await user.agents.list();
+    expect(calls[0]?.path).toBe("agents.list");
+  });
+  test("agents.update -> agents.rotate", async () => {
+    const { user, calls } = makeUserClient({ apiKey: "abl_xxx" });
+    await user.agents.update("a_x");
+    expect(calls[0]?.path).toBe("agents.rotate");
+  });
+  test("agents.delete -> agents.revoke", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.agents.delete("a_x");
+    expect(calls[0]?.path).toBe("agents.revoke");
+  });
+  test("agents.get finds via list", async () => {
+    const { user, calls } = makeUserClient({
+      agents: [
+        { id: "a_x", name: "n" },
+        { id: "a_y", name: "m" },
+      ],
+    });
+    const { agent } = await user.agents.get("a_y");
+    expect(agent.id).toBe("a_y");
+    expect(calls[0]?.path).toBe("agents.list");
+  });
+  test("agents.get throws AGENT_NOT_FOUND when missing", async () => {
+    const { user } = makeUserClient({ agents: [] });
+    await expect(user.agents.get("a_missing")).rejects.toMatchObject({
+      code: "AGENT_NOT_FOUND",
+    });
+  });
+
+  // permissions
+  test("permissions.create -> permissions.create", async () => {
+    const { user, calls } = makeUserClient({ permissions: [] });
+    await user.permissions.create({
+      agentId: "a_x",
+      itemId: "i_x",
+      capabilities: ["read_ciphertext"],
+    } as never);
+    expect(calls[0]?.path).toBe("permissions.create");
+  });
+  test("permissions.list -> permissions.list", async () => {
+    const { user, calls } = makeUserClient({ permissions: [] });
+    await user.permissions.list({ agentId: "a_x" });
+    expect(calls[0]?.path).toBe("permissions.list");
+  });
+  test("permissions.delete -> permissions.revoke", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await user.permissions.delete("p_x");
+    expect(calls[0]?.path).toBe("permissions.revoke");
+  });
+
+  // audit
+  test("audit.list -> audit.list", async () => {
+    const { user, calls } = makeUserClient({ entries: [], nextCursor: null });
+    await user.audit.list({ agentId: "a_x" });
+    expect(calls[0]?.path).toBe("audit.list");
+  });
+});
+
+// -----------------------------------------------------------------------------
 // AbadgeUserClient — error paths
 // -----------------------------------------------------------------------------
 
