@@ -10,6 +10,7 @@ function itemSummary(overrides: Partial<ItemSummary>): ItemSummary {
     storageMode: "server_managed",
     cryptoVersion: 1,
     contentVersion: 1,
+    profileId: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     ...overrides,
@@ -24,6 +25,7 @@ function makeClient(existing: ItemSummary[] = []) {
     storageMode: "server_managed" as const,
     cryptoVersion: 1,
     contentVersion: 1,
+    profileId: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
   }));

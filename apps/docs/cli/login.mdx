@@ -41,7 +41,7 @@ abadge login --no-open-browser
 </Steps>
 
 <Tip>
-  `abadge login` does not register any agents automatically. The CLI's runtime agents (`local_cli` for `abadge run`/`mount`, `local_mcp` for the MCP server) are created separately with `abadge agent register --kind local_cli` / `--kind local_mcp` after you have an active organization.
+  `abadge login` does not register any agents automatically. The CLI's runtime agents (`local_cli` for `abadge run`/`mount`, `local_mcp` for the MCP server) are created separately with `abadge agent add --kind local_cli` / `--kind local_mcp` after you have an active organization.
 </Tip>
 
 ## After logging in
@@ -50,14 +50,14 @@ Before you can create items or use `abadge run`, set up an organization and a lo
 
 ```bash
 # Create (or join) an org and make it active
-abadge org create --name "Acme"
+abadge org add --name "Acme"
 abadge org use <org-id-or-slug>
 
 # Register the CLI's runtime agent (writes to localAgents.cli)
-abadge agent register --kind local_cli --name "dev-laptop"
+abadge agent add --kind local_cli --name "dev-laptop"
 
 # Create a profile if your org doesn't have one yet
-abadge profile create --name default --storage-mode server_managed
+abadge profile add --name default --storage-mode server_managed
 abadge profile use default
 ```
 
@@ -81,4 +81,4 @@ These are for integrations that need to render the verification URL in a custom 
 - [Authentication (API)](/api/authentication)
 - [Configuration](/cli/configuration)
 - [`abadge logout`](/cli/logout)
-- [`abadge agent register`](/cli/agent#abadge-agent-register)
+- [`abadge agent add`](/cli/agent#abadge-agent-add)

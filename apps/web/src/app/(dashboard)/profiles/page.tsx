@@ -29,7 +29,7 @@ import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
-const TABLE_COL_COUNT = 5;
+const TABLE_COL_COUNT = 6;
 
 export default function ProfilesListPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
@@ -134,6 +134,7 @@ export default function ProfilesListPage(): React.ReactElement {
           <TableHeader>
             <TableRow>
               <TableHead>Profile name</TableHead>
+              <TableHead>External ID</TableHead>
               <TableHead>ID</TableHead>
               <TableHead>Storage</TableHead>
               <TableHead>Vault</TableHead>
@@ -216,6 +217,9 @@ function ProfileRow({
             DEFAULT
           </Badge>
         )}
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">
+        {profile.externalId ?? "—"}
       </TableCell>
       <TableCell className="font-mono text-xs text-muted-foreground">
         {profile.id.slice(0, 8)}...

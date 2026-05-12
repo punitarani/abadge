@@ -50,7 +50,7 @@ abadge mount --item <id> --field private_key
 
 ## Using Fields in the MCP
 
-Pass the optional `field` parameter to `run_with_secret` or `mount_secret`:
+Pass the optional `field` parameter to `use_secret` or `mount_secret`:
 
 ```json
 {

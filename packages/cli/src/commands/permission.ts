@@ -24,6 +24,7 @@ export function createPermissionCommand(): Command {
     )
     .option("--json", "Output as JSON")
     .action(
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: permission.grant parses comma-separated capabilities, validates each against the canonical+legacy set, branches on capability-matrix legality per locality+storage-mode, and surfaces detailed per-capability errors — splitting it would obscure the audit trail.
       async (opts: {
         agentId: string;
         itemId: string;

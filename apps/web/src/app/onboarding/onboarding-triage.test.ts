@@ -34,42 +34,24 @@ function org(overrides: Partial<ResumeOrgSummary>): ResumeOrgSummary {
   };
 }
 
-describe("decideResumeAction", () => {
+describe("decideResumeAction (§REVAMP-PR5: single-step onboarding)", () => {
   test("no orgs -> fall-through (show the choose screen)", () => {
     expect(decideResumeAction([])).toEqual({ kind: "fall-through" });
   });
 
-  test("single bootstrapped org -> redirect", () => {
+  test("any orgs at all -> redirect (auto-default profile exists)", () => {
+    // PR3 auto-creates a server_managed default profile when an org is
+    // created, so any org coming back from the list is usable. We trust
+    // the dashboard and the profiles page to surface recovery flows for
+    // the edge case where an admin deleted the default profile.
     expect(decideResumeAction([org({ hasBootstrappedProfile: true })])).toEqual({
       kind: "redirect",
     });
-  });
-
-  test("single unbootstrapped org -> resume-profile for that org", () => {
-    const target = org({ id: "o1", slug: "s1", name: "N1" });
-    expect(decideResumeAction([target])).toEqual({ kind: "resume-profile", org: target });
-  });
-
-  test("multiple bootstrapped orgs -> redirect", () => {
-    const a = org({ id: "a", hasBootstrappedProfile: true });
-    const b = org({ id: "b", hasBootstrappedProfile: true });
-    expect(decideResumeAction([a, b])).toEqual({ kind: "redirect" });
-  });
-
-  test("mix of bootstrapped + unbootstrapped -> redirect (do not block on the incomplete sibling)", () => {
-    // Behavioral pin: this differs from the previous decideOnboardingStateFromList,
-    // which eagerly resumed the first incomplete org even when others were
-    // bootstrapped. A user with any usable org is not blocked, and the
-    // dashboard's org switcher lets them fix the incomplete one later.
-    const usable = org({ id: "u", hasBootstrappedProfile: true });
-    const broken = org({ id: "b", hasBootstrappedProfile: false });
-    expect(decideResumeAction([broken, usable])).toEqual({ kind: "redirect" });
-    expect(decideResumeAction([usable, broken])).toEqual({ kind: "redirect" });
-  });
-
-  test("multiple unbootstrapped orgs -> resume-profile for the first one in list order", () => {
-    const a = org({ id: "first" });
-    const b = org({ id: "second" });
-    expect(decideResumeAction([a, b])).toEqual({ kind: "resume-profile", org: a });
+    expect(decideResumeAction([org({ hasBootstrappedProfile: false })])).toEqual({
+      kind: "redirect",
+    });
+    expect(decideResumeAction([org({ id: "a" }), org({ id: "b" })])).toEqual({
+      kind: "redirect",
+    });
   });
 });

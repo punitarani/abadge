@@ -1,99 +1,58 @@
 # API Reference
 
-The canonical control-plane transport is tRPC over HTTP at `/trpc`.
-
-Better Auth is mounted at `/api/auth/*`.
-
-There is no REST layer. All application endpoints are tRPC procedures.
+The canonical control-plane transport is REST at `/v1/...`. Every endpoint
+is also reachable via tRPC at `/trpc/*`, but new integrations should target
+the REST surface.
 
 Base URL:
 
-* production: `https://your-api-domain`
-* local development: `http://localhost:8787`
+* production: `https://your-api-domain/v1`
+* local development: `http://localhost:8787/v1`
 
-## Transport
+The OpenAPI 3.1 spec is served at `/v1/openapi.json` and is generated from
+the same procedure metadata that drives request routing — `/v1` and the
+spec cannot disagree.
 
-Use the shared clients instead of hand-rolling HTTP requests:
+## Conventions
 
-```ts
-import { createNodeTrpcClient } from "@abadge/trpc/client";
-
-const client = createNodeTrpcClient({
-  baseUrl: "http://localhost:8787",
-  token: process.env.ABADGE_SESSION_OR_AGENT_TOKEN,
-});
-```
+* **Content type**: `application/json` for request and response bodies.
+* **Path params**: appear in curly braces (`/items/{itemId}`).
+* **Query params**: cursor pagination uses `limit` (default 50, max 100) and
+  `cursor` (opaque string returned in the previous page response).
+* **Request IDs**: every response includes an `X-Request-Id` header. Clients
+  may set their own; the server echoes it back. Always include the request ID
+  when reporting issues.
+* **Errors**: every non-2xx response is a JSON envelope (see below). HTTP
+  status reflects error class. Validation errors carry `issues[]`.
 
 ## Authentication
 
-### Human operator auth
+All endpoints under `/v1/*` use `Authorization: Bearer <token>` unless the
+table marks an endpoint as unauthenticated (agent enrollment + session
+exchange). The bearer token may be:
 
-Better Auth handles user authentication at `/api/auth/*`.
-
-Common routes:
-
-```text
-POST /api/auth/sign-up/email
-POST /api/auth/sign-in/email
-POST /api/auth/sign-out
-GET  /api/auth/get-session
-```
-
-Device authorization routes used by the CLI:
-
-```text
-POST /api/auth/device/code
-POST /api/auth/device/token
-GET  /api/auth/device?user_code=...
-POST /api/auth/device/approve
-POST /api/auth/device/deny
-```
-
-`/api/auth/device/approve` and `/api/auth/device/deny` require an authenticated Better Auth web
-session.
-
-Session-backed tRPC procedures accept:
-
-* Better Auth browser cookies
-* Better Auth bearer access tokens in `Authorization: Bearer ...`
-
-The CLI stores the bearer token only in daemon memory.
-
-### Agent auth
-
-Agent-facing procedures resolve Bearer credentials in this order:
-
-1. `abs_...` short-lived agent session token lookup in `agent_sessions`
-2. legacy `abl_...` / `abg_...` API-key verification by stored prefix and hash
-3. legacy Better Auth API-key fallback for migrated records
+| Prefix | Holder | Issuer |
+|--------|--------|--------|
+| Better Auth session token | Human operator | `/api/auth/sign-in/*` |
+| `abs_...` | Agent session | `POST /v1/agents/{agentId}/sessions/exchange` |
+| legacy API key | Agent (legacy) | `POST /v1/agents` with `authMethod=legacy_api_key` |
 
 `abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes.
+The TypeScript SDK refreshes them automatically at T-2 minutes.
 
-### Agent enrollment and session lifecycle
+### Org scoping
 
-Keypair-backed agents use the auth router lifecycle:
+Most endpoints are scoped to an organization. The server resolves the
+caller's org in this order:
 
-| Procedure | Auth | Description |
-|------|------|-------------|
-| `auth.issueBootstrapToken` | `sessionProcedure` | Issue a one-time `abe_...` bootstrap token |
-| `auth.enroll` | `publicProcedure` | Redeem bootstrap token and upload an agent public key |
-| `auth.createChallenge` | `publicProcedure` | Create a short-lived signing challenge |
-| `auth.exchangeSession` | `publicProcedure` | Verify Ed25519 signature and mint an `abs_...` session |
-| `auth.revokeSession` | `sessionProcedure` | Revoke an existing `abs_...` session for the current operator |
-| `auth.recordLogin` | `sessionProcedure` | Audit successful CLI login |
-| `auth.logout` | `sessionProcedure` | Audit operator logout |
+1. `X-Abadge-Org-Id` header (required for users with more than one org)
+2. The single org the caller belongs to (when unambiguous)
+3. The org embedded in the bearer credential (agent sessions and API keys)
 
-## Procedure tiers
-
-| Tier | Auth | Used by |
-|------|------|---------|
-| `publicProcedure` | none | agent enrollment and agent session exchange |
-| `sessionProcedure` | Better Auth session or bearer session token | dashboard, CLI management commands, SDK |
-| `agentProcedure` | agent bearer credential | local runtime agents, MCP, remote agents |
+If a user belongs to multiple orgs and omits `X-Abadge-Org-Id`, the server
+returns `400 BAD_REQUEST` with `code: "ORG_HEADER_REQUIRED"`.
 
 ## Error envelope
-
-All domain errors use a consistent JSON envelope:
 
 ```json
 {
@@ -104,424 +63,189 @@ All domain errors use a consistent JSON envelope:
 }
 ```
 
-Validation errors include an additional `issues` array:
+Validation errors add an `issues` array:
 
 ```json
 {
   "code": "VALIDATION_ERROR",
-  "message": "Missing required field.",
-  "hint": "Check the invalid input fields and try again.",
-  "issues": [
-    { "path": ["itemId"], "message": "Required" }
-  ]
+  "message": "Invalid input.",
+  "hint": "Check the invalid fields and try again.",
+  "issues": [{ "path": ["itemId"], "message": "Required" }],
+  "meta": {}
 }
 ```
 
-See [`docs/ERRORS.md`](./ERRORS.md) for all error codes.
-
-## Session procedures
-
-### `organizations.create`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `name` | string | yes | Organization display name |
-| `slug` | string | no | URL-safe identifier (auto-generated if omitted) |
-
-Returns `{ id, name, slug }`.
-
-### `organizations.list`
-
-Auth: `sessionProcedure`
-
-Returns `{ organizations }` — each entry includes `id`, `name`, `slug`, `logo` (`string | null`), `createdAt`, `role`, and `hasBootstrappedProfile` (`boolean`). The flag is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`; the dashboard's onboarding-resume flow uses it to skip a per-org `profiles.list` round trip.
-
-### `organizations.get`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId }`. Returns the organization record.
-
-### `organizations.update`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId, name? }`. Returns `{ ok: true }`.
-
-### `organizations.delete`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId }`. Deletes the organization and cascades to agents and permissions. Returns `{ ok: true }`.
-
-### `organizations.members.list`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId }`. Returns `{ members }` with `{ id, userId, name, email, role, createdAt }` per member. `email` is `string | null`: populated only when the caller is `owner` or `admin`; `null` for callers with `member` role (applies uniformly, including to the caller's own row — users should read their own email from their profile/session).
-
-### `organizations.members.invite`
-
-Auth: `sessionProcedure` (admin+)
-
-Input: `{ orgId, role? }`. Generates a one-time invite link token. Returns `{ ok, invitationId, token }`.
-
-The `token` (prefixed `abi_`) is shown once. Only its SHA-256 hash is stored. The frontend constructs the invite URL: `{APP_URL}/invite/accept?token={token}`.
-
-Invitations expire after 7 days.
-
-### `organizations.members.getInviteInfo`
-
-Auth: `sessionProcedure`
-
-Input: `{ token }`. Returns `{ organizationName, organizationSlug, role, expiresAt }`.
-
-Requires authentication to prevent info disclosure of org names to unauthenticated users. Rate-limited to 10 lookups/minute per (user, IP) to discourage brute-force enumeration of invite tokens; excess returns `RATE_LIMITED` / 429. Returned metadata is intentionally narrow — the internal `invitationId` and `inviterUserId` are not exposed because a successful guess would otherwise leak them.
-
-### `organizations.members.acceptInvite`
-
-Auth: `sessionProcedure`
-
-Input: `{ token }`. Adds the authenticated user as a member with the invite's role. Returns `{ ok, organizationId, organizationName, organizationSlug }`.
-
-Atomic: uses `WHERE usedAt IS NULL` to prevent double-accept race conditions. Returns org data so the frontend can switch context.
-
-### `organizations.members.revokeInvite`
-
-Auth: `sessionProcedure` (admin+)
-
-Input: `{ orgId, invitationId }`. Deletes an unused invitation. Returns `{ ok: true }`.
-
-### `organizations.members.remove`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId, userId }`. Returns `{ ok: true }`. Cascades agent revocation for agents owned by the removed member.
-
-### `organizations.members.updateRole`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId, userId, role }`. Returns `{ ok: true }`.
-
-### `profiles.create`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `orgId` | string | yes | Owning organization |
-| `name` | string | yes | Profile display name |
-| `description` | string | no | Optional description |
-| `storageMode` | enum | no | `zero_knowledge` or `server_managed` (default: `server_managed`) |
-
-Returns `{ id }`.
-
-### `profiles.list`
-
-Auth: `sessionProcedure`
-
-Input: `{ orgId }`. Returns profiles for the organization.
-
-### `profiles.get`
-
-Auth: `sessionProcedure`
-
-Input: `{ profileId }`. Returns profile metadata.
-
-### `profiles.bootstrap`
-
-Auth: `sessionProcedure`
-
-Initializes the encryption state for a zero-knowledge profile.
-
-Input: `{ profileId, wrappedRootKey, kdfSalt, kdfParams }`. Returns `{ id }`.
-
-### `profiles.changePassword`
-
-Auth: `sessionProcedure`
-
-Input: `{ profileId, wrappedRootKey, kdfSalt, kdfParams }`. Returns `{ ok: true }`.
-
-### `profiles.setupRecovery`
-
-Auth: `sessionProcedure`
-
-Input: `{ profileId, recoveryWrappedRootKey }`. Returns `{ ok: true }`.
-
-### `profiles.rotateKey`
-
-Auth: `sessionProcedure`
-
-Input: `{ profileId, wrappedRootKey, rekeyedItems }`. Returns `{ ok: true, keyVersion }`.
-
-### `profiles.delete`
-
-Auth: `sessionProcedure`
-
-Input: `{ profileId }`. Fails with `PROFILE_NOT_EMPTY` if the profile contains items. Returns `{ ok: true }`.
-
-### `vault.*`
-
-Auth: `sessionProcedure`
-
-Legacy per-user vault procedures retained for web app compatibility. These will be removed in a future release. Prefer `profiles.*` for new integrations.
-
-Procedures: `vault.bootstrap`, `vault.get`, `vault.changePassword`, `vault.setupRecovery`, `vault.rotateKey`.
-
-### `items.create`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `storageMode` | enum | yes | `zero_knowledge` or `server_managed` |
-| `label` | string | yes | Display name |
-| `kind` | enum | no | Item kind (e.g. `opaque`, `api_key`, `login`) |
-| `payload` | object | conditional | Required for `server_managed` items |
-| `encryptedItemKey` | string | conditional | Required for `zero_knowledge` items |
-| `ciphertext` | string | conditional | Required for `zero_knowledge` items |
-
-Returns `{ id }`.
-
-### `items.list`
-
-Auth: `sessionProcedure`
-
-Returns `{ items }` with metadata only (no secret data). Each item summary includes `id`, `label`, `kind`, `storageMode`, `createdAt`.
-
-### `items.get`
-
-Auth: `sessionProcedure`
-
-Input: `{ itemId }`. Returns `{ item }`.
-
-### `items.update`
-
-Auth: `sessionProcedure`
-
-Input: `{ itemId, data }` where `data` contains updated fields and `contentVersion` for optimistic
-concurrency. Returns `{ ok: true, contentVersion }`.
-
-### `items.ownerReveal`
-
-Auth: `sessionProcedure`
-
-Input: `{ itemId }`. Decrypts and returns a server-managed item owned by the current user. Returns `{ payload }`. Fails on zero-knowledge items.
-
-### `items.delete`
-
-Auth: `sessionProcedure`
-
-Input: `{ itemId }`. Soft-deletes the item. Returns `{ ok: true }`.
-
-### `items.listForAgent`
-
-Auth: `agentProcedure` (bearer agent session or legacy API key).
-
-Returns `{ items }` with metadata only (no secret data). Scoped to items the calling agent has at least one `permissions` row on — agents without any grant receive an empty list. Metadata-only endpoint; no per-call audit row (access-path procedures `access.ciphertext` / `access.reveal` / `access.mount` remain the audited boundary).
-
-### `agents.create`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `kind` | enum | yes | `local_cli`, `local_mcp`, `remote` |
-| `name` | string | yes | Display name |
-| `authMethod` | enum | no | `public_key_session` (default) or `legacy_api_key` |
-| `publicKey` | string | no | JWK-serialized Ed25519 public key for direct enrollment |
-| `issueBootstrapToken` | boolean | no | Issue a one-time bootstrap token instead of direct enrollment |
-| `metadata` | object | no | Free-form metadata |
-
-Response:
-
-```ts
+All error codes are listed in [`docs/ERRORS.md`](./ERRORS.md). The TypeScript
+SDK surfaces the envelope as `AbadgeApiError` with `statusCode`, `code`,
+`hint`, `meta`, and `issues`.
+
+## Rate limits
+
+| Bucket | Limit | Headers |
+|--------|-------|---------|
+| Better Auth (`/api/auth/*`) | 60 / minute / IP | `Retry-After` on 429 |
+| Application (`/v1/*` and `/trpc/*`) | 100 / minute / principal | `Retry-After` on 429 |
+
+The principal is the bearer token (or IP for unauthenticated routes).
+
+## Endpoints
+
+### Organizations
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/orgs` | session | Create an organization. Auto-creates a default `server_managed` profile (`externalId: "default"`). Response includes `defaultProfile`. |
+| `GET` | `/v1/orgs` | session | List organizations the caller belongs to. |
+| `GET` | `/v1/orgs/{orgId}` | session | Fetch a single organization. |
+| `PATCH` | `/v1/orgs/{orgId}` | session (admin) | Update name, slug, or logo. |
+| `DELETE` | `/v1/orgs/{orgId}` | session (owner) | Soft-delete the organization. |
+
+### Members & invites
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `GET` | `/v1/orgs/{orgId}/members` | session | List members of the org. |
+| `POST` | `/v1/orgs/{orgId}/members` | session (admin) | Invite a new member by email. Returns an `abi_...` invite token. |
+| `POST` | `/v1/invites/accept` | session | Accept an invite by token (`abi_...`). |
+| `DELETE` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Remove a member; cascade-revokes their agents. |
+| `PATCH` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Change a member's role. |
+
+### Profiles
+
+Profiles are the encryption boundary within an org. A new org always has a
+`server_managed` profile with `externalId: "default"`. Additional profiles
+support either storage mode and may carry a customer-supplied `externalId`.
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/orgs/{orgId}/profiles` | session (admin) | Create a profile. Accepts `name`, optional `description`, `storageMode`. |
+| `GET` | `/v1/orgs/{orgId}/profiles` | session | List profiles in the org. |
+| `GET` | `/v1/profiles/{profileId}` | session | Get a single profile. |
+| `POST` | `/v1/profiles/{profileId}/bootstrap` | session (admin) | Bootstrap a `zero_knowledge` profile with a client-derived wrapped root key. |
+| `POST` | `/v1/profiles/{profileId}/rotate` | session (admin) | Rotate the profile's root key. |
+| `DELETE` | `/v1/profiles/{profileId}` | session (admin) | Delete a profile and cascade-delete its items. |
+
+### Items
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/items` | session/agent (`items:write`) | Create an item in a profile. For ZK items, supply `encryptedItemKey` + `ciphertext`; for server-managed items, supply `payload`. |
+| `GET` | `/v1/items` | session/agent (`items:read`) | List items. Supports `profileId`, `limit`, `cursor`. |
+| `GET` | `/v1/items/{itemId}` | session/agent | Fetch a single item's metadata + (for ZK) ciphertext. |
+| `PATCH` | `/v1/items/{itemId}` | session (admin) | Update an item's label or payload. Uses optimistic concurrency via `contentVersion`. |
+| `DELETE` | `/v1/items/{itemId}` | session (admin) | Soft-delete an item. |
+
+### Agents
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/agents` | session (admin) | Register an agent. Default `authMethod=public_key_session`; pass `issueBootstrapToken: true` for unenrolled keypair agents, or `authMethod=legacy_api_key` to receive a one-time API key. |
+| `GET` | `/v1/agents` | session | List agents in the org. |
+| `GET` | `/v1/agents/{agentId}` | session | Fetch agent details. |
+| `DELETE` | `/v1/agents/{agentId}` | session (admin) | Revoke an agent; cascade-revokes its permissions. |
+
+### Agent enrollment & sessions (public)
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/agents/{agentId}/bootstrap` | session (admin) | Issue a one-time `abe_...` bootstrap token. |
+| `POST` | `/v1/agents/enroll` | none | Redeem bootstrap token + upload an Ed25519 public key. |
+| `POST` | `/v1/agents/{agentId}/sessions/challenge` | none | Create a short-lived signing challenge (`abc_...`, 60 s TTL). |
+| `POST` | `/v1/agents/{agentId}/sessions/exchange` | none | Exchange a signed challenge for an `abs_...` session token. |
+| `DELETE` | `/v1/agents/sessions/{token}` | agent | Revoke the current session. |
+
+### Permissions (grants)
+
+The canonical capabilities are `read` and `use`. Legacy capability names
+(`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`) remain
+accepted as aliases and normalize to `read`/`use` on the server. See
+[`CAPABILITIES.md`](./CAPABILITIES.md).
+
+`POST /v1/permissions` accepts either an item target or a profile target.
+All capabilities in a single request commit as one transaction; partial
+grants are never observable.
+
+Item target:
+
+```json
 {
-  agent: Agent;
-  apiKey: string | null;
-  bootstrapToken: string | null;
-  bootstrapExpiresAt: string | null;
+  "agentId": "agt_...",
+  "itemId": "itm_...",
+  "capabilities": ["read"],
+  "expiresAt": "2026-12-31T00:00:00.000Z"
 }
 ```
 
-Behavior:
-
-* `authMethod` defaults to `public_key_session`
-* `legacy_api_key` agents receive a one-time API key
-* `public_key_session` agents must provide either `publicKey` or `issueBootstrapToken: true`
-* missing both `publicKey` and `issueBootstrapToken` fails with `PUBLIC_KEY_REQUIRED`
-* keypair-backed agents without `publicKey` receive a bootstrap token (`abe_`, 10-min TTL)
-
-### `agents.list`
-
-Auth: `sessionProcedure`
-
-Returns `{ agents }`.
-
-### `agents.get`
-
-Auth: `sessionProcedure`
-
-Input: `{ agentId }`. Returns `{ agent }`.
-
-### `agents.rotate`
-
-Auth: `sessionProcedure`
-
-Input: `{ agentId }`. Rotates a legacy API key only. Returns `{ apiKey, keyPrefix }`.
-
-### `agents.revoke`
-
-Auth: `sessionProcedure`
-
-Input: `{ agentId }`. Invalidates all active sessions. Returns `{ ok: true }`.
-
-### `permissions.create`
-
-Auth: `sessionProcedure`
-
-Grants one or more capabilities to an agent on an item in a single atomic operation. Returns `{ permissions }` — one row per capability granted.
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `agentId` | string | yes | Agent receiving access |
-| `itemId` | string | yes | Target item |
-| `capabilities` | enum[] | yes | Non-empty array of distinct capabilities (`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`) |
-| `expiresAt` | string | no | ISO timestamp applied to every capability in this submission |
-
-Atomic batching: every requested capability lands or none does. The schema rejects empty arrays and inputs with duplicate capabilities (rejected as a `VALIDATION_ERROR` before the router runs).
-
-Creation-time enforcement rejects the entire batch when:
-
-* any capability is invalid for the agent's locality (`INVALID_CAPABILITY_LOCALITY`) — `meta.invalidCapabilities` lists every offender
-* any capability is invalid for the item's storage mode (`INVALID_CAPABILITY_STORAGE`) — `meta.invalidCapabilities` lists every offender
-* any capability is already granted on this `(agent, item)` pair (`PERMISSION_ALREADY_EXISTS`) — `meta.duplicateCapabilities` lists every duplicate
-
-Single-capability grants use `capabilities: ["reveal_plaintext"]` (an array of one).
-
-### `permissions.list`
-
-Auth: `sessionProcedure`
-
-Optional filters: `agentId`, `itemId`. When both are provided they are AND-combined (returns only permissions matching both). Returns `{ permissions }` — one row per capability.
-
-### `permissions.revoke`
-
-Auth: `sessionProcedure`
-
-Input: `{ permissionId }`. Returns `{ ok: true }`.
-
-### `audit.list`
-
-Auth: `sessionProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `eventType` | enum | no | Filter by event type |
-| `result` | enum | no | Filter by result (`allowed`, `denied`, `expired`, `revoked`) |
-| `agentId` | string | no | Filter by agent |
-| `itemId` | string | no | Filter by item |
-| `cursor` | string | no | Pagination cursor (numeric string) |
-| `limit` | integer | no | 1--100, default 50 |
-
-Returns `{ entries, nextCursor }`.
-
-## Agent procedures
-
-### `agents.self`
-
-Auth: `agentProcedure`
-
-Returns `{ agent }` for the currently authenticated agent.
-
-### `access.ciphertext`
-
-Auth: `agentProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-
-Returns `{ encryptedItemKey, ciphertext, cryptoVersion }`.
-
-Denied if: remote agent, non-ZK item, or missing `read_ciphertext` permission.
-
-### `access.reveal`
-
-Auth: `agentProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-| `field` | string | no | Named field to return (for multi-field items) |
-
-Returns `{ payload }`.
-
-Denied if: non-server-managed item, or missing `reveal_plaintext` permission.
-
-For multi-field items where no `field` is specified, returns `MULTI_FIELD_ITEM` with available field
-names in the hint. See [`docs/FIELDS.md`](./FIELDS.md).
-
-### `access.mount`
-
-Auth: `agentProcedure`
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-| `mountType` | `"env" \| "file"` | yes | Requested mount style |
-| `field` | string | no | Named field to return (for multi-field items) |
-
-Response:
-
-* zero-knowledge item: `{ storageMode: "zero_knowledge", encryptedItemKey, ciphertext, cryptoVersion }`
-* server-managed item: `{ storageMode: "server_managed", payload }`
-
-Denied if: remote agent, or missing `mount_env`/`mount_file` permission.
-
-### `access.bulkMountEnv`
-
-Auth: `agentProcedure`
-
-Returns every item in the given profile that the calling agent has `mount_env` on, in one round trip. Backs `abadge run --all`. **Profile is the trust boundary** — items in other profiles are NEVER returned, even when the agent has grants on them.
-
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `profileId` | string | yes | The profile to scope the bulk mount to |
-
-Response: `{ items: BulkMountEnvItem[] }` where each item is either:
-
-* `{ storageMode: "zero_knowledge", itemId, label, encryptedItemKey, ciphertext, cryptoVersion, profileId, contentVersion }`
-* `{ storageMode: "server_managed", itemId, label, payload }`
-
-Each included item produces one `access.mount_env` audit row tagged `meta.viaBulk = true` and carrying `profileId`.
-
-Failure modes:
-* Remote agents → `PERMISSION_DENIED` (no per-item audit row, since no items were accessed).
-* `profileId` belonging to another org → `PROFILE_NOT_FOUND` (existence is not leaked).
-* More than 256 matching items → `BAD_REQUEST` with `meta.limit = 256`. Scope the profile or use `--item` per-secret.
-
-## Audit events
-
-| Category | Event types |
-|---|---|
-| Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
-| Items | `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export` |
-| Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
-| Agents | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
-| Permissions | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
-| Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
-
-## Rate limiting
-
-| Path | Limit |
-|------|-------|
-| `/api/auth/*` | 60 requests/minute per IP |
-| `/trpc/*` | 100 requests/minute per IP |
-
-## Health check
-
-`GET /health` returns `{ "status": "ok" }`. No authentication required.
+Profile target (grants apply to every current and future item in the
+profile):
+
+```json
+{
+  "agentId": "agt_...",
+  "profileId": "prf_...",
+  "capabilities": ["use"]
+}
+```
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/permissions` | session (admin) | Create one or more grants atomically. |
+| `GET` | `/v1/permissions` | session | List grants. Supports `agentId`, `itemId`, `profileId` filters. |
+| `DELETE` | `/v1/permissions/{permissionId}` | session (admin) | Revoke a single grant. |
+
+### Access (agent-facing)
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/access/{itemId}/read` | agent | Read a single item. Returns the server-decrypted payload (server-managed) or the ZK envelope (zero-knowledge). Optional `field` for field selection. |
+| `POST` | `/v1/access/{itemId}/use` | agent | Reserve a mount handle for an item. Body: `delivery: "env" \| "file"`, optional `envVarName`, `field`. Returns an opaque `mountId` and `expiresAt`. |
+| `POST` | `/v1/profiles/{profileId}/access/use` | agent | Reserve a mount handle for every item in a profile (bulk env injection). Returns a single mount with one entry per item. |
+| `POST` | `/v1/access/mounts/{mountId}/redeem` | agent | Redeem a mount handle. Used by the daemon to consume the reservation; returns the decrypted payload + delivery hints. One-shot; redemption deletes the reservation. |
+
+The `field` parameter selects a single field from a multi-field payload.
+See [`docs/FIELDS.md`](./FIELDS.md) for resolution rules.
+
+### Audit
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `GET` | `/v1/audit` | session (audit:read) | List audit events. Supports `agentId`, `itemId`, `profileId`, `result`, `eventType`, `since`, `until`, `limit`, `cursor`. |
+
+### Health
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `GET` | `/v1/health` | none | Liveness probe. Returns `{ "status": "ok" }`. |
+
+## Pagination
+
+List endpoints accept `limit` (default 50, max 100) and `cursor` (opaque).
+The response shape is:
+
+```json
+{
+  "items": [/* ... */],
+  "nextCursor": "..." | null
+}
+```
+
+When `nextCursor` is `null`, the page is the last page.
+
+## tRPC bridge
+
+Every REST route is also reachable via tRPC at `/trpc/<router>.<procedure>`.
+The transport differs (POST with `input` in body for mutations; GET with
+`input` query-string for queries) but the input/output shapes are
+identical. New integrations should prefer REST; the tRPC bridge exists for
+internal callers (web dashboard, CLI, SDK) that already speak tRPC.
+
+The Better Auth surface remains at `/api/auth/*` and is not part of `/v1`.
+
+## SDKs
+
+* **TypeScript**: `@abadge/sdk` exports `Abadge.User` (session-authed) and
+  `Abadge.Agent` (agent-session-authed). See [`docs/CLI.md`](./CLI.md) for
+  usage examples.
+* **CLI**: `abadge` binary, distributed via Homebrew and `npx`. See
+  [`docs/CLI.md`](./CLI.md).
+* **MCP**: stdio MCP server for AI agents. See [`docs/MCP.md`](./MCP.md).

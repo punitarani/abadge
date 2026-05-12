@@ -101,7 +101,7 @@ The MCP server reads its config from env vars or `~/.abadge/config.json`. To reg
 agent and get a paste-ready Claude Desktop snippet:
 
 ```bash
-abadge agent register --kind local_mcp --name claude-desktop --mcp-config
+abadge agent add --kind local_mcp --name claude-desktop --mcp-config
 ```
 
 See [Claude Desktop](/mcp/claude-desktop) for the full setup walk-through.
@@ -116,7 +116,7 @@ See [Claude Desktop](/mcp/claude-desktop) for the full setup walk-through.
     Read env vars (or fall back to top-level `apiUrl`, `agentId`, `privateKeyPath` in `~/.abadge/config.json`). Error out on missing required fields.
   </Step>
   <Step title="Register tools">
-    `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`.
+    `list_items`, `use_secret`, `mount_secret`, `release_mount`, `get_audit`.
   </Step>
   <Step title="Listen on stdio">
     The server prints `abadge-mcp server running on stdio` on stderr and begins handling MCP requests. The keypair session exchange happens lazily on the first tool invocation.

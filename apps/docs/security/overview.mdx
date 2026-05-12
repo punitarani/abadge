@@ -107,7 +107,7 @@ The full decision flow is in [Permissions and capabilities](/concepts/permission
     `reveal_plaintext`. Returns the value over HTTPS. Used by remote agents that cannot use local injection. Server-managed items only.
   </Tab>
   <Tab title="MCP tools">
-    Secrets are injected into subprocesses, never returned to the model. `mount_secret` returns an opaque `mountId` (never the file path). `run_with_secret` redacts the secret from output and caps it at 4 KB.
+    Secrets are injected into subprocesses, never returned to the model. `mount_secret` returns an opaque `mountId` (never the file path). `use_secret` returns only the exit code, duration, output-line count, and a truncation flag — subprocess stdout/stderr text is never forwarded to the model.
   </Tab>
 </Tabs>
 
