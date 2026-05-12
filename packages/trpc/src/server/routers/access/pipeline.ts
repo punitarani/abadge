@@ -20,13 +20,14 @@ import {
 } from "@abadge/crypto/shared";
 import { and, eq, inArray, isNull, or } from "@abadge/db";
 import {
+  auditLogs,
   items as itemRecords,
   mountReservations,
   permissions as permissionRecords,
   profiles as profileRecords,
 } from "@abadge/db/schema";
 import { Effect } from "effect";
-import { logAgentAudit } from "../../audit";
+import { buildAuditRow, logAgentAudit } from "../../audit";
 import { AgentRequestContextTag, tryAsync } from "../../effect";
 import { decodeServerManagedPayload } from "../../item-payload";
 import { checkActionConstraint } from "./constraints";
@@ -458,33 +459,40 @@ export const resolveAccess = (
     const mountId = generateMountId();
     const expiresAt = new Date(Date.now() + MOUNT_TTL_MS);
 
+    // Reservation + audit go through one transaction so the invariant
+    // "every allowed access is logged" holds even if the audit insert
+    // fails — both rollback together. auditLogs has no foreign keys
+    // (by design) so a multi-table tx here does not deadlock.
     yield* tryAsync(() =>
-      ctx.db.insert(mountReservations).values({
-        id: crypto.randomUUID(),
-        mountId,
-        itemId,
-        agentId: ctx.identity.agentId,
-        delivery,
-        field: field ?? null,
-        envVarName: envVarName ?? null,
-        expiresAt,
+      ctx.db.transaction(async (tx) => {
+        await tx.insert(mountReservations).values({
+          id: crypto.randomUUID(),
+          mountId,
+          itemId,
+          agentId: ctx.identity.agentId,
+          delivery,
+          field: field ?? null,
+          envVarName: envVarName ?? null,
+          expiresAt,
+        });
+        await tx.insert(auditLogs).values(
+          buildAuditRow({
+            organizationId: ctx.identity.agentOrganizationId,
+            userId: ctx.identity.agentUserId,
+            agentId: ctx.identity.agentId,
+            itemId,
+            profileId: item.profileId ?? undefined,
+            eventType,
+            result: "allowed",
+            deliveryMode: `mount_${delivery}`,
+            field: field ?? "__default__",
+            purpose,
+            ipAddress: ctx.ipAddress,
+            meta: { action: "use", viaProfileGrant: perm.viaProfileGrant, mountId },
+          }),
+        );
       }),
     );
-
-    yield* logAgentAudit({
-      organizationId: ctx.identity.agentOrganizationId,
-      userId: ctx.identity.agentUserId,
-      agentId: ctx.identity.agentId,
-      itemId,
-      profileId: item.profileId ?? undefined,
-      eventType,
-      result: "allowed",
-      deliveryMode: `mount_${delivery}`,
-      field: field ?? "__default__",
-      purpose,
-      ipAddress: ctx.ipAddress,
-      meta: { action: "use", viaProfileGrant: perm.viaProfileGrant, mountId },
-    });
 
     return { mountId, delivery, expiresAt } satisfies UseResult;
   });
@@ -676,15 +684,18 @@ export const resolveProfileAccess = (
     }
 
     // All items resolved successfully — flush reservations + audits in one tx.
+    // Atomic write preserves "every allowed access is logged" even if an
+    // audit insert fails; auditLogs has no FKs so the multi-table write does
+    // not risk a deadlock.
     if (pendingReservations.length > 0) {
       yield* tryAsync(() =>
         ctx.db.transaction(async (tx) => {
           await tx.insert(mountReservations).values(pendingReservations);
+          if (pendingAudits.length > 0) {
+            await tx.insert(auditLogs).values(pendingAudits.map((a) => buildAuditRow(a)));
+          }
         }),
       );
-    }
-    for (const auditRow of pendingAudits) {
-      yield* logAgentAudit(auditRow);
     }
 
     return { items: responseItems };

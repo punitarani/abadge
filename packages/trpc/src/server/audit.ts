@@ -103,7 +103,7 @@ export interface AuditEntryInput {
   ipAddress?: string;
 }
 
-function buildAuditRow(entry: AuditEntryInput) {
+export function buildAuditRow(entry: AuditEntryInput) {
   return {
     organizationId: entry.organizationId,
     userId: entry.userId,
