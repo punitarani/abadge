@@ -14,12 +14,12 @@ export interface TriageProfile {
  * - it is server_managed (no client-side key needed), OR
  * - it is zero_knowledge and has a wrappedRootKey set.
  *
- * Mirrors the server-side gate in
- * `packages/trpc/src/server/onboarding-gate.ts`; they must stay in sync.
- *
- * Used by `resolve-profile.ts` to decide whether an "already exists"
- * profile is an unbootstrapped orphan we may adopt, or a real profile we
- * must never clobber.
+ * Historically also enforced server-side via the onboarding-completeness
+ * gate; that gate was dropped in §REVAMP-PR3 Task 5.2 once
+ * `organizations.create` started auto-seeding a default profile. This
+ * helper survives because `resolve-profile.ts` still uses it to decide
+ * whether an "already exists" profile is an unbootstrapped orphan we may
+ * adopt, or a real profile we must never clobber.
  */
 export function isProfileBootstrapped(p: TriageProfile): boolean {
   if (p.storageMode === "server_managed") return true;

@@ -1,7 +1,7 @@
 import { ForbiddenError, NotFoundError } from "@abadge/core";
 import type { Database } from "@abadge/db";
 import { and, eq } from "@abadge/db";
-import { agents, auditLogs, member } from "@abadge/db/schema";
+import { agents, member } from "@abadge/db/schema";
 import { initTRPC, type TRPCError } from "@trpc/server";
 import { Effect } from "effect";
 import { resolveAgentIdentity, resolveSessionIdentity } from "./auth";
@@ -13,11 +13,6 @@ import type {
   SessionRequestContext,
 } from "./context";
 import { getTrpcErrorData, toTrpcError } from "./errors";
-import {
-  assertOrgOnboardingComplete,
-  incompleteOrgError,
-  orgHasBootstrappedProfile,
-} from "./onboarding-gate";
 
 const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
 
@@ -163,16 +158,15 @@ export const scopedSessionProcedure = (_scope: string) =>
         throw new ForbiddenError({
           code: "FORBIDDEN",
           message: "Organization context required",
-          hint: "Complete onboarding to create or join an organization.",
+          hint: "Create or join an organization first.",
         });
       }
       await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
-      // Onboarding-complete gate: any org-scoped call requires the org to
-      // have at least one bootstrapped profile. At-use (not just at-issuance)
-      // so a later profile deletion revokes downstream access immediately.
-      // Safe here because profiles.create / profiles.bootstrap use
-      // `sessionProcedure`, not `scopedSessionProcedure` — no chicken-and-egg.
-      await assertOrgOnboardingComplete(ctx.db, ctx.identity.organizationId);
+      // §REVAMP-PR3 Task 5.2 — the at-use onboarding-completeness gate was
+      // dropped here. `organizations.create` now auto-seeds a default
+      // server_managed profile in the same transaction (Task 5.1), so an org
+      // is unbootstrapped only if a user explicitly deletes every profile —
+      // an action that already requires admin role and is itself audit-logged.
       return await next({ ctx });
     } catch (error) {
       // Convert domain errors (ForbiddenError, etc.) into TRPCError with the
@@ -186,34 +180,11 @@ export const scopedSessionProcedure = (_scope: string) =>
 export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
     const identity = await Effect.runPromise(resolveAgentIdentity(ctx));
-    // Onboarding-complete gate for agents — keyed off the agent's own org.
-    // Deleting the last bootstrapped profile stops active `abs_` sessions on
-    // their next request rather than waiting for the 15-minute TTL.
-    //
-    // Existing invariant: every denied agent access attempt is audit-logged.
-    // We use the predicate (not `assertOrgOnboardingComplete`) so we can write
-    // the audit row before throwing. Audit-write failures must never invert
-    // the auth-fail response — fire-and-forget with a warning on error.
-    if (!(await orgHasBootstrappedProfile(ctx.db, identity.agentOrganizationId))) {
-      ctx.db
-        .insert(auditLogs)
-        .values({
-          organizationId: identity.agentOrganizationId,
-          userId: identity.agentUserId,
-          agentId: identity.agentId,
-          eventType: "agent.session_reject",
-          result: "denied",
-          meta: { reason: "onboarding_incomplete" },
-          ipAddress: ctx.ipAddress ?? null,
-        })
-        .execute()
-        .catch((err: unknown) => {
-          console.warn(
-            `audit_write_failed event_type=agent.session_reject reason=onboarding_incomplete err=${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-      throw incompleteOrgError(identity.agentOrganizationId);
-    }
+    // §REVAMP-PR3 Task 5.2 — the agent-side onboarding gate was dropped here.
+    // Auto-seeded default profiles (Task 5.1) make the gate redundant on the
+    // happy path; the rare "all profiles deleted" case surfaces as a domain
+    // error from individual access procedures, not a blanket middleware
+    // reject. Per-procedure audit rows for denied access remain unchanged.
     return next({
       ctx: {
         ...ctx,

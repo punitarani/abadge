@@ -87,16 +87,15 @@ function DeviceApprovalPageContent(): React.ReactElement {
   // Gate CLI approval on the *user's* onboarding status, not the active org:
   // if the user hasn't finished onboarding they can't hand the CLI a usable
   // session. The server-side tRPC gate already rejects, but checking here
-  // first gives a clear pre-approval error instead of the CLI looking
+  // first gave a clear pre-approval error instead of the CLI looking
   // logged-in and then failing on its first call.
   //
-  // Fail-open on query error: server-side gates (scopedSessionProcedure +
-  // agentProcedure + exchangeAgentSession) are the source of truth. If the
-  // status fetch fails (network/auth/500) we let the user reach the
-  // Approve/Deny buttons rather than trapping them on "Checking your
-  // account…" until the 15-minute device code silently expires. An
-  // under-onboarded user who slips through here will still hit a clear
-  // ONBOARDING_INCOMPLETE error from the server on their first tRPC call.
+  // §REVAMP-PR3 Task 5.2: the server-side onboarding-completeness gate has
+  // been removed (default profiles are auto-seeded on org create). The
+  // `onboarding.status` procedure is retained as a compatibility shim that
+  // now always returns `complete: true`, so this branch is effectively a
+  // no-op. The query is kept here so an older deployment that still ran
+  // the gate degrades gracefully; remove once the shim does.
   const onboardingQuery = useQuery({
     queryKey: ["onboarding", "status"],
     queryFn: () => browserTrpcClient.onboarding.status.query(),

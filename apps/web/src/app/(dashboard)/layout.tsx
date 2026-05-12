@@ -243,8 +243,11 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
   }
 
   // Inline loader while auth, orgs, or store hydration are pending. orgReady
-  // requires the active org to also have a bootstrapped profile — otherwise
-  // scoped child queries would fail with ONBOARDING_INCOMPLETE. The effect
+  // requires the active org to also have a bootstrapped profile — pre-§REVAMP
+  // this was load-bearing because `scopedSessionProcedure` rejected with
+  // `ONBOARDING_INCOMPLETE`; that gate has since been removed (Task 5.2). The
+  // check is retained as a UX guard to prevent the dashboard from rendering
+  // empty states for an org the user hasn't finished setting up. The effect
   // above redirects to /onboarding; this render guard keeps the dashboard
   // from briefly flashing broken state in that window. Crucially, the loader
   // lives INSIDE `<SidebarInset>` (the parent layout renders the chrome
