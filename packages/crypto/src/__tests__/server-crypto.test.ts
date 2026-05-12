@@ -38,7 +38,10 @@ describe("Server-managed encryption", () => {
     // already ended in "AA"), causing intermittent CI flakes.
     const last = encrypted.ciphertext.slice(-1);
     const replacement = last === "A" ? "B" : "A";
-    const tampered = { ...encrypted, ciphertext: `${encrypted.ciphertext.slice(0, -1)}${replacement}` };
+    const tampered = {
+      ...encrypted,
+      ciphertext: `${encrypted.ciphertext.slice(0, -1)}${replacement}`,
+    };
     expect(serverDecrypt(tampered, TEST_SERVER_KEY)).rejects.toThrow();
   });
 
