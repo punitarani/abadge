@@ -10,7 +10,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, isNull, sql } from "@abadge/db";
-import { items, profiles } from "@abadge/db/schema";
+import { auditLogs, items, permissions as permissionRecords, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -561,7 +561,46 @@ const deleteProfile = (profileId: string) =>
       );
     }
 
-    yield* tryAsync(() => ctx.db.delete(profiles).where(eq(profiles.id, profileId)));
+    // §RM-PR2 — Before deleting the profile, snapshot every permission
+    // targeting it so we can write one permission.revoke_cascade audit row
+    // per implicitly-invalidated grant. The DB ON DELETE CASCADE handles
+    // the actual row removal; the audit table has no FK so the rows survive.
+    // All three steps land in a single transaction so a deleted-without-audit
+    // state is unreachable.
+    yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        const grants = await tx
+          .select({
+            id: permissionRecords.id,
+            agentId: permissionRecords.agentId,
+            capability: permissionRecords.capability,
+          })
+          .from(permissionRecords)
+          .where(eq(permissionRecords.profileId, profileId));
+
+        if (grants.length > 0) {
+          await tx.insert(auditLogs).values(
+            grants.map((g) => ({
+              organizationId: profile.organizationId,
+              userId,
+              agentId: g.agentId,
+              profileId,
+              eventType: "permission.revoke_cascade" as const,
+              result: "cascade" as const,
+              meta: {
+                reason: "profile_deleted",
+                permissionId: g.id,
+                agentId: g.agentId,
+                capability: g.capability,
+              },
+              ipAddress: ctx.ipAddress ?? null,
+            })),
+          );
+        }
+
+        await tx.delete(profiles).where(eq(profiles.id, profileId));
+      }),
+    );
 
     yield* logSessionAudit({
       organizationId: profile.organizationId,
