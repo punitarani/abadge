@@ -1,4 +1,10 @@
-import type { AgentLocality, Capability, DeliveryMode, ItemPayload, StorageMode } from "@abadge/core";
+import type {
+  AgentLocality,
+  Capability,
+  DeliveryMode,
+  ItemPayload,
+  StorageMode,
+} from "@abadge/core";
 import {
   ForbiddenError,
   IntegrityError,
@@ -323,12 +329,7 @@ export const resolveAccess = (
     );
 
     // 3. Permission lookup (item-level OR profile-level grant)
-    const perm = yield* lookupPermission(
-      ctx.identity.agentId,
-      itemId,
-      item.profileId,
-      action,
-    );
+    const perm = yield* lookupPermission(ctx.identity.agentId, itemId, item.profileId, action);
     if (!perm) {
       yield* logAgentAudit({
         organizationId: ctx.identity.agentOrganizationId,
@@ -450,9 +451,7 @@ export const resolveAccess = (
 
     // action === "use" — mint a mount handle and persist a reservation.
     if (!delivery) {
-      return yield* Effect.fail(
-        new Error("internal: delivery required for action=use"),
-      );
+      return yield* Effect.fail(new Error("internal: delivery required for action=use"));
     }
 
     const mountId = generateMountId();
@@ -575,8 +574,7 @@ export const resolveProfileAccess = (
             locality: ctx.identity.agentLocality as AgentLocality,
             storageMode: item.storageMode as StorageMode,
           }),
-        catch: (e) =>
-          e instanceof ForbiddenError ? e : new Error(String(e)),
+        catch: (e) => (e instanceof ForbiddenError ? e : new Error(String(e))),
       }).pipe(
         Effect.tapError((err) =>
           err instanceof ForbiddenError
@@ -597,12 +595,7 @@ export const resolveProfileAccess = (
 
       // Permission lookup per-item; failure short-circuits the bulk call so
       // a single missing grant cannot produce a partial success.
-      const perm = yield* lookupPermission(
-        ctx.identity.agentId,
-        item.id,
-        item.profileId,
-        action,
-      );
+      const perm = yield* lookupPermission(ctx.identity.agentId, item.id, item.profileId, action);
       if (!perm) {
         yield* logAgentAudit({
           organizationId: ctx.identity.agentOrganizationId,
