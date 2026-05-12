@@ -814,6 +814,14 @@ export const accessRouter = createTrpcRouter({
   // §RM-PR2 — Canonical access procedures. Unified pipeline handles both ZK
   // and server-managed storage, plus item-level AND profile-level grants.
   read: agentProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/access/{itemId}/read",
+        tags: ["access"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ReadAccessSchema))
     .output(strictSchema(ReadAccessResponseSchema))
     .mutation(({ ctx, input }) =>
@@ -837,6 +845,9 @@ export const accessRouter = createTrpcRouter({
       ),
     ),
   use: agentProcedure
+    .meta({
+      openapi: { method: "POST", path: "/access/{itemId}/use", tags: ["access"], protect: true },
+    })
     .input(strictSchema(UseAccessSchema))
     .output(strictSchema(UseAccessResponseSchema))
     .mutation(({ ctx, input }) =>
@@ -865,6 +876,14 @@ export const accessRouter = createTrpcRouter({
       ),
     ),
   useProfile: agentProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/profiles/{profileId}/access/use",
+        tags: ["access"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileUseAccessSchema))
     .output(strictSchema(ProfileUseAccessResponseSchema))
     .mutation(({ ctx, input }) =>

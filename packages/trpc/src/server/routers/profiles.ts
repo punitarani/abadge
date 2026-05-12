@@ -621,21 +621,53 @@ const KeyVersionResultSchema = Schema.Struct({
 
 export const profilesRouter = createTrpcRouter({
   create: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/orgs/{orgId}/profiles",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(CreateProfileSchema))
     .output(strictSchema(ProfileResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createProfile(input))),
 
   list: sessionProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/orgs/{orgId}/profiles",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(OrgIdSchema))
     .output(strictSchema(ProfileListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listProfiles(input.orgId))),
 
   get: sessionProcedure
+    .meta({
+      openapi: {
+        method: "GET",
+        path: "/profiles/{profileId}",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileIdSchema))
     .output(strictSchema(ProfileResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getProfile(input.profileId))),
 
   bootstrap: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/profiles/{profileId}/bootstrap",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileBootstrapSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, bootstrapProfile(input))),
@@ -651,11 +683,27 @@ export const profilesRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, setupProfileRecovery(input))),
 
   rotateKey: sessionProcedure
+    .meta({
+      openapi: {
+        method: "POST",
+        path: "/profiles/{profileId}/rotate",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileRotateKeySchema))
     .output(strictSchema(KeyVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateProfileKey(input))),
 
   delete: sessionProcedure
+    .meta({
+      openapi: {
+        method: "DELETE",
+        path: "/profiles/{profileId}",
+        tags: ["profiles"],
+        protect: true,
+      },
+    })
     .input(strictSchema(ProfileIdSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteProfile(input.profileId))),

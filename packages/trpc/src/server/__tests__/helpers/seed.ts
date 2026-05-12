@@ -92,15 +92,14 @@ export async function seedOrg(
     slug?: string;
     /**
      * When `false`, skips the default `server_managed` profile seed so the
-     * org is left in the "no bootstrapped profile" state. Use this for tests
-     * that specifically exercise the `ONBOARDING_INCOMPLETE` gate or the
-     * onboarding flow. Defaults to `true` because most tests need a usable
-     * org and `scopedSessionProcedure` enforces "at least one bootstrapped
-     * profile" at-use.
+     * org is left in the "no profile" state. Used by the few tests that
+     * exercise the rare "all profiles deleted" code paths. Defaults to
+     * `true` so seeded orgs are immediately usable.
      *
-     * Note: `organizations.create` itself does NOT seed a profile (that
-     * behavior was removed); this helper still seeds one by default purely
-     * as a convenience for the bulk of integration tests.
+     * Note: the onboarding-completeness gate was removed in §REVAMP-PR3
+     * Task 5.2; production `organizations.create` auto-seeds a default
+     * profile (Task 5.1). This helper mirrors that behaviour for tests
+     * that bypass the tRPC layer.
      */
     withDefaultProfile?: boolean;
   },

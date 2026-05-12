@@ -37,12 +37,8 @@ describe("api golden path", () => {
       orgId: org.id,
     });
 
-    // 3. bootstrap the first profile (server_managed)
-    await userClient.createProfile({
-      orgId: org.id,
-      name: "default",
-      storageMode: "server_managed",
-    });
+    // 3. organizations.create auto-seeds a default server_managed profile
+    // (§REVAMP-PR3 Task 5.1), so no explicit createProfile is needed here.
 
     // 4. create a server-managed item
     const { id: itemId } = await userClient.createItem({
