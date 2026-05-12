@@ -45,11 +45,7 @@ describe("cli item + agent + permission flow", () => {
       sessionToken: owner.sessionToken,
       orgId: org.id,
     });
-    await scoped.createProfile({
-      orgId: org.id,
-      name: "default",
-      storageMode: "server_managed",
-    });
+    // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
     const item = await scoped.createItem({
       storageMode: "server_managed",
       payload: {
