@@ -1,5 +1,5 @@
 import type { Agent, AuditEntry, ItemDetail, ItemSummary, Permission, Profile } from "@abadge/core";
-import { AUDIT_EVENT_TYPES, type AuditEventType } from "@abadge/core";
+import { AUDIT_EVENT_TYPES, type AuditEventType, IntegrityError } from "@abadge/core";
 import type { agents, auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -174,9 +174,12 @@ export function serializePermission(row: PermissionRow): Permission {
   // a row inserted by some future writer landed before PermissionSchema was
   // widened — surface that loudly rather than coerce to an empty string.
   if (row.itemId === null) {
-    throw new Error(
-      "serializePermission: profile-target permissions cannot be serialized yet; widen PermissionSchema first",
-    );
+    throw new IntegrityError({
+      code: "INTEGRITY_ERROR",
+      message: "serializePermission called with profile-target row before PR2 wiring",
+      hint: "This is an internal sentinel; profile-target rows must be serialized via the PR2 helper. File a bug.",
+      meta: { permissionId: row.id, profileId: row.profileId },
+    });
   }
   return {
     id: row.id,
