@@ -105,7 +105,14 @@ export function serializeProfile(row: ProfileRow): Profile {
 export function serializeItemSummary(
   row: Pick<
     ItemRow,
-    "id" | "label" | "storageMode" | "cryptoVersion" | "contentVersion" | "createdAt" | "updatedAt"
+    | "id"
+    | "label"
+    | "storageMode"
+    | "cryptoVersion"
+    | "contentVersion"
+    | "profileId"
+    | "createdAt"
+    | "updatedAt"
   >,
 ): ItemSummary {
   return {
@@ -114,6 +121,7 @@ export function serializeItemSummary(
     storageMode: row.storageMode,
     cryptoVersion: row.cryptoVersion,
     contentVersion: row.contentVersion,
+    profileId: row.profileId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

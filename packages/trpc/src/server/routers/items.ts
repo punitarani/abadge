@@ -261,6 +261,10 @@ const listItems = Effect.gen(function* () {
         storageMode: items.storageMode,
         cryptoVersion: items.cryptoVersion,
         contentVersion: items.contentVersion,
+        // §C2 — required so the web dashboard's profile-grant
+        // blast-radius dialog can count items in a profile without
+        // fetching item-detail rows for every item.
+        profileId: items.profileId,
         createdAt: items.createdAt,
         updatedAt: items.updatedAt,
       })
@@ -282,6 +286,7 @@ const listItemsForAgent = Effect.gen(function* () {
         storageMode: items.storageMode,
         cryptoVersion: items.cryptoVersion,
         contentVersion: items.contentVersion,
+        profileId: items.profileId,
         createdAt: items.createdAt,
         updatedAt: items.updatedAt,
       })

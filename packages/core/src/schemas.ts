@@ -466,6 +466,11 @@ export const ItemSummarySchema = Schema.Struct({
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
+  // §C2 — surfacing this on summaries lets the dashboard's
+  // profile-grant blast-radius dialog count items in a profile without
+  // needing to fetch detail rows. Nullable because items can sit at the
+  // org root (legacy / pre-PR1 rows) until they get assigned to a profile.
+  profileId: Schema.NullOr(Schema.String),
   createdAt: IsoDateString,
   updatedAt: IsoDateString,
 });

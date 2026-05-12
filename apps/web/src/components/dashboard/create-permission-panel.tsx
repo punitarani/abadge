@@ -513,10 +513,7 @@ export function CreatePermissionPanel({
         incompatibleMessage: "",
       };
     }
-    const profileItems = items.filter(
-      (i: ItemSummary & { profileId?: string | null }) =>
-        (i as { profileId?: string | null }).profileId === selectedProfile,
-    );
+    const profileItems = items.filter((i: ItemSummary) => i.profileId === selectedProfile);
     const modes = new Set<StorageMode>(profileItems.map((i: ItemSummary) => i.storageMode));
     // If the profile has no items yet, we can't constrain by storage. Allow
     // both; the server's grant-create constraint runs on every item add.
@@ -752,7 +749,7 @@ export function CreatePermissionPanel({
             </div>
             <div className="mt-1 text-xs">
               {profilesList.length > 0 && selectedProfileObj
-                ? `Every item in this profile (${items.filter((i: ItemSummary & { profileId?: string | null }) => (i as { profileId?: string | null }).profileId === selectedProfile).length} today, plus every item added later)`
+                ? `Every item in this profile (${items.filter((i: ItemSummary) => i.profileId === selectedProfile).length} today, plus every item added later)`
                 : "Every item added to this profile, now and in the future"}
             </div>
           </div>

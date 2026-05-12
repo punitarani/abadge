@@ -138,6 +138,7 @@ describe("serializeItemSummary + serializeItemDetail", () => {
       storageMode: "server_managed",
       cryptoVersion: 1,
       contentVersion: 1,
+      profileId: "p_default",
       createdAt: ISO("2026-01-01T00:00:00Z"),
       updatedAt: ISO("2026-01-02T00:00:00Z"),
     };
@@ -148,9 +149,25 @@ describe("serializeItemSummary + serializeItemDetail", () => {
       storageMode: "server_managed",
       cryptoVersion: 1,
       contentVersion: 1,
+      profileId: "p_default",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
+  });
+
+  test("summary maps undefined profileId to null", () => {
+    const row = {
+      id: "i_legacy",
+      label: "L",
+      storageMode: "server_managed",
+      cryptoVersion: 1,
+      contentVersion: 1,
+      profileId: null,
+      createdAt: ISO("2026-01-01T00:00:00Z"),
+      updatedAt: ISO("2026-01-02T00:00:00Z"),
+    };
+    const out = serializeItemSummary(row as never);
+    expect(out.profileId).toBeNull();
   });
 
   test("detail returns ZK envelope when storageMode === zero_knowledge", () => {
