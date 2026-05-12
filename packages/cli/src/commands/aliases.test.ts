@@ -24,13 +24,13 @@ describe("registerDeprecatedAliases", () => {
   });
 
   test("hidden 'item create' alias re-dispatches to 'item add'", async () => {
-    let received: string | null = null;
+    const received = { value: "" };
     const program = buildProgramWithItemAdd((label) => {
-      received = label;
+      received.value = label;
     });
     await program.parseAsync(["item", "create", "--label", "foo"], { from: "user" });
 
-    expect(received).toBe("foo");
+    expect(received.value).toBe("foo");
     const stderrCalls = (stderr.mock.calls as unknown as string[][])
       .flat()
       .filter((c) => typeof c === "string");

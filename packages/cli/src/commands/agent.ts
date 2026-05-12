@@ -160,25 +160,79 @@ export async function registerKeypairAgent(
   }
 }
 
-export async function registerLegacyAgent(
+/**
+ * Issue a one-time bootstrap token for an unenrolled public-key agent. The
+ * client receiving the token completes enrollment by uploading its own
+ * public key. The bootstrap token is shown once and never persisted in the
+ * CLI config.
+ */
+export async function registerBootstrapAgent(
   client: AbadgeUserClient,
   opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
 ): Promise<void> {
   const result = await client.createAgent({
     name: opts.name,
     kind: opts.kind,
-    authMethod: "legacy_api_key",
+    issueBootstrapToken: true,
     metadata: opts.description ? { description: opts.description } : {},
   });
 
   if (opts.json) {
     json(result);
-  } else {
-    success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
-    console.log("");
-    warn("Save this API key — it will NOT be shown again:");
-    console.log(`  ${result.apiKey}`);
+    return;
   }
+
+  success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
+  if (result.bootstrapToken) {
+    console.log("");
+    warn("Save this bootstrap token — it expires in 10 minutes and is shown once:");
+    console.log(`  ${result.bootstrapToken}`);
+  }
+}
+
+/**
+ * Enroll an agent against an already-generated Ed25519 public key (read
+ * from a JWK file on disk). The CLI does not write a local private key —
+ * the operator manages it externally.
+ */
+export async function registerWithExistingPublicKey(
+  client: AbadgeUserClient,
+  opts: {
+    name: string;
+    kind: AgentKind;
+    description?: string;
+    json?: boolean;
+    publicKeyPath: string;
+  },
+): Promise<void> {
+  const fs = await import("node:fs");
+  const raw = fs.readFileSync(opts.publicKeyPath, "utf-8");
+  // Accept either a raw JWK JSON or a wrapped {publicKey: "..."} envelope.
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const jwk =
+    typeof parsed.kty === "string"
+      ? parsed
+      : typeof parsed.publicKey === "string"
+        ? (JSON.parse(parsed.publicKey as string) as Record<string, unknown>)
+        : null;
+  if (!jwk || typeof jwk.x !== "string" || jwk.kty !== "OKP") {
+    error(`Public-key file ${opts.publicKeyPath} is not a valid Ed25519 JWK.`);
+    process.exit(1);
+  }
+  const publicKeySerialized = JSON.stringify(jwk);
+
+  const result = await client.createAgent({
+    name: opts.name,
+    kind: opts.kind,
+    publicKey: publicKeySerialized,
+    metadata: opts.description ? { description: opts.description } : {},
+  });
+
+  if (opts.json) {
+    json({ agent: result.agent });
+    return;
+  }
+  success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
 }
 
 export function createAgentCommand(): Command {
@@ -186,23 +240,25 @@ export function createAgentCommand(): Command {
 
   cmd
     .command("add")
-    .description("Register a new agent")
+    .description("Register a new agent (Ed25519 keypair only)")
     .requiredOption("-n, --name <name>", "Agent name")
     .option("-k, --kind <kind>", "Agent kind", "local_cli")
     .option("-d, --description <text>", "Agent description")
-    .option("--legacy-api-key", "Use legacy API key auth instead of Ed25519 keypair")
     .option(
       "--mcp-config",
       "After registering a local_mcp agent, print a Claude Desktop config snippet",
     )
+    .option("--bootstrap", "Issue a one-time bootstrap token instead of generating a local keypair")
+    .option("--public-key <path>", "Path to an existing Ed25519 public-key JWK to enroll")
     .option("--json", "Output as JSON")
     .action(
       async (opts: {
         name: string;
         kind: string;
         description?: string;
-        legacyApiKey?: boolean;
         mcpConfig?: boolean;
+        bootstrap?: boolean;
+        publicKey?: string;
         json?: boolean;
       }) => {
         if (!AGENT_KINDS.includes(opts.kind as AgentKind)) {
@@ -211,34 +267,38 @@ export function createAgentCommand(): Command {
         }
         const kind = opts.kind as AgentKind;
 
-        if (opts.mcpConfig && kind !== "local_mcp") {
-          error("--mcp-config is only valid with --kind local_mcp.");
+        if (opts.bootstrap && opts.publicKey) {
+          error("--bootstrap and --public-key are mutually exclusive.");
           process.exit(1);
         }
-        if (opts.mcpConfig && opts.legacyApiKey) {
-          error("--mcp-config cannot be combined with --legacy-api-key.");
+        if (opts.mcpConfig && kind !== "local_mcp") {
+          error("--mcp-config is only valid with --kind local_mcp.");
           process.exit(1);
         }
         if (opts.mcpConfig && opts.json) {
           // --mcp-config is a human-paste workflow; --json is for script consumers.
           // Mixing them would emit two top-level JSON documents on stdout. Prefer
-          // running `abadge agent register --json` and then `abadge agent mcp-config <id>`.
+          // running `abadge agent add --json` and then `abadge agent mcp-config <id>`.
           error(
-            "--mcp-config cannot be combined with --json. Run `abadge agent register --json` first, then `abadge agent mcp-config <id>` to print the snippet.",
+            "--mcp-config cannot be combined with --json. Run `abadge agent add --json` first, then `abadge agent mcp-config <id>` to print the snippet.",
           );
           process.exit(1);
         }
         if (opts.mcpConfig && !loadConfig()?.apiUrl) {
-          // Validate before createAgent so a missing apiUrl doesn't strand a
-          // server-side agent record with no usable client config.
           error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
           process.exit(1);
         }
 
         try {
           const client = await createUserApiClient();
-          if (opts.legacyApiKey) {
-            await registerLegacyAgent(client, { ...opts, kind });
+          if (opts.bootstrap) {
+            await registerBootstrapAgent(client, { ...opts, kind });
+          } else if (opts.publicKey) {
+            await registerWithExistingPublicKey(client, {
+              ...opts,
+              kind,
+              publicKeyPath: opts.publicKey,
+            });
           } else {
             await registerKeypairAgent(client, { ...opts, kind });
           }

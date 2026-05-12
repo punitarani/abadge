@@ -137,13 +137,12 @@ describe("agent register action handler", () => {
 });
 
 // ---------------------------------------------------------------------------
-// registerKeypairAgent + registerLegacyAgent — exported helpers covering the
-// happy paths each `agent register` flag combination drives, with mocked
-// SDK + mocked filesystem. Run after the action-handler tests so we know
-// the pre-checks short-circuit before reaching these.
+// registerKeypairAgent — exported helper covering the keypair flow for
+// `agent add`, with mocked SDK + filesystem. Legacy-API-key registration
+// was removed in PR 4 (keypair-only registration).
 // ---------------------------------------------------------------------------
 
-describe("registerKeypairAgent + registerLegacyAgent (exported helpers)", () => {
+describe("registerKeypairAgent (exported helper)", () => {
   const { mkdtempSync, readFileSync, rmSync } = require("node:fs") as typeof import("node:fs");
   const { tmpdir } = require("node:os") as typeof import("node:os");
 
@@ -267,52 +266,6 @@ describe("registerKeypairAgent + registerLegacyAgent (exported helpers)", () => 
     const cfgPath = join(HOME_DIR, ".abadge", "config.json");
     const persistedCfg = JSON.parse(require("node:fs").readFileSync(cfgPath, "utf-8"));
     expect(persistedCfg.localAgents).toBeUndefined();
-  });
-
-  test("registerLegacyAgent surfaces the one-time apiKey and stores no key file", async () => {
-    const { registerLegacyAgent } = await import("./agent");
-    const { client, calls } = makeStubClient({
-      agent: { id: "agent_legacy_1", name: "legacy-bot" },
-      apiKey: "abl_OnceShown",
-      keyPrefix: "abl_",
-    });
-
-    await registerLegacyAgent(client as never, {
-      name: "legacy-bot",
-      kind: "local_cli",
-    });
-
-    // SDK call should have authMethod legacy_api_key.
-    const callArg = calls[0] as { authMethod?: string };
-    expect(callArg.authMethod).toBe("legacy_api_key");
-
-    // No JWK file written — legacy path doesn't generate a keypair.
-    const agentsDir = join(HOME_DIR, ".abadge", "agents");
-    expect(require("node:fs").existsSync(agentsDir)).toBe(false);
-
-    // The one-time key must be visible somewhere in stdout (success message includes it).
-    const printed = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
-    expect(printed).toContain("abl_OnceShown");
-  });
-
-  test("registerLegacyAgent --json includes the one-time apiKey in the JSON payload", async () => {
-    const { registerLegacyAgent } = await import("./agent");
-    const { client } = makeStubClient({
-      agent: { id: "agent_legacy_2", name: "json-legacy" },
-      apiKey: "abl_jsonkey",
-      keyPrefix: "abl_",
-    });
-
-    await registerLegacyAgent(client as never, {
-      name: "json-legacy",
-      kind: "local_cli",
-      json: true,
-    });
-
-    const printed = (logSpy.mock.calls[0]?.[0] ?? "") as string;
-    const parsed = JSON.parse(printed);
-    expect(parsed.agent.id).toBe("agent_legacy_2");
-    expect(parsed.apiKey).toBe("abl_jsonkey");
   });
 
   test("registerKeypairAgent surfaces SDK errors (createAgent throws)", async () => {
