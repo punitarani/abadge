@@ -295,15 +295,87 @@ export const RevokeAgentSessionSchema = Schema.Struct({
   token: NonEmptyString,
 });
 
-export const CreatePermissionSchema = Schema.Struct({
+const CreatePermissionCapabilities = Schema.NonEmptyArray(CapabilitySchema).pipe(
+  Schema.filter((arr) =>
+    new Set(arr).size === arr.length ? undefined : "capabilities must not contain duplicates",
+  ),
+);
+
+/**
+ * §RM-PR1 — A permission grant targets EXACTLY one of (item, profile). The
+ * discriminated union mirrors the storage-layer CHECK constraint so the
+ * router cannot construct an illegal row.
+ *
+ * Capabilities remain `CapabilitySchema` (legacy + canonical) for now so
+ * existing item-target grants keep working; PR2 narrows new write paths to
+ * `CanonicalCapabilitySchema` once the unified pipeline lands.
+ */
+export const CreateItemPermissionSchema = Schema.Struct({
   agentId: NonEmptyString,
   itemId: NonEmptyString,
-  capabilities: Schema.NonEmptyArray(CapabilitySchema).pipe(
-    Schema.filter((arr) =>
-      new Set(arr).size === arr.length ? undefined : "capabilities must not contain duplicates",
-    ),
-  ),
+  capabilities: CreatePermissionCapabilities,
   expiresAt: Schema.optional(IsoDateString),
+});
+
+export const CreateProfilePermissionSchema = Schema.Struct({
+  agentId: NonEmptyString,
+  profileId: NonEmptyString,
+  capabilities: CreatePermissionCapabilities,
+  expiresAt: Schema.optional(IsoDateString),
+});
+
+export const CreatePermissionSchema = Schema.Union(
+  CreateItemPermissionSchema,
+  CreateProfilePermissionSchema,
+);
+
+/**
+ * §RM-PR1 — Unified access shapes. `read` returns either a server-decrypted
+ * payload or a ZK envelope for client decrypt; `use` returns an opaque mount
+ * handle with an expiry. Profile-target reads are not exposed yet because
+ * "read a whole profile" has no single canonical response shape; profile
+ * grants gate per-item access at the policy layer.
+ */
+export const ReadAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  field: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const UseAccessSchema = Schema.Struct({
+  itemId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  field: Schema.optional(NonEmptyString),
+  envVarName: Schema.optional(NonEmptyString),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const ProfileUseAccessSchema = Schema.Struct({
+  profileId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  purpose: Schema.optional(NonEmptyString),
+});
+
+export const ReadAccessResponseSchema = Schema.Union(
+  Schema.Struct({
+    storageMode: Schema.Literal("server_managed"),
+    payload: ItemPayloadSchema,
+  }),
+  Schema.Struct({
+    storageMode: Schema.Literal("zero_knowledge"),
+    encryptedItemKey: NonEmptyString,
+    ciphertext: NonEmptyString,
+    cryptoVersion: Schema.Number,
+    itemId: NonEmptyString,
+    profileId: NonEmptyString,
+    contentVersion: Schema.Number,
+  }),
+);
+
+export const UseAccessResponseSchema = Schema.Struct({
+  mountId: NonEmptyString,
+  delivery: Schema.Literal("env", "file"),
+  expiresAt: IsoDateString,
 });
 
 export const CiphertextAccessSchema = Schema.Struct({

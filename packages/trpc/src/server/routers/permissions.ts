@@ -48,6 +48,21 @@ const PermissionListQuerySchema = Schema.Struct({
 const createPermission = (input: CreatePermissionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+
+    // §RM-PR1 — CreatePermissionSchema is now a discriminated union over
+    // (item target, profile target). PR1 is structural; profile-target
+    // grants land in PR2 alongside the unified access pipeline. Reject them
+    // here so callers get a deterministic error rather than a partial path.
+    if ("profileId" in input) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "Profile-target permissions are not yet supported",
+          hint: "Grant capabilities per item for now; profile-target grants ship in the upcoming access revamp.",
+        }),
+      );
+    }
+
     const [agent] = yield* tryAsync(() =>
       ctx.db
         .select()

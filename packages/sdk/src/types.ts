@@ -54,9 +54,17 @@ export type {
 
 export type BootstrapVaultInput = import("@abadge/core").VaultBootstrapInput;
 export type KeyDerivationParams = import("@abadge/core").KdfParams;
-export type PermissionFilters = Partial<
-  Pick<import("@abadge/core").CreatePermissionInput, "agentId" | "itemId">
->;
+/**
+ * §RM-PR1 — `CreatePermissionInput` is now a discriminated union over
+ * (item target, profile target). `Pick` no longer reaches `itemId` because
+ * it only exists on one branch, so define the filter shape explicitly. The
+ * filter is purely for query-side narrowing; it accepts either target id.
+ */
+export interface PermissionFilters {
+  agentId?: string;
+  itemId?: string;
+  profileId?: string;
+}
 export type AuditFilters = import("@abadge/core").AuditQuery;
 
 export type Item = import("@abadge/core").ItemDetail;
