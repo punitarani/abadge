@@ -181,6 +181,32 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect(row?.profileId).toBe(second.profileId);
   });
 
+  // AB-0002 #1 (ZK) — explicit profileId places a zero_knowledge item under
+  // that specific ZK profile, not the arbitrary "first" one. Two ZK profiles
+  // make the default ambiguous, so this proves the explicit id wins.
+  test("explicit profileId stores a zero_knowledge item under that ZK profile", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    await seedProfile(db, org.orgId, { name: "zk-a", storageMode: "zero_knowledge" });
+    const target = await seedProfile(db, org.orgId, { name: "zk-b", storageMode: "zero_knowledge" });
+
+    const created = await caller.items.create({
+      storageMode: "zero_knowledge",
+      id: crypto.randomUUID(),
+      profileId: target.profileId,
+      label: "zk-explicit",
+      encryptedItemKey: "ek-zk-explicit",
+      ciphertext: "ct-zk-explicit",
+    });
+
+    const [row] = await db
+      .select({ profileId: items.profileId })
+      .from(items)
+      .where(eq(items.id, created.id));
+    expect(row?.profileId).toBe(target.profileId);
+  });
+
   // AB-0002 #2 — a profileId from another org is rejected as PROFILE_NOT_FOUND
   // (org-scoped lookup; no cross-tenant existence leak).
   test("a profileId from another org returns PROFILE_NOT_FOUND", async () => {
