@@ -22,10 +22,11 @@ export const items = pgTable(
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
     storageMode: text("storage_mode", { enum: STORAGE_MODES }).notNull(),
 
-    // ZK fields (null for server_managed)
+    // ZK fields (null for server_managed). The XChaCha20-Poly1305 content
+    // nonce is prepended into `ciphertext` (first 24 bytes), not a column —
+    // see encryptItem/decryptItem in @abadge/crypto/src/client/items.ts.
     encryptedItemKey: text("encrypted_item_key"),
     ciphertext: text("ciphertext"),
-    contentNonce: text("content_nonce"),
 
     // Server-managed fields (null for zero_knowledge)
     serverCiphertext: text("server_ciphertext"),

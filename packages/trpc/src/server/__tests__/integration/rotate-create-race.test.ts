@@ -78,7 +78,6 @@ describe("rotateKey + items.create race (§I5-RACE)", () => {
       storageMode: "zero_knowledge",
       encryptedItemKey: "ek-v1",
       ciphertext: "ct-v1",
-      contentNonce: "content-nonce-v1",
       cryptoVersion: 1,
     });
 
