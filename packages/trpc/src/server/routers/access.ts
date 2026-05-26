@@ -31,12 +31,6 @@ import {
   UseAccessResponseSchema,
   UseAccessSchema,
 } from "@abadge/core";
-import { serverDecrypt } from "@abadge/crypto/server";
-import {
-  profileIdForServerAad,
-  SERVER_AAD_MIN_VERSION,
-  type ServerAadMeta,
-} from "@abadge/crypto/shared";
 import { and, eq, gt, isNull, or, sql } from "@abadge/db";
 import {
   items,
@@ -49,6 +43,11 @@ import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+import {
+  decryptServerEnvelope,
+  loadProfileContentKey,
+  SERVER_ENVELOPE_VERSION,
+} from "../server-envelope";
 import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
 
 function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
@@ -97,6 +96,7 @@ const failMissingServerManagedData = (
 const decryptServerManagedItem = (
   item: typeof items.$inferSelect,
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
+  cachedContentKey?: string,
 ) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
@@ -109,28 +109,19 @@ const decryptServerManagedItem = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    // v1 rows predate AAD binding and MUST be decrypted without AAD.
-    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion),
-    // so a DB-write adversary cannot substitute rows across items.
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.agentOrganizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
     return yield* tryAsync(() =>
-      serverDecrypt(
-        {
-          ciphertext,
-          iv,
-          keyVersion,
-        },
+      decryptServerEnvelope(
+        ctx.db,
         ctx.env.ENCRYPTION_KEY,
-        aadMeta,
+        ctx.identity.agentOrganizationId,
+        {
+          id: item.id,
+          profileId: item.profileId,
+          serverCiphertext: ciphertext,
+          serverIv: iv,
+          serverKeyVersion: keyVersion,
+        },
+        cachedContentKey,
       ),
     );
   });
@@ -681,6 +672,10 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     type StagedAudit = Parameters<typeof logAgentAudit>[0];
     const pendingAllowedAudits: StagedAudit[] = [];
 
+    // Every row is scoped to input.profileId, so all v3 items share one DEK.
+    // Resolve+unwrap it once on first need and reuse it across the loop.
+    let cachedContentKey: string | undefined;
+
     for (const row of rows) {
       const item = row.item;
 
@@ -743,7 +738,21 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
       // never flushes — so any earlier ZK items that were staged as
       // "allowed" do NOT leave audit rows. This is the load-bearing
       // property of the staging pattern.
-      const decrypted = yield* decryptServerManagedItem(item, "access.mount_env");
+      if (
+        cachedContentKey === undefined &&
+        item.serverKeyVersion !== null &&
+        item.serverKeyVersion >= SERVER_ENVELOPE_VERSION
+      ) {
+        cachedContentKey = yield* tryAsync(() =>
+          loadProfileContentKey(
+            ctx.db,
+            ctx.env.ENCRYPTION_KEY,
+            ctx.identity.agentOrganizationId,
+            input.profileId,
+          ),
+        );
+      }
+      const decrypted = yield* decryptServerManagedItem(item, "access.mount_env", cachedContentKey);
       const payload = decodeServerManagedPayload(item.id, decrypted);
 
       pendingAllowedAudits.push({
@@ -1104,23 +1113,15 @@ export const redeemMount = (mountId: string) =>
       );
     }
 
-    const keyVersion = item.serverKeyVersion;
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.agentOrganizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
+    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
     const decrypted = yield* tryAsync(() =>
-      serverDecrypt(
-        { ciphertext: item.serverCiphertext as string, iv: item.serverIv as string, keyVersion },
-        ctx.env.ENCRYPTION_KEY,
-        aadMeta,
-      ),
+      decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
+        id: item.id,
+        profileId: item.profileId,
+        serverCiphertext: item.serverCiphertext as string,
+        serverIv: item.serverIv as string,
+        serverKeyVersion: item.serverKeyVersion,
+      }),
     );
     const payload = decodeServerManagedPayload(item.id, decrypted);
 

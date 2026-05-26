@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "@abadge/db";
-import { items } from "@abadge/db/schema";
+import { items, profiles } from "@abadge/db/schema";
 import {
   seedAgent,
   seedAgentSession,
@@ -48,7 +48,7 @@ describe("items CRUD", () => {
     expect(result.item.storageMode).toBe("server_managed");
   });
 
-  test("§W1S7-002: new server_managed writes land as AAD-bound v2 and round-trip", async () => {
+  test("§AB-0030: new server_managed writes land as v3 under a per-profile DEK and round-trip", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -66,8 +66,16 @@ describe("items CRUD", () => {
 
     const [row] = await db.select().from(items).where(eq(items.id, created.id));
     expect(row).toBeDefined();
-    // v2 is the minimum AAD-bound version (see SERVER_AAD_MIN_VERSION).
-    expect(row?.serverKeyVersion).toBe(2);
+    // §AB-0030 — new writes are the per-profile envelope (v3), not direct-key v2.
+    expect(row?.serverKeyVersion).toBe(3);
+
+    // The target profile now holds a wrapped DEK — content is encrypted under it,
+    // not directly under ENCRYPTION_KEY (acceptance #1).
+    const [profile] = await db
+      .select({ dek: profiles.serverWrappedDek })
+      .from(profiles)
+      .where(eq(profiles.id, row?.profileId ?? ""));
+    expect(profile?.dek).toBeTruthy();
 
     const revealed = await caller.items.ownerReveal({ itemId: created.id });
     expect((revealed.payload.fields as Record<string, string>).token).toBe("bound-to-item");
