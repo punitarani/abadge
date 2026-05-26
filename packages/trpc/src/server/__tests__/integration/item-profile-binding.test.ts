@@ -189,7 +189,10 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
     await seedProfile(db, org.orgId, { name: "zk-a", storageMode: "zero_knowledge" });
-    const target = await seedProfile(db, org.orgId, { name: "zk-b", storageMode: "zero_knowledge" });
+    const target = await seedProfile(db, org.orgId, {
+      name: "zk-b",
+      storageMode: "zero_knowledge",
+    });
 
     const created = await caller.items.create({
       storageMode: "zero_knowledge",
