@@ -1,0 +1,62 @@
+---
+title: "Pagination"
+description: "Cursor (keyset) pagination on the list endpoints that support it."
+---
+
+A fixed set of list endpoints support cursor (keyset) pagination. Each accepts
+optional `limit` and `cursor` and returns its result array alongside a
+`nextCursor`. Every other list endpoint returns its full set in one response.
+
+## Paginated endpoints
+
+| REST | tRPC procedure | Array key |
+|---|---|---|
+| `GET /v1/items` | `items.list` | `items` |
+| `GET /v1/agents` | `agents.list` | `agents` |
+| `GET /v1/permissions` | `permissions.list` | `permissions` |
+| `GET /v1/audit` | `audit.list` | `entries` |
+
+Organizations, members, and profiles are **not** paginated — they return the
+full set.
+
+## Request
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `limit` | integer | `50` | Clamped to `[1, 100]` server-side. |
+| `cursor` | string | — | Opaque. Pass back the previous page's `nextCursor`. |
+
+## Response
+
+The result array sits under the endpoint's key (see the table above) next to
+`nextCursor`. Using `items.list` as the example:
+
+```json
+{
+  "items": [/* ... */],
+  "nextCursor": "..."
+}
+```
+
+## Contract
+
+- **`cursor` is opaque.** Pass back the exact `nextCursor` from the previous
+  page; never construct or parse it. The encoding is an implementation detail
+  and may change.
+- **Ordering is newest-first by creation time.** Pages form a stable keyset, so
+  rows are neither dropped nor duplicated across page boundaries even while new
+  records are being inserted concurrently.
+- **`nextCursor: null` means the last page.** Stop iterating when it is `null`.
+
+## Iterating
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await client.items.list.query({ cursor });
+  for (const item of page.items) {
+    // ...
+  }
+  cursor = page.nextCursor ?? undefined;
+} while (cursor);
+```
