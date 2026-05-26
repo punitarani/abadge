@@ -18,9 +18,11 @@ function makeStubClient(): {
   calls: { proc: string; args: unknown }[];
 } {
   const calls: { proc: string; args: unknown }[] = [];
+  // The list procedures are drained by the planner, so their stub must return a
+  // single-page shape (`nextCursor: null`) carrying every possible array key.
   const record = (proc: string) => (args?: unknown) => {
     calls.push({ proc, args });
-    return Promise.resolve(`result:${proc}`);
+    return Promise.resolve({ items: [], agents: [], permissions: [], nextCursor: null });
   };
   return {
     calls,
@@ -130,12 +132,47 @@ describe("buildPrefetchPlan", () => {
       "agents.list",
       "permissions.list",
     ]);
-    // profiles.list is called with { orgId }; items/agents/permissions take {}
-    // (the optional cursor-pagination input — §AB-0050).
+    // profiles.list is called with { orgId }; items/agents/permissions are
+    // drained — each first page requests the max limit with no cursor (§AB-0050).
     expect(calls[0]?.args).toEqual({ orgId: ORG_ID });
-    expect(calls[1]?.args).toEqual({});
-    expect(calls[2]?.args).toEqual({});
-    expect(calls[3]?.args).toEqual({});
+    expect(calls[1]?.args).toEqual({ cursor: undefined, limit: 100 });
+    expect(calls[2]?.args).toEqual({ cursor: undefined, limit: 100 });
+    expect(calls[3]?.args).toEqual({ cursor: undefined, limit: 100 });
+  });
+
+  test("a paginated entry's queryFn drains every page, not just the first", async () => {
+    // items.list returns two pages; the warmed cache must hold both rows so the
+    // page component (which also drains) doesn't trust a truncated first page.
+    let itemsCall = 0;
+    const client: PrefetchClient = {
+      profiles: { list: { query: async () => ({}) } },
+      items: {
+        list: {
+          query: async () => {
+            itemsCall++;
+            return itemsCall === 1
+              ? { items: [{ id: "i1" }], nextCursor: "c1" }
+              : { items: [{ id: "i2" }], nextCursor: null };
+          },
+        },
+      },
+      agents: { list: { query: async () => ({ agents: [], nextCursor: null }) } },
+      permissions: { list: { query: async () => ({ permissions: [], nextCursor: null }) } },
+      organizations: {
+        get: { query: async () => ({}) },
+        members: { list: { query: async () => ({}) } },
+      },
+    };
+
+    const plan = buildPrefetchPlan("items", ORG_ID, client);
+    const result = (await plan[0]?.queryFn()) as {
+      items: { id: string }[];
+      nextCursor: string | null;
+    };
+
+    expect(itemsCall).toBe(2);
+    expect(result.items.map((i) => i.id)).toEqual(["i1", "i2"]);
+    expect(result.nextCursor).toBeNull();
   });
 
   test("settings queryFns dispatch to organizations.get and organizations.members.list with orgId", async () => {

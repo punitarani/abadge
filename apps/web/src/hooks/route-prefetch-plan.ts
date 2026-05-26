@@ -1,4 +1,5 @@
 import type { QueryKey } from "@tanstack/react-query";
+import { DRAIN_PAGE_SIZE, drainAll } from "@/lib/drain-all";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 
 export type PrefetchableRoute =
@@ -16,12 +17,35 @@ export type PrefetchableRoute =
  * client) so {@link buildPrefetchPlan} stays pure and testable — the test
  * passes a stub client matching this shape.
  */
+type ListPageInput = { cursor?: string; limit?: number };
+
 export interface PrefetchClient {
   profiles: { list: { query: (args: { orgId: string }) => Promise<unknown> } };
-  // §AB-0050 — list endpoints accept optional cursor pagination.
-  items: { list: { query: (input: { cursor?: string; limit?: number }) => Promise<unknown> } };
-  agents: { list: { query: (input: { cursor?: string; limit?: number }) => Promise<unknown> } };
-  permissions: { list: { query: (input: Record<string, never>) => Promise<unknown> } };
+  // §AB-0050 — list endpoints are cursor-paginated; the prefetch drains every
+  // page so the warmed cache matches what the page component reads (which also
+  // drains). Warming only the first page would leave the page trusting a
+  // truncated cache and silently hiding rows past the first 50.
+  items: {
+    list: {
+      query: (
+        input: ListPageInput,
+      ) => Promise<{ items: readonly unknown[]; nextCursor: string | null }>;
+    };
+  };
+  agents: {
+    list: {
+      query: (
+        input: ListPageInput,
+      ) => Promise<{ agents: readonly unknown[]; nextCursor: string | null }>;
+    };
+  };
+  permissions: {
+    list: {
+      query: (
+        input: ListPageInput,
+      ) => Promise<{ permissions: readonly unknown[]; nextCursor: string | null }>;
+    };
+  };
   organizations: {
     get: { query: (args: { orgId: string }) => Promise<unknown> };
     members: { list: { query: (args: { orgId: string }) => Promise<unknown> } };
@@ -71,15 +95,33 @@ export function buildPrefetchPlan(
   };
   const items: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgItems(activeOrgId),
-    queryFn: () => client.items.list.query({}),
+    queryFn: async () => ({
+      items: await drainAll(async (cursor) => {
+        const page = await client.items.list.query({ cursor, limit: DRAIN_PAGE_SIZE });
+        return { rows: page.items, nextCursor: page.nextCursor };
+      }),
+      nextCursor: null,
+    }),
   };
   const agents: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId),
-    queryFn: () => client.agents.list.query({}),
+    queryFn: async () => ({
+      agents: await drainAll(async (cursor) => {
+        const page = await client.agents.list.query({ cursor, limit: DRAIN_PAGE_SIZE });
+        return { rows: page.agents, nextCursor: page.nextCursor };
+      }),
+      nextCursor: null,
+    }),
   };
   const permissions: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgPermissions(activeOrgId),
-    queryFn: () => client.permissions.list.query({}),
+    queryFn: async () => ({
+      permissions: await drainAll(async (cursor) => {
+        const page = await client.permissions.list.query({ cursor, limit: DRAIN_PAGE_SIZE });
+        return { rows: page.permissions, nextCursor: page.nextCursor };
+      }),
+      nextCursor: null,
+    }),
   };
   const organization: PrefetchEntry = {
     queryKey: dashboardQueryKeys.organization(activeOrgId),
