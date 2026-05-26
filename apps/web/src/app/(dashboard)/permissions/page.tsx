@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { listAllAgents, listAllItems, listAllPermissions } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import {
   type CapabilityFilter,
@@ -346,17 +347,17 @@ export default function PermissionsListPage(): React.ReactElement {
 
   const permissionsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.permissions.list.query({}),
+    queryFn: () => listAllPermissions(),
     enabled: !!activeOrgId,
   });
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query({}),
+    queryFn: () => listAllAgents(),
     enabled: !!activeOrgId,
   });
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query({}),
+    queryFn: () => listAllItems(),
     enabled: !!activeOrgId,
   });
   // §REVAMP-PR5 — Look up profile names so profile-target grants render

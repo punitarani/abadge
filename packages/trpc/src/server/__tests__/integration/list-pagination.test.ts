@@ -52,14 +52,28 @@ describe("list cursor pagination (AB-0050)", () => {
     expect([...seen].sort()).toEqual([...created].sort()); // no gaps
   });
 
-  test("limit is bounded server-side at 100 even if a larger value is requested", async () => {
+  test("limit at the 100 ceiling is accepted", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
-    // The schema caps limit at 100; an in-range request returns a single full page here.
+    // 100 is the schema ceiling — an in-range request returns a single full page here.
     const page = await caller.items.list({ limit: 100 });
     expect(page.items).toHaveLength(0);
     expect(page.nextCursor).toBeNull();
+  });
+
+  test("limit above the 100 ceiling is rejected by input validation", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    // A value over the ceiling is a hard BAD_REQUEST, not a silent clamp — the
+    // caller learns it asked for too much rather than quietly getting a
+    // different page size. (Effect Schema: "less than or equal to 100".)
+    await expect(caller.items.list({ limit: 200 })).rejects.toMatchObject({
+      name: "TRPCError",
+      code: "BAD_REQUEST",
+    });
   });
 });

@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { listAllAgents } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import {
   type AgentAuthFilter,
@@ -25,7 +26,6 @@ import {
   type AgentStatusFilter,
   agentsFilterParsers,
 } from "@/lib/query-state";
-import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
@@ -80,7 +80,7 @@ export default function AgentsListPage(): React.ReactElement {
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query({}),
+    queryFn: () => listAllAgents(),
     enabled: !!activeOrgId,
   });
 
