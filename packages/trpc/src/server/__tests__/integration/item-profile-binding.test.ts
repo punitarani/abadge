@@ -253,4 +253,58 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
       expect(trpcError.cause?.meta?.reason).toBe("profile_mode_mismatch");
     }
   });
+
+  // AB-0002 #2 (ZK) — the explicit-profileId validation also applies to ZK
+  // creates: a profileId from another org is rejected as PROFILE_NOT_FOUND.
+  test("a ZK create with another org's profileId returns PROFILE_NOT_FOUND", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    await seedProfile(db, org.orgId, { name: "zk", storageMode: "zero_knowledge" });
+    const otherOrg = await seedOrg(auth, owner.userId, { slug: `other-${crypto.randomUUID()}` });
+    const foreignZk = await seedProfile(db, otherOrg.orgId, {
+      name: "zk-foreign",
+      storageMode: "zero_knowledge",
+    });
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    try {
+      await caller.items.create({
+        storageMode: "zero_knowledge",
+        id: crypto.randomUUID(),
+        profileId: foreignZk.profileId,
+        label: "zk-foreign-target",
+        encryptedItemKey: "ek",
+        ciphertext: "ct",
+      });
+      expect.unreachable("cross-org ZK profileId should be rejected");
+    } catch (error: unknown) {
+      const trpcError = error as { cause?: { code?: string } };
+      expect(trpcError.cause?.code).toBe("PROFILE_NOT_FOUND");
+    }
+  });
+
+  // AB-0002 #3 (ZK) — a server_managed profileId on a ZK create is a validation
+  // error (proves the up-front ZK validation call is load-bearing).
+  test("a ZK create targeting a server_managed profile is a validation error", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const sm = await serverProfileId(org.orgId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    try {
+      await caller.items.create({
+        storageMode: "zero_knowledge",
+        id: crypto.randomUUID(),
+        profileId: sm,
+        label: "zk-mode-mismatch",
+        encryptedItemKey: "ek",
+        ciphertext: "ct",
+      });
+      expect.unreachable("mode-mismatched ZK profileId should be rejected");
+    } catch (error: unknown) {
+      const trpcError = error as { cause?: { code?: string; meta?: { reason?: string } } };
+      expect(trpcError.cause?.code).toBe("BAD_REQUEST");
+      expect(trpcError.cause?.meta?.reason).toBe("profile_mode_mismatch");
+    }
+  });
 });
