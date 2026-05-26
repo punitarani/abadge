@@ -242,12 +242,12 @@ export default function AuditPage(): React.ReactElement {
   // Lookup data
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query(),
+    queryFn: () => browserTrpcClient.agents.list.query({}),
     enabled: !!activeOrgId,
   });
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => browserTrpcClient.items.list.query({}),
     enabled: !!activeOrgId,
   });
   const profilesQuery = useQuery({

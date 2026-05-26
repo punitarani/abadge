@@ -71,7 +71,7 @@ export default function AgentDetailPage(): React.ReactElement {
 
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => browserTrpcClient.items.list.query({}),
     enabled: !!activeOrgId,
   });
 

@@ -86,7 +86,7 @@ export default function SettingsPage(): React.ReactElement {
   // ---- Items (for danger zone count) ----
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => browserTrpcClient.items.list.query({}),
     enabled: !!activeOrgId,
   });
   const itemCount = itemsQuery.data?.items?.length ?? 0;

@@ -18,8 +18,9 @@ export type PrefetchableRoute =
  */
 export interface PrefetchClient {
   profiles: { list: { query: (args: { orgId: string }) => Promise<unknown> } };
-  items: { list: { query: () => Promise<unknown> } };
-  agents: { list: { query: () => Promise<unknown> } };
+  // §AB-0050 — list endpoints accept optional cursor pagination.
+  items: { list: { query: (input: { cursor?: string; limit?: number }) => Promise<unknown> } };
+  agents: { list: { query: (input: { cursor?: string; limit?: number }) => Promise<unknown> } };
   permissions: { list: { query: (input: Record<string, never>) => Promise<unknown> } };
   organizations: {
     get: { query: (args: { orgId: string }) => Promise<unknown> };
@@ -70,11 +71,11 @@ export function buildPrefetchPlan(
   };
   const items: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgItems(activeOrgId),
-    queryFn: () => client.items.list.query(),
+    queryFn: () => client.items.list.query({}),
   };
   const agents: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId),
-    queryFn: () => client.agents.list.query(),
+    queryFn: () => client.agents.list.query({}),
   };
   const permissions: PrefetchEntry = {
     queryKey: dashboardQueryKeys.orgPermissions(activeOrgId),

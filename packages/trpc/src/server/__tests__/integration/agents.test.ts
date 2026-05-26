@@ -69,7 +69,7 @@ describe("agents CRUD", () => {
       authMethod: "legacy_api_key",
     });
 
-    const result = await caller.agents.list();
+    const result = await caller.agents.list({});
     expect(result.agents).toHaveLength(2);
   });
 

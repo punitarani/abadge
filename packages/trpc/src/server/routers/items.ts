@@ -19,7 +19,7 @@ import {
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
 } from "@abadge/crypto/shared";
-import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
+import { and, desc, eq, isNull, lt, or, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -36,6 +36,7 @@ import {
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
+import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
 const loadOwnedItem = (
@@ -251,30 +252,54 @@ const createItem = (input: CreateItemInput) =>
     return { id };
   });
 
-const listItems = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .select({
-        id: items.id,
-        label: items.label,
-        storageMode: items.storageMode,
-        cryptoVersion: items.cryptoVersion,
-        contentVersion: items.contentVersion,
-        // §C2 — required so the web dashboard's profile-grant
-        // blast-radius dialog can count items in a profile without
-        // fetching item-detail rows for every item.
-        profileId: items.profileId,
-        createdAt: items.createdAt,
-        updatedAt: items.updatedAt,
-      })
-      .from(items)
-      .where(and(eq(items.organizationId, ctx.identity.organizationId), isNull(items.deletedAt)))
-      .orderBy(desc(items.createdAt)),
-  );
-
-  return { items: result.map(serializeItemSummary) };
+const ItemListQuerySchema = Schema.Struct({
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
 });
+
+const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC): an immutable
+    // tuple, so a concurrent insert never shifts an existing page.
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    const result = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: items.id,
+          label: items.label,
+          storageMode: items.storageMode,
+          cryptoVersion: items.cryptoVersion,
+          contentVersion: items.contentVersion,
+          // §C2 — required so the web dashboard's profile-grant
+          // blast-radius dialog can count items in a profile without
+          // fetching item-detail rows for every item.
+          profileId: items.profileId,
+          createdAt: items.createdAt,
+          updatedAt: items.updatedAt,
+        })
+        .from(items)
+        .where(
+          and(
+            eq(items.organizationId, ctx.identity.organizationId),
+            isNull(items.deletedAt),
+            cursor
+              ? or(
+                  lt(items.createdAt, cursor.createdAt),
+                  and(eq(items.createdAt, cursor.createdAt), lt(items.id, cursor.id)),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(items.createdAt), desc(items.id))
+        .limit(limit),
+    );
+
+    return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
+  });
 
 const listItemsForAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
@@ -302,7 +327,9 @@ const listItemsForAgent = Effect.gen(function* () {
       .orderBy(desc(items.createdAt)),
   );
 
-  return { items: result.map(serializeItemSummary) };
+  // listForAgent is not cursor-paginated (the agent's own grant set); nextCursor
+  // is null to satisfy the shared result schema.
+  return { items: result.map(serializeItemSummary), nextCursor: null };
 });
 
 const getItem = (itemId: string) =>
@@ -525,8 +552,11 @@ export const itemsRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createItem(input))),
   list: scopedSessionProcedure("items:read")
     .meta({ openapi: { method: "GET", path: "/items", tags: ["items"], protect: true } })
+    // §AB-0050 — input is optional so existing no-arg `list()` callers keep
+    // working (first page); pagination params are opt-in.
+    .input(strictSchema(Schema.UndefinedOr(ItemListQuerySchema)))
     .output(strictSchema(ItemListResultSchema))
-    .query(({ ctx }) => runSessionEffect(ctx, listItems)),
+    .query(({ ctx, input }) => runSessionEffect(ctx, listItems(input ?? {}))),
   listForAgent: agentProcedure
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),

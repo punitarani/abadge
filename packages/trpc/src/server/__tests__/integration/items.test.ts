@@ -258,7 +258,7 @@ describe("items CRUD", () => {
 
     await caller.items.delete({ itemId: item2.id });
 
-    const result = await caller.items.list();
+    const result = await caller.items.list({});
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.id).toBe(item1.id);
   });

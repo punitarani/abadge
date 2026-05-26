@@ -369,11 +369,11 @@ export function CreatePermissionPanel({
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query(),
+    queryFn: () => browserTrpcClient.agents.list.query({}),
   });
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => browserTrpcClient.items.list.query({}),
   });
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
