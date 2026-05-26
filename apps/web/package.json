@@ -31,7 +31,7 @@
     "cmdk": "^1.1.1",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.8.0",
-    "next": "^15.3.0",
+    "next": "^15.5.16",
     "nuqs": "^2",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
-    "@happy-dom/global-registrator": "^15",
+    "@happy-dom/global-registrator": "^20",
     "@opennextjs/cloudflare": "latest",
     "@storybook/addon-a11y": "^10.3.4",
     "@storybook/addon-docs": "^10.3.4",

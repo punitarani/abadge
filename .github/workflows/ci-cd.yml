@@ -62,16 +62,12 @@ jobs:
         with:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
-      # AB-0101 — surface high/critical dependency advisories on every PR.
-      # Report-only for now (continue-on-error): the workspace carries
-      # pre-existing transitive high/critical advisories — Next.js (x8),
-      # happy-dom, fast-uri, lodash, kysely, fast-xml-builder — that require a
-      # dedicated framework-upgrade/triage pass (tracked as AB-0104) before this
-      # gate can block. New advisories are visible in this step's output; flip
-      # `continue-on-error` to false once the baseline is triaged or allowlisted.
+      # AB-0101/AB-0104 — blocking gate: fail on any high/critical advisory that
+      # is not in .audit-allowlist.toml. Each allowlist entry carries a
+      # justification and an expiry; an expired entry also fails the build, so
+      # suppressions can't become permanent. See scripts/ci/audit-check.ts.
       - name: Audit dependencies (high/critical)
-        continue-on-error: true
-        run: bun audit --audit-level=high
+        run: bun scripts/ci/audit-check.ts
 
   typecheck:
     name: Typecheck
