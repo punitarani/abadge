@@ -53,6 +53,26 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint
 
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      # AB-0101 — surface high/critical dependency advisories on every PR.
+      # Report-only for now (continue-on-error): the workspace carries
+      # pre-existing transitive high/critical advisories — Next.js (x8),
+      # happy-dom, fast-uri, lodash, kysely, fast-xml-builder — that require a
+      # dedicated framework-upgrade/triage pass (tracked as AB-0104) before this
+      # gate can block. New advisories are visible in this step's output; flip
+      # `continue-on-error` to false once the baseline is triaged or allowlisted.
+      - name: Audit dependencies (high/critical)
+        continue-on-error: true
+        run: bun audit --audit-level=high
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
