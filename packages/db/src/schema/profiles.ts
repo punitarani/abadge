@@ -22,6 +22,10 @@ export const profiles = pgTable(
     kdfSalt: text("kdf_salt"),
     kdfParams: jsonb("kdf_params"),
     recoveryWrappedRootKey: text("recovery_wrapped_root_key"),
+    // §AB-0030 — per-profile server-managed DEK, wrapped under ENCRYPTION_KEY
+    // (base64 iv ‖ AES-256-GCM(masterKey, DEK)). NULL until the profile's first
+    // v3 server-managed write provisions it. Only server_managed profiles use it.
+    serverWrappedDek: text("server_wrapped_dek"),
     keyVersion: integer("key_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

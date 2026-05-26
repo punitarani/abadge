@@ -31,12 +31,6 @@ import {
   UseAccessResponseSchema,
   UseAccessSchema,
 } from "@abadge/core";
-import { serverDecrypt } from "@abadge/crypto/server";
-import {
-  profileIdForServerAad,
-  SERVER_AAD_MIN_VERSION,
-  type ServerAadMeta,
-} from "@abadge/crypto/shared";
 import { and, eq, gt, isNull, or, sql } from "@abadge/db";
 import {
   items,
@@ -49,6 +43,7 @@ import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+import { decryptServerEnvelope } from "../server-envelope";
 import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
 
 function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
@@ -109,29 +104,15 @@ const decryptServerManagedItem = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    // v1 rows predate AAD binding and MUST be decrypted without AAD.
-    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion),
-    // so a DB-write adversary cannot substitute rows across items.
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.agentOrganizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
+    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
     return yield* tryAsync(() =>
-      serverDecrypt(
-        {
-          ciphertext,
-          iv,
-          keyVersion,
-        },
-        ctx.env.ENCRYPTION_KEY,
-        aadMeta,
-      ),
+      decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
+        id: item.id,
+        profileId: item.profileId,
+        serverCiphertext: ciphertext,
+        serverIv: iv,
+        serverKeyVersion: keyVersion,
+      }),
     );
   });
 
@@ -1104,23 +1085,15 @@ export const redeemMount = (mountId: string) =>
       );
     }
 
-    const keyVersion = item.serverKeyVersion;
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.agentOrganizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
+    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
     const decrypted = yield* tryAsync(() =>
-      serverDecrypt(
-        { ciphertext: item.serverCiphertext as string, iv: item.serverIv as string, keyVersion },
-        ctx.env.ENCRYPTION_KEY,
-        aadMeta,
-      ),
+      decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
+        id: item.id,
+        profileId: item.profileId,
+        serverCiphertext: item.serverCiphertext as string,
+        serverIv: item.serverIv as string,
+        serverKeyVersion: item.serverKeyVersion,
+      }),
     );
     const payload = decodeServerManagedPayload(item.id, decrypted);
 
