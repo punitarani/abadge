@@ -13,6 +13,9 @@ import {
 import {
   buildGitHubBinaryAssetBaseName,
   buildGitHubBinaryTag,
+  buildSbomCommand,
+  buildSignBlobCommand,
+  buildVerifyBlobCommand,
   defaultOutDirForPackage,
 } from "./releases/publish";
 import {
@@ -473,5 +476,48 @@ describe("installer helpers", () => {
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("release provenance commands (§AB-0102)", () => {
+  test("buildSbomCommand scans a directory and emits CycloneDX JSON", () => {
+    expect(buildSbomCommand("/repo", "/out/abadge-cli-v1.2.3.sbom.cdx.json")).toEqual([
+      "syft",
+      "scan",
+      "dir:/repo",
+      "-o",
+      "cyclonedx-json=/out/abadge-cli-v1.2.3.sbom.cdx.json",
+    ]);
+  });
+
+  test("buildSignBlobCommand produces a keyless, non-interactive bundle signature", () => {
+    const cmd = buildSignBlobCommand("/out/app.tar.gz", "/out/app.tar.gz.cosign.bundle");
+    expect(cmd).toEqual([
+      "cosign",
+      "sign-blob",
+      "--yes",
+      "--bundle",
+      "/out/app.tar.gz.cosign.bundle",
+      "/out/app.tar.gz",
+    ]);
+    // `--yes` is mandatory: a release runs unattended and must not block on the
+    // transparency-log consent prompt.
+    expect(cmd).toContain("--yes");
+  });
+
+  test("buildVerifyBlobCommand pins both the signer identity and the OIDC issuer", () => {
+    const cmd = buildVerifyBlobCommand({
+      filePath: "/dl/app.tar.gz",
+      bundlePath: "/dl/app.tar.gz.cosign.bundle",
+      certificateIdentity:
+        "https://github.com/punitarani/abadge/.github/workflows/release.yml@refs/heads/main",
+      oidcIssuer: "https://token.actions.githubusercontent.com",
+    });
+    // Verifying without both constraints would accept any Fulcio-issued cert.
+    expect(cmd).toContain("--certificate-identity");
+    expect(cmd).toContain("--certificate-oidc-issuer");
+    expect(cmd).toContain("https://token.actions.githubusercontent.com");
+    expect(cmd[0]).toBe("cosign");
+    expect(cmd[1]).toBe("verify-blob");
   });
 });
