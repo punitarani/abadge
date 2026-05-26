@@ -122,6 +122,23 @@ export function buildAuditRow(entry: AuditEntryInput) {
   };
 }
 
+// §AB-0024 — best-effort second audit sink. Emits each committed audit row as a
+// structured log line, which Workers Logs ships off-box (via Logpush) to an
+// append-only store. Comparing that immutable copy against the DB is the
+// tamper signal: a DB-side deletion shows up as a row present in the sink but
+// missing from the table. The `audit_mirror` marker makes the stream
+// machine-parseable for the divergence check
+// (scripts/audit-divergence-check.ts). Never throws — sink failure must not
+// block or fail the request (acceptance criterion 3).
+export function mirrorAuditRow(row: ReturnType<typeof buildAuditRow>): void {
+  try {
+    console.log(JSON.stringify({ audit_mirror: 1, mirroredAt: new Date().toISOString(), ...row }));
+  } catch {
+    // Best-effort by design: swallow everything so a serialization or stream
+    // failure can never invert the caller's primary mutation.
+  }
+}
+
 // Never let an audit-write failure invert the caller's primary mutation.
 // On DB error: log a warning for operator visibility and return void.
 // A future dead-letter queue can replay from the warning stream.
@@ -130,6 +147,10 @@ function withAuditFailureWarning(
   effect: Effect.Effect<unknown, Error>,
 ): Effect.Effect<void, never> {
   return effect.pipe(
+    // §AB-0024 — mirror only rows that committed to the DB (runs after the
+    // insert succeeds; skipped when it fails so the sinks don't diverge on a
+    // never-committed row).
+    Effect.tap(() => Effect.sync(() => mirrorAuditRow(buildAuditRow(entry)))),
     Effect.catchAll((err) => {
       // §AB-0091 — meta is redacted before logging so an audit-write failure
       // can't surface a secret to Workers observability, even if a future
