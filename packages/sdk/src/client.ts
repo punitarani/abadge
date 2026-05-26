@@ -143,7 +143,7 @@ interface SdkTrpcClient {
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
     list: TrpcQuery<ListPageInput, ItemListResult>;
-    listForAgent: TrpcQueryWithoutInput<ItemListResult>;
+    listForAgent: TrpcQuery<ListPageInput, ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
       { itemId: string; data: UpdateItemInput },
@@ -1363,7 +1363,17 @@ export class AbadgeAgentClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return this.authedCall(() => this.client.items.listForAgent.query(), "Failed to list items");
+    // listForAgent is now paginated (§AB-0010); drain it so the agent still
+    // sees its full grant set. Session validity is checked once up front.
+    const items = await this.authedCall(
+      () =>
+        drainPages(async (cursor, limit) => {
+          const page = await this.client.items.listForAgent.query({ cursor, limit });
+          return { rows: page.items, nextCursor: page.nextCursor };
+        }, "Failed to list items"),
+      "Failed to list items",
+    );
+    return { items, nextCursor: null };
   }
 
   /**

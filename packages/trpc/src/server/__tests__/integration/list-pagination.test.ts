@@ -1,7 +1,14 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { seedOrg, seedUser } from "../helpers/seed";
+import {
+  seedAgent,
+  seedAgentSession,
+  seedOrg,
+  seedPermission,
+  seedServerItem,
+  seedUser,
+} from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { createOperatorCaller } from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
@@ -75,5 +82,47 @@ describe("list cursor pagination (AB-0050)", () => {
       name: "TRPCError",
       code: "BAD_REQUEST",
     });
+  });
+
+  test("items.listForAgent pages the agent's grant set exactly once each (§AB-0010)", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const agent = await seedAgent(db, { userId: owner.userId, orgId: org.orgId, kind: "remote" });
+
+    const granted: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const item = await seedServerItem(db, {
+        userId: owner.userId,
+        orgId: org.orgId,
+        fields: { k: String(i) },
+      });
+      await seedPermission(db, {
+        orgId: org.orgId,
+        agentId: agent.agentId,
+        itemId: item.itemId,
+        capability: "reveal_plaintext",
+        grantedBy: owner.userId,
+      });
+      granted.push(item.itemId);
+    }
+
+    const session = await seedAgentSession(db, { agentId: agent.agentId, userId: owner.userId });
+    const agentCaller = createAgentCaller(db, auth, session.rawToken);
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await agentCaller.items.listForAgent({ limit: 3, cursor });
+      expect(page.items.length).toBeLessThanOrEqual(3);
+      for (const it of page.items) seen.push(it.id);
+      cursor = page.nextCursor ?? undefined;
+      pages += 1;
+      if (pages > 10) throw new Error("pagination did not terminate");
+    } while (cursor);
+
+    expect(pages).toBe(3); // 3 + 3 + 1
+    expect(new Set(seen).size).toBe(7); // no duplicates across pages
+    expect([...seen].sort()).toEqual([...granted].sort()); // no gaps
   });
 });

@@ -486,6 +486,27 @@ describe("AbadgeUserClient list methods drain every page", () => {
   });
 });
 
+describe("AbadgeAgentClient.listItems drains the paginated agent item view (§AB-0010)", () => {
+  test("concatenates listForAgent pages and reports nextCursor=null", async () => {
+    let n = 0;
+    const listForAgent = {
+      query: () => {
+        n++;
+        return Promise.resolve({
+          items: [{ id: `agent-item-${n}` }],
+          nextCursor: n === 1 ? "c1" : null,
+        });
+      },
+    };
+    const agent = new AbadgeAgentClient({ apiUrl: "http://x", apiKey: "abl_test_key" });
+    (agent as unknown as { client: unknown }).client = { items: { listForAgent } };
+
+    const { items, nextCursor } = await agent.listItems();
+    expect(items.map((i) => (i as { id: string }).id)).toEqual(["agent-item-1", "agent-item-2"]);
+    expect(nextCursor).toBeNull();
+  });
+});
+
 // -----------------------------------------------------------------------------
 // AbadgeUserClient — error paths
 // -----------------------------------------------------------------------------
@@ -541,7 +562,9 @@ describe("AbadgeAgentClient happy paths", () => {
     ["accessMount", "access.mount", "mutate", ["item_x", "env"]],
     ["bulkAccessMountEnv", "access.bulkMountEnv", "mutate", ["prof_x"]],
   ] as const)("%s -> %s.%s", async (method, expectedPath, expectedKind, args) => {
-    const { agent, calls } = makeAgentClient({ ok: true });
+    // listItems drains pages, reading items/nextCursor off the response, so the
+    // shared return must terminate a single page (§AB-0010).
+    const { agent, calls } = makeAgentClient({ ok: true, items: [], nextCursor: null });
     await invoke(agent, method, [...args]);
     expect(calls[0]?.path).toBe(expectedPath);
     expect(calls[0]?.kind).toBe(expectedKind as RecordedCall["kind"]);

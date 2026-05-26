@@ -302,7 +302,7 @@ describe("items.listForAgent permission scoping", () => {
     });
     const agentCaller = createAgentCaller(db, auth, session.rawToken);
 
-    const result = await agentCaller.items.listForAgent();
+    const result = await agentCaller.items.listForAgent({});
     expect(result.items).toHaveLength(0);
   });
 
@@ -341,7 +341,7 @@ describe("items.listForAgent permission scoping", () => {
     });
     const agentCaller = createAgentCaller(db, auth, session.rawToken);
 
-    const result = await agentCaller.items.listForAgent();
+    const result = await agentCaller.items.listForAgent({});
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.id).toBe(allowedItem.itemId);
     // Sanity: the forbidden item is not in the list
@@ -385,7 +385,7 @@ describe("items.listForAgent permission scoping", () => {
     });
     const agentCaller = createAgentCaller(db, auth, session.rawToken);
 
-    const result = await agentCaller.items.listForAgent();
+    const result = await agentCaller.items.listForAgent({});
     expect(result.items).toHaveLength(1);
     expect(result.items[0]?.id).toBe(item.itemId);
   });
