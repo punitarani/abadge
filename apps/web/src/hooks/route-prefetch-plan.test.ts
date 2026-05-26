@@ -130,10 +130,11 @@ describe("buildPrefetchPlan", () => {
       "agents.list",
       "permissions.list",
     ]);
-    // profiles.list is called with { orgId }; items/agents take no args; permissions takes {}.
+    // profiles.list is called with { orgId }; items/agents/permissions take {}
+    // (the optional cursor-pagination input — §AB-0050).
     expect(calls[0]?.args).toEqual({ orgId: ORG_ID });
-    expect(calls[1]?.args).toBeUndefined();
-    expect(calls[2]?.args).toBeUndefined();
+    expect(calls[1]?.args).toEqual({});
+    expect(calls[2]?.args).toEqual({});
     expect(calls[3]?.args).toEqual({});
   });
 
