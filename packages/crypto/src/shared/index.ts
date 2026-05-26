@@ -1,5 +1,6 @@
 export {
   buildServerAad,
+  buildServerDekWrapAad,
   buildZkContentAad,
   buildZkDekWrapAad,
   buildZkRootWrapAad,
@@ -7,6 +8,7 @@ export {
   profileIdForServerAad,
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
+  type ServerDekWrapAadMeta,
   type ZkContentAadMeta,
   type ZkDekWrapAadMeta,
   type ZkRootWrapAadMeta,
