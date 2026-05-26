@@ -269,6 +269,7 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 | Input validation | Effect Schema on all external input |
 | SQL injection | Drizzle ORM parameterized queries (no raw SQL) |
 | Audit write ordering | Audit entries are awaited before returning responses |
+| Authorization-read freshness | Hyperdrive query caching **disabled** on the config resource, so revocations/expirations are never stale-served (Hyperdrive caches read-only `SELECT`s ~60s with no write-invalidation). Disable + verify: `wrangler hyperdrive update <id> --caching-disabled true`. See [ADR-002](decisions/002-hyperdrive-authz-cache-disabled.md). |
 
 ### Credential Handling on Disk
 
