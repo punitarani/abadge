@@ -18,7 +18,7 @@ function itemSummary(overrides: Partial<ItemSummary>): ItemSummary {
 }
 
 function makeClient(existing: ItemSummary[] = []) {
-  const listItems = mock(async () => ({ items: existing }));
+  const listItems = mock(async () => ({ items: existing, nextCursor: null }));
   const createItem = mock(async (_data: CreateItemInput) => ({
     id: "item_new",
     label: "x",

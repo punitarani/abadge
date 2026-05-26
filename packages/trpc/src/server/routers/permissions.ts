@@ -13,7 +13,7 @@ import {
   type StorageMode,
   SuccessResultSchema,
 } from "@abadge/core";
-import { and, eq, inArray, or } from "@abadge/db";
+import { and, desc, eq, inArray, lt, or } from "@abadge/db";
 import {
   agents as agentRecords,
   auditLogs,
@@ -36,6 +36,7 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
+import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -45,6 +46,11 @@ const PermissionIdSchema = Schema.Struct({
 const PermissionListQuerySchema = Schema.Struct({
   agentId: Schema.optional(Schema.String),
   itemId: Schema.optional(Schema.String),
+  // §AB-0050 — keyset pagination.
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
 });
 
 const createPermission = (input: CreatePermissionInput) =>
@@ -255,6 +261,8 @@ const createPermission = (input: CreatePermissionInput) =>
 
       return {
         permissions: profileRows.map((row) => serializePermission(row)),
+        // create returns the full created set in one response (not paginated).
+        nextCursor: null,
       };
     }
 
@@ -485,6 +493,8 @@ const createPermission = (input: CreatePermissionInput) =>
 
     return {
       permissions: rows.map((row) => serializePermission(row)),
+      // create returns the full created set in one response (not paginated).
+      nextCursor: null,
     };
   });
 
@@ -500,14 +510,14 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
 
     const agentIds = userAgents.map((agent) => agent.id);
     if (agentIds.length === 0) {
-      return { permissions: [] };
+      return { permissions: [], nextCursor: null };
     }
 
     // Compose filters so callers can pass any subset of {agentId, itemId} and
     // get a consistent AND-narrowed result. The grant panel relies on the
     // (agentId, itemId) combination to discover already-granted caps.
     if (input.agentId && !agentIds.includes(input.agentId)) {
-      return { permissions: [] };
+      return { permissions: [], nextCursor: null };
     }
     if (input.itemId) {
       const itemId = input.itemId;
@@ -519,7 +529,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
           .limit(1),
       );
       if (!item) {
-        return { permissions: [] };
+        return { permissions: [], nextCursor: null };
       }
     }
 
@@ -532,14 +542,34 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       filters.push(eq(permissionRecords.itemId, input.itemId));
     }
 
+    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    if (cursor) {
+      filters.push(
+        or(
+          lt(permissionRecords.createdAt, cursor.createdAt),
+          and(
+            eq(permissionRecords.createdAt, cursor.createdAt),
+            lt(permissionRecords.id, cursor.id),
+          ),
+        ),
+      );
+    }
+
     const result = yield* tryAsync(() =>
       ctx.db
         .select()
         .from(permissionRecords)
-        .where(and(...filters)),
+        .where(and(...filters))
+        .orderBy(desc(permissionRecords.createdAt), desc(permissionRecords.id))
+        .limit(limit),
     );
 
-    return { permissions: result.map(serializePermission) };
+    return {
+      permissions: result.map(serializePermission),
+      nextCursor: nextCursorFrom(result, limit),
+    };
   });
 
 const revokePermission = (permissionId: string) =>

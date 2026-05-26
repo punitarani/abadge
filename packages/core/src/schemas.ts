@@ -733,6 +733,8 @@ export const ItemResultSchema = Schema.Struct({
 
 export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const AgentResultSchema = Schema.Struct({
@@ -741,10 +743,14 @@ export const AgentResultSchema = Schema.Struct({
 
 export const AgentListResultSchema = Schema.Struct({
   agents: Schema.Array(AgentSchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const PermissionListResultSchema = Schema.Struct({
   permissions: Schema.Array(PermissionSchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const AuditListResultSchema = Schema.Struct({

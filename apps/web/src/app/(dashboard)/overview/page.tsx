@@ -242,13 +242,13 @@ export default function OverviewPage(): React.ReactElement {
 
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => browserTrpcClient.items.list.query({}),
     enabled: !!activeOrgId,
   });
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query(),
+    queryFn: () => browserTrpcClient.agents.list.query({}),
     enabled: !!activeOrgId,
   });
 
