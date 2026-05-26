@@ -23,3 +23,4 @@ export { onMemberRemoved } from "./cascades";
 export { createDb, type Database, type Transaction } from "./client";
 export * from "./roadmap-backfill";
 export * from "./schema";
+export * from "./server-profile-backfill";
