@@ -20,6 +20,23 @@ bun run cli -- --help
 See [`docs/release/cli.md`](./release/cli.md) and
 [`docs/release/mcp.md`](./release/mcp.md) for the per-package release flow.
 
+### Verifying a release
+
+Every release publishes, per binary, a `.tar.gz`, a `SHA256SUMS` entry, a
+CycloneDX SBOM, and a keyless `cosign` signature bundle (`*.cosign.bundle`).
+Verify a download against the GitHub Actions signer identity before trusting it:
+
+```bash
+cosign verify-blob \
+  --bundle <artifact>.tar.gz.cosign.bundle \
+  --certificate-identity-regexp 'https://github.com/punitarani/abadge/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  <artifact>.tar.gz
+```
+
+The release notes for each tag include the exact command. The SBOM
+(`*.sbom.cdx.json`) is the CycloneDX dependency inventory for that build.
+
 ## Configuration
 
 Config lives at `~/.abadge/config.json`:
