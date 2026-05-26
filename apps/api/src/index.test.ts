@@ -129,4 +129,23 @@ describe("api app", () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThanOrEqual(1);
     expect(doc.components.securitySchemes.bearerAuth).toBeDefined();
   });
+
+  // §AB-0051 — secret-bearing surfaces (tRPC access.*/items.ownerReveal and the
+  // /v1 REST mirror) must not be cacheable by browsers, proxies, or SWs.
+  test("tRPC responses carry Cache-Control: no-store", async () => {
+    const response = await app.request("http://localhost/trpc/access.read", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+    expect(response.headers.get("Pragma")).toBe("no-cache");
+  });
+
+  test("v1 (REST) responses carry Cache-Control: no-store", async () => {
+    const response = await app.request("http://localhost/v1/_test/ping", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+    expect(response.headers.get("Pragma")).toBe("no-cache");
+  });
+
+  test("non-secret top-level /health is not marked no-store", async () => {
+    const response = await app.request("http://localhost/health", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).not.toBe("no-store, no-cache, must-revalidate");
+  });
 });

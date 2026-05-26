@@ -9,6 +9,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
 import { getConnectionString, getDb } from "./lib/db";
 import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
+import { noStore } from "./middleware/no-store";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { requestId } from "./middleware/request-id";
 import { getOpenApiDocument } from "./rest/openapi";
@@ -57,6 +58,12 @@ app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 // `/v1/*` rate limit matches `/trpc/*` — both surfaces hit the same
 // procedures via the same caller factory.
 app.use("/v1/*", rateLimitMiddleware(100, 60_000));
+
+// §AB-0051 — secret-bearing surfaces must not be cached by browsers, proxies,
+// or service workers. These prefixes carry plaintext/ciphertext/session tokens.
+app.use("/api/auth/*", noStore);
+app.use("/trpc/*", noStore);
+app.use("/v1/*", noStore);
 
 // Wrap bare Better Auth 4xx responses into the canonical {code, message, hint, meta} envelope.
 app.use("/api/auth/*", authEnvelopeMiddleware);
