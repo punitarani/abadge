@@ -8,6 +8,7 @@ import {
   tryAsync,
   UserRequestContextTag,
 } from "./effect";
+import { redactedJson } from "./log";
 
 // ---------------------------------------------------------------------------
 // auditDenied helpers (W2T12-003)
@@ -130,8 +131,11 @@ function withAuditFailureWarning(
 ): Effect.Effect<void, never> {
   return effect.pipe(
     Effect.catchAll((err) => {
+      // §AB-0091 — meta is redacted before logging so an audit-write failure
+      // can't surface a secret to Workers observability, even if a future
+      // caller puts sensitive data in `meta`.
       console.warn(
-        `audit_write_failed event_type=${entry.eventType} org=${entry.organizationId} user=${entry.userId} err=${err instanceof Error ? err.message : String(err)}`,
+        `audit_write_failed event_type=${entry.eventType} org=${entry.organizationId} user=${entry.userId} meta=${redactedJson(entry.meta ?? {})} err=${err instanceof Error ? err.message : String(err)}`,
       );
       return Effect.void;
     }),
