@@ -111,7 +111,8 @@
               "api/overview",
               "api/authentication",
               "api/errors",
-              "api/rate-limiting"
+              "api/rate-limiting",
+              "api/pagination"
             ]
           },
           {
