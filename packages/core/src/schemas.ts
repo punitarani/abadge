@@ -160,6 +160,11 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   // server MUST use this value verbatim when inserting the row. Any server-side
   // replacement would break the AAD binding and make the item undecryptable.
   id: UuidString,
+  // §AB-0002 — optional explicit target profile. Omitted preserves legacy
+  // behavior (server resolves the org's first zero_knowledge profile). When
+  // set it MUST be a zero_knowledge profile in the caller's org; the client
+  // is responsible for having wrapped the DEK under that profile's root key.
+  profileId: Schema.optional(UuidString),
   label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
@@ -171,6 +176,10 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
 
 export const ServerManagedCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("server_managed"),
+  // §AB-0002 — optional explicit target profile. Omitted resolves the org's
+  // default server_managed profile. Must be a server_managed profile in the
+  // caller's org.
+  profileId: Schema.optional(UuidString),
   payload: ItemPayloadSchema,
 });
 
