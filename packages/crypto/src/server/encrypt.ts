@@ -1,4 +1,9 @@
-import { buildServerAad, type ServerAadMeta } from "../shared/aad";
+import {
+  buildServerAad,
+  buildServerDekWrapAad,
+  type ServerAadMeta,
+  type ServerDekWrapAadMeta,
+} from "../shared/aad";
 import { fromBase64, toBase64 } from "../shared/encoding";
 import type { ServerEncryptedItem } from "../shared/types";
 
@@ -86,4 +91,79 @@ export async function serverDecrypt(
 
   const decrypted = await crypto.subtle.decrypt(algorithm, key, toArrayBuffer(ciphertext));
   return new Uint8Array(decrypted);
+}
+
+// Per-profile envelope: each server_managed profile owns a 32-byte DEK wrapped
+// under the master ENCRYPTION_KEY; v3 item content encrypts under the DEK, so
+// rotating the master key rewraps DEKs only — no content re-encryption.
+// See docs/ENVELOPE_SPEC.md ("Server-managed per-profile envelope (v3)").
+
+const DEK_LENGTH = 32;
+
+/** Generate a fresh 32-byte server-managed profile DEK. */
+export function generateServerDek(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(DEK_LENGTH));
+}
+
+/**
+ * Wrap a profile DEK under the master key (AES-256-GCM), AAD-bound to
+ * `(orgId, profileId)` so the wrapped blob cannot be transplanted to another
+ * profile. Returns self-contained base64 `iv (12) || ciphertext+tag`.
+ */
+export async function wrapServerDek(
+  masterKeyBase64: string,
+  dek: Uint8Array,
+  aad: ServerDekWrapAadMeta,
+): Promise<string> {
+  if (dek.byteLength !== DEK_LENGTH) {
+    throw new Error(`server DEK must be ${DEK_LENGTH} bytes, got ${dek.byteLength}`);
+  }
+  const key = await importKey(masterKeyBase64);
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      {
+        name: ALGORITHM,
+        iv: toArrayBuffer(iv),
+        additionalData: toArrayBuffer(buildServerDekWrapAad(aad)),
+      },
+      key,
+      toArrayBuffer(dek),
+    ),
+  );
+  const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(ciphertext, iv.byteLength);
+  return toBase64(combined);
+}
+
+/**
+ * Unwrap a profile DEK produced by {@link wrapServerDek}. The `(orgId, profileId)`
+ * AAD must match the wrap, so a blob from a different profile fails GCM
+ * authentication. Throws if the recovered key is not 32 bytes.
+ */
+export async function unwrapServerDek(
+  masterKeyBase64: string,
+  wrappedBase64: string,
+  aad: ServerDekWrapAadMeta,
+): Promise<Uint8Array> {
+  const key = await importKey(masterKeyBase64);
+  const combined = fromBase64(wrappedBase64);
+  const iv = combined.subarray(0, IV_LENGTH);
+  const ciphertext = combined.subarray(IV_LENGTH);
+  const dek = new Uint8Array(
+    await crypto.subtle.decrypt(
+      {
+        name: ALGORITHM,
+        iv: toArrayBuffer(iv),
+        additionalData: toArrayBuffer(buildServerDekWrapAad(aad)),
+      },
+      key,
+      toArrayBuffer(ciphertext),
+    ),
+  );
+  if (dek.byteLength !== DEK_LENGTH) {
+    throw new Error(`unwrapped server DEK must be ${DEK_LENGTH} bytes, got ${dek.byteLength}`);
+  }
+  return dek;
 }
