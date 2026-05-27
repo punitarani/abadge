@@ -129,4 +129,33 @@ describe("api app", () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThanOrEqual(1);
     expect(doc.components.securitySchemes.bearerAuth).toBeDefined();
   });
+
+  test("tRPC responses carry Cache-Control: no-store", async () => {
+    const response = await app.request("http://localhost/trpc/access.read", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+    expect(response.headers.get("Pragma")).toBe("no-cache");
+  });
+
+  test("v1 (REST) responses carry Cache-Control: no-store", async () => {
+    const response = await app.request("http://localhost/v1/_test/ping", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+    expect(response.headers.get("Pragma")).toBe("no-cache");
+  });
+
+  // The unit env has no DB binding, so the auth handler throws and the response
+  // comes from app.onError — this also proves no-store survives the error path.
+  test("auth (/api/auth/*) responses carry Cache-Control: no-store", async () => {
+    const response = await app.request(
+      "http://localhost/api/auth/sign-in",
+      { method: "POST" },
+      testEnv,
+    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-cache, must-revalidate");
+    expect(response.headers.get("Pragma")).toBe("no-cache");
+  });
+
+  test("non-secret top-level /health is not marked no-store", async () => {
+    const response = await app.request("http://localhost/health", undefined, testEnv);
+    expect(response.headers.get("Cache-Control")).not.toBe("no-store, no-cache, must-revalidate");
+  });
 });
