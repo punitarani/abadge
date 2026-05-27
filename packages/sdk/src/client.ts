@@ -127,6 +127,9 @@ interface TrpcQueryWithoutInput<TOutput> {
   query(): Promise<TOutput>;
 }
 
+/** Optional keyset-pagination input shared by the cursor-paginated lists (§AB-0050). */
+type ListPageInput = { cursor?: string; limit?: number };
+
 interface SdkTrpcClient {
   auth: {
     createChallenge: TrpcMutation<{ agentId: string }, AgentChallengeResult>;
@@ -139,7 +142,7 @@ interface SdkTrpcClient {
   };
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
-    list: TrpcQueryWithoutInput<ItemListResult>;
+    list: TrpcQuery<ListPageInput, ItemListResult>;
     listForAgent: TrpcQueryWithoutInput<ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
@@ -151,14 +154,14 @@ interface SdkTrpcClient {
   };
   agents: {
     create: TrpcMutation<CreateAgentInput, AgentWithKey>;
-    list: TrpcQueryWithoutInput<AgentListResult>;
+    list: TrpcQuery<ListPageInput, AgentListResult>;
     self: TrpcQueryWithoutInput<AgentResult>;
     rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
   permissions: {
     create: TrpcMutation<CreatePermissionInput, PermissionListResult>;
-    list: TrpcQuery<PermissionFilters, PermissionListResult>;
+    list: TrpcQuery<PermissionFilters & ListPageInput, PermissionListResult>;
     revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
   access: {
@@ -304,6 +307,50 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
   } catch (error) {
     throw AbadgeApiError.fromUnknown(error, fallback);
   }
+}
+
+/**
+ * The per-request page size the drainer asks for. Equal to the server's
+ * `MAX_PAGE_LIMIT` (§AB-0050); requesting the ceiling minimises round-trips.
+ * Asking for more would be rejected by input validation, not clamped.
+ */
+const DRAIN_PAGE_SIZE = 100;
+
+/**
+ * Pure runaway-loop guard. A `nextCursor` that never resolves to `null` means a
+ * server-side cursor bug; an unbounded client loop is worse than a loud failure.
+ * 1000 pages × the 100-row ceiling is far above any realistic org size.
+ */
+const MAX_DRAIN_PAGES = 1000;
+
+/**
+ * Follow `nextCursor` across every page of a cursor-paginated list and return
+ * the concatenation. The server caps each request (§AB-0050); this restores the
+ * "return everything" contract that the SDK list helpers had before pagination,
+ * so callers that need the full set (CLI export/import, list-then-find) keep
+ * working. Throws if pagination fails to terminate (see {@link MAX_DRAIN_PAGES}).
+ */
+async function drainPages<T>(
+  fetchPage: (
+    cursor: string | undefined,
+    limit: number,
+  ) => Promise<{ rows: readonly T[]; nextCursor: string | null }>,
+  fallback: string,
+): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_DRAIN_PAGES; page++) {
+    const { rows, nextCursor } = await call(() => fetchPage(cursor, DRAIN_PAGE_SIZE), fallback);
+    all.push(...rows);
+    if (!nextCursor) return all;
+    cursor = nextCursor;
+  }
+  throw new AbadgeApiError(
+    500,
+    "PAGINATION_RUNAWAY",
+    `Pagination did not terminate after ${MAX_DRAIN_PAGES} pages`,
+    "This indicates a server-side cursor bug; report it with your X-Request-Id.",
+  );
 }
 
 function buildTrpcClient(apiUrl: string, token: string, orgId?: string): SdkTrpcClient {
@@ -543,7 +590,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.items.list()` instead. Removal target: v0.6.
    */
   async listItems(): Promise<ItemListResult> {
-    return call(() => this.client.items.list.query(), "Failed to list items");
+    const items = await drainPages(async (cursor, limit) => {
+      const page = await this.client.items.list.query({ cursor, limit });
+      return { rows: page.items, nextCursor: page.nextCursor };
+    }, "Failed to list items");
+    return { items, nextCursor: null };
   }
 
   /**
@@ -628,7 +679,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.agents.list()` instead. Removal target: v0.6.
    */
   async listAgents(): Promise<AgentListResult> {
-    return call(() => this.client.agents.list.query(), "Failed to list agents");
+    const agents = await drainPages(async (cursor, limit) => {
+      const page = await this.client.agents.list.query({ cursor, limit });
+      return { rows: page.agents, nextCursor: page.nextCursor };
+    }, "Failed to list agents");
+    return { agents, nextCursor: null };
   }
 
   /**
@@ -700,7 +755,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.permissions.list(filters)` instead. Removal target: v0.6.
    */
   async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
-    return call(() => this.client.permissions.list.query(filters), "Failed to list permissions");
+    const permissions = await drainPages(async (cursor, limit) => {
+      const page = await this.client.permissions.list.query({ ...filters, cursor, limit });
+      return { rows: page.permissions, nextCursor: page.nextCursor };
+    }, "Failed to list permissions");
+    return { permissions, nextCursor: null };
   }
 
   /**

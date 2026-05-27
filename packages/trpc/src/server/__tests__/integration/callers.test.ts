@@ -21,7 +21,7 @@ describe("test callers", () => {
     const orgResult = await seedOrg(auth, userResult.userId);
     const caller = createOperatorCaller(db, auth, userResult.headers, orgResult.orgId);
 
-    const result = await caller.agents.list();
+    const result = await caller.agents.list({});
     expect(result.agents).toEqual([]);
   });
 });

@@ -140,7 +140,7 @@ support either storage mode and may carry a customer-supplied `externalId`.
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/agents` | session (admin) | Register an agent. Default `authMethod=public_key_session`; pass `issueBootstrapToken: true` for unenrolled keypair agents, or `authMethod=legacy_api_key` to receive a one-time API key. |
-| `GET` | `/v1/agents` | session | List agents in the org. |
+| `GET` | `/v1/agents` | session | List agents in the org. Supports `limit`, `cursor`. |
 | `GET` | `/v1/agents/{agentId}` | session | Fetch agent details. |
 | `DELETE` | `/v1/agents/{agentId}` | session (admin) | Revoke an agent; cascade-revokes its permissions. |
 
@@ -190,7 +190,7 @@ profile):
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/permissions` | session (admin) | Create one or more grants atomically. |
-| `GET` | `/v1/permissions` | session | List grants. Supports `agentId`, `itemId`, `profileId` filters. |
+| `GET` | `/v1/permissions` | session | List grants. Supports `agentId`, `itemId`, `profileId` filters plus `limit`, `cursor`. |
 | `DELETE` | `/v1/permissions/{permissionId}` | session (admin) | Revoke a single grant. |
 
 ### Access (agent-facing)
@@ -219,8 +219,18 @@ See [`docs/FIELDS.md`](./FIELDS.md) for resolution rules.
 
 ## Pagination
 
-List endpoints accept `limit` (default 50, max 100) and `cursor` (opaque).
-The response shape is:
+Exactly these four list endpoints support cursor (keyset) pagination. Each
+accepts optional `limit` (default 50, max 100) and `cursor`, and returns the
+result array under its own key alongside `nextCursor`:
+
+| Endpoint | Array key |
+|----------|-----------|
+| `GET /v1/items` | `items` |
+| `GET /v1/agents` | `agents` |
+| `GET /v1/permissions` | `permissions` |
+| `GET /v1/audit` | `entries` |
+
+The response shape (using `/v1/items` as the example):
 
 ```json
 {
@@ -229,7 +239,15 @@ The response shape is:
 }
 ```
 
-When `nextCursor` is `null`, the page is the last page.
+* **`cursor` is opaque.** Pass back the exact `nextCursor` from the previous
+  page; never construct or parse it. The encoding is an implementation detail
+  and may change.
+* **Ordering is newest-first by creation time.** Pages are a stable keyset, so
+  rows are neither dropped nor duplicated across page boundaries even while new
+  records are being inserted concurrently.
+* **`nextCursor: null` means the last page.** Stop when it is `null`.
+* **Other list endpoints are not paginated.** Organizations, members, and
+  profiles return their full set in a single response.
 
 ## tRPC bridge
 

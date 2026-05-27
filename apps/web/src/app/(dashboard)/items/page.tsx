@@ -18,9 +18,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { listAllItems, listAllPermissions } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { itemsFilterParsers, type StorageFilter } from "@/lib/query-state";
-import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
@@ -53,13 +53,13 @@ export default function ItemsListPage(): React.ReactElement {
 
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => listAllItems(),
     enabled: !!activeOrgId,
   });
 
   const permissionsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.permissions.list.query({}),
+    queryFn: () => listAllPermissions(),
     enabled: !!activeOrgId,
   });
 

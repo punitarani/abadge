@@ -30,6 +30,7 @@ import {
   buildProfileNameMap,
   resolveAuditDisplayValue,
 } from "@/lib/audit-display";
+import { listAllAgents, listAllItems } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { type AuditDateRangeFilter, auditFilterParsers } from "@/lib/query-state";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
@@ -242,12 +243,12 @@ export default function AuditPage(): React.ReactElement {
   // Lookup data
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query(),
+    queryFn: () => listAllAgents(),
     enabled: !!activeOrgId,
   });
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => listAllItems(),
     enabled: !!activeOrgId,
   });
   const profilesQuery = useQuery({
