@@ -98,6 +98,9 @@ const store: ServerItemProfileBackfillStore = {
   },
 
   async bindServerManagedItem(item) {
+    // The isNull(profileId) predicate keeps the write a no-op if a live request
+    // bound the row between the SELECT and this UPDATE, so a concurrent write is
+    // never clobbered with stale-profile ciphertext.
     await db
       .update(items)
       .set({
@@ -105,8 +108,9 @@ const store: ServerItemProfileBackfillStore = {
         serverCiphertext: item.serverCiphertext,
         serverIv: item.serverIv,
         serverKeyVersion: item.serverKeyVersion,
+        updatedAt: new Date(),
       })
-      .where(eq(items.id, item.id));
+      .where(and(eq(items.id, item.id), isNull(items.profileId)));
   },
 };
 
