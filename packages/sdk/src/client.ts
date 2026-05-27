@@ -143,7 +143,7 @@ interface SdkTrpcClient {
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
     list: TrpcQuery<ListPageInput, ItemListResult>;
-    listForAgent: TrpcQueryWithoutInput<ItemListResult>;
+    listForAgent: TrpcQuery<ListPageInput, ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
       { itemId: string; data: UpdateItemInput },
@@ -1363,7 +1363,25 @@ export class AbadgeAgentClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return this.authedCall(() => this.client.items.listForAgent.query(), "Failed to list items");
+    // The session guard is inlined rather than wrapping drainPages in
+    // authedCall: drainPages already routes each page through call(), and a
+    // second call() around it would re-normalize an AbadgeApiError into a
+    // generic 500/UNKNOWN, dropping the real statusCode/code/hint/meta.
+    if (this.sessionExpired) {
+      return Promise.reject(
+        new AbadgeApiError(
+          401,
+          "SESSION_REFRESH_FAILED",
+          "Agent session refresh exhausted; reconnect required",
+          "Call disconnect() + connect() again, or instantiate a fresh AbadgeAgentClient.",
+        ),
+      );
+    }
+    const items = await drainPages(async (cursor, limit) => {
+      const page = await this.client.items.listForAgent.query({ cursor, limit });
+      return { rows: page.items, nextCursor: page.nextCursor };
+    }, "Failed to list items");
+    return { items, nextCursor: null };
   }
 
   /**
