@@ -33,3 +33,16 @@ Configure the repository:
 | `TURBO_TOKEN` | GitHub Actions **secret** | Remote cache token with read/write for that team |
 
 If these are unset, Turbo falls back to local caching only inside each job (no cross-run sharing).
+
+## Deploy jobs and worker secrets
+
+`deploy-api` / `deploy-web` (push to `main` only) run each app's `deploy` script under
+`doppler run`. That script **deploys the worker first, then syncs secrets** from Doppler via
+`scripts/sync-worker-secrets.ts` (`wrangler secret bulk`).
+
+The order matters: Cloudflare rejects a bulk secret edit when the worker's latest version
+isn't the deployed one (Workers Versions guard, API error `10215`). Pushing secrets before
+`wrangler deploy` therefore fails. Deploying first makes the latest version live, so the
+subsequent secret sync is allowed. A `--check` pre-step still validates that every required
+secret is present in the environment before anything is deployed, so a missing Doppler value
+aborts up front rather than after a partial deploy.
