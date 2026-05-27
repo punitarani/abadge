@@ -14,11 +14,13 @@ import { createAgentCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
- * §AB-0022 — pin the access pipeline's strongest properties so a future
- * refactor can't silently drop them:
+ * Access-pipeline audit invariants (AB-0022)
+ *
+ * Pins the access pipeline's strongest properties so a future refactor can't
+ * silently drop them:
  *  - every denied/expired access is audited BEFORE the error is raised, and
  *  - a granted mount reservation and its "allowed" audit row are written in
- *    one transaction (audit-insert failure rolls back the reservation).
+ *    one transaction (an audit-insert failure rolls back the reservation).
  */
 describe("access pipeline audit invariants (AB-0022)", () => {
   const db = getTestDb();
@@ -38,7 +40,6 @@ describe("access pipeline audit invariants (AB-0022)", () => {
     return { agent, caller: createAgentCaller(db, auth, session.rawToken) };
   }
 
-  // AB-0022 #1 — denied read writes exactly one denied audit row, no reservation.
   test("a denied read (no permission) writes one denied audit row and no mount reservation", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -53,6 +54,7 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.itemId, item.itemId)));
     expect(audits).toHaveLength(1);
     expect(audits[0]?.result).toBe("denied");
+    expect(audits[0]?.eventType).toBe("access.reveal");
 
     const reservations = await db
       .select({ id: mountReservations.id })
@@ -61,7 +63,6 @@ describe("access pipeline audit invariants (AB-0022)", () => {
     expect(reservations).toHaveLength(0);
   });
 
-  // AB-0022 #2 — allowed use writes one allowed audit row and one reservation.
   test("an allowed use writes one allowed audit row and one mount reservation", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -92,11 +93,7 @@ describe("access pipeline audit invariants (AB-0022)", () => {
     expect(reservations[0]?.mountId).toBe(result.mountId);
   });
 
-  // AB-0022 #3 — a forced audit-insert failure inside the mount transaction
-  // rolls back BOTH the reservation and the audit row (atomicity). The fault is
-  // injected on the transaction's `tx.insert(auditLogs)` (the pipeline uses tx,
-  // not ctx.db, inside the reservation+audit transaction).
-  test("an audit-insert failure rolls back the mount reservation (zero reservations, zero allowed audits)", async () => {
+  test("an audit-insert failure rolls back the mount reservation (zero reservations, zero audit rows)", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
@@ -114,13 +111,14 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       grantedBy: owner.userId,
     });
 
-    // Hijack the transaction so the audit insert throws; the reservation insert
-    // (earlier in the same tx) must roll back with it. Agent auth (selects +
-    // lastUsedAt update) is untouched.
+    // Throw only on `tx.insert(auditLogs)`; the reservation insert earlier in
+    // the same tx must roll back with it. The pipeline runs both writes on `tx`
+    // (not `ctx.db`), and agent auth uses selects + a lastUsedAt update, so the
+    // auth path is untouched by this Proxy.
     const hijackedDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "transaction") {
-          return (cb: (tx: unknown) => unknown) =>
+          return (cb: (tx: unknown) => Promise<unknown>) =>
             (target as Database).transaction((tx) => {
               const hijackedTx = new Proxy(tx as object, {
                 get(t2, p2, r2) {
@@ -151,14 +149,15 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .where(eq(mountReservations.agentId, agent.agentId));
     expect(reservations).toHaveLength(0);
 
-    const allowed = await db
+    // The whole tx rolls back, so NO audit row survives — not just the
+    // "allowed" one. A compensating row written outside the tx would trip this.
+    const audits = await db
       .select({ id: auditLogs.id })
       .from(auditLogs)
-      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.result, "allowed")));
-    expect(allowed).toHaveLength(0);
+      .where(eq(auditLogs.agentId, agent.agentId));
+    expect(audits).toHaveLength(0);
   });
 
-  // AB-0022 #4 — an expired permission writes a result='expired' audit row.
   test("an expired permission writes a result='expired' audit row", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -170,16 +169,17 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       itemId: item.itemId,
       capability: "reveal_plaintext",
       grantedBy: owner.userId,
-      expiresAt: new Date(Date.now() - 60_000), // expired one minute ago
+      expiresAt: new Date(Date.now() - 60_000),
     });
 
     await expect(caller.access.read({ itemId: item.itemId })).rejects.toThrow();
 
     const audits = await db
-      .select({ result: auditLogs.result })
+      .select({ result: auditLogs.result, eventType: auditLogs.eventType })
       .from(auditLogs)
       .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.itemId, item.itemId)));
     expect(audits).toHaveLength(1);
     expect(audits[0]?.result).toBe("expired");
+    expect(audits[0]?.eventType).toBe("access.reveal");
   });
 });
