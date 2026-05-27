@@ -98,7 +98,7 @@ describe("§AB-0043 — agent lifecycle survives creating-user deletion", () => 
     // cascade would otherwise pass the typecheck while SQL `NULL = NULL` silently rejected
     // every orphaned session). The surviving permission still grants the agent its item.
     const agentCaller = createAgentCaller(db, auth, s.session.rawToken);
-    const result = await agentCaller.items.listForAgent();
+    const result = await agentCaller.items.listForAgent({});
 
     expect(result.items.map((i: { id: string }) => i.id)).toContain(s.item.itemId);
   });
