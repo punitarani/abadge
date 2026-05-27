@@ -12,7 +12,7 @@ import {
   seedUser,
 } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
-import { createAgentCaller } from "../helpers/test-callers";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 // §AB-0043 — Agent-lifecycle entities are org-scoped, not user-scoped. Deleting the
@@ -149,5 +149,35 @@ describe("§AB-0043 — agent lifecycle survives creating-user deletion", () => 
       code = (err as { code?: string }).code;
     }
     expect(code).toBe("MEMBER_AGENT_OWNERSHIP");
+  });
+
+  test("after orphaning, an admin can revoke the orphaned session but a non-creating member cannot", async () => {
+    const s = await seedOrphanScenario();
+    await db.delete(user).where(eq(user.id, s.creator.userId));
+
+    // A non-creating member is denied (an orphaned agent is admin-only to manage), and the
+    // session must stay live — the deny path must not silently report success.
+    const member = await seedUser(auth);
+    await seedMember(auth, s.org.orgId, member.userId, "member");
+    const memberCaller = createOperatorCaller(db, auth, member.headers, s.org.orgId);
+    let memberErr: { cause?: { code?: string } } | undefined;
+    try {
+      await memberCaller.auth.revokeSession({ token: s.session.rawToken });
+      expect.unreachable("a non-creating member must not revoke an orphaned session");
+    } catch (err) {
+      memberErr = err as { cause?: { code?: string } };
+    }
+    expect(memberErr?.cause?.code).toBe("MEMBER_AGENT_OWNERSHIP");
+
+    // The owner (admin) revokes by token. Before the revoke fix this was a silent no-op: the
+    // session's userId was SET NULL on user-delete, so a `userId = caller` filter matched nothing.
+    const operatorCaller = createOperatorCaller(db, auth, s.owner.headers, s.org.orgId);
+    await operatorCaller.auth.revokeSession({ token: s.session.rawToken });
+
+    const [row] = await db
+      .select({ revokedAt: agentSessions.revokedAt })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, s.session.sessionId));
+    expect(row?.revokedAt).not.toBeNull();
   });
 });

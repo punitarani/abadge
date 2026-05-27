@@ -45,6 +45,8 @@ import {
 import {
   createTrpcRouter,
   publicProcedure,
+  requireAgentOwnership,
+  requireOrgRole,
   scopedSessionProcedure,
   sessionProcedure,
 } from "../init";
@@ -75,7 +77,8 @@ interface ReturningIdRow {
 
 interface RevocableAgentSessionRow {
   id: string;
-  userId: string;
+  // §AB-0043 — userId is null once the session's creating user is deleted (FK SET NULL).
+  userId: string | null;
   agentId: string;
 }
 
@@ -764,6 +767,10 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const tokenHash = yield* tryAsync(() => hashApiKey(input.token));
+    // Sessions carry no org column, so join the agent to scope revocation to the
+    // caller's active org. §AB-0043 — this also reaches orphaned sessions whose
+    // userId was SET NULL when the creating user was deleted; the previous
+    // `eq(userId, caller)` filter could never match those rows.
     const [sessionRecord] = (yield* tryAsync(() =>
       ctx.db
         .select({
@@ -772,10 +779,11 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
           agentId: agentSessions.agentId,
         })
         .from(agentSessions)
+        .innerJoin(agentRecords, eq(agentRecords.id, agentSessions.agentId))
         .where(
           and(
             eq(agentSessions.tokenHash, tokenHash),
-            eq(agentSessions.userId, ctx.identity.userId),
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
             isNull(agentSessions.revokedAt),
           ),
         )
@@ -785,6 +793,36 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
     if (!sessionRecord) {
       return { ok: true };
     }
+
+    // Owners/admins revoke any agent's session in the org; members only agents they
+    // created. An orphaned agent (createdBy null) is admin-only, matching the rest of
+    // the agent-management surface (agents.rotate, permissions.create).
+    const callerRole = yield* tryAsync(() =>
+      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
+    );
+    yield* tryAsync(() =>
+      requireAgentOwnership(
+        ctx.db,
+        sessionRecord.agentId,
+        ctx.identity.userId,
+        ctx.identity.organizationId,
+        callerRole,
+      ),
+    ).pipe(
+      Effect.tapError((err) =>
+        err instanceof ForbiddenError
+          ? logSessionAudit({
+              organizationId: ctx.identity.organizationId,
+              userId: ctx.identity.userId,
+              agentId: sessionRecord.agentId,
+              eventType: "agent.session_revoke",
+              result: "denied",
+              ipAddress: ctx.ipAddress,
+              meta: { reason: "agent_not_owned" },
+            })
+          : Effect.void,
+      ),
+    );
 
     yield* tryAsync(() =>
       ctx.db

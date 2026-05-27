@@ -9,9 +9,9 @@ export const agentSessions = pgTable(
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    // §AB-0043 — nullable + SET NULL: an orphaned agent (creator deleted) can still
-    // exchange sessions, with userId null. Previously-issued sessions now survive
-    // user-deletion (until their 15-min TTL) instead of being cascade-deleted.
+    // §AB-0043 — nullable + SET NULL so an orphaned agent (creator deleted) can still
+    // exchange sessions, with userId null. An existing session outlives its creating
+    // user up to its 15-min TTL; user-deletion nulls userId instead of dropping it.
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
     tokenHash: text("token_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
