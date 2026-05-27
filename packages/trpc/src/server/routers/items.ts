@@ -405,36 +405,41 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
     return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
   });
 
-const listItemsForAgent = Effect.gen(function* () {
-  const ctx = yield* AgentRequestContextTag;
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .selectDistinct({
-        id: items.id,
-        label: items.label,
-        storageMode: items.storageMode,
-        cryptoVersion: items.cryptoVersion,
-        contentVersion: items.contentVersion,
-        profileId: items.profileId,
-        createdAt: items.createdAt,
-        updatedAt: items.updatedAt,
-      })
-      .from(items)
-      .innerJoin(permissions, eq(permissions.itemId, items.id))
-      .where(
-        and(
-          eq(items.organizationId, ctx.identity.agentOrganizationId),
-          eq(permissions.agentId, ctx.identity.agentId),
-          isNull(items.deletedAt),
-        ),
-      )
-      .orderBy(desc(items.createdAt)),
-  );
+const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+    // §AB-0050 — the agent's grant set is not structurally bounded, so page it
+    // on the same (createdAt DESC, id DESC) keyset as the session list.
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    const result = yield* tryAsync(() =>
+      ctx.db
+        .selectDistinct({
+          id: items.id,
+          label: items.label,
+          storageMode: items.storageMode,
+          cryptoVersion: items.cryptoVersion,
+          contentVersion: items.contentVersion,
+          profileId: items.profileId,
+          createdAt: items.createdAt,
+          updatedAt: items.updatedAt,
+        })
+        .from(items)
+        .innerJoin(permissions, eq(permissions.itemId, items.id))
+        .where(
+          and(
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
+            eq(permissions.agentId, ctx.identity.agentId),
+            isNull(items.deletedAt),
+            cursorCondition(items.createdAt, items.id, cursor),
+          ),
+        )
+        .orderBy(desc(items.createdAt), desc(items.id))
+        .limit(limit),
+    );
 
-  // listForAgent is not cursor-paginated (the agent's own grant set); nextCursor
-  // is null to satisfy the shared result schema.
-  return { items: result.map(serializeItemSummary), nextCursor: null };
-});
+    return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
+  });
 
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -662,8 +667,9 @@ export const itemsRouter = createTrpcRouter({
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listItems(input ?? {}))),
   listForAgent: agentProcedure
+    .input(strictSchema(Schema.UndefinedOr(ItemListQuerySchema)))
     .output(strictSchema(ItemListResultSchema))
-    .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),
+    .query(({ ctx, input }) => runAgentEffect(ctx, listItemsForAgent(input ?? {}))),
   get: scopedSessionProcedure("items:read")
     .meta({
       openapi: { method: "GET", path: "/items/{itemId}", tags: ["items"], protect: true },

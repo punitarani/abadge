@@ -863,7 +863,7 @@ describe("permissions-matrix", () => {
     });
     const agentCaller = createAgentCaller(db, auth, session.rawToken);
 
-    const visible = await agentCaller.items.listForAgent();
+    const visible = await agentCaller.items.listForAgent({});
     const ids = visible.items.map((i: { id: string }) => i.id);
     expect(ids).toContain(itemA.itemId);
     expect(ids).not.toContain(itemB.itemId);
@@ -917,7 +917,7 @@ describe("permissions-matrix", () => {
       const err = error as { code?: string };
       expect(err.code).toBe("FORBIDDEN");
     }
-    const visible = await agentCaller.items.listForAgent();
+    const visible = await agentCaller.items.listForAgent({});
     expect(visible.items).toHaveLength(0);
   });
 
