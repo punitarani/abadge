@@ -20,6 +20,8 @@ describe("roadmap schema foundations", () => {
       "kdfSalt",
       "kdfParams",
       "recoveryWrappedRootKey",
+      // §AB-0030 — per-profile server-managed DEK, wrapped under ENCRYPTION_KEY.
+      "serverWrappedDek",
       "keyVersion",
       "createdAt",
       "updatedAt",

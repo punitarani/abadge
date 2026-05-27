@@ -1,1 +1,7 @@
-export { serverDecrypt, serverEncrypt } from "./encrypt";
+export {
+  generateServerDek,
+  serverDecrypt,
+  serverEncrypt,
+  unwrapServerDek,
+  wrapServerDek,
+} from "./encrypt";
