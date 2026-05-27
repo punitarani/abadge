@@ -1,6 +1,6 @@
 ---
-"@abadge/cli": minor
-"@abadge/mcp": minor
+"@abadge/cli": patch
+"@abadge/mcp": patch
 ---
 
 Agent records, permission grants, and audit entries can now carry a null actor-user.
