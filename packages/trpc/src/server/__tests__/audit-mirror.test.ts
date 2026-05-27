@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { buildAuditRow, mirrorAuditRow } from "../audit";
 
 /**
- * §AB-0024 — the second audit sink is a best-effort structured-log emit. These
- * unit tests pin its two load-bearing properties: it produces a parseable,
- * marked line (so Logpush + the divergence check can find it), and it never
- * throws (so sink failure can't block a request — acceptance criterion 3).
+ * The second audit sink is a best-effort structured-log emit. These tests pin
+ * its load-bearing properties: it produces a parseable, marked line (so the
+ * divergence check can find it); it never throws (so a sink failure can't block
+ * the caller's request); and it redacts secret-bearing keys before emitting.
  */
-describe("mirrorAuditRow (§AB-0024 second audit sink)", () => {
+describe("mirrorAuditRow (second audit sink)", () => {
   function captureLog(fn: () => void): string[] {
     const lines: string[] = [];
     const original = console.log;
@@ -45,7 +45,7 @@ describe("mirrorAuditRow (§AB-0024 second audit sink)", () => {
     expect(typeof parsed.mirroredAt).toBe("string");
   });
 
-  test("never throws when the log stream fails (best-effort, criterion 3)", () => {
+  test("never throws when the log stream fails (best-effort)", () => {
     const row = buildAuditRow({
       organizationId: "org_1",
       userId: "user_1",
@@ -62,5 +62,21 @@ describe("mirrorAuditRow (§AB-0024 second audit sink)", () => {
     } finally {
       console.log = original;
     }
+  });
+
+  test("redacts secret-bearing keys in meta before emitting", () => {
+    const row = buildAuditRow({
+      organizationId: "org_1",
+      userId: "user_1",
+      eventType: "access.reveal",
+      result: "allowed",
+      meta: { password: "topsecret-value" },
+    });
+
+    const lines = captureLog(() => mirrorAuditRow(row));
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain("topsecret-value");
+    expect(lines[0]).toContain("[redacted]");
   });
 });

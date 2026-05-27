@@ -227,6 +227,7 @@ The MCP server adds additional protections for AI model contexts:
 ### Guarantees
 
 - **Append-only**: Audit entries are never updated or deleted
+- **Second sink**: Every committed row is also mirrored, best-effort, to an off-box append-only log sink; a divergence between that sink and the DB flags a DB-side deletion (`scripts/audit-divergence-check.ts`). The mirror never blocks or fails a request, and its structured output is redacted like every other log.
 - **No foreign keys**: Entries survive entity deletion (agents, items, permissions)
 - **Every attempt**: Both allowed and denied access is logged
 - **Metadata**: Structured `meta` field captures additional context per event type

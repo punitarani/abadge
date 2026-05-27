@@ -122,20 +122,16 @@ export function buildAuditRow(entry: AuditEntryInput) {
   };
 }
 
-// §AB-0024 — best-effort second audit sink. Emits each committed audit row as a
-// structured log line, which Workers Logs ships off-box (via Logpush) to an
-// append-only store. Comparing that immutable copy against the DB is the
-// tamper signal: a DB-side deletion shows up as a row present in the sink but
-// missing from the table. The `audit_mirror` marker makes the stream
-// machine-parseable for the divergence check
-// (scripts/audit-divergence-check.ts). Never throws — sink failure must not
-// block or fail the request (acceptance criterion 3).
+// Best-effort second audit sink: emit each committed row as a marked structured
+// log line that ships off-box to an append-only store, so a DB-side deletion is
+// detectable as a row present in the sink but absent from the table. Redacted
+// like every structured log (a future caller could put a secret in `meta`), and
+// never throws — a sink failure must not invert or block the caller's mutation.
 export function mirrorAuditRow(row: ReturnType<typeof buildAuditRow>): void {
   try {
-    console.log(JSON.stringify({ audit_mirror: 1, mirroredAt: new Date().toISOString(), ...row }));
+    console.log(redactedJson({ audit_mirror: 1, mirroredAt: new Date().toISOString(), ...row }));
   } catch {
-    // Best-effort by design: swallow everything so a serialization or stream
-    // failure can never invert the caller's primary mutation.
+    // Intentionally swallowed — the mirror is best-effort and must never throw.
   }
 }
 
@@ -147,9 +143,9 @@ function withAuditFailureWarning(
   effect: Effect.Effect<unknown, Error>,
 ): Effect.Effect<void, never> {
   return effect.pipe(
-    // §AB-0024 — mirror only rows that committed to the DB (runs after the
-    // insert succeeds; skipped when it fails so the sinks don't diverge on a
-    // never-committed row).
+    // Mirror only after the insert succeeds (tap skips the failure path): a row
+    // that never committed must not appear in the sink, or the divergence check
+    // would false-positive.
     Effect.tap(() => Effect.sync(() => mirrorAuditRow(buildAuditRow(entry)))),
     Effect.catchAll((err) => {
       // §AB-0091 — meta is redacted before logging so an audit-write failure
