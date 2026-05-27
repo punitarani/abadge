@@ -15,7 +15,13 @@ export {
 } from "./client/index";
 
 // Server-side crypto (AES-GCM via WebCrypto) — for API worker
-export { serverDecrypt, serverEncrypt } from "./server/index";
+export {
+  generateServerDek,
+  serverDecrypt,
+  serverEncrypt,
+  unwrapServerDek,
+  wrapServerDek,
+} from "./server/index";
 // Types
 export type {
   EncryptedItem,
@@ -27,6 +33,7 @@ export type {
 // Shared utilities — safe for all environments
 export {
   buildServerAad,
+  buildServerDekWrapAad,
   buildZkContentAad,
   buildZkDekWrapAad,
   buildZkRootWrapAad,
@@ -45,6 +52,7 @@ export {
   randomBytes,
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
+  type ServerDekWrapAadMeta,
   signEd25519,
   toBase32,
   toBase64,

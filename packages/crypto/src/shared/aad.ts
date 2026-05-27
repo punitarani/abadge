@@ -105,6 +105,27 @@ export function buildServerAad(meta: ServerAadMeta): Uint8Array {
   ]);
 }
 
+export interface ServerDekWrapAadMeta {
+  orgId: string;
+  profileId: string;
+}
+
+/**
+ * AAD for the server-managed per-profile DEK wrap (`profiles.server_wrapped_dek`).
+ * Binds the wrapped DEK to (org, profile) so a wrapped DEK transplanted to
+ * another profile fails to unwrap. Mirrors `buildZkDekWrapAad` on the ZK side.
+ *
+ * Wire format:
+ *   "abadge-sm-dek-v1\0" || orgId \0 || profileId \0
+ */
+export function buildServerDekWrapAad(meta: ServerDekWrapAadMeta): Uint8Array {
+  return concat([
+    encode("abadge-sm-dek-v1\0"),
+    encode(`${meta.orgId}\0`),
+    encode(`${meta.profileId}\0`),
+  ]);
+}
+
 // -----------------------------------------------------------------------------
 // Zero-knowledge (XChaCha20-Poly1305) AAD — W1S7-001
 // -----------------------------------------------------------------------------
