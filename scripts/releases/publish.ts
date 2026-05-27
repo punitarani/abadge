@@ -118,6 +118,53 @@ export function defaultOutDirForPackage(releasePackage: ReleasePackage, version:
   return join(repoRoot, "dist", "releases", releasePackage.id, version);
 }
 
+// §AB-0102 — supply-chain provenance for release binaries.
+
+// The release workflow runs on push to `main`, so the keyless signing
+// certificate's identity is this exact workflow path at that ref. Verification
+// must pin to it — a regexp over the repo would accept any workflow's cert.
+const RELEASE_SIGNER_IDENTITY =
+  "https://github.com/punitarani/abadge/.github/workflows/release.yml@refs/heads/main";
+const RELEASE_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+
+/**
+ * CycloneDX SBOM of the release's dependency closure. A bun-compiled binary
+ * cannot be introspected directly, so syft scans the workspace manifests +
+ * lockfile; one SBOM is attached per release.
+ */
+export function buildSbomCommand(scanDir: string, outputPath: string): string[] {
+  return ["syft", "scan", `dir:${scanDir}`, "-o", `cyclonedx-json=${outputPath}`];
+}
+
+/**
+ * Keyless detached signature (Fulcio/Rekor via GitHub OIDC). The
+ * `.cosign.bundle` carries the signature + signing certificate, so verification
+ * needs only the bundle and the expected signer identity — no key distribution.
+ */
+export function buildSignBlobCommand(filePath: string, bundlePath: string): string[] {
+  return ["cosign", "sign-blob", "--yes", "--bundle", bundlePath, filePath];
+}
+
+/** Documented verification counterpart to {@link buildSignBlobCommand}. */
+export function buildVerifyBlobCommand(input: {
+  filePath: string;
+  bundlePath: string;
+  certificateIdentity: string;
+  oidcIssuer: string;
+}): string[] {
+  return [
+    "cosign",
+    "verify-blob",
+    "--bundle",
+    input.bundlePath,
+    "--certificate-identity",
+    input.certificateIdentity,
+    "--certificate-oidc-issuer",
+    input.oidcIssuer,
+    input.filePath,
+  ];
+}
+
 function buildGitHubBinaryReleaseNotes(
   releasePackage: ReleasePackage,
   target: GitHubBinaryTarget,
@@ -135,9 +182,19 @@ function buildGitHubBinaryReleaseNotes(
       return `- ${assetBaseName}.tar.gz`;
     }),
     "- SHA256SUMS",
+    `- ${target.assetPrefix}-v${version}.sbom.cdx.json (CycloneDX SBOM)`,
+    "- *.cosign.bundle (keyless signature per artifact)",
     "",
     "Install:",
     "curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash",
+    "",
+    "Verify a download (cosign + GitHub OIDC):",
+    buildVerifyBlobCommand({
+      filePath: "<artifact>",
+      bundlePath: "<artifact>.cosign.bundle",
+      certificateIdentity: RELEASE_SIGNER_IDENTITY,
+      oidcIssuer: RELEASE_OIDC_ISSUER,
+    }).join(" "),
   ];
 
   return `${lines.join("\n")}\n`;
@@ -173,6 +230,7 @@ async function buildGitHubBinaryTarget(
   target: GitHubBinaryTarget,
   version: string,
   outDir: string,
+  sign: boolean,
 ): Promise<string[]> {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -220,9 +278,36 @@ async function buildGitHubBinaryTarget(
     assets.push(archivePath);
   }
 
+  if (sign) {
+    // One SBOM per release (the dependency closure is platform-independent).
+    // Generated before SHA256SUMS so the checksum file covers it too.
+    const sbomPath = join(outDir, `${target.assetPrefix}-v${version}.sbom.cdx.json`);
+    await runCommand(buildSbomCommand(repoRoot, sbomPath), {
+      cwd: repoRoot,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    checksums.push(`${await sha256(sbomPath)}  ${basename(sbomPath)}`);
+    assets.push(sbomPath);
+  }
+
   const checksumPath = join(outDir, "SHA256SUMS");
   await writeFile(checksumPath, `${checksums.join("\n")}\n`);
   assets.push(checksumPath);
+
+  if (sign) {
+    // Sign every published asset (archives, SBOM, checksums). A signing failure
+    // throws from runCommand and fails the release (§AB-0102 acceptance).
+    for (const asset of [...assets]) {
+      const bundlePath = `${asset}.cosign.bundle`;
+      await runCommand(buildSignBlobCommand(asset, bundlePath), {
+        cwd: repoRoot,
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      assets.push(bundlePath);
+    }
+  }
 
   return assets;
 }
@@ -275,7 +360,15 @@ async function publishReleasePackage(
       continue;
     }
 
-    const assets = await buildGitHubBinaryTarget(releasePackage, target, version, targetOutDir);
+    // Sign + SBOM only on a real publish: keyless signing needs GitHub OIDC and
+    // syft/cosign on PATH, neither of which a local dry-run build has.
+    const assets = await buildGitHubBinaryTarget(
+      releasePackage,
+      target,
+      version,
+      targetOutDir,
+      !options.dryRun,
+    );
 
     if (options.dryRun) {
       console.log(
