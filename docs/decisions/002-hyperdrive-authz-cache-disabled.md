@@ -13,17 +13,19 @@ abadge is a credential firewall: its authorization decisions are read-only `SELE
 
 **Disable Hyperdrive query caching globally** for the abadge Hyperdrive configuration.
 
-Caching is a per-Hyperdrive-**resource** setting — it is *not* a `wrangler.jsonc` binding field (wrangler emits `Unexpected fields found in hyperdrive[0] field: "caching"` and ignores it). It is disabled via the Wrangler CLI against the resource id:
+Caching is a per-Hyperdrive-**resource** setting — it is *not* a `wrangler.jsonc` binding field (wrangler emits `Unexpected fields found in hyperdrive[0] field: "caching"` and ignores it). It is disabled via the Wrangler CLI against the resource id. Read the id from `hyperdrive[0].id` in `apps/api/wrangler.jsonc` (or `wrangler hyperdrive list`) rather than a literal copied here, which goes stale if the resource is recreated:
 
 ```bash
-wrangler hyperdrive update 3ea93d0186d94581b5b66f4e670216bb \
+HYPERDRIVE_ID=<hyperdrive[0].id from apps/api/wrangler.jsonc>
+
+wrangler hyperdrive update "$HYPERDRIVE_ID" \
   --origin-password "$DB_PASSWORD" --caching-disabled true
 
-# verify:
-wrangler hyperdrive get 3ea93d0186d94581b5b66f4e670216bb   # expect caching.disabled = true
+# verify (expect caching.disabled = true):
+wrangler hyperdrive get "$HYPERDRIVE_ID"
 ```
 
-This is an operational action on the Cloudflare resource, applied once (it persists) and re-asserted whenever the Hyperdrive config is recreated. The `wrangler.jsonc` binding carries a comment pointing here.
+This is an operational action on the Cloudflare resource: it persists across deploys but lives outside version control. Re-assert `--caching-disabled true` and re-verify with `wrangler hyperdrive get` after **any** `wrangler hyperdrive update` to this resource (e.g. rotating `--origin-password`), not only when the config is recreated — an `update` that omits the flag can revert to the cached default and silently reopen the stale-authz window. The `wrangler.jsonc` binding carries a comment pointing here.
 
 ## Alternatives
 

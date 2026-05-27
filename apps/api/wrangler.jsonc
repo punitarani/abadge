@@ -54,15 +54,17 @@
       "binding": "HYPERDRIVE",
       "id": "3ea93d0186d94581b5b66f4e670216bb",
       "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
-      // §AB-0052 — Hyperdrive query caching is DISABLED on this config resource
-      // (not here: caching is a per-Hyperdrive-resource setting, not a binding
-      // field). abadge's authorization checks (permission lookups, agent
-      // enabled/revoked state, session validity, item soft-delete) are
-      // read-only SELECTs that Hyperdrive would otherwise cache (~60s default)
-      // with no write-invalidation, leaving a stale-authz window after a
-      // revocation. Disable + verify with:
-      //   wrangler hyperdrive update 3ea93d0186d94581b5b66f4e670216bb \
-      //     --origin-password "$DB_PASSWORD" --caching-disabled true
+      // §AB-0052 — Hyperdrive query caching is DISABLED on this config
+      // resource (a per-resource setting, NOT a binding field — wrangler
+      // ignores a "caching" key here). abadge's authz checks (permission
+      // lookups, agent enabled/revoked state, session validity, item
+      // soft-delete) are read-only SELECTs that Hyperdrive would otherwise
+      // cache (~60s default, no write-invalidation), leaving a stale-authz
+      // window after a revocation. Disable, and re-verify after ANY update
+      // to this resource (use the "id" above):
+      //   wrangler hyperdrive update <id> --origin-password "$DB_PASSWORD" \
+      //     --caching-disabled true
+      //   wrangler hyperdrive get <id>   # expect caching.disabled = true
       // See docs/decisions/002-hyperdrive-authz-cache-disabled.md.
     }
   ],
