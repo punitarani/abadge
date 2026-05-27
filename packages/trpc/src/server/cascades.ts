@@ -1,6 +1,7 @@
 import type { Transaction } from "@abadge/db";
 import { and, eq, gt, isNull } from "@abadge/db";
-import { agentSessions, auditLogs, permissions } from "@abadge/db/schema";
+import { agentSessions } from "@abadge/db/schema";
+import { scopedDb } from "./scoped-db";
 
 // Re-export so callers (tRPC routers, tests) can import from one place.
 export { onMemberRemoved } from "@abadge/db";
@@ -33,6 +34,11 @@ export async function onAgentRevoked(
   ipAddress?: string,
 ): Promise<void> {
   const now = new Date();
+  // §AB-0010 — tenant tables via the org scope (no direct schema import); the
+  // cascade queries are agentId/permission-scoped and run on the passed tx.
+  const scope = scopedDb(tx, orgId);
+  const auditLogs = scope.tables.auditLogs;
+  const permissions = scope.tables.permissions;
 
   const revoked = await tx
     .update(agentSessions)
@@ -106,6 +112,9 @@ export async function onItemDeleted(
   deletedBy: string,
   ipAddress?: string,
 ): Promise<void> {
+  const scope = scopedDb(tx, orgId);
+  const auditLogs = scope.tables.auditLogs;
+  const permissions = scope.tables.permissions;
   await tx.delete(permissions).where(eq(permissions.itemId, itemId));
 
   await tx.insert(auditLogs).values({

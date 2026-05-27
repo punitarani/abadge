@@ -16,7 +16,6 @@ const TENANT_TABLES = ["items", "profiles", "agents", "permissions", "auditLogs"
 const MIGRATION_ALLOWLIST = new Set<string>([
   "audit.ts",
   "auth.ts",
-  "cascades.ts",
   "init.ts",
   "routers/access.ts",
   "routers/access/pipeline.ts",
