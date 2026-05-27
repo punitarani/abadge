@@ -1,5 +1,5 @@
 import type { Database, Transaction } from "@abadge/db";
-import { and, eq, type SQL } from "@abadge/db";
+import { and, eq, type SQL, sql } from "@abadge/db";
 import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 
 /**
@@ -104,7 +104,15 @@ export function scopedDb(executor: Executor, orgId: string): ScopedDb {
       await (executor.insert(t as any) as any).values({ ...values, organizationId: orgId });
     },
     run(fn) {
-      return executor.transaction((tx) => fn(scopedDb(tx, orgId)));
+      return executor.transaction(async (tx) => {
+        // §AB-0011 — set the per-transaction org GUC that the RLS policies read, as
+        // the first statement. set_config(_, _, true) is transaction-local (like SET
+        // LOCAL) so it survives connection pooling (Hyperdrive RESETs between txns, so
+        // a non-transaction-local SET would not hold). Unset => RLS fails closed (zero
+        // rows). No-op for superuser/BYPASSRLS connections.
+        await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
+        return fn(scopedDb(tx, orgId));
+      });
     },
   };
 
