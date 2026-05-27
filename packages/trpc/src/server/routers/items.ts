@@ -179,7 +179,7 @@ async function insertZeroKnowledgeItem(
  * PROFILE_MODE_MISMATCH if the mode differs). Without one: pick the org's
  * default profile of that mode — preferring the auto-seeded `externalId='default'`
  * profile, then the oldest — so every server_managed item gets a real profileId
- * (the P0 fix) instead of being created profile-less and silently excluded from
+ * instead of being created profile-less and silently excluded from
  * profile-level grants.
  */
 const resolveTargetProfile = (
