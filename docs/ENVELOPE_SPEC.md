@@ -231,3 +231,64 @@ sequenceDiagram
 - `crypto_version` on items: Identifies the envelope format. Allows future algorithm changes without breaking old items. Current: 1.
 - `content_version` on items: Optimistic concurrency. Incremented on every update. Server rejects updates with stale version.
 - `key_version` on vaults: Incremented on root key rotation. Allows clients to detect stale local caches.
+
+## Server-Managed Per-Profile Envelope (v3)
+
+See [ADR-004](./decisions/004-server-managed-per-profile-envelope.md) for the rationale. This section is the wire contract the AB-0030 implementation must satisfy.
+
+### Key hierarchy (server-managed)
+
+```
+ENCRYPTION_KEY (master, AES-256-GCM)
+  --wraps-->  profile DEK (32 bytes, one per server_managed profile)
+                --encrypts-->  server item ciphertext
+```
+
+The profile DEK is the new intermediate key. `ENCRYPTION_KEY` no longer touches item content directly for v3 rows — only the DEK does.
+
+### Profile record (added field)
+
+```json
+{
+  "server_wrapped_dek": "<base64: iv (12 bytes) || AES-256-GCM(ENCRYPTION_KEY, DEK, wrapAad)>"
+}
+```
+
+- `server_wrapped_dek` packs the whole wrap in one self-describing blob: `iv (12) || ciphertext+tag (48 = 32-byte DEK + 16-byte tag)`; the unwrap side splits on the known 12-byte IV length. This deliberately differs from item records, which keep `server_ciphertext` and `server_iv` as separate columns (reusing the existing v1/v2 schema). The two AES-256-GCM layouts must not be cross-parsed.
+- The wrap is AAD-bound to `(orgId, profileId)` under a distinct domain-separation prefix (`abadge-sm-dek-v1`), mirroring `buildZkDekWrapAad`. This pins each wrapped DEK to exactly one profile, so a DEK blob transplanted to another profile fails to unwrap — closing the gap where a post-swap write would otherwise be silently encrypted under an attacker-chosen DEK.
+- Provisioned for `server_managed` profiles on create/bootstrap, or lazily on the first v3 write. Lazy provisioning MUST be atomic: generate-and-wrap the DEK and persist it with a compare-and-set (`UPDATE … SET server_wrapped_dek = ? WHERE id = ? AND server_wrapped_dek IS NULL`) or a `SELECT … FOR UPDATE` row lock, in the same transaction as the item write, then encrypt the item under whichever DEK won the race. A "losing" DEK must never encrypt content, or its items become permanently unrecoverable.
+
+### Server-managed item record (`server_key_version = 3`)
+
+```json
+{
+  "server_ciphertext": "<base64: AES-256-GCM(profileDEK, payload)>",
+  "server_iv": "<base64: 12 bytes>",
+  "server_key_version": 3
+}
+```
+
+AAD is unchanged from v2: the canonical `(orgId, profileId, itemId, keyVersion)` tuple from `buildServerAad`, with `keyVersion = 3`. The plaintext envelope is the same item JSON as all other modes.
+
+### `server_key_version` semantics
+
+| Version | Content key | AAD | Notes |
+|---|---|---|---|
+| 1 | `ENCRYPTION_KEY` | none | legacy; predates AAD binding |
+| 2 | `ENCRYPTION_KEY` | `(orgId, profileId\|sentinel, itemId, 2)` | §AB-0001 direct-key + AAD |
+| 3 | profile DEK | `(orgId, profileId, itemId, 3)` | §AB-0030 per-profile envelope |
+
+Decrypt **must** branch on the stored `server_key_version`: v1/v2 unwrap nothing and decrypt under `ENCRYPTION_KEY`; v3 unwraps `server_wrapped_dek` and decrypts under the DEK. New writes are always v3.
+
+### `ENCRYPTION_KEY` rotation (v3)
+
+Rotation rewraps each profile's `server_wrapped_dek` (unwrap with the old master key, wrap with the new) and **re-encrypts no item content** — the DEK, and therefore every item ciphertext bound to it, is unchanged. This is O(profiles), not O(secrets). See the rotation runbook (AB-0090).
+
+### Golden vectors (required by the implementation)
+
+The AB-0030 crypto tests MUST check in fixed vectors so a wire-format change fails loudly:
+
+1. **DEK wrap round-trip:** a fixed 32-byte `ENCRYPTION_KEY` + fixed 32-byte DEK + fixed 12-byte IV + fixed `(orgId, profileId)` wrap AAD → a committed `server_wrapped_dek` string; unwrapping it returns the exact DEK, and unwrapping with a different `profileId` AAD fails authentication.
+2. **Item round-trip under the DEK:** fixed DEK + fixed payload + fixed AAD tuple + fixed IV → a committed `server_ciphertext`; decrypting returns the exact payload.
+3. **Cross-profile isolation:** two profiles with independently generated DEKs (and distinct `profileId` AAD); an item encrypted under profile A's DEK fails GCM authentication when decrypted in profile B's context. This catches both DEK confusion (wrong key) and AAD omission (wrong profile binding) — AB-0030 acceptance #2.
+4. **Backward compatibility:** a v2 direct-key ciphertext still decrypts unchanged (AB-0030 acceptance #3).
