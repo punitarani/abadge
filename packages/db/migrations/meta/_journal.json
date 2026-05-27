@@ -120,6 +120,13 @@
       "when": 1778602372105,
       "tag": "0016_mount_reservations_field_envvar",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779839204173,
+      "tag": "0017_agent_lifecycle_org_scoped",
+      "breakpoints": true
     }
   ]
 }
