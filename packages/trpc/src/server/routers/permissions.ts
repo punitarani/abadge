@@ -14,13 +14,6 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, desc, eq, inArray, lt, or } from "@abadge/db";
-import {
-  agents as agentRecords,
-  auditLogs,
-  items,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -37,6 +30,7 @@ import {
   scopedSessionProcedure,
 } from "../init";
 import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { scopedDb } from "../scoped-db";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -57,19 +51,11 @@ const createPermission = (input: CreatePermissionInput) =>
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: createPermission orchestrates target-discriminated validation (item vs profile), agent ownership, capability-matrix legality, atomic batch insert, duplicate detection, and audit row staging — splitting it would obscure the audit-before-mutation invariant.
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const isProfileTarget = "profileId" in input;
 
-    const [agent] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.id, input.agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-          ),
-        )
-        .limit(1),
+    const agent = yield* tryAsync(() =>
+      scope.findFirst("agents", { where: eq(scope.tables.agents.id, input.agentId) }),
     );
 
     if (!agent) {
@@ -137,17 +123,8 @@ const createPermission = (input: CreatePermissionInput) =>
     // pipeline runs the per-item constraint check at access time. Validate
     // existence in-org, pre-check duplicates, then insert atomically.
     if (isProfileTarget) {
-      const [profile] = yield* tryAsync(() =>
-        ctx.db
-          .select({ id: profileRecords.id })
-          .from(profileRecords)
-          .where(
-            and(
-              eq(profileRecords.id, input.profileId),
-              eq(profileRecords.organizationId, ctx.identity.organizationId),
-            ),
-          )
-          .limit(1),
+      const profile = yield* tryAsync(() =>
+        scope.findFirst("profiles", { where: eq(scope.tables.profiles.id, input.profileId) }),
       );
       if (!profile) {
         return yield* auditDeniedSession(
@@ -170,16 +147,19 @@ const createPermission = (input: CreatePermissionInput) =>
 
       const requested = input.capabilities as readonly Capability[];
 
-      // Pre-check duplicates for profile-target rows.
+      // Pre-check duplicates for profile-target rows. Keyed by
+      // (agentId, profileId, capability) — not org-scoped — so it runs through
+      // the escape hatch to preserve the exact WHERE (the agent was already
+      // verified in-org above).
       const existingProfileRows = yield* tryAsync(() =>
-        ctx.db
-          .select({ capability: permissionRecords.capability })
-          .from(permissionRecords)
+        scope.executor
+          .select({ capability: scope.tables.permissions.capability })
+          .from(scope.tables.permissions)
           .where(
             and(
-              eq(permissionRecords.agentId, input.agentId),
-              eq(permissionRecords.profileId, input.profileId),
-              inArray(permissionRecords.capability, requested),
+              eq(scope.tables.permissions.agentId, input.agentId),
+              eq(scope.tables.permissions.profileId, input.profileId),
+              inArray(scope.tables.permissions.capability, requested),
             ),
           ),
       );
@@ -225,10 +205,11 @@ const createPermission = (input: CreatePermissionInput) =>
 
       yield* tryAsync(() =>
         ctx.db.transaction(async (tx) => {
-          await tx.insert(permissionRecords).values(profileRows);
+          const txScope = scopedDb(tx, ctx.identity.organizationId);
+          // Batch insert: array rows keep organizationId explicitly (escape hatch).
+          await tx.insert(txScope.tables.permissions).values(profileRows);
           for (const row of profileRows) {
-            await tx.insert(auditLogs).values({
-              organizationId: ctx.identity.organizationId,
+            await txScope.insert("auditLogs", {
               userId: ctx.identity.userId,
               agentId: input.agentId,
               itemId: null,
@@ -266,14 +247,8 @@ const createPermission = (input: CreatePermissionInput) =>
       };
     }
 
-    const [item] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(items)
-        .where(
-          and(eq(items.id, input.itemId), eq(items.organizationId, ctx.identity.organizationId)),
-        )
-        .limit(1),
+    const item = yield* tryAsync(() =>
+      scope.findFirst("items", { where: eq(scope.tables.items.id, input.itemId) }),
     );
 
     if (!item) {
@@ -390,15 +365,17 @@ const createPermission = (input: CreatePermissionInput) =>
     // Pre-check duplicates with one IN query so the error envelope can list
     // every duplicate, not just the first one we'd hit on insert. The unique
     // index inside the transaction is still the authoritative race-gate.
+    // Keyed by (agentId, itemId, capability) — not org-scoped — so it runs
+    // through the escape hatch to preserve the exact WHERE.
     const existingRows = yield* tryAsync(() =>
-      ctx.db
-        .select({ capability: permissionRecords.capability })
-        .from(permissionRecords)
+      scope.executor
+        .select({ capability: scope.tables.permissions.capability })
+        .from(scope.tables.permissions)
         .where(
           and(
-            eq(permissionRecords.agentId, input.agentId),
-            eq(permissionRecords.itemId, input.itemId),
-            inArray(permissionRecords.capability, requested),
+            eq(scope.tables.permissions.agentId, input.agentId),
+            eq(scope.tables.permissions.itemId, input.itemId),
+            inArray(scope.tables.permissions.capability, requested),
           ),
         ),
     );
@@ -447,12 +424,13 @@ const createPermission = (input: CreatePermissionInput) =>
 
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
-        await tx.insert(permissionRecords).values(rows);
+        const txScope = scopedDb(tx, ctx.identity.organizationId);
+        // Batch insert: array rows keep organizationId explicitly (escape hatch).
+        await tx.insert(txScope.tables.permissions).values(rows);
         // One audit row per granted capability — preserves the existing
         // 1:1 invariant between permission rows and permission.create events.
         for (const row of rows) {
-          await tx.insert(auditLogs).values({
-            organizationId: ctx.identity.organizationId,
+          await txScope.insert("auditLogs", {
             userId: ctx.identity.userId,
             agentId: input.agentId,
             itemId: input.itemId,
@@ -501,12 +479,8 @@ const createPermission = (input: CreatePermissionInput) =>
 const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const userAgents = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: agentRecords.id })
-        .from(agentRecords)
-        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
-    );
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const userAgents = yield* tryAsync(() => scope.findMany("agents"));
 
     const agentIds = userAgents.map((agent) => agent.id);
     if (agentIds.length === 0) {
@@ -521,18 +495,15 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
     }
     if (input.itemId) {
       const itemId = input.itemId;
-      const [item] = yield* tryAsync(() =>
-        ctx.db
-          .select({ id: items.id })
-          .from(items)
-          .where(and(eq(items.id, itemId), eq(items.organizationId, ctx.identity.organizationId)))
-          .limit(1),
+      const item = yield* tryAsync(() =>
+        scope.findFirst("items", { where: eq(scope.tables.items.id, itemId) }),
       );
       if (!item) {
         return { permissions: [], nextCursor: null };
       }
     }
 
+    const permissionRecords = scope.tables.permissions;
     const filters = [
       input.agentId
         ? eq(permissionRecords.agentId, input.agentId)
@@ -557,8 +528,11 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       );
     }
 
+    // Not single-org-scoped: the WHERE is an OR over the caller's agent IDs
+    // (already restricted to this org above) plus optional cursor/itemId.
+    // Escape hatch preserves the exact query and ordering.
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
         .from(permissionRecords)
         .where(and(...filters))
@@ -575,11 +549,15 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
 const revokePermission = (permissionId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    // Not single-org-scoped: looked up by primary key alone. The org is not
+    // known until the row is read; cross-org access is rejected below via the
+    // agent's org check. Escape hatch preserves the exact by-PK query.
     const [permission] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(permissionRecords)
-        .where(eq(permissionRecords.id, permissionId))
+        .from(scope.tables.permissions)
+        .where(eq(scope.tables.permissions.id, permissionId))
         .limit(1),
     );
 
@@ -600,17 +578,8 @@ const revokePermission = (permissionId: string) =>
       );
     }
 
-    const [agent] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: agentRecords.id })
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.id, permission.agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-          ),
-        )
-        .limit(1),
+    const agent = yield* tryAsync(() =>
+      scope.findFirst("agents", { where: eq(scope.tables.agents.id, permission.agentId) }),
     );
 
     if (!agent) {
@@ -674,8 +643,12 @@ const revokePermission = (permissionId: string) =>
       ),
     );
 
+    // Delete by primary key (org already authorized via the agent check above).
+    // Escape hatch preserves the exact by-PK delete.
     yield* tryAsync(() =>
-      ctx.db.delete(permissionRecords).where(eq(permissionRecords.id, permissionId)),
+      scope.executor
+        .delete(scope.tables.permissions)
+        .where(eq(scope.tables.permissions.id, permissionId)),
     );
 
     yield* logSessionAudit({
