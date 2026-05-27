@@ -5,20 +5,20 @@ import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/sche
 /**
  * §AB-0010 — Org-scoped data-access layer.
  *
- * The five tables below are the org-scoped tenant tables. Historically every
- * router hand-wrote `eq(table.organizationId, ctx.identity…)`; one forgotten
- * filter is a cross-tenant leak with no backstop. `scopedDb(executor, orgId)`
- * is the choke-point:
+ * The five tenant tables are reached only through a `scopedDb(executor, orgId)`
+ * choke-point, so a forgotten `organization_id` filter cannot leak another
+ * tenant's rows:
  *
  *  - `findMany` / `findFirst` bake `organization_id = orgId` into the WHERE
  *    clause, so a scoped read cannot omit the tenant filter by construction;
  *  - `insert` auto-sets `organizationId`, so a scoped write cannot forget it;
  *  - `orgScope` / `tables` are the escape hatch for queries the helpers can't
- *    express (joins, DISTINCT, projections) — the pre-built org condition is
- *    handed to the caller so it is still present by construction;
- *  - the companion lint rule (biome `noRestrictedImports`) bans direct imports
- *    of these tables outside this module, so the only path to a tenant table is
- *    through an org scope.
+ *    express (joins, DISTINCT, projections): the pre-built org condition is
+ *    handed to the caller, but a query built straight off `executor` must AND
+ *    it in by hand — the layer cannot enforce that path;
+ *  - the companion CI ratchet (`scoped-db-import-ban.test.ts`) bans direct
+ *    imports of these tables outside this module, so a server file cannot reach
+ *    a tenant table without going through an org scope.
  *
  * `run()` is transaction-oriented: the AB-0011 RLS backstop prepends
  * `SET LOCAL app.current_org` as the first statement of every scoped tx, so a
@@ -43,7 +43,7 @@ export interface FindOptions {
 
 export interface ScopedDb {
   readonly orgId: string;
-  /** Raw executor (db or tx). Use only via the escape hatch with `orgScope`. */
+  /** Raw db/tx escape hatch: any query built from it must AND in `orgScope` by hand. */
   readonly executor: Executor;
   /** Tenant tables. Reference columns through here, never via a direct schema import. */
   readonly tables: typeof TENANT_TABLES;

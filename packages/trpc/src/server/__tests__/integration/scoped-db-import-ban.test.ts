@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";
 
-// §AB-0010 — the scoped data-access layer is only a backstop if nothing bypasses
-// it. The five org-scoped tenant tables must be reached through `scopedDb`, never
-// imported directly into a router. This test is the enforcement (the acceptance
-// criterion's "CI test scanning imports").
+// §AB-0010 — the five org-scoped tenant tables must be reached through `scopedDb`,
+// never imported directly into a server file. This CI ratchet is the enforcement
+// for that acceptance criterion: a named OR namespace import of the schema barrel's
+// tenant tables fails the test unless the file is on the (shrinking) allowlist.
 const SERVER_DIR = path.resolve(import.meta.dir, "../..");
 const TENANT_TABLES = ["items", "profiles", "agents", "permissions", "auditLogs"] as const;
 
@@ -32,14 +32,15 @@ const MIGRATION_ALLOWLIST = new Set<string>([
 ]);
 
 function importsTenantTable(source: string): boolean {
-  const blocks = source.matchAll(
+  // Named import: flag when a tenant table is among the bindings.
+  for (const m of source.matchAll(
     /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']@abadge\/db\/schema["']/g,
-  );
-  for (const m of blocks) {
-    const names = m[1] ?? "";
-    if (TENANT_TABLES.some((t) => new RegExp(`\\b${t}\\b`).test(names))) return true;
+  )) {
+    if (TENANT_TABLES.some((t) => new RegExp(`\\b${t}\\b`).test(m[1] ?? ""))) return true;
   }
-  return false;
+  // Namespace import exposes every table including the tenant ones, so `schema.items`
+  // is a bypass by construction — flag it regardless of how the binding is later used.
+  return /import\s*(?:type\s*)?\*\s*as\s+\w+\s*from\s*["']@abadge\/db\/schema["']/.test(source);
 }
 
 function serverFilesImportingTenantTables(): string[] {

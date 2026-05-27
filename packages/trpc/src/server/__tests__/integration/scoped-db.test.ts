@@ -80,6 +80,29 @@ describe("§AB-0010 scopedDb — org-scoped data-access layer", () => {
     expect(count).toBe(1);
   });
 
+  test("run rolls back its writes when fn throws", async () => {
+    const s = await twoOrgs();
+    const scope = scopedDb(db, s.orgA.orgId);
+    const before = (await scope.findMany("items")).length;
+    await expect(
+      scope.run(async (tx) => {
+        await tx.insert("items", {
+          id: crypto.randomUUID(),
+          createdBy: s.userA.userId,
+          label: "rolled-back",
+          storageMode: "server_managed",
+          serverCiphertext: "ct",
+          serverIv: "iv",
+          serverKeyVersion: 1,
+        });
+        throw new Error("abort");
+      }),
+    ).rejects.toThrow("abort");
+    const after = await scope.findMany("items");
+    expect(after.length).toBe(before);
+    expect(after.some((r) => r.label === "rolled-back")).toBe(false);
+  });
+
   test("orgScope + tables (escape hatch) is still org-bound", async () => {
     const s = await twoOrgs();
     const scope = scopedDb(db, s.orgA.orgId);
