@@ -2,12 +2,15 @@
 /**
  * Dependency-audit gate (§AB-0104).
  *
- * Runs `bun audit --audit-level=high` with the advisories listed in
- * `.audit-allowlist.toml` suppressed, and exits non-zero on any finding that is
- * NOT allowlisted — so a newly introduced high/critical advisory fails CI.
+ * Parses `bun audit --json` and fails on any high/critical advisory that is not
+ * listed in `.audit-allowlist.toml`, so a newly introduced advisory blocks CI.
+ * It also fails if any allowlist entry has passed its `expires` date, forcing
+ * periodic re-triage instead of letting a suppression become permanent.
  *
- * It also fails if any allowlist entry has passed its `expires` date, which
- * forces periodic re-triage instead of letting a suppression become permanent.
+ * Severity filtering and suppression are done in-process against the JSON
+ * report rather than via `bun audit`'s `--audit-level` / `--ignore` flags: those
+ * flags' availability and accepted ID format (CVE vs GHSA) vary across bun
+ * releases, whereas `--json` and the advisory schema are stable.
  */
 import process from "node:process";
 import allowlist from "../../.audit-allowlist.toml";
@@ -18,6 +21,14 @@ interface IgnoreEntry {
   reason: string;
   expires: string;
 }
+
+interface Advisory {
+  url: string;
+  title: string;
+  severity: string;
+}
+
+const BLOCKING_SEVERITIES = new Set(["high", "critical"]);
 
 const entries: IgnoreEntry[] = (allowlist as { ignore?: IgnoreEntry[] }).ignore ?? [];
 
@@ -38,17 +49,49 @@ if (expired.length > 0) {
   process.exit(1);
 }
 
-// 2. Run the audit with allowlisted advisories suppressed.
-const ignoreArgs = entries.map((entry) => `--ignore=${entry.id}`);
-const result = Bun.spawnSync(["bun", "audit", "--audit-level=high", ...ignoreArgs], {
-  stdout: "inherit",
-  stderr: "inherit",
-});
+const allowlisted = new Set(entries.map((entry) => entry.id));
 
-if (entries.length > 0) {
-  console.error(
-    `\n${entries.length} advisory suppression(s) active (see .audit-allowlist.toml); a new high/critical advisory still fails this gate.`,
-  );
+// 2. Run the audit and read its JSON report. `bun audit` exits non-zero when it
+//    finds any advisory (regardless of severity); we gate on severity ourselves.
+const audit = Bun.spawnSync(["bun", "audit", "--json"], { stdout: "pipe", stderr: "inherit" });
+const stdout = audit.stdout.toString().trim();
+
+let report: Record<string, Advisory[]> = {};
+if (stdout) {
+  try {
+    report = JSON.parse(stdout) as Record<string, Advisory[]>;
+  } catch {
+    console.error("✗ Could not parse `bun audit --json` output — failing closed.");
+    process.exit(1);
+  }
+} else if (audit.exitCode !== 0) {
+  // No report plus a non-success exit means the audit itself failed (e.g. a
+  // network error reaching the advisory DB). Fail closed rather than vouch for
+  // a tree we never actually scanned.
+  console.error("✗ `bun audit` produced no report and exited non-zero — failing closed.");
+  process.exit(1);
 }
 
-process.exit(result.exitCode ?? 1);
+// The advisory id is the trailing GHSA segment of its GitHub advisory URL.
+const advisoryId = (url: string): string => url.split("/").pop() ?? url;
+
+const blocking = Object.entries(report).flatMap(([pkg, advisories]) =>
+  advisories
+    .filter((adv) => BLOCKING_SEVERITIES.has(adv.severity) && !allowlisted.has(advisoryId(adv.url)))
+    .map((adv) => ({ pkg, id: advisoryId(adv.url), title: adv.title, severity: adv.severity })),
+);
+
+if (blocking.length > 0) {
+  console.error(`✗ ${blocking.length} non-allowlisted high/critical advisory(ies):`);
+  for (const adv of blocking) {
+    console.error(`    ${adv.severity.toUpperCase()} ${adv.pkg} ${adv.id} — ${adv.title}`);
+  }
+  console.error(
+    "\nUpgrade the dependency, or add a justified, expiring entry to .audit-allowlist.toml.",
+  );
+  process.exit(1);
+}
+
+console.log(
+  `✓ No non-allowlisted high/critical advisories (${entries.length} suppression(s) configured).`,
+);
