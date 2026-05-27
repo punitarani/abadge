@@ -515,7 +515,8 @@ export const ItemDetailSchema = Schema.Union(
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
-  createdBy: NonEmptyString,
+  // §AB-0043 — null when the creating user has been deleted (agent orphaned, org-scoped).
+  createdBy: Schema.NullOr(NonEmptyString),
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
   authMethod: AgentAuthMethodSchema,
@@ -608,14 +609,16 @@ export const PermissionSchema = Schema.Struct({
   profileId: Schema.NullOr(NonEmptyString),
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  grantedBy: NonEmptyString,
+  // §AB-0043 — null when the granting user has been deleted (grant survives).
+  grantedBy: Schema.NullOr(NonEmptyString),
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
   organizationId: NonEmptyString,
-  userId: NonEmptyString,
+  // §AB-0043 — null for an orphaned agent's actions (no actor-user).
+  userId: Schema.NullOr(NonEmptyString),
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
   profileId: Schema.NullOr(Schema.String),

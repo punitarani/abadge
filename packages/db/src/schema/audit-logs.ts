@@ -5,7 +5,11 @@ export const auditLogs = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     organizationId: text("organization_id").notNull(),
-    userId: text("user_id").notNull(),
+    // §AB-0043 — nullable: an orphaned agent (its creating user deleted, per
+    // agents.created_by SET NULL) still acts and must still be logged, but has
+    // no actor-user. The "every access is logged" invariant holds (the row is
+    // written); only the actor-user is null for this case.
+    userId: text("user_id"),
     agentId: text("agent_id"),
     itemId: text("item_id"),
     profileId: text("profile_id"),

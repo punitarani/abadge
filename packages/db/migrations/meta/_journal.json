@@ -141,6 +141,13 @@
       "when": 1779832786416,
       "tag": "0019_server_wrapped_dek",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1779839204173,
+      "tag": "0020_agent_lifecycle_org_scoped",
+      "breakpoints": true
     }
   ]
 }

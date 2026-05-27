@@ -179,13 +179,19 @@ Service accounts registered per organization. Auth methods:
 
 Revoking an agent invalidates all active sessions immediately.
 
+Agents are org-scoped, not user-scoped: deleting the user who created an agent sets `createdBy` to
+null (orphaning it) rather than deleting the agent, so org workloads survive operator turnover
+(§AB-0043). An orphaned agent keeps authenticating and accessing its grants; only an admin can
+manage it (members lose the creator-ownership path), and its audit rows carry a null actor-user.
+
 ### Permissions
 
 Agent × item capability grants, scoped to an org. Each permission specifies one capability from:
 `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`.
 
-Permissions reference `grantedBy` (user) and support an optional `expiresAt`. Deleting an item
-marks associated permissions invalid (cascade).
+Permissions reference `grantedBy` (user, nullable) and support an optional `expiresAt`. Deleting an
+item marks associated permissions invalid (cascade); deleting the granting user sets `grantedBy` to
+null so the grant survives (§AB-0043).
 
 ### Audit log
 

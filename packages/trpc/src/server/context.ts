@@ -43,7 +43,8 @@ export interface OptionalOrgSessionRequestContext extends BaseRequestContext {
 export interface AgentIdentity {
   kind: "agent";
   agentId: string;
-  agentUserId: string;
+  // §AB-0043 — null when the agent is orphaned (its creating user was deleted).
+  agentUserId: string | null;
   agentOrganizationId: string;
   agentLocality: "local" | "remote";
 }
