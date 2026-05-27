@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bash ../../scripts/generate-dev-vars.sh && wrangler dev",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "deploy": "bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && wrangler deploy",
+    "deploy": "bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc --check && wrangler deploy && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

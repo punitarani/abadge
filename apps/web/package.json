@@ -13,7 +13,7 @@
     "test": "bun test src/",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
-    "deploy": "bun run build:workers && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc && opennextjs-cloudflare deploy"
+    "deploy": "bun run build:workers && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc --check && opennextjs-cloudflare deploy && bun ../../scripts/sync-worker-secrets.ts --config wrangler.jsonc"
   },
   "dependencies": {
     "@abadge/auth": "workspace:*",
