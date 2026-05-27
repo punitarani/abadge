@@ -124,8 +124,14 @@ function auditAgentSessionReject(
   );
 }
 
-// Rate-limit audit writes for unrecognized bearers to prevent attacker-driven
-// audit-log amplification. 1 write per IP per 10s window.
+// Best-effort dampening of audit writes for unrecognized bearers, to reduce
+// attacker-driven audit-log amplification: ~1 write per IP per 10s window.
+// This counter is a module-level in-memory Map, so on Cloudflare Workers the
+// bound is per-isolate, not global: each isolate keeps its own counters and
+// isolates are ephemeral. A probe scattered across many isolates can therefore
+// exceed the nominal per-IP cap. The hard global bound on unauth probe volume
+// is the request-level rate-limit middleware (apps/api); this map only trims
+// redundant audit rows within a single isolate's lifetime.
 const UNAUTH_AUDIT_WINDOW_MS = 10_000;
 // Hard cap on map entries. Under a scattered-source attack the map would grow
 // unbounded (one entry per unique probe IP) — the cap bounds memory to
