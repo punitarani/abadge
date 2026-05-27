@@ -22,7 +22,7 @@ import { redactedJson } from "./log";
 
 export interface DeniedAuditFields {
   organizationId: string;
-  userId: string;
+  userId: string | null;
   agentId?: string;
   itemId?: string;
   profileId?: string;
@@ -90,7 +90,7 @@ export const auditDeniedBase = <E extends Error>(
 
 export interface AuditEntryInput {
   organizationId: string;
-  userId: string;
+  userId: string | null;
   agentId?: string;
   itemId?: string;
   profileId?: string;

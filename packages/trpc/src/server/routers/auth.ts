@@ -403,7 +403,14 @@ const enrollAgent = (input: EnrollAgentInput) =>
         .select()
         .from(agentRecords)
         .where(
-          and(eq(agentRecords.id, bootstrap.agentId), eq(agentRecords.createdBy, bootstrap.userId)),
+          and(
+            eq(agentRecords.id, bootstrap.agentId),
+            // §AB-0043 — tolerate an orphaned agent (createdBy null) whose enrollment token
+            // was also issued without an owner; otherwise the creator must match the token.
+            bootstrap.userId === null
+              ? isNull(agentRecords.createdBy)
+              : eq(agentRecords.createdBy, bootstrap.userId),
+          ),
         )
         .limit(1),
     )) as Array<OwnedAgentRow>;
@@ -442,7 +449,10 @@ const enrollAgent = (input: EnrollAgentInput) =>
           .where(
             and(
               eq(agentRecords.id, agent.id),
-              eq(agentRecords.createdBy, agent.createdBy),
+              // §AB-0043 — match the re-fetched agent's creator, tolerating orphans (null).
+              agent.createdBy === null
+                ? isNull(agentRecords.createdBy)
+                : eq(agentRecords.createdBy, agent.createdBy),
               eq(agentRecords.enabled, true),
               isNull(agentRecords.revokedAt),
               isNull(agentRecords.publicKey),
