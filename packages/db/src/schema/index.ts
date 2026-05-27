@@ -3,7 +3,6 @@ export * from "./agent-enrollment-tokens";
 export * from "./agent-session-challenges";
 export * from "./agent-sessions";
 export * from "./agents";
-export * from "./audit-log";
 export * from "./audit-logs";
 export * from "./auth";
 export * from "./items";
