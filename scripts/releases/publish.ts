@@ -120,6 +120,13 @@ export function defaultOutDirForPackage(releasePackage: ReleasePackage, version:
 
 // §AB-0102 — supply-chain provenance for release binaries.
 
+// The release workflow runs on push to `main`, so the keyless signing
+// certificate's identity is this exact workflow path at that ref. Verification
+// must pin to it — a regexp over the repo would accept any workflow's cert.
+const RELEASE_SIGNER_IDENTITY =
+  "https://github.com/punitarani/abadge/.github/workflows/release.yml@refs/heads/main";
+const RELEASE_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+
 /**
  * CycloneDX SBOM of the release's dependency closure. A bun-compiled binary
  * cannot be introspected directly, so syft scans the workspace manifests +
@@ -182,11 +189,12 @@ function buildGitHubBinaryReleaseNotes(
     "curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash",
     "",
     "Verify a download (cosign + GitHub OIDC):",
-    "cosign verify-blob \\",
-    "  --bundle <artifact>.cosign.bundle \\",
-    "  --certificate-identity-regexp 'https://github.com/punitarani/abadge/.*' \\",
-    "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\",
-    "  <artifact>",
+    buildVerifyBlobCommand({
+      filePath: "<artifact>",
+      bundlePath: "<artifact>.cosign.bundle",
+      certificateIdentity: RELEASE_SIGNER_IDENTITY,
+      oidcIssuer: RELEASE_OIDC_ISSUER,
+    }).join(" "),
   ];
 
   return `${lines.join("\n")}\n`;
@@ -270,21 +278,25 @@ async function buildGitHubBinaryTarget(
     assets.push(archivePath);
   }
 
-  const checksumPath = join(outDir, "SHA256SUMS");
-  await writeFile(checksumPath, `${checksums.join("\n")}\n`);
-  assets.push(checksumPath);
-
   if (sign) {
     // One SBOM per release (the dependency closure is platform-independent).
+    // Generated before SHA256SUMS so the checksum file covers it too.
     const sbomPath = join(outDir, `${target.assetPrefix}-v${version}.sbom.cdx.json`);
     await runCommand(buildSbomCommand(repoRoot, sbomPath), {
       cwd: repoRoot,
       stdout: "inherit",
       stderr: "inherit",
     });
+    checksums.push(`${await sha256(sbomPath)}  ${basename(sbomPath)}`);
     assets.push(sbomPath);
+  }
 
-    // Sign every published asset (archives, checksums, SBOM). A signing failure
+  const checksumPath = join(outDir, "SHA256SUMS");
+  await writeFile(checksumPath, `${checksums.join("\n")}\n`);
+  assets.push(checksumPath);
+
+  if (sign) {
+    // Sign every published asset (archives, SBOM, checksums). A signing failure
     // throws from runCommand and fails the release (§AB-0102 acceptance).
     for (const asset of [...assets]) {
       const bundlePath = `${asset}.cosign.bundle`;

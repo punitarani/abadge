@@ -29,7 +29,7 @@ Verify a download against the GitHub Actions signer identity before trusting it:
 ```bash
 cosign verify-blob \
   --bundle <artifact>.tar.gz.cosign.bundle \
-  --certificate-identity-regexp 'https://github.com/punitarani/abadge/.*' \
+  --certificate-identity 'https://github.com/punitarani/abadge/.github/workflows/release.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   <artifact>.tar.gz
 ```
