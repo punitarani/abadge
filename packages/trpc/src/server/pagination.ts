@@ -9,6 +9,8 @@
  * key on each result is unchanged.
  */
 
+import { and, type Column, eq, lt, or, type SQL } from "@abadge/db";
+
 export const DEFAULT_PAGE_LIMIT = 50;
 export const MAX_PAGE_LIMIT = 100;
 
@@ -21,6 +23,23 @@ export function resolveLimit(limit: number | undefined): number {
 export interface DecodedCursor {
   createdAt: Date;
   id: string;
+}
+
+/**
+ * Keyset predicate for a `(createdAt DESC, id DESC)` ordering: rows strictly
+ * after the cursor. Returns `undefined` for a null cursor so it can be dropped
+ * straight into an `and(...)` clause as a no-op (first page).
+ */
+export function cursorCondition(
+  createdAtColumn: Column,
+  idColumn: Column,
+  cursor: DecodedCursor | null,
+): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(
+    lt(createdAtColumn, cursor.createdAt),
+    and(eq(createdAtColumn, cursor.createdAt), lt(idColumn, cursor.id)),
+  );
 }
 
 // Opaque base64url over `${isoCreatedAt}|${id}`. btoa/atob are available in

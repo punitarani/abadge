@@ -17,7 +17,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, count, desc, eq, isNull, lt, or } from "@abadge/db";
+import { and, count, desc, eq, isNull } from "@abadge/db";
 import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -37,7 +37,7 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
-import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -185,12 +185,7 @@ const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
         .where(
           and(
             eq(agentRecords.organizationId, ctx.identity.organizationId),
-            cursor
-              ? or(
-                  lt(agentRecords.createdAt, cursor.createdAt),
-                  and(eq(agentRecords.createdAt, cursor.createdAt), lt(agentRecords.id, cursor.id)),
-                )
-              : undefined,
+            cursorCondition(agentRecords.createdAt, agentRecords.id, cursor),
           ),
         )
         .orderBy(desc(agentRecords.createdAt), desc(agentRecords.id))

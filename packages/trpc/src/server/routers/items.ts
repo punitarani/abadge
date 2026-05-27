@@ -19,7 +19,7 @@ import {
   SERVER_AAD_MIN_VERSION,
   type ServerAadMeta,
 } from "@abadge/crypto/shared";
-import { and, desc, eq, isNull, lt, or, sql, type Transaction } from "@abadge/db";
+import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -36,7 +36,7 @@ import {
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
-import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 
 const loadOwnedItem = (
@@ -395,12 +395,7 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
           and(
             eq(items.organizationId, ctx.identity.organizationId),
             isNull(items.deletedAt),
-            cursor
-              ? or(
-                  lt(items.createdAt, cursor.createdAt),
-                  and(eq(items.createdAt, cursor.createdAt), lt(items.id, cursor.id)),
-                )
-              : undefined,
+            cursorCondition(items.createdAt, items.id, cursor),
           ),
         )
         .orderBy(desc(items.createdAt), desc(items.id))

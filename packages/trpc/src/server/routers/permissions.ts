@@ -13,7 +13,7 @@ import {
   type StorageMode,
   SuccessResultSchema,
 } from "@abadge/core";
-import { and, desc, eq, inArray, lt, or } from "@abadge/db";
+import { and, desc, eq, inArray, or } from "@abadge/db";
 import {
   agents as agentRecords,
   auditLogs,
@@ -36,7 +36,7 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
-import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -545,17 +545,8 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
     // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
-    if (cursor) {
-      filters.push(
-        or(
-          lt(permissionRecords.createdAt, cursor.createdAt),
-          and(
-            eq(permissionRecords.createdAt, cursor.createdAt),
-            lt(permissionRecords.id, cursor.id),
-          ),
-        ),
-      );
-    }
+    // undefined (no cursor) is a no-op inside and(); no branch needed here.
+    filters.push(cursorCondition(permissionRecords.createdAt, permissionRecords.id, cursor));
 
     const result = yield* tryAsync(() =>
       ctx.db

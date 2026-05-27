@@ -1,6 +1,6 @@
 // Re-export drizzle-orm operators so consumers don't need a direct drizzle-orm dependency
 
-export type { SQL } from "drizzle-orm";
+export type { Column, SQL } from "drizzle-orm";
 export {
   and,
   asc,
