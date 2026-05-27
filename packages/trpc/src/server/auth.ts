@@ -101,7 +101,8 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
 function auditAgentSessionReject(
   ctx: BaseRequestContext,
   input: {
-    userId: string;
+    // §AB-0043 — null when the rejected agent is orphaned (no owning user).
+    userId: string | null;
     agentId: string;
     organizationId: string;
     result: "denied" | "expired" | "revoked";
@@ -307,7 +308,13 @@ const verifyAgentSessionIdentity = (
         .where(
           and(
             eq(agentRecords.id, sessionRecord.agentId),
-            eq(agentRecords.createdBy, sessionRecord.userId),
+            // §AB-0043 — an orphaned agent (createdBy IS NULL) still validates its session;
+            // an owned agent's creator must still match the session's recorded user. The two
+            // null states move together — the user-delete FK SET-NULLs createdBy and the
+            // session's userId atomically — so a null session user pairs with a null createdBy.
+            sessionRecord.userId === null
+              ? isNull(agentRecords.createdBy)
+              : eq(agentRecords.createdBy, sessionRecord.userId),
           ),
         )
         .limit(1),

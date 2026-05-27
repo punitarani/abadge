@@ -25,9 +25,9 @@ export const permissions = pgTable(
     profileId: text("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     capability: text("capability", { enum: CAPABILITIES }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
-    grantedBy: text("granted_by")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    // §AB-0043 — nullable + SET NULL so a grant outlives the user who issued it:
+    // deleting the granter must not revoke the agent's access (org-scoped lifecycle).
+    grantedBy: text("granted_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

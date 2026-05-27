@@ -678,7 +678,8 @@ function CapabilityChip({
   const expired = isExpired(permission.expiresAt);
   const expiringSoon = isExpiringSoon(permission.expiresAt);
   const tooltip = [
-    `Granted by ${permission.grantedBy.slice(0, 12)}`,
+    // §AB-0043 — grantedBy is null when the granting user was deleted (grant survives).
+    `Granted by ${permission.grantedBy?.slice(0, 12) ?? "(deleted user)"}`,
     `Created ${formatDate(permission.createdAt)}`,
     permission.expiresAt
       ? `${expired ? "Expired" : "Expires"} ${formatDate(permission.expiresAt)}`

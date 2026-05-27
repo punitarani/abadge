@@ -4,7 +4,7 @@ import {
   type AuditQuery,
   AuditResultSchema,
 } from "@abadge/core";
-import { and, desc, eq, lt, or, type SQL } from "@abadge/db";
+import { and, desc, eq, isNull, lt, or, type SQL } from "@abadge/db";
 import { auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import {
@@ -88,7 +88,8 @@ function buildEventTypeCondition(eventType: NonNullable<AuditQuery["eventType"]>
 
 interface AuditConditionsContext {
   orgId: string;
-  userId: string;
+  // §AB-0043 — null when the caller is an orphaned agent (no owning user).
+  userId: string | null;
   role: string;
   profileId?: string;
   surface?: string;
@@ -100,7 +101,11 @@ function buildAuditConditions(input: AuditQuery, ctx: AuditConditionsContext): S
 
   // Non-admin users can only see their own audit entries
   if (roleRank(ctx.role) < roleRank("admin")) {
-    conditions.push(eq(auditLogs.userId, ctx.userId));
+    // §AB-0043 — an orphaned agent (userId null) sees the org's ownerless audit rows
+    // (its own bucket); `eq(userId, null)` matches nothing under SQL NULL semantics.
+    conditions.push(
+      ctx.userId === null ? isNull(auditLogs.userId) : eq(auditLogs.userId, ctx.userId),
+    );
   }
 
   if (input.eventType) conditions.push(buildEventTypeCondition(input.eventType));
