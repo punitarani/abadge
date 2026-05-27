@@ -59,8 +59,8 @@ app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 // procedures via the same caller factory.
 app.use("/v1/*", rateLimitMiddleware(100, 60_000));
 
-// §AB-0051 — secret-bearing surfaces must not be cached by browsers, proxies,
-// or service workers. These prefixes carry plaintext/ciphertext/session tokens.
+// These prefixes carry plaintext, ciphertext, or session tokens; mark their
+// responses uncacheable so no browser, proxy, or service worker can persist one.
 app.use("/api/auth/*", noStore);
 app.use("/trpc/*", noStore);
 app.use("/v1/*", noStore);
