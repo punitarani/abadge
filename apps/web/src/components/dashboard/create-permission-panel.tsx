@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
+import { listAllAgents, listAllItems } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
@@ -369,11 +370,11 @@ export function CreatePermissionPanel({
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query({}),
+    queryFn: () => listAllAgents(),
   });
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query({}),
+    queryFn: () => listAllItems(),
   });
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
