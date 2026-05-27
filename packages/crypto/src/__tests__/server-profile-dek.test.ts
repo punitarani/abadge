@@ -40,6 +40,12 @@ const GOLDEN_V2 = {
   iv: "JV80z3qqitW8tkhv",
   keyVersion: 2,
 };
+const GOLDEN_V4 = {
+  ciphertext:
+    "OD6KTFR3csV1NiGLK77u-473gCE_PTxhGpK1qgIRwqRZmmBeApmsnzjLsp8nt1JbQUp59jWiCJTJl6mcfx7i6sMrxSuhx-pRzw",
+  iv: "mZJfjl9SpJ9THnoT",
+  keyVersion: 4,
+};
 
 // Encrypt arbitrary-length plaintext under the master key + wrap AAD, in the
 // `iv || ct+tag` layout unwrapServerDek expects. Only used to forge a GCM-valid
@@ -160,6 +166,45 @@ describe("server per-profile DEK envelope", () => {
 
   test("golden: committed v2 direct-key ciphertext still decrypts (acceptance #3)", async () => {
     const dec = await serverDecrypt(GOLDEN_V2, MASTER, V2_AAD);
+    expect(JSON.parse(new TextDecoder().decode(dec))).toEqual(PAYLOAD);
+  });
+});
+
+describe("server key commitment (§AB-0032, v4)", () => {
+  const V4_AAD: ServerAadMeta = { ...CONTENT_AAD, keyVersion: 4 };
+
+  test("v4 round-trips and grows the ciphertext by the 32-byte commitment (acceptance #2)", async () => {
+    const dekKey = toBase64(DEK);
+    const plaintext = new TextEncoder().encode("commit-me");
+    const v3 = await serverEncrypt(plaintext, dekKey, 3, CONTENT_AAD);
+    const v4 = await serverEncrypt(plaintext, dekKey, 4, V4_AAD);
+
+    // v4 carries a 32-byte HMAC commitment prefix that v3 does not.
+    expect(fromBase64(v4.ciphertext).byteLength).toBe(fromBase64(v3.ciphertext).byteLength + 32);
+
+    const dec = await serverDecrypt(v4, dekKey, V4_AAD);
+    expect(new TextDecoder().decode(dec)).toBe("commit-me");
+  });
+
+  test("v4 decrypt rejects a ciphertext whose commitment does not match the key (acceptance #1)", async () => {
+    const dekA = toBase64(generateServerDek());
+    const dekB = toBase64(generateServerDek());
+    const enc = await serverEncrypt(new TextEncoder().encode("secret"), dekA, 4, V4_AAD);
+    // dekB's commitment differs from the stored (dekA) commitment -> rejected.
+    await expect(serverDecrypt(enc, dekB, V4_AAD)).rejects.toThrow();
+  });
+
+  test("v4 decrypt rejects a tampered commitment even with the right key + intact ciphertext", async () => {
+    const dekKey = toBase64(DEK);
+    const enc = await serverEncrypt(new TextEncoder().encode("secret"), dekKey, 4, V4_AAD);
+    const bytes = fromBase64(enc.ciphertext);
+    bytes[0] = (bytes[0] as number) ^ 0xff; // flip a byte inside the commitment prefix
+    const tampered = { ...enc, ciphertext: toBase64(bytes) };
+    await expect(serverDecrypt(tampered, dekKey, V4_AAD)).rejects.toThrow(/commitment mismatch/);
+  });
+
+  test("golden: committed v4 ciphertext decrypts to the known payload", async () => {
+    const dec = await serverDecrypt(GOLDEN_V4, toBase64(DEK), V4_AAD);
     expect(JSON.parse(new TextDecoder().decode(dec))).toEqual(PAYLOAD);
   });
 });
