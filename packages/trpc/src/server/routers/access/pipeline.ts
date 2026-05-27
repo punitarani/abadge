@@ -13,19 +13,17 @@ import {
   resolveFieldValue,
 } from "@abadge/core";
 import { and, eq, inArray, isNull, or } from "@abadge/db";
-import {
-  auditLogs,
-  items as itemRecords,
-  mountReservations,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
+import { mountReservations } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { buildAuditRow, logAgentAudit } from "../../audit";
 import { AgentRequestContextTag, tryAsync } from "../../effect";
 import { decodeServerManagedPayload } from "../../item-payload";
+import { type ScopedDb, scopedDb } from "../../scoped-db";
 import { decryptServerEnvelope } from "../../server-envelope";
 import { checkActionConstraint } from "./constraints";
+
+/** §AB-0010 — item row type sourced through the scoped DAL, not a direct schema import. */
+type ItemRow = ScopedDb["tables"]["items"]["$inferSelect"];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,6 +132,10 @@ const lookupPermission = (
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
     const caps = legacyCapsForAction(action);
+    // §AB-0010 — permission lookup is agent + (item OR profile) scoped, not
+    // single-org scoped; escape hatch preserves the exact OR predicate.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const permissionRecords = scope.tables.permissions;
 
     // Item-level grants are always considered. Profile-level grants only when
     // the item belongs to a profile (NULL would broaden the predicate to every
@@ -151,7 +153,7 @@ const lookupPermission = (
         : null;
 
     const rows = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
         .from(permissionRecords)
         .where(
@@ -191,18 +193,12 @@ const lookupPermission = (
 const loadItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [item] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(itemRecords)
-        .where(
-          and(
-            eq(itemRecords.id, itemId),
-            eq(itemRecords.organizationId, ctx.identity.agentOrganizationId),
-            isNull(itemRecords.deletedAt),
-          ),
-        )
-        .limit(1),
+    // §AB-0010 — single-org-scoped read; findFirst bakes in the org filter.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const item = yield* tryAsync(() =>
+      scope.findFirst("items", {
+        where: and(eq(scope.tables.items.id, itemId), isNull(scope.tables.items.deletedAt)),
+      }),
     );
     return item ?? null;
   });
@@ -212,7 +208,7 @@ const loadItem = (itemId: string) =>
 // ---------------------------------------------------------------------------
 
 const decryptServerManaged = (
-  item: typeof itemRecords.$inferSelect,
+  item: ItemRow,
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
 ) =>
   Effect.gen(function* () {
@@ -457,6 +453,9 @@ export const resolveAccess = (
     // (by design) so a multi-table tx here does not deadlock.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        // §AB-0010 — tx-bound scope; mountReservations is not a tenant table
+        // (stays direct), the audit insert routes through the org scope.
+        const txScope = scopedDb(tx, ctx.identity.agentOrganizationId);
         await tx.insert(mountReservations).values({
           id: crypto.randomUUID(),
           mountId,
@@ -467,7 +466,7 @@ export const resolveAccess = (
           envVarName: envVarName ?? null,
           expiresAt,
         });
-        await tx.insert(auditLogs).values(
+        await tx.insert(txScope.tables.auditLogs).values(
           buildAuditRow({
             organizationId: ctx.identity.agentOrganizationId,
             userId: ctx.identity.agentUserId,
@@ -511,11 +510,14 @@ export const resolveProfileAccess = (
     const ctx = yield* AgentRequestContextTag;
     const { profileId, action, delivery, purpose } = input;
     const eventType = eventTypeForAction(action, delivery);
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
 
     // Verify profile belongs to the agent's org BEFORE returning anything.
     // Cross-org probing returns NOT_FOUND so existence isn't leaked.
+    // §AB-0010 — {id} projection → escape hatch.
+    const profileRecords = scope.tables.profiles;
     const [profileRow] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({ id: profileRecords.id })
         .from(profileRecords)
         .where(
@@ -537,18 +539,15 @@ export const resolveProfileAccess = (
     }
 
     // Load every active item in the profile.
+    // §AB-0010 — full-row single-org-scoped read → findMany (org filter baked in).
     const rows = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(itemRecords)
-        .where(
-          and(
-            eq(itemRecords.profileId, profileId),
-            eq(itemRecords.organizationId, ctx.identity.agentOrganizationId),
-            isNull(itemRecords.deletedAt),
-          ),
-        )
-        .limit(MAX_PROFILE_USE_ITEMS + 1),
+      scope.findMany("items", {
+        where: and(
+          eq(scope.tables.items.profileId, profileId),
+          isNull(scope.tables.items.deletedAt),
+        ),
+        limit: MAX_PROFILE_USE_ITEMS + 1,
+      }),
     );
 
     if (rows.length > MAX_PROFILE_USE_ITEMS) {
@@ -682,9 +681,14 @@ export const resolveProfileAccess = (
     if (pendingReservations.length > 0) {
       yield* tryAsync(() =>
         ctx.db.transaction(async (tx) => {
+          // §AB-0010 — tx-bound scope; mountReservations stays direct (not a
+          // tenant table), the batch audit insert routes through the org scope.
+          const txScope = scopedDb(tx, ctx.identity.agentOrganizationId);
           await tx.insert(mountReservations).values(pendingReservations);
           if (pendingAudits.length > 0) {
-            await tx.insert(auditLogs).values(pendingAudits.map((a) => buildAuditRow(a)));
+            await tx
+              .insert(txScope.tables.auditLogs)
+              .values(pendingAudits.map((a) => buildAuditRow(a)));
           }
         }),
       );

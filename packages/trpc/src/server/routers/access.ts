@@ -32,19 +32,18 @@ import {
   UseAccessSchema,
 } from "@abadge/core";
 import { and, eq, gt, isNull, or, sql } from "@abadge/db";
-import {
-  items,
-  mountReservations,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
+import { mountReservations } from "@abadge/db/schema";
 import { Cause, Effect, Schema } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import { decryptServerEnvelope } from "../server-envelope";
 import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
+
+/** §AB-0010 — item row type sourced through the scoped DAL, not a direct schema import. */
+type ItemRow = ScopedDb["tables"]["items"]["$inferSelect"];
 
 function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
   if (result === "expired") {
@@ -90,7 +89,7 @@ const failMissingServerManagedData = (
   });
 
 const decryptServerManagedItem = (
-  item: typeof items.$inferSelect,
+  item: ItemRow,
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
 ) =>
   Effect.gen(function* () {
@@ -119,15 +118,19 @@ const decryptServerManagedItem = (
 const checkPermission = (agentId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    // §AB-0010 — permission lookup is agent+item+capability scoped (not single-org
+    // scoped); escape hatch preserves the exact WHERE.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const permissions = scope.tables.permissions;
     const [permission] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(permissionRecords)
+        .from(permissions)
         .where(
           and(
-            eq(permissionRecords.agentId, agentId),
-            eq(permissionRecords.itemId, itemId),
-            eq(permissionRecords.capability, capability),
+            eq(permissions.agentId, agentId),
+            eq(permissions.itemId, itemId),
+            eq(permissions.capability, capability),
           ),
         )
         .limit(1),
@@ -147,18 +150,12 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
 const loadAccessibleItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const [item] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(items)
-        .where(
-          and(
-            eq(items.id, itemId),
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            isNull(items.deletedAt),
-          ),
-        )
-        .limit(1),
+    // §AB-0010 — single-org-scoped read; findFirst bakes in the org filter.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const item = yield* tryAsync(() =>
+      scope.findFirst("items", {
+        where: and(eq(scope.tables.items.id, itemId), isNull(scope.tables.items.deletedAt)),
+      }),
     );
 
     if (!item) {
@@ -584,10 +581,17 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
       );
     }
 
+    // §AB-0010 — escape hatch: the profile check uses a {id} projection and the
+    // main query is a JOIN; both go through scope.executor + scope.tables.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const profileRecords = scope.tables.profiles;
+    const items = scope.tables.items;
+    const permissionRecords = scope.tables.permissions;
+
     // Verify the profile belongs to the agent's org BEFORE returning anything.
     // Cross-org probing returns NOT_FOUND so existence isn't leaked.
     const [profile] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({ id: profileRecords.id })
         .from(profileRecords)
         .where(
@@ -614,7 +618,7 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     // mirrors checkPermission's tri-state collapsed into a SQL predicate.
     const now = new Date();
     const rows = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({
           item: items,
           permissionExpiresAt: permissionRecords.expiresAt,
@@ -980,18 +984,15 @@ export const redeemMount = (mountId: string) =>
     // Load the item (org-scoped, soft-delete-aware). If the item disappeared
     // between mint and redeem, treat it as integrity error — the reservation
     // FK should normally cascade, but a concurrent soft-delete is possible.
-    const [item] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(items)
-        .where(
-          and(
-            eq(items.id, reservation.itemId),
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            isNull(items.deletedAt),
-          ),
-        )
-        .limit(1),
+    // §AB-0010 — single-org-scoped read; findFirst bakes in the org filter.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const item = yield* tryAsync(() =>
+      scope.findFirst("items", {
+        where: and(
+          eq(scope.tables.items.id, reservation.itemId),
+          isNull(scope.tables.items.deletedAt),
+        ),
+      }),
     );
     if (!item) {
       yield* logAgentAudit({

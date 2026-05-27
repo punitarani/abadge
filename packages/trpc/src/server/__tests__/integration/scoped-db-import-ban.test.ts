@@ -11,20 +11,28 @@ const SERVER_DIR = path.resolve(import.meta.dir, "../..");
 const TENANT_TABLES = ["items", "profiles", "agents", "permissions", "auditLogs"] as const;
 
 // Files that still import a tenant table directly, pending migration onto scopedDb.
-// This is the migration RATCHET: it shrinks as routers move to the scoped layer and
-// must be emptied when AB-0010 is complete. A NEW direct importer fails the test.
+// §AB-0010 PR-D — every org-scoped-query router (items, agents, permissions,
+// access, access/pipeline, audit) now routes tenant-table access through scopedDb.
+// The entries below are the DOCUMENTED EXCEPTIONS that legitimately cannot use the
+// single-org scope. Any NEW direct tenant-table importer outside this set fails.
 const MIGRATION_ALLOWLIST = new Set<string>([
+  // Audit-write infrastructure: inserts auditLogs with the org from the validated
+  // entry; not a product data-access path. (mirrorAuditRow is log-only.)
   "audit.ts",
+  // Agent auth resolution: agent/session lookups, transitively org-scoped via agentId.
   "auth.ts",
-  "init.ts",
-  "routers/access.ts",
-  "routers/access/pipeline.ts",
-  "routers/audit.ts",
   "routers/auth.ts",
-  "routers/items.ts",
+  // requireAgentOwnership (agents-by-id+org) + member (non-tenant) queries.
+  "init.ts",
+  // Cross-org onboarding-status query (inArray over the user's orgIds) cannot be
+  // single-org-scoped; the remainder is Better Auth tables.
   "routers/organizations.ts",
+  // Role-check + by-PK model: loadProfile fetches by PK then requireOrgRole against
+  // the profile's OWN org (deliberately cross-org-membership), not the active org.
   "routers/profiles.ts",
+  // Row->wire mapping; references table TYPES ($inferSelect), not queries.
   "serialize.ts",
+  // Per-profile DEK envelope (AB-0030): operates by id within an org-resolved request.
   "server-envelope.ts",
 ]);
 

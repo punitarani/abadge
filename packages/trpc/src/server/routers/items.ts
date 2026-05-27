@@ -20,7 +20,6 @@ import {
   type ServerAadMeta,
 } from "@abadge/crypto/shared";
 import { and, desc, eq, isNull, lt, or, sql, type Transaction } from "@abadge/db";
-import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
@@ -37,6 +36,7 @@ import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../ini
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { scopedDb } from "../scoped-db";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 import { decryptServerEnvelope, encryptServerEnvelope } from "../server-envelope";
 
@@ -46,18 +46,11 @@ const loadOwnedItem = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [item] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(items)
-        .where(
-          and(
-            eq(items.id, itemId),
-            eq(items.organizationId, ctx.identity.organizationId),
-            isNull(items.deletedAt),
-          ),
-        )
-        .limit(1),
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const item = yield* tryAsync(() =>
+      scope.findFirst("items", {
+        where: and(eq(scope.tables.items.id, itemId), isNull(scope.tables.items.deletedAt)),
+      }),
     );
 
     if (!item) {
@@ -106,14 +99,18 @@ async function insertZeroKnowledgeItem(
     profileId: string | undefined;
   },
 ): Promise<void> {
-  const [profile] = await tx
-    .select({ id: profiles.id, keyVersion: profiles.keyVersion })
-    .from(profiles)
+  // §AB-0010 — tenant tables via the tx-bound org scope; the profile lookup is
+  // org-scoped (escape hatch for the column projection), the locked re-read is
+  // intentionally by-PK, and the insert injects organizationId automatically.
+  const scope = scopedDb(tx, opts.organizationId);
+  const [profile] = await scope.executor
+    .select({ id: scope.tables.profiles.id, keyVersion: scope.tables.profiles.keyVersion })
+    .from(scope.tables.profiles)
     .where(
       and(
-        eq(profiles.organizationId, opts.organizationId),
-        eq(profiles.storageMode, "zero_knowledge"),
-        ...(opts.profileId ? [eq(profiles.id, opts.profileId)] : []),
+        scope.orgScope("profiles"),
+        eq(scope.tables.profiles.storageMode, "zero_knowledge"),
+        ...(opts.profileId ? [eq(scope.tables.profiles.id, opts.profileId)] : []),
       ),
     )
     .limit(1);
@@ -135,10 +132,11 @@ async function insertZeroKnowledgeItem(
 
   // Re-read keyVersion UNDER the lock; defends against a rotate that committed
   // between the profile SELECT and the advisory-lock acquisition.
-  const [locked] = await tx
-    .select({ keyVersion: profiles.keyVersion })
-    .from(profiles)
-    .where(eq(profiles.id, profile.id));
+  // Intentionally by-PK (the org was already enforced by the lookup above).
+  const [locked] = await scope.executor
+    .select({ keyVersion: scope.tables.profiles.keyVersion })
+    .from(scope.tables.profiles)
+    .where(eq(scope.tables.profiles.id, profile.id));
 
   if (!locked) {
     throw new NotFoundError({
@@ -160,10 +158,9 @@ async function insertZeroKnowledgeItem(
     });
   }
 
-  await tx.insert(items).values({
+  await scope.insert("items", {
     id: opts.id,
     createdBy: opts.userId,
-    organizationId: opts.organizationId,
     profileId: profile.id,
     label: opts.label,
     storageMode: "zero_knowledge",
@@ -190,18 +187,19 @@ const resolveTargetProfile = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    // §AB-0010 — both profile lookups are org-scoped; escape hatch preserves the
+    // column projections and the default-profile ordering exactly.
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
 
     if (explicitProfileId !== undefined) {
       const [profile] = yield* tryAsync(() =>
-        ctx.db
-          .select({ id: profiles.id, storageMode: profiles.storageMode })
-          .from(profiles)
-          .where(
-            and(
-              eq(profiles.id, explicitProfileId),
-              eq(profiles.organizationId, ctx.identity.organizationId),
-            ),
-          )
+        scope.executor
+          .select({
+            id: scope.tables.profiles.id,
+            storageMode: scope.tables.profiles.storageMode,
+          })
+          .from(scope.tables.profiles)
+          .where(and(eq(scope.tables.profiles.id, explicitProfileId), scope.orgScope("profiles")))
           .limit(1),
       );
       if (!profile) {
@@ -232,18 +230,13 @@ const resolveTargetProfile = (
     }
 
     const [profile] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            eq(profiles.organizationId, ctx.identity.organizationId),
-            eq(profiles.storageMode, storageMode),
-          ),
-        )
+      scope.executor
+        .select({ id: scope.tables.profiles.id })
+        .from(scope.tables.profiles)
+        .where(and(scope.orgScope("profiles"), eq(scope.tables.profiles.storageMode, storageMode)))
         .orderBy(
-          sql`case when ${profiles.externalId} = 'default' then 0 else 1 end`,
-          profiles.createdAt,
+          sql`case when ${scope.tables.profiles.externalId} = 'default' then 0 else 1 end`,
+          scope.tables.profiles.createdAt,
         )
         .limit(1),
     );
@@ -265,6 +258,7 @@ const resolveTargetProfile = (
 const createItem = (input: CreateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const userId = ctx.identity.userId;
 
     // §W1S7-001 — ZK branch: client supplies `id` because it is bound into the
@@ -336,10 +330,9 @@ const createItem = (input: CreateItemInput) =>
       );
 
       yield* tryAsync(() =>
-        ctx.db.insert(items).values({
+        scope.insert("items", {
           id,
           createdBy: userId,
-          organizationId: ctx.identity.organizationId,
           profileId: targetProfileId,
           label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
@@ -372,40 +365,26 @@ const ItemListQuerySchema = Schema.Struct({
 const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const itemRecords = scope.tables.items;
     // §AB-0050 — keyset pagination over (createdAt DESC, id DESC): an immutable
     // tuple, so a concurrent insert never shifts an existing page.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: items.id,
-          label: items.label,
-          storageMode: items.storageMode,
-          cryptoVersion: items.cryptoVersion,
-          contentVersion: items.contentVersion,
-          // §C2 — required so the web dashboard's profile-grant
-          // blast-radius dialog can count items in a profile without
-          // fetching item-detail rows for every item.
-          profileId: items.profileId,
-          createdAt: items.createdAt,
-          updatedAt: items.updatedAt,
-        })
-        .from(items)
-        .where(
-          and(
-            eq(items.organizationId, ctx.identity.organizationId),
-            isNull(items.deletedAt),
-            cursor
-              ? or(
-                  lt(items.createdAt, cursor.createdAt),
-                  and(eq(items.createdAt, cursor.createdAt), lt(items.id, cursor.id)),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(items.createdAt), desc(items.id))
-        .limit(limit),
+      scope.findMany("items", {
+        where: and(
+          isNull(itemRecords.deletedAt),
+          cursor
+            ? or(
+                lt(itemRecords.createdAt, cursor.createdAt),
+                and(eq(itemRecords.createdAt, cursor.createdAt), lt(itemRecords.id, cursor.id)),
+              )
+            : undefined,
+        ),
+        orderBy: [desc(itemRecords.createdAt), desc(itemRecords.id)],
+        limit,
+      }),
     );
 
     return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
@@ -414,38 +393,44 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
 const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    // §AB-0010 — DISTINCT + INNER JOIN on permissions is not expressible via the
+    // findMany helper; escape hatch with the pre-built org scope keeps the org
+    // filter present by construction.
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const itemRecords = scope.tables.items;
+    const permissionRecords = scope.tables.permissions;
     // §AB-0050/AB-0010 — the agent's grant set is not structurally bounded, so
     // page it on the same (createdAt DESC, id DESC) keyset as the session list.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .selectDistinct({
-          id: items.id,
-          label: items.label,
-          storageMode: items.storageMode,
-          cryptoVersion: items.cryptoVersion,
-          contentVersion: items.contentVersion,
-          profileId: items.profileId,
-          createdAt: items.createdAt,
-          updatedAt: items.updatedAt,
+          id: itemRecords.id,
+          label: itemRecords.label,
+          storageMode: itemRecords.storageMode,
+          cryptoVersion: itemRecords.cryptoVersion,
+          contentVersion: itemRecords.contentVersion,
+          profileId: itemRecords.profileId,
+          createdAt: itemRecords.createdAt,
+          updatedAt: itemRecords.updatedAt,
         })
-        .from(items)
-        .innerJoin(permissions, eq(permissions.itemId, items.id))
+        .from(itemRecords)
+        .innerJoin(permissionRecords, eq(permissionRecords.itemId, itemRecords.id))
         .where(
           and(
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            eq(permissions.agentId, ctx.identity.agentId),
-            isNull(items.deletedAt),
+            scope.orgScope("items"),
+            eq(permissionRecords.agentId, ctx.identity.agentId),
+            isNull(itemRecords.deletedAt),
             cursor
               ? or(
-                  lt(items.createdAt, cursor.createdAt),
-                  and(eq(items.createdAt, cursor.createdAt), lt(items.id, cursor.id)),
+                  lt(itemRecords.createdAt, cursor.createdAt),
+                  and(eq(itemRecords.createdAt, cursor.createdAt), lt(itemRecords.id, cursor.id)),
                 )
               : undefined,
           ),
         )
-        .orderBy(desc(items.createdAt), desc(items.id))
+        .orderBy(desc(itemRecords.createdAt), desc(itemRecords.id))
         .limit(limit),
     );
 
@@ -473,11 +458,15 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const item = yield* loadOwnedItem(itemId, "item.update");
+    // §AB-0010 — the optimistic-concurrency UPDATE is by-PK + contentVersion CAS;
+    // org ownership was already enforced by loadOwnedItem, so this stays by-PK
+    // (escape hatch) rather than adding a redundant org filter.
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
 
     if (input.storageMode === "zero_knowledge") {
       const updated = yield* tryAsync(() =>
-        ctx.db
-          .update(items)
+        scope.executor
+          .update(scope.tables.items)
           .set({
             label: resolveStoredLabel(itemId, input.label),
             encryptedItemKey: input.encryptedItemKey,
@@ -485,8 +474,13 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
-          .returning({ id: items.id }),
+          .where(
+            and(
+              eq(scope.tables.items.id, itemId),
+              eq(scope.tables.items.contentVersion, input.contentVersion),
+            ),
+          )
+          .returning({ id: scope.tables.items.id }),
       );
 
       if (updated.length === 0) {
@@ -514,8 +508,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       );
 
       const updated = yield* tryAsync(() =>
-        ctx.db
-          .update(items)
+        scope.executor
+          .update(scope.tables.items)
           .set({
             label: resolveStoredLabel(itemId, input.payload.label),
             serverCiphertext: encrypted.ciphertext,
@@ -524,8 +518,13 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
-          .returning({ id: items.id }),
+          .where(
+            and(
+              eq(scope.tables.items.id, itemId),
+              eq(scope.tables.items.contentVersion, input.contentVersion),
+            ),
+          )
+          .returning({ id: scope.tables.items.id }),
       );
 
       if (updated.length === 0) {
@@ -621,10 +620,14 @@ const deleteItem = (itemId: string) =>
     const now = new Date();
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
-        await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
+        const txScope = scopedDb(tx, ctx.identity.organizationId);
+        // by-PK soft-delete (org already verified by loadOwnedItem).
+        await tx
+          .update(txScope.tables.items)
+          .set({ deletedAt: now })
+          .where(eq(txScope.tables.items.id, itemId));
 
-        await tx.insert(auditLogs).values({
-          organizationId: ctx.identity.organizationId,
+        await txScope.insert("auditLogs", {
           userId: ctx.identity.userId,
           itemId,
           surface: "api",
