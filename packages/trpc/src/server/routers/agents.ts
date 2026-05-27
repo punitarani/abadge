@@ -18,7 +18,7 @@ import {
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, count, desc, eq, isNull, lt, or } from "@abadge/db";
-import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
+import { agentEnrollmentTokens } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onAgentRevoked } from "../cascades";
@@ -38,6 +38,7 @@ import {
   scopedSessionProcedure,
 } from "../init";
 import { decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { scopedDb } from "../scoped-db";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -47,6 +48,7 @@ const AgentIdSchema = Schema.Struct({
 const createAgent = (input: CreateAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const locality = agentLocalityForKind(input.kind);
     // Default to public_key_session per v0 roadmap. legacy_api_key remains
     // available but must be requested explicitly.
@@ -86,10 +88,10 @@ const createAgent = (input: CreateAgentInput) =>
 
     // §AGC1a — Enforce per-org agent quota before insert.
     const [countRow] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({ count: count() })
-        .from(agentRecords)
-        .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
+        .from(scope.tables.agents)
+        .where(scope.orgScope("agents")),
     );
     if ((countRow?.count ?? 0) >= MAX_AGENTS_PER_ORG) {
       return yield* Effect.fail(
@@ -103,9 +105,8 @@ const createAgent = (input: CreateAgentInput) =>
     }
 
     yield* tryAsync(() =>
-      ctx.db.insert(agentRecords).values({
+      scope.insert("agents", {
         id,
-        organizationId: ctx.identity.organizationId,
         createdBy: ctx.identity.userId,
         kind: input.kind,
         locality,
@@ -175,26 +176,22 @@ const AgentListQuerySchema = Schema.Struct({
 const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const agentRecords = scope.tables.agents;
     // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-            cursor
-              ? or(
-                  lt(agentRecords.createdAt, cursor.createdAt),
-                  and(eq(agentRecords.createdAt, cursor.createdAt), lt(agentRecords.id, cursor.id)),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(agentRecords.createdAt), desc(agentRecords.id))
-        .limit(limit),
+      scope.findMany("agents", {
+        where: cursor
+          ? or(
+              lt(agentRecords.createdAt, cursor.createdAt),
+              and(eq(agentRecords.createdAt, cursor.createdAt), lt(agentRecords.id, cursor.id)),
+            )
+          : undefined,
+        orderBy: [desc(agentRecords.createdAt), desc(agentRecords.id)],
+        limit,
+      }),
     );
 
     return { agents: result.map(serializeAgent), nextCursor: nextCursorFrom(result, limit) };
@@ -203,17 +200,9 @@ const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
 const getAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.id, agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-          ),
-        )
-        .limit(1),
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const agent = yield* tryAsync(() =>
+      scope.findFirst("agents", { where: eq(scope.tables.agents.id, agentId) }),
     );
 
     if (!agent) {
@@ -231,8 +220,15 @@ const getAgent = (agentId: string) =>
 
 const getCurrentAgent = Effect.gen(function* () {
   const ctx = yield* AgentRequestContextTag;
+  // §AB-0010 — agent context: deliberately fetch by id with no org narrowing
+  // (the session already binds the agent); escape hatch preserves that exactly.
+  const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
   const [agent] = yield* tryAsync(() =>
-    ctx.db.select().from(agentRecords).where(eq(agentRecords.id, ctx.identity.agentId)).limit(1),
+    scope.executor
+      .select()
+      .from(scope.tables.agents)
+      .where(eq(scope.tables.agents.id, ctx.identity.agentId))
+      .limit(1),
   );
 
   if (!agent) {
@@ -251,18 +247,11 @@ const getCurrentAgent = Effect.gen(function* () {
 const rotateAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* tryAsync(() =>
-      ctx.db
-        .select()
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.id, agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-            isNull(agentRecords.revokedAt),
-          ),
-        )
-        .limit(1),
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const agent = yield* tryAsync(() =>
+      scope.findFirst("agents", {
+        where: and(eq(scope.tables.agents.id, agentId), isNull(scope.tables.agents.revokedAt)),
+      }),
     );
 
     if (!agent) {
@@ -346,13 +335,13 @@ const rotateAgent = (agentId: string) =>
     const { key, hash, prefix: keyPrefix } = yield* tryAsync(() => generateApiKey(prefix));
 
     yield* tryAsync(() =>
-      ctx.db
-        .update(agentRecords)
+      scope.executor
+        .update(scope.tables.agents)
         .set({
           secretHash: hash,
           secretPrefix: keyPrefix,
         })
-        .where(eq(agentRecords.id, agentId)),
+        .where(eq(scope.tables.agents.id, agentId)),
     );
 
     yield* logSessionAudit({
@@ -373,17 +362,9 @@ const rotateAgent = (agentId: string) =>
 const revokeAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
-    const [agent] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: agentRecords.id })
-        .from(agentRecords)
-        .where(
-          and(
-            eq(agentRecords.id, agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
-          ),
-        )
-        .limit(1),
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const agent = yield* tryAsync(() =>
+      scope.findFirst("agents", { where: eq(scope.tables.agents.id, agentId) }),
     );
 
     if (!agent) {
@@ -454,13 +435,13 @@ const revokeAgent = (agentId: string) =>
     const now = new Date();
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const txScope = scopedDb(tx, ctx.identity.organizationId);
         await tx
-          .update(agentRecords)
+          .update(txScope.tables.agents)
           .set({ revokedAt: now, enabled: false })
-          .where(eq(agentRecords.id, agentId));
+          .where(eq(txScope.tables.agents.id, agentId));
 
-        await tx.insert(auditLogs).values({
-          organizationId: ctx.identity.organizationId,
+        await txScope.insert("auditLogs", {
           userId: ctx.identity.userId,
           agentId,
           surface: "api",

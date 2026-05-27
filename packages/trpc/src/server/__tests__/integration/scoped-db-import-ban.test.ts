@@ -20,7 +20,6 @@ const MIGRATION_ALLOWLIST = new Set<string>([
   "init.ts",
   "routers/access.ts",
   "routers/access/pipeline.ts",
-  "routers/agents.ts",
   "routers/audit.ts",
   "routers/auth.ts",
   "routers/items.ts",
