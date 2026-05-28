@@ -3,7 +3,7 @@ title: "Authentication"
 description: "Operator sessions, agent sessions, and the keypair-based exchange."
 ---
 
-The API authenticates two kinds of callers: human operators (via Better Auth) and agents (via short-lived sessions or legacy API keys).
+The API authenticates two kinds of callers: human operators (via Better Auth session, or a personal API key for the management surface) and agents (via short-lived Ed25519 keypair sessions).
 
 ## Human operators
 
@@ -30,12 +30,21 @@ POST /api/auth/device/deny
 
 `/api/auth/device/approve` and `/api/auth/device/deny` require an authenticated browser session.
 
-Session-backed tRPC procedures accept either:
+Session-backed tRPC procedures accept any of:
 
 - Better Auth browser **cookies** (set by `/api/auth/sign-in/*`)
 - Better Auth **bearer tokens** in `Authorization: Bearer ...`
+- A **personal API key** (`abu_...`) in `Authorization: Bearer ...`
 
 The CLI's device-login bearer token is held in daemon memory only — never written to disk.
+
+### Personal API keys
+
+A personal API key (`abu_...`) lets a user script the management surface without a browser. Each key is bound to a `(user, org)` pair and is created, listed, and revoked from the dashboard org Settings page.
+
+It resolves to a **session identity** — the same `sessionProcedure` surface the dashboard uses (organizations, profiles, items metadata, agents, permissions, audit, settings). It is **structurally barred from the agent-gated `access.*` surface**: it can never reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key also cannot create or revoke other API keys — that needs a real browser session.
+
+The secret is shown exactly once at creation; the server stores a SHA-256 hash plus an 8-character lookup prefix. Keys support an optional expiry and can be revoked. See the [API keys reference](/api/procedures/api-keys).
 
 ### Device authorization flow
 
@@ -59,11 +68,7 @@ The CLI's device-login bearer token is held in daemon memory only — never writ
 
 ## Agents
 
-Agent-facing procedures resolve `Authorization: Bearer <token>` in this order:
-
-1. **`abs_...`** — short-lived agent session lookup in `agent_sessions` (hash-based)
-2. **`abl_...` / `abg_...`** — legacy API-key verification by stored prefix and hash
-3. Legacy Better Auth API-key fallback for migrated principals
+Agent-facing (`access.*`) procedures require a short-lived `abs_...` agent session token, looked up in `agent_sessions` by hash. It is the only agent auth method, and the only credential that reaches the `access.*` surface.
 
 `abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes.
 
@@ -99,16 +104,18 @@ curl https://api.abadge.io/trpc/items.list \
   -H "Authorization: Bearer <better-auth-bearer-token>"
 ```
 
+```bash Personal API key
+curl https://api.abadge.io/trpc/items.list \
+  -H "Authorization: Bearer abu_..."
+```
+
 ```bash Agent session
 curl https://api.abadge.io/trpc/access.reveal \
   -H "Authorization: Bearer abs_..."
 ```
-
-```bash Legacy API key
-curl https://api.abadge.io/trpc/access.reveal \
-  -H "Authorization: Bearer abl_..."
-```
 </CodeGroup>
+
+The `abu_...` key works on the management surface (`items.list`, `agents.*`, etc.) but is rejected by `access.*` — only an `abs_...` agent session can read secret values.
 
 ## Audit events for auth
 

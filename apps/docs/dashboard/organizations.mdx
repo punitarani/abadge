@@ -62,6 +62,30 @@ The members table on **Settings → Members** lets owners and admins:
 - Remove a member (cascades agent revocation)
 - Revoke a pending invitation
 
+## Personal API keys
+
+**Settings → API keys** lets you mint personal API keys to script the management surface without a browser. Each key is bound to your user and the active org.
+
+<Steps>
+  <Step title="Click New API key">
+    Give it a name and an optional expiry.
+  </Step>
+  <Step title="Copy the secret">
+    The success dialog shows the full `abu_...` secret exactly once. The server stores only its SHA-256 hash plus an 8-character prefix.
+  </Step>
+  <Step title="Use it as a bearer token">
+    Send `Authorization: Bearer abu_...`, or pass it as the `sessionToken` to `AbadgeUserClient`.
+  </Step>
+</Steps>
+
+The keys table lists each key's name, prefix, expiry, last-used time, and enabled/revoked state. **Revoke** disables a key immediately.
+
+<Warning>
+  A personal API key authenticates the **management surface only** — organizations, profiles, items metadata, agents, permissions, audit, settings. It resolves to a session identity, **not** an agent, so it can never reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key also cannot create or revoke other API keys — use a browser session for that.
+</Warning>
+
+See the [API keys reference](/api/procedures/api-keys) for the procedures.
+
 ## Removing the organization
 
 Deleting an organization cascades to its agents, permissions, profiles, and items. Audit entries persist (they have no foreign-key constraints). This is irreversible.
@@ -70,4 +94,5 @@ Deleting an organization cascades to its agents, permissions, profiles, and item
 
 - [Concepts: organizations](/concepts/organizations)
 - [API: organizations procedures](/api/procedures/organizations)
+- [API: API keys procedures](/api/procedures/api-keys)
 - [CLI: org commands](/cli/org)

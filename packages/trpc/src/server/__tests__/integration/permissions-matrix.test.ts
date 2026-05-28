@@ -721,7 +721,7 @@ describe("permissions-matrix", () => {
     const aliceCaller = createOperatorCaller(db, auth, alice.headers, org.orgId);
     const aliceAgent = await aliceCaller.agents.create({
       name: "alice-matrix-agent",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
       kind: "local_cli",
     });
     const item = await seedServerItem(db, { userId: alice.userId, orgId: org.orgId });

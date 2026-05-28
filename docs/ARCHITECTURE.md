@@ -124,9 +124,9 @@ Each tRPC request constructs context once:
 
 Procedure middleware then adds identity:
 
-* `sessionProcedure` resolves browser sessions or Better Auth bearer sessions
+* `sessionProcedure` resolves browser sessions, Better Auth bearer sessions, or a personal API key (`abu_`) — all session identities
 * `scopedSessionProcedure` is the route-tier alias used for session-only management procedures
-* `agentProcedure` resolves an agent token, including legacy fallback
+* `agentProcedure` resolves an `abs_` agent session token
 
 ## Contract model
 
@@ -171,13 +171,21 @@ Soft-deleted via `deletedAt`.
 
 ### Agents
 
-Service accounts registered per organization. Auth methods:
+Service accounts registered per organization. Agents authenticate with one method:
 
-* `public_key_session` (preferred) — Ed25519 keypair with short-lived `abs_...` sessions (15-min
+* `public_key_session` — Ed25519 keypair with short-lived `abs_...` sessions (15-min
   TTL, background refresh at T-2 minutes)
-* `legacy_api_key` — static `abl_`/`abg_` key, SHA-256 hash stored
 
 Revoking an agent invalidates all active sessions immediately.
+
+### Personal API keys
+
+Personal API keys (prefix `abu_`) authenticate the management surface as the issuing user, scoped to
+one org (table `user_api_keys`). They resolve to a **session identity**, not an agent — they reach
+only the `sessionProcedure` surface (organizations, profiles, items metadata, agents, permissions,
+audit, settings) and can never reach the agent-gated `access.*` surface. The secret is shown once and
+stored as a SHA-256 hash plus an 8-character prefix; keys support an optional expiry and can be
+revoked.
 
 Agents are org-scoped, not user-scoped: deleting the user who created an agent sets `createdBy` to
 null (orphaning it) rather than deleting the agent, so org workloads survive operator turnover

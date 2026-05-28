@@ -161,13 +161,14 @@ ABCDE-FGHIJ-KLMNO-PQRST-UVWXY-Z2345-67ABC-DEFGH-IJKLM-NOPQR-STUVW
 
 The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as the KEK wrap. Stored as `recovery_wrapped_root_key` on the vault record.
 
-## API Key Format
+## Personal API Key Format
 
-- Prefix: `abg_` (for remote agents) or `abl_` (for local agents)
+- Prefix: `abu_` (personal API key, bound to a user + org)
 - Random portion: 32 bytes, base64url-encoded
 - Full key shown once on creation
 - Server stores: SHA-256 hash of full key + first 8 chars as prefix for lookup
 - Authentication: constant-time comparison of hashes
+- Resolves to a session identity (management surface only); never reaches `access.*`
 
 ## Password Change Flow
 

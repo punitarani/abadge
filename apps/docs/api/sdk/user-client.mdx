@@ -21,7 +21,7 @@ const client = new AbadgeUserClient({
   API endpoint URL, no trailing slash.
 </ParamField>
 <ParamField path="sessionToken" type="string" required>
-  Better Auth bearer token. The same token the CLI receives from the device-code flow and the dashboard holds in its session cookie.
+  Better Auth bearer token (the same token the CLI receives from the device-code flow and the dashboard holds in its session cookie), or a personal API key (`abu_...`). A personal API key authenticates the management surface only and can never reach `access.*`.
 </ParamField>
 <ParamField path="orgId" type="string">
   Active organization ID. Sent as `X-Abadge-Org-Id` on every request. Required when the signed-in user belongs to multiple organizations.
@@ -106,14 +106,13 @@ client.ownerReveal(itemId);
 client.agents.create({
   name: string;
   kind: "local_cli" | "local_mcp" | "remote";
-  authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
+  authMethod?: "public_key_session";     // only value; default
   publicKey?: string;
   issueBootstrapToken?: boolean;
   metadata?: Record<string, unknown>;   // put description, owner tags, etc. here
 });
 
 client.agents.list();
-client.agents.update(agentId);          // rotate legacy API key
 client.agents.delete(agentId);          // revoke agent
 
 // Issue a fresh bootstrap token for an existing agent.
@@ -132,6 +131,16 @@ client.permissions.create({
 
 client.permissions.list({ agentId?, itemId? });
 client.permissions.delete(permissionId);
+```
+
+## API keys
+
+Manage personal API keys (`abu_`) for the active org. The full secret is returned exactly once from `create`. A personal API key authenticates the management surface only — it can never reach `access.*` — and cannot create or revoke other API keys (so call these from a browser-backed session).
+
+```ts
+client.apiKeys.create({ name: string; expiresAt?: string });  // returns { apiKey, key }
+client.apiKeys.list();                                        // secrets never returned
+client.apiKeys.revoke(keyId);
 ```
 
 ## Audit

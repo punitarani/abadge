@@ -108,10 +108,8 @@ Automated caller scoped to an org. Kinds: local_cli, local_mcp, remote.
 | `description` | text | nullable | Optional description |
 | `kind` | text | NOT NULL | `local_cli`, `local_mcp`, `remote` |
 | `locality` | text | NOT NULL | `local` or `remote` (derived from kind) |
-| `authMethod` | text | NOT NULL | `public_key_session` or `legacy_api_key` |
+| `authMethod` | text | NOT NULL | `public_key_session` (only value) |
 | `publicKey` | text | nullable | Ed25519 public key (session auth) |
-| `secretHash` | text | nullable | SHA-256 hash of API key (legacy auth) |
-| `secretPrefix` | text | nullable | First chars for fast lookup |
 | `enabled` | boolean | NOT NULL, default `true` | Whether agent can authenticate |
 | `revokedAt` | timestamptz | nullable | Revocation timestamp |
 | `lastUsedAt` | timestamptz | nullable | Last successful auth |
@@ -119,6 +117,29 @@ Automated caller scoped to an org. Kinds: local_cli, local_mcp, remote.
 | `createdAt` | timestamptz | NOT NULL | Creation time |
 
 **Locality mapping**: `local_cli`, `local_mcp` → `local`. `remote` → `remote`.
+
+---
+
+## User API Key
+
+Personal API key (prefix `abu_`) bound to a `(user, org)` pair. Authenticates the management surface as the issuing user; resolves to a session identity, never an agent. Created, listed, and revoked from the dashboard org Settings page. No foreign keys to org-scoped tenant tables — RLS-exempt like `agents`.
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | text | PK | Key ID |
+| `userId` | text | FK → user, NOT NULL, ON DELETE cascade | Owning user |
+| `organizationId` | text | FK → organization, NOT NULL, ON DELETE cascade | Scoped org |
+| `name` | text | NOT NULL | Human-readable label |
+| `secretHash` | text | NOT NULL | SHA-256 hash of the `abu_...` secret |
+| `secretPrefix` | text | NOT NULL | First 8 chars for fast lookup |
+| `enabled` | boolean | NOT NULL, default `true` | Whether the key can authenticate |
+| `revokedAt` | timestamptz | nullable | Revocation timestamp |
+| `expiresAt` | timestamptz | nullable | Optional expiration |
+| `lastUsedAt` | timestamptz | nullable | Last successful auth |
+| `metadata` | jsonb | NOT NULL, default `{}` | Arbitrary metadata |
+| `createdAt` | timestamptz | NOT NULL | Creation time |
+
+**Security**: the secret is shown exactly once at creation. The server stores only the hash + prefix. The key reaches only the `sessionProcedure` management surface — it can never reach the agent-gated `access.*` surface and cannot create or revoke other API keys.
 
 ---
 
@@ -170,7 +191,8 @@ Append-only, no FK constraints. Survives entity deletion.
 | Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
 | Item | `item.create`, `item.export`, `item.update`, `item.delete`, `item.delete_cascade` |
 | Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
-| Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.rotate`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
+| Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
+| API key | `user_api_key.create`, `user_api_key.revoke` |
 | Permission | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
 | Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
 
@@ -263,11 +285,10 @@ One-time bootstrap token for agent enrollment (public key registration).
 
 | Token | Prefix | TTL | Storage | Purpose |
 |---|---|---|---|---|
-| Agent session | `abs_` | 15 minutes | SHA-256 hash | Short-lived access token |
+| Agent session | `abs_` | 15 minutes | SHA-256 hash | Short-lived agent access token (only credential that reaches `access.*`) |
+| Personal API key | `abu_` | Optional expiry | SHA-256 hash + prefix | User-owned management-surface key (session identity, never `access.*`) |
 | Bootstrap token | `abe_` | 10 minutes | SHA-256 hash | One-time agent enrollment |
 | Challenge | `abc_` | 1 minute | SHA-256 hash | Signature verification |
-| Local API key | `abl_` | None | SHA-256 hash + prefix | Legacy local agent auth |
-| Remote API key | `abg_` | None | SHA-256 hash + prefix | Legacy remote agent auth |
 
 ---
 
@@ -289,10 +310,7 @@ One-time bootstrap token for agent enrollment (public key registration).
 [Created] → agent.create
   │
   ├── [Enrolled] → agent.enroll (public key set)
-  │     └── [Active] → session exchanged
-  │
-  ├── [Active] → API key issued (legacy)
-  │     └── [KeyRotated] → agent.rotate → [Active]
+  │     └── [Active] → session exchanged (abs_ token)
   │
   └── [Revoked] → agent.revoke (revokedAt set, enabled = false)
 ```

@@ -130,6 +130,7 @@
               "api/procedures/profiles",
               "api/procedures/items",
               "api/procedures/agents",
+              "api/procedures/api-keys",
               "api/procedures/permissions",
               "api/procedures/access",
               "api/procedures/audit"

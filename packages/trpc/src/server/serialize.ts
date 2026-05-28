@@ -165,7 +165,6 @@ export function serializeAgent(row: AgentRow): Agent {
     name: row.name,
     description: row.description ?? null,
     publicKeyConfigured: row.publicKey !== null,
-    keyPrefix: row.secretPrefix,
     enabled: row.enabled,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,

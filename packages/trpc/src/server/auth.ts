@@ -3,10 +3,17 @@ import {
   BadRequestError,
   ForbiddenError,
   UnauthorizedError,
+  USER_API_KEY_PREFIX,
 } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNull, or } from "@abadge/db";
-import { agents as agentRecords, agentSessions, auditLogs, member } from "@abadge/db/schema";
+import {
+  agents as agentRecords,
+  agentSessions,
+  auditLogs,
+  member,
+  userApiKeys,
+} from "@abadge/db/schema";
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
@@ -35,11 +42,6 @@ interface AuthContextWithSessionLookup {
     findSession: (token: string) => Promise<AuthSessionResult | null>;
   };
 }
-
-type ActiveAgentCandidate = Pick<
-  typeof agentRecords.$inferSelect,
-  "id" | "organizationId" | "createdBy" | "locality" | "authMethod" | "secretHash"
->;
 
 type ActiveAgentSession = Pick<
   typeof agentSessions.$inferSelect,
@@ -197,55 +199,6 @@ function auditUnrecognizedBearer(
     }),
   );
 }
-
-const verifyLocalAgentIdentity = (
-  ctx: BaseRequestContext,
-  token: string,
-): Effect.Effect<AgentIdentity | null, Error> =>
-  Effect.gen(function* () {
-    const prefixes = getCandidatePrefixes(token);
-    const activeCandidates = (yield* tryAsync(() =>
-      ctx.db
-        .select({
-          id: agentRecords.id,
-          organizationId: agentRecords.organizationId,
-          createdBy: agentRecords.createdBy,
-          locality: agentRecords.locality,
-          authMethod: agentRecords.authMethod,
-          secretHash: agentRecords.secretHash,
-        })
-        .from(agentRecords)
-        .where(
-          and(
-            or(...prefixes.map((prefix) => eq(agentRecords.secretPrefix, prefix))),
-            eq(agentRecords.enabled, true),
-            isNull(agentRecords.revokedAt),
-          ),
-        )
-        .limit(10),
-    )) as Array<ActiveAgentCandidate>;
-
-    for (const agent of activeCandidates) {
-      if (agent.authMethod !== "legacy_api_key") {
-        continue;
-      }
-
-      const secretHash = agent.secretHash;
-      if (!secretHash) {
-        continue;
-      }
-
-      const valid = yield* tryAsync(() => verifyApiKey(token, secretHash));
-      if (!valid) {
-        continue;
-      }
-
-      touchAgent(ctx, agent.id);
-      return toAgentIdentity(agent);
-    }
-
-    return null;
-  });
 
 const verifyAgentSessionIdentity = (
   ctx: BaseRequestContext,
@@ -452,9 +405,114 @@ export const resolveSessionIdentity = (
     return yield* Effect.fail(unauthorized("Unauthorized"));
   });
 
+function touchUserApiKey(ctx: BaseRequestContext, keyId: string): void {
+  void ctx.db
+    .update(userApiKeys)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(userApiKeys.id, keyId))
+    .execute()
+    .catch(() => {});
+}
+
+/**
+ * Audit a rejected-but-recognized personal API key (the hash matched a stored
+ * key, but it was expired). A wrong-secret miss returns null and falls through
+ * like any unrecognized bearer; only a real-key rejection writes a row here, to
+ * mirror `auditAgentSessionReject`'s "expired" handling.
+ */
+function auditUserApiKeyReject(
+  ctx: BaseRequestContext,
+  input: { userId: string; organizationId: string; result: "expired"; reason: string },
+): Effect.Effect<void, never> {
+  return tryAsync(() =>
+    ctx.db
+      .insert(auditLogs)
+      .values({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        agentId: null,
+        eventType: "user_api_key.revoke",
+        result: input.result,
+        meta: { reason: input.reason },
+        ipAddress: ctx.ipAddress ?? null,
+      })
+      .then(() => undefined),
+  ).pipe(
+    Effect.catchAll((err) => {
+      console.warn(
+        `audit_write_failed (user_api_key_reject) err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      return Effect.void;
+    }),
+  );
+}
+
+/**
+ * Resolve a personal user API key (`abu_`) to a SESSION identity. The key is
+ * bound to one (user, org); that org is authoritative (we do NOT consult
+ * `X-Abadge-Org-Id` or `resolveUserOrgId`). Returns null on no match so the
+ * caller can fall through to the Better Auth bearer-session lookup.
+ *
+ * Because this resolves to `kind:"session"`, an `abu_` key can never enter the
+ * agent-only `access.*` surface (that requires `resolveAgentIdentity`).
+ */
+const resolveUserApiKeyIdentity = (
+  ctx: BaseRequestContext,
+  token: string,
+): Effect.Effect<SessionIdentity | null, Error | UnauthorizedError> =>
+  Effect.gen(function* () {
+    const prefixes = getCandidatePrefixes(token);
+    const candidates = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: userApiKeys.id,
+          userId: userApiKeys.userId,
+          organizationId: userApiKeys.organizationId,
+          secretHash: userApiKeys.secretHash,
+          expiresAt: userApiKeys.expiresAt,
+        })
+        .from(userApiKeys)
+        .where(
+          and(
+            or(...prefixes.map((prefix) => eq(userApiKeys.secretPrefix, prefix))),
+            eq(userApiKeys.enabled, true),
+            isNull(userApiKeys.revokedAt),
+          ),
+        )
+        .limit(10),
+    );
+
+    for (const key of candidates) {
+      const valid = yield* tryAsync(() => verifyApiKey(token, key.secretHash));
+      if (!valid) {
+        continue;
+      }
+
+      if (key.expiresAt && key.expiresAt <= new Date()) {
+        yield* auditUserApiKeyReject(ctx, {
+          userId: key.userId,
+          organizationId: key.organizationId,
+          result: "expired",
+          reason: "user_api_key_expired",
+        });
+        return yield* Effect.fail(unauthorized("Expired user API key"));
+      }
+
+      touchUserApiKey(ctx, key.id);
+      return {
+        kind: "session" as const,
+        userId: key.userId,
+        organizationId: key.organizationId,
+        authMethod: "user_api_key",
+      };
+    }
+
+    return null;
+  });
+
 const resolveBearerSessionIdentity = (
   ctx: BaseRequestContext,
-): Effect.Effect<SessionIdentity | null, Error> =>
+): Effect.Effect<SessionIdentity | null, Error | UnauthorizedError> =>
   Effect.gen(function* () {
     const authHeader = ctx.req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -462,6 +520,13 @@ const resolveBearerSessionIdentity = (
     }
 
     const token = authHeader.slice(7);
+
+    // Personal user API key (`abu_`) — resolves to a session identity bound to
+    // the key's own org. Checked before the Better Auth session lookup.
+    if (token.startsWith(USER_API_KEY_PREFIX)) {
+      return yield* resolveUserApiKeyIdentity(ctx, token);
+    }
+
     const authContext = (yield* tryAsync(() => ctx.auth.$context)) as AuthContextWithSessionLookup;
     const sessionLookup = (yield* tryAsync(() =>
       authContext.internalAdapter.findSession(token),
@@ -491,14 +556,10 @@ export const resolveAgentIdentity = (
       return sessionIdentity;
     }
 
-    const agentIdentity = yield* verifyLocalAgentIdentity(ctx, token);
-    if (agentIdentity) {
-      return agentIdentity;
-    }
-
-    // Audit the unrecognized-bearer rejection. Covers both abs_-prefixed session
-    // tokens that matched no row and legacy-shaped tokens that matched no agent.
-    // This satisfies the invariant "every denied attempt is logged" (W2T12-001).
+    // Keypair-backed `abs_` agent sessions are the only agent credential. Anything
+    // else (a personal `abu_` key, a browser session token, garbage) is not an
+    // agent and must not reach the agent surface. Audit the unrecognized-bearer
+    // rejection — "every denied attempt is logged" (W2T12-001).
     yield* auditUnrecognizedBearer(ctx, token);
     return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

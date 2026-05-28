@@ -207,9 +207,10 @@ Partial payloads (missing some items) return `ROTATE_KEY_INCOMPLETE` with the mi
 | `content_version` | items | Optimistic concurrency. Incremented on every update. Server rejects stale writes. |
 | `key_version` | profiles | Incremented on root-key rotation. Lets clients detect stale local caches. |
 
-## API key format
+## Personal API key format
 
-- Prefix: `abg_` (remote agents) or `abl_` (local agents)
+- Prefix: `abu_` (personal API key, bound to a user + org)
 - Random portion: 32 bytes, base64url-encoded
 - Server stores: SHA-256 hash + first 8 chars as lookup prefix
 - Authentication: constant-time hash comparison
+- Resolves to a session identity (management surface only); never reaches `access.*`

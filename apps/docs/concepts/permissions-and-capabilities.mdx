@@ -93,7 +93,7 @@ Every access request follows this exact order:
 
 <Steps>
   <Step title="Authenticate">
-    Resolve the bearer token: `abs_...` session or legacy API key.
+    Resolve the `abs_...` agent session token. `access.*` accepts no other credential.
   </Step>
   <Step title="Resolve item">
     The item must belong to the same organization as the agent.

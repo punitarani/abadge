@@ -41,7 +41,7 @@ describe("agents.create hardening (§AGC1)", () => {
       name: `bulk-agent-${i}`,
       kind: "remote" as const,
       locality: "remote" as const,
-      authMethod: "legacy_api_key" as const,
+      authMethod: "public_key_session" as const,
     }));
     await db.insert(agents).values(rows);
 
@@ -50,7 +50,7 @@ describe("agents.create hardening (§AGC1)", () => {
       await caller.agents.create({
         name: "one-too-many",
         kind: "remote",
-        authMethod: "legacy_api_key",
+        issueBootstrapToken: true,
       });
       expect.unreachable("should have thrown CONFLICT");
     } catch (error: unknown) {
@@ -76,7 +76,7 @@ describe("agents.create hardening (§AGC1)", () => {
       await caller.agents.create({
         name: "size-bot",
         kind: "remote",
-        authMethod: "legacy_api_key",
+        issueBootstrapToken: true,
         metadata: { big: "x".repeat(20_000) },
       });
       expect.unreachable("should have thrown on oversized metadata");
@@ -107,7 +107,7 @@ describe("agents.create hardening (§AGC1)", () => {
       await caller.agents.create({
         name: "deep-bot",
         kind: "remote",
-        authMethod: "legacy_api_key",
+        issueBootstrapToken: true,
         metadata: deepMeta,
       });
       expect.unreachable("should have thrown on too-deep metadata");
@@ -155,7 +155,7 @@ describe("agents.create hardening (§AGC1)", () => {
       await caller.agents.create({
         name: "   ",
         kind: "remote",
-        authMethod: "legacy_api_key",
+        issueBootstrapToken: true,
       });
       expect.unreachable("should have thrown on whitespace name");
     } catch (error: unknown) {
@@ -178,7 +178,7 @@ describe("agents.create hardening (§AGC1)", () => {
         // "bot" with a U+200B zero-width space inserted between b and o
         name: "b​ot",
         kind: "remote",
-        authMethod: "legacy_api_key",
+        issueBootstrapToken: true,
       });
       expect.unreachable("should have thrown on zero-width char in name");
     } catch (error: unknown) {

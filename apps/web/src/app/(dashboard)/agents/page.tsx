@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, AgentAuthMethod, AgentKind } from "@abadge/core";
+import type { Agent, AgentKind } from "@abadge/core";
 import { MagnifyingGlass, Plus, X } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
@@ -21,7 +21,6 @@ import {
 import { listAllAgents } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import {
-  type AgentAuthFilter,
   type AgentKindFilter,
   type AgentStatusFilter,
   agentsFilterParsers,
@@ -33,11 +32,6 @@ const KIND_LABELS: Record<AgentKind, string> = {
   local_cli: "CLI",
   local_mcp: "MCP",
   remote: "Remote",
-};
-
-const AUTH_LABELS: Record<AgentAuthMethod, string> = {
-  public_key_session: "Keypair",
-  legacy_api_key: "Legacy",
 };
 
 function KindBadge({ kind }: { kind: AgentKind }): React.ReactElement {
@@ -70,13 +64,7 @@ export default function AgentsListPage(): React.ReactElement {
     clearOnDefault: true,
     limitUrlUpdates: debounce(250),
   });
-  const {
-    q: search,
-    kind: kindFilter,
-    auth: authFilter,
-    status: statusFilter,
-    create: createOpen,
-  } = filters;
+  const { q: search, kind: kindFilter, status: statusFilter, create: createOpen } = filters;
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
@@ -98,10 +86,6 @@ export default function AgentsListPage(): React.ReactElement {
       result = result.filter((agent: Agent) => agent.kind === kindFilter);
     }
 
-    if (authFilter !== "all") {
-      result = result.filter((agent: Agent) => agent.authMethod === authFilter);
-    }
-
     if (statusFilter !== "all") {
       if (statusFilter === "active") {
         result = result.filter((agent: Agent) => !agent.revokedAt);
@@ -111,13 +95,12 @@ export default function AgentsListPage(): React.ReactElement {
     }
 
     return result;
-  }, [agents, search, kindFilter, authFilter, statusFilter]);
+  }, [agents, search, kindFilter, statusFilter]);
 
-  const hasActiveFilters =
-    search !== "" || kindFilter !== "all" || authFilter !== "all" || statusFilter !== "all";
+  const hasActiveFilters = search !== "" || kindFilter !== "all" || statusFilter !== "all";
 
   function clearFilters(): void {
-    void setFilters({ q: "", kind: "all", auth: "all", status: "all" });
+    void setFilters({ q: "", kind: "all", status: "all" });
   }
 
   return (
@@ -170,16 +153,6 @@ export default function AgentsListPage(): React.ReactElement {
         </select>
 
         <select
-          value={authFilter}
-          onChange={(e) => void setFilters({ auth: e.target.value as AgentAuthFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="all">All auth</option>
-          <option value="public_key_session">Keypair</option>
-          <option value="legacy_api_key">Legacy</option>
-        </select>
-
-        <select
           value={statusFilter}
           onChange={(e) => void setFilters({ status: e.target.value as AgentStatusFilter })}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -195,11 +168,9 @@ export default function AgentsListPage(): React.ReactElement {
         <FilterChips
           search={search}
           kindFilter={kindFilter}
-          authFilter={authFilter}
           statusFilter={statusFilter}
           onClearSearch={() => void setFilters({ q: "" })}
           onClearKind={() => void setFilters({ kind: "all" })}
-          onClearAuth={() => void setFilters({ auth: "all" })}
           onClearStatus={() => void setFilters({ status: "all" })}
           onClearAll={clearFilters}
         />
@@ -222,21 +193,17 @@ export default function AgentsListPage(): React.ReactElement {
 function FilterChips({
   search,
   kindFilter,
-  authFilter,
   statusFilter,
   onClearSearch,
   onClearKind,
-  onClearAuth,
   onClearStatus,
   onClearAll,
 }: {
   search: string;
   kindFilter: AgentKindFilter;
-  authFilter: AgentAuthFilter;
   statusFilter: AgentStatusFilter;
   onClearSearch: () => void;
   onClearKind: () => void;
-  onClearAuth: () => void;
   onClearStatus: () => void;
   onClearAll: () => void;
 }): React.ReactElement {
@@ -254,14 +221,6 @@ function FilterChips({
         <Badge variant="secondary" className="gap-1">
           Kind: {KIND_LABELS[kindFilter]}
           <button type="button" onClick={onClearKind} className="ml-0.5">
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
-      )}
-      {authFilter !== "all" && (
-        <Badge variant="secondary" className="gap-1">
-          Auth: {AUTH_LABELS[authFilter]}
-          <button type="button" onClick={onClearAuth} className="ml-0.5">
             <X className="h-3 w-3" />
           </button>
         </Badge>
@@ -301,7 +260,6 @@ function AgentsTable({
           <TableRow>
             <TableHead>Agent Name</TableHead>
             <TableHead>Kind</TableHead>
-            <TableHead>Auth</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Last Used</TableHead>
             <TableHead>Created</TableHead>
@@ -311,13 +269,13 @@ function AgentsTable({
         <TableBody>
           {isPending ? (
             <TableRow>
-              <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                 Loading...
               </TableCell>
             </TableRow>
           ) : agents.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+              <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
                 <div className="space-y-2">
                   <div className="font-medium text-foreground">
                     {totalCount === 0 ? "No agents yet" : "No agents match your filters"}
@@ -338,9 +296,6 @@ function AgentsTable({
                 </TableCell>
                 <TableCell>
                   <KindBadge kind={agent.kind} />
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {AUTH_LABELS[agent.authMethod]}
                 </TableCell>
                 <TableCell>
                   <StatusBadge agent={agent} />

@@ -3,9 +3,7 @@ import {
   AGENT_BOOTSTRAP_TTL_MS,
   AgentListResultSchema,
   AgentResultSchema,
-  AgentRotateResultSchema,
   AgentWithKeySchema,
-  API_KEY_PREFIX,
   agentLocalityForKind,
   BadRequestError,
   ConflictError,
@@ -16,8 +14,8 @@ import {
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
-import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, count, desc, eq, isNull } from "@abadge/db";
+import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
+import { and, count, desc, eq } from "@abadge/db";
 import { agentEnrollmentTokens } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -50,26 +48,17 @@ const createAgent = (input: CreateAgentInput) =>
     const ctx = yield* SessionRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const locality = agentLocalityForKind(input.kind);
-    // Default to public_key_session per v0 roadmap. legacy_api_key remains
-    // available but must be requested explicitly.
+    // public_key_session is the only agent auth method. authMethod is accepted
+    // for forward-compat but always resolves to public_key_session.
     const authMethod = input.authMethod ?? "public_key_session";
     const id = crypto.randomUUID();
 
-    let secretHash: string | null = null;
-    let secretPrefix: string | null = null;
     let publicKey: string | null = null;
-    let apiKey: string | null = null;
     let bootstrapToken: string | null = null;
     let bootstrapExpiresAt: string | null = null;
     let bootstrapTokenHash: string | null = null;
 
-    if (authMethod === "legacy_api_key") {
-      const prefix = API_KEY_PREFIX[locality];
-      const generated = yield* tryAsync(() => generateApiKey(prefix));
-      secretHash = generated.hash;
-      secretPrefix = generated.prefix;
-      apiKey = generated.key;
-    } else if (input.publicKey) {
+    if (input.publicKey) {
       publicKey = input.publicKey;
     } else if (input.issueBootstrapToken) {
       bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
@@ -79,9 +68,8 @@ const createAgent = (input: CreateAgentInput) =>
       return yield* Effect.fail(
         new BadRequestError({
           code: "PUBLIC_KEY_REQUIRED",
-          message:
-            "public_key_session agents require either a publicKey or issueBootstrapToken: true",
-          hint: "Provide a public key or request a bootstrap token for public_key_session agents.",
+          message: "Agents require either a publicKey or issueBootstrapToken: true",
+          hint: "Provide a public key or request a bootstrap token.",
         }),
       );
     }
@@ -112,8 +100,6 @@ const createAgent = (input: CreateAgentInput) =>
         locality,
         authMethod,
         name: input.name,
-        secretHash,
-        secretPrefix,
         publicKey,
         metadata: input.metadata ?? {},
       }),
@@ -151,8 +137,6 @@ const createAgent = (input: CreateAgentInput) =>
         authMethod,
         name: input.name,
         description: null,
-        secretHash,
-        secretPrefix,
         publicKey,
         enabled: true,
         revokedAt: null,
@@ -160,7 +144,6 @@ const createAgent = (input: CreateAgentInput) =>
         metadata: input.metadata ?? {},
         createdAt: new Date(),
       }),
-      apiKey,
       bootstrapToken,
       bootstrapExpiresAt,
     };
@@ -238,121 +221,6 @@ const getCurrentAgent = Effect.gen(function* () {
 
   return { agent: serializeAgent(agent) };
 });
-
-const rotateAgent = (agentId: string) =>
-  Effect.gen(function* () {
-    const ctx = yield* SessionRequestContextTag;
-    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
-    const agent = yield* tryAsync(() =>
-      scope.findFirst("agents", {
-        where: and(eq(scope.tables.agents.id, agentId), isNull(scope.tables.agents.revokedAt)),
-      }),
-    );
-
-    if (!agent) {
-      return yield* auditDeniedSession(
-        {
-          organizationId: ctx.identity.organizationId,
-          userId: ctx.identity.userId,
-          agentId,
-          eventType: "agent.rotate",
-          reason: "not_found",
-          ipAddress: ctx.ipAddress,
-        },
-        new NotFoundError({
-          code: "AGENT_NOT_FOUND",
-          message: "Agent not found",
-          hint: "Check the agent ID and make sure it belongs to this account and is still active.",
-        }),
-      );
-    }
-
-    const callerRole = yield* tryAsync(() =>
-      requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
-    ).pipe(
-      Effect.tapError((err) =>
-        err instanceof ForbiddenError
-          ? logSessionAudit({
-              organizationId: ctx.identity.organizationId,
-              userId: ctx.identity.userId,
-              agentId,
-              eventType: "agent.rotate",
-              result: "denied",
-              ipAddress: ctx.ipAddress,
-              meta: { reason: "insufficient_role" },
-            })
-          : Effect.void,
-      ),
-    );
-    yield* tryAsync(() =>
-      requireAgentOwnership(
-        ctx.db,
-        agentId,
-        ctx.identity.userId,
-        ctx.identity.organizationId,
-        callerRole,
-      ),
-    ).pipe(
-      Effect.tapError((err) =>
-        err instanceof ForbiddenError
-          ? logSessionAudit({
-              organizationId: ctx.identity.organizationId,
-              userId: ctx.identity.userId,
-              agentId,
-              eventType: "agent.rotate",
-              result: "denied",
-              ipAddress: ctx.ipAddress,
-              meta: { reason: "agent_not_owned" },
-            })
-          : Effect.void,
-      ),
-    );
-
-    if (agent.authMethod !== "legacy_api_key") {
-      return yield* auditDeniedSession(
-        {
-          organizationId: ctx.identity.organizationId,
-          userId: ctx.identity.userId,
-          agentId,
-          eventType: "agent.rotate",
-          reason: "unsupported_auth_method",
-          ipAddress: ctx.ipAddress,
-        },
-        new BadRequestError({
-          code: "BAD_REQUEST",
-          message: "Only legacy API key agents support key rotation",
-          hint: "Public-key agents use keypair enrollment. Rotate the keypair instead.",
-        }),
-      );
-    }
-
-    const prefix = API_KEY_PREFIX[agent.locality as "local" | "remote"];
-    const { key, hash, prefix: keyPrefix } = yield* tryAsync(() => generateApiKey(prefix));
-
-    yield* tryAsync(() =>
-      scope.executor
-        .update(scope.tables.agents)
-        .set({
-          secretHash: hash,
-          secretPrefix: keyPrefix,
-        })
-        .where(and(eq(scope.tables.agents.id, agentId), scope.orgScope("agents"))),
-    );
-
-    yield* logSessionAudit({
-      organizationId: ctx.identity.organizationId,
-      userId: ctx.identity.userId,
-      agentId,
-      eventType: "agent.rotate",
-      result: "allowed",
-      ipAddress: ctx.ipAddress,
-    });
-
-    return {
-      apiKey: key,
-      keyPrefix,
-    };
-  });
 
 const revokeAgent = (agentId: string) =>
   Effect.gen(function* () {
@@ -480,10 +348,6 @@ export const agentsRouter = createTrpcRouter({
     .input(strictSchema(AgentIdSchema))
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getAgent(input.agentId))),
-  rotate: scopedSessionProcedure("agents:write")
-    .input(strictSchema(AgentIdSchema))
-    .output(strictSchema(AgentRotateResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateAgent(input.agentId))),
   revoke: scopedSessionProcedure("agents:write")
     .meta({
       openapi: { method: "DELETE", path: "/agents/{agentId}", tags: ["agents"], protect: true },

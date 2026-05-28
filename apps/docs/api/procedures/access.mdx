@@ -151,7 +151,7 @@ Every `access.*` call runs the same decision flow before any decryption:
 
 <Steps>
   <Step title="Authenticate the bearer token">
-    Resolve `abs_...`, then `abl_/abg_...`, then legacy fallback.
+    Resolve the `abs_...` agent session token (hash lookup, TTL check). `access.*` accepts no other credential — personal API keys (`abu_`) are rejected here.
   </Step>
   <Step title="Resolve the item">
     Must belong to the same organization as the agent.

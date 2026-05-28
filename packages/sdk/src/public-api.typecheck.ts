@@ -1,14 +1,11 @@
 import type { AbadgeApiError } from "./errors";
 import {
   Abadge,
-  type AbadgeAgentApiKeyConfig,
   type AbadgeAgentClient,
   type AbadgeAgentClientConfig,
   type AbadgeAgentKeypairConfig,
   type AbadgeUserClient,
   type AbadgeUserClientConfig,
-  type Agent,
-  type AgentWithKey,
   type CreateAgentInput,
   type CreatePermissionInput,
   type ErrorCode,
@@ -22,13 +19,11 @@ type Assert<T extends true> = T;
 
 // -- Backward-compat type assertions (existing) ----------------------------
 
-type _AgentHasKeyPrefix = Assert<Agent["keyPrefix"] extends string | null ? true : false>;
 type _PermissionUsesAgentId = Assert<Permission["agentId"] extends string ? true : false>;
 type _AgentCreateInput = Assert<CreateAgentInput["kind"] extends string ? true : false>;
 type _PermissionFilters = Assert<
   PermissionFilters["agentId"] extends string | undefined ? true : false
 >;
-type _AgentWithKeyUsesApiKey = Assert<AgentWithKey["apiKey"] extends string | null ? true : false>;
 type _PermissionCreateInput = Assert<
   CreatePermissionInput["agentId"] extends string ? true : false
 >;
@@ -61,15 +56,12 @@ type _LegacyPrincipalAuthMethod = import("./index").PrincipalAuthMethod;
 type _UserClientConfig = Assert<
   AbadgeUserClientConfig extends { apiUrl: string; sessionToken: string } ? true : false
 >;
-type _AgentApiKeyConfigShape = Assert<
-  AbadgeAgentApiKeyConfig extends { apiUrl: string; apiKey: string } ? true : false
->;
 type _AgentKeypairConfigShape = Assert<
   AbadgeAgentKeypairConfig extends { apiUrl: string; agentId: string } ? true : false
 >;
-// AbadgeAgentClientConfig is the union of keypair and apikey configs
-type _AgentClientConfigIsUnion = Assert<
-  AbadgeAgentClientConfig extends AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig ? true : false
+// AbadgeAgentClientConfig is the keypair config (legacy API-key auth removed).
+type _AgentClientConfigIsKeypair = Assert<
+  AbadgeAgentClientConfig extends AbadgeAgentKeypairConfig ? true : false
 >;
 
 // Abadge namespace exposes both client constructors (runtime + type check).

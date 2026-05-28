@@ -59,7 +59,6 @@ describe("AgentSchema", () => {
         name: "deploy-bot",
         description: "Roadmap agent",
         publicKeyConfigured: true,
-        keyPrefix: null,
         enabled: true,
         revokedAt: null,
         lastUsedAt: null,

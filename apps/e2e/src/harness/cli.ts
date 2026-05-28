@@ -56,7 +56,6 @@ export async function runCli(args: string[], opts: CliRunOptions): Promise<CliRu
   };
   if (opts.sessionToken) env.ABADGE_SESSION_TOKEN = opts.sessionToken;
   // Strip any inherited agent creds — they would alter the auth path.
-  delete env.ABADGE_AUTH_TOKEN;
   delete env.ABADGE_AGENT_ID;
   delete env.ABADGE_PRIVATE_KEY;
   delete env.ABADGE_PRIVATE_KEY_PATH;

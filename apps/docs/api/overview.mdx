@@ -47,8 +47,8 @@ Every procedure is registered against one of three tiers:
 | Tier | Auth | Used by |
 |---|---|---|
 | `publicProcedure` | none | agent enrollment, agent session exchange |
-| `sessionProcedure` | Better Auth session cookie or bearer token | dashboard, CLI management commands, SDK user client |
-| `agentProcedure` | agent bearer credential (`abs_`, `abl_`, `abg_`) | runtime agents, MCP, remote agents |
+| `sessionProcedure` | Better Auth session cookie/bearer token, or a personal API key (`abu_`) | dashboard, CLI management commands, SDK user client |
+| `agentProcedure` | agent session bearer credential (`abs_`) | runtime agents, MCP, remote agents |
 
 ## Routers
 
@@ -59,6 +59,7 @@ Every procedure is registered against one of three tiers:
 | `profiles` | session | [profiles procedures](/api/procedures/profiles) |
 | `items` | session + agent | [items procedures](/api/procedures/items) |
 | `agents` | session | [agents procedures](/api/procedures/agents) |
+| `apiKeys` | session | [API keys procedures](/api/procedures/api-keys) |
 | `permissions` | session | [permissions procedures](/api/procedures/permissions) |
 | `access` | agent | [access procedures](/api/procedures/access) |
 | `audit` | session | [audit procedures](/api/procedures/audit) |

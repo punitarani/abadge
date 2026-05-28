@@ -34,11 +34,20 @@ exchange). The bearer token may be:
 | Prefix | Holder | Issuer |
 |--------|--------|--------|
 | Better Auth session token | Human operator | `/api/auth/sign-in/*` |
+| `abu_...` | Personal API key (user + org) | `POST /v1/api-keys` |
 | `abs_...` | Agent session | `POST /v1/agents/{agentId}/sessions/exchange` |
-| legacy API key | Agent (legacy) | `POST /v1/agents` with `authMethod=legacy_api_key` |
 
 `abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes.
 The TypeScript SDK refreshes them automatically at T-2 minutes.
+
+An `abu_...` personal API key authenticates the **management surface only**
+— the same procedures the dashboard uses (organizations, profiles, items
+metadata, agents, permissions, audit, settings). It resolves to a
+**session identity**, not an agent identity, so it can never reach the
+agent-gated `access.*` surface and cannot reveal or mount secret values.
+Reading secret values still requires a keypair agent plus an explicit
+permission. A personal API key also cannot create or revoke other API keys
+— that requires a real browser session.
 
 ### Org scoping
 
@@ -47,7 +56,7 @@ caller's org in this order:
 
 1. `X-Abadge-Org-Id` header (required for users with more than one org)
 2. The single org the caller belongs to (when unambiguous)
-3. The org embedded in the bearer credential (agent sessions and API keys)
+3. The org embedded in the bearer credential (agent sessions and personal API keys are both bound to a single org)
 
 If a user belongs to multiple orgs and omits `X-Abadge-Org-Id`, the server
 returns `400 BAD_REQUEST` with `code: "ORG_HEADER_REQUIRED"`.
@@ -113,6 +122,28 @@ Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs
 | `DELETE` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Remove a member; cascade-revokes their agents. |
 | `PATCH` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Change a member's role. |
 
+### API keys
+
+Personal API keys (`abu_...`) authenticate the management surface as the
+issuing user, scoped to one org. They resolve to a **session identity** —
+they call the same `sessionProcedure` surface the dashboard does
+(organizations, profiles, items metadata, agents, permissions, audit,
+settings). They can **never** reach the agent-gated `access.*` surface, so
+they cannot reveal or mount secret values; that still requires a keypair
+agent plus an explicit permission. They are created, listed, and revoked
+from the dashboard org Settings page. A personal API key cannot create or
+revoke other API keys (that needs a real browser session).
+
+The secret is shown exactly once at creation. The server stores a SHA-256
+hash plus an 8-character lookup prefix. Keys support an optional `expiresAt`
+and can be revoked.
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `POST` | `/v1/api-keys` | session (browser) | Create a personal API key. Accepts `name`, optional `expiresAt`. Returns the full `abu_...` secret once, plus the key record. |
+| `GET` | `/v1/api-keys` | session | List the caller's personal API keys in the active org (secrets never returned). |
+| `DELETE` | `/v1/api-keys/{keyId}` | session (browser) | Revoke a personal API key. |
+
 ### Profiles
 
 Profiles are the encryption boundary within an org. A new org always has a
@@ -142,7 +173,7 @@ support either storage mode and may carry a customer-supplied `externalId`.
 
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
-| `POST` | `/v1/agents` | session (admin) | Register an agent. Default `authMethod=public_key_session`; pass `issueBootstrapToken: true` for unenrolled keypair agents, or `authMethod=legacy_api_key` to receive a one-time API key. |
+| `POST` | `/v1/agents` | session (admin) | Register an agent. Agents use `public_key_session` (Ed25519); provide `publicKey` directly or pass `issueBootstrapToken: true` for unenrolled keypair agents. |
 | `GET` | `/v1/agents` | session | List agents in the org. Supports `limit`, `cursor`. |
 | `GET` | `/v1/agents/{agentId}` | session | Fetch agent details. |
 | `DELETE` | `/v1/agents/{agentId}` | session (admin) | Revoke an agent; cascade-revokes its permissions. |

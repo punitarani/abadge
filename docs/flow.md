@@ -123,12 +123,12 @@ sequenceDiagram
   participant DB as PostgreSQL
 
   User->>API: Create agent (name, kind)
-  API->>API: Generate Ed25519 keypair or API key
-  API->>DB: Store agent (public key or hashed secret)
+  API->>API: Accept Ed25519 public key, or issue a bootstrap token
+  API->>DB: Store agent (public key; token hashed if issued)
   API->>DB: Audit: agent.create
-  API-->>User: Agent ID + one-time secret/bootstrap token
+  API-->>User: Agent ID + one-time bootstrap token (if requested)
 
-  Note over User: API key or bootstrap token shown ONCE
+  Note over User: Bootstrap token shown ONCE
   Note over User: Never retrievable again
 ```
 
@@ -317,14 +317,10 @@ graph TD
 
 ```mermaid
 flowchart TD
-  Start["Agent sends request\n(Bearer token)"] --> AuthCheck{"Authenticate\ntoken"}
-  AuthCheck -->|"abs_ prefix"| SessionAuth["Verify session\n(hash lookup, TTL check)"]
-  AuthCheck -->|"abl_/abg_ prefix"| KeyAuth["Verify API key\n(prefix lookup, hash match)"]
-  AuthCheck -->|"other"| LegacyAuth["Legacy Better Auth\nAPI key fallback"]
+  Start["Agent sends request\n(Bearer abs_ token)"] --> AuthCheck{"Authenticate\ntoken"}
+  AuthCheck -->|"abs_ prefix"| SessionAuth["Verify agent session\n(hash lookup, TTL check)"]
 
   SessionAuth --> Resolved{"Agent\nresolved?"}
-  KeyAuth --> Resolved
-  LegacyAuth --> Resolved
 
   Resolved -->|No| Deny1["DENY\n(401 Unauthorized)"]
   Resolved -->|Yes| LoadItem["Load target item\n(same owner check)"]
@@ -445,9 +441,9 @@ flowchart TB
     AuditLog["Audit Log\n(immutable)"]
   end
 
-  Human -->|"session cookie"| AuthN
+  Human -->|"session cookie / abu_ key"| AuthN
   LocalAgent -->|"abs_ token"| AuthN
-  RemoteAgent -->|"API key / abs_ token"| AuthN
+  RemoteAgent -->|"abs_ token"| AuthN
 
   AuthN --> AuthZ
   AuthZ -->|"check grants"| Grants
@@ -505,7 +501,7 @@ journey
     Review audit log: 5: User
     Check agent activity: 4: User
   section Manage
-    Rotate agent keys: 4: User
+    Re-enroll agent keypairs: 4: User
     Update permissions: 5: User
     Revoke expired agents: 5: User
   section Secure

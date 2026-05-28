@@ -87,7 +87,7 @@ The server stores only ciphertext, wrapped keys, salts, and KDF parameters for Z
 
 ## Tier 4 — Remote agents
 
-Remote agents (cloud workers, CI runners, webhook handlers) authenticate with API keys or keypair sessions and can only access **server-managed items** with **`reveal_plaintext`** permissions.
+Remote agents (cloud workers, CI runners, webhook handlers) authenticate with short-lived Ed25519 keypair sessions (`abs_`) and can only access **server-managed items** with **`reveal_plaintext`** permissions.
 
 **What a compromised remote agent exposes:**
 - Only the server-managed items it has permissions for

@@ -29,8 +29,8 @@ yarn add @abadge/sdk
 
 | Client | Auth | Use for |
 |---|---|---|
-| `AbadgeUserClient` | Operator session token | Manage organizations, profiles, items, agents, permissions, audit |
-| `AbadgeAgentClient` | Ed25519 keypair (preferred) or legacy API key | Read secrets via `access.*` |
+| `AbadgeUserClient` | Operator session token or personal API key (`abu_`) | Manage organizations, profiles, items, agents, permissions, audit |
+| `AbadgeAgentClient` | Ed25519 keypair session (`abs_`) | Read secrets via `access.*` |
 
 ```ts
 import { AbadgeUserClient, AbadgeAgentClient } from "@abadge/sdk";
@@ -80,7 +80,7 @@ import { AbadgeApiError } from "@abadge/sdk";
     Session-scoped client for organizations, profiles, items, agents, permissions, audit.
   </Card>
   <Card title="AbadgeAgentClient" href="/api/sdk/agent-client">
-    Agent-scoped client for `access.*` with keypair sessions or legacy API keys.
+    Agent-scoped client for `access.*` with Ed25519 keypair sessions.
   </Card>
   <Card title="Error handling" href="/api/sdk/error-handling">
     `AbadgeApiError` shape, common codes, retry strategy.

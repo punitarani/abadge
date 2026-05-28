@@ -46,7 +46,6 @@ describe("permissions exactly-one-target constraint", () => {
     const agent = await seedAgent(db, {
       userId: owner.userId,
       orgId: org.orgId,
-      authMethod: "legacy_api_key",
     });
     const profile = await seedProfile(db, org.orgId);
     const item = await seedServerItem(db, {
@@ -76,7 +75,6 @@ describe("permissions exactly-one-target constraint", () => {
     const agent = await seedAgent(db, {
       userId: owner.userId,
       orgId: org.orgId,
-      authMethod: "legacy_api_key",
     });
 
     await expectPgError(
@@ -100,7 +98,6 @@ describe("permissions exactly-one-target constraint", () => {
     const agent = await seedAgent(db, {
       userId: owner.userId,
       orgId: org.orgId,
-      authMethod: "legacy_api_key",
     });
     const profile = await seedProfile(db, org.orgId);
 
@@ -135,7 +132,6 @@ describe("permissions exactly-one-target constraint", () => {
     const agent = await seedAgent(db, {
       userId: owner.userId,
       orgId: org.orgId,
-      authMethod: "legacy_api_key",
     });
     const profile = await seedProfile(db, org.orgId);
     const item = await seedServerItem(db, {

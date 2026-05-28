@@ -69,43 +69,14 @@ describe("seed factories", () => {
   // -----------------------------------------------------------------------
   // seedAgent — inserts into agents table
   // -----------------------------------------------------------------------
-  test("seedAgent inserts into agents table with correct fields", async () => {
+  test("seedAgent inserts a public_key_session agent with the returned keyPair", async () => {
     const auth = createTestAuth(db);
     const { userId } = await seedUser(auth);
     const { orgId } = await seedOrg(auth, userId);
 
-    const { agentId, name, apiKey } = await seedAgent(db, {
-      userId,
-      orgId,
-      authMethod: "legacy_api_key",
-    });
+    const { agentId, name, keyPair } = await seedAgent(db, { userId, orgId });
 
     expect(agentId).toBeDefined();
-    expect(apiKey).toBeDefined();
-
-    const agent = assertDefined(
-      (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
-      "agents row",
-    );
-    expect(agent.name).toBe(name);
-    expect(agent.organizationId).toBe(orgId);
-    expect(agent.createdBy).toBe(userId);
-    expect(agent.secretHash).toBeDefined();
-    expect(agent.secretPrefix).toBeDefined();
-  });
-
-  test("seedAgent with public_key_session returns a keyPair", async () => {
-    const auth = createTestAuth(db);
-    const { userId } = await seedUser(auth);
-    const { orgId } = await seedOrg(auth, userId);
-
-    const { agentId, keyPair, apiKey } = await seedAgent(db, {
-      userId,
-      orgId,
-      authMethod: "public_key_session",
-    });
-
-    expect(apiKey).toBeUndefined();
     const kp = assertDefined(keyPair, "keyPair");
     expect(kp.publicKey).toBeDefined();
     expect(kp.privateKey).toBeDefined();
@@ -114,7 +85,10 @@ describe("seed factories", () => {
       (await db.select().from(agents).where(eq(agents.id, agentId)))[0],
       "agents row",
     );
-
+    expect(agent.name).toBe(name);
+    expect(agent.organizationId).toBe(orgId);
+    expect(agent.createdBy).toBe(userId);
+    expect(agent.authMethod).toBe("public_key_session");
     expect(agent.publicKey).toBe(kp.publicKey);
   });
 

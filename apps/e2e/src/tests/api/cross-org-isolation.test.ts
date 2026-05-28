@@ -29,10 +29,16 @@ async function setupOrg(apiUrl: string, sessionToken: string, label: string) {
       fields: { value: `sk-${label}` },
     },
   });
+  const keypair = (await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ])) as CryptoKeyPair;
+  const publicJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
   const agent = await scoped.agents.create({
     name: `agent-${label}`,
     kind: "remote",
-    authMethod: "legacy_api_key",
+    authMethod: "public_key_session",
+    publicKey: JSON.stringify(publicJwk),
   });
   return { org, scoped, itemId: item.id, agentId: agent.agent.id };
 }

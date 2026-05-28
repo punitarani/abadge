@@ -10,7 +10,7 @@ The **Agents** view is where you register the automated callers that consume cre
 The agents table shows:
 
 - Name and kind
-- Auth method (`public_key_session` or `legacy_api_key`)
+- Auth method (`public_key_session`)
 - Locality (`local` or `remote`)
 - Enabled / revoked state
 - Last successful authentication
@@ -22,20 +22,16 @@ The agents table shows:
     Provide a display name and pick a kind. Auth method defaults to `public_key_session`.
   </Step>
   <Step title="Choose enrollment">
-    For `public_key_session`:
     - **Bootstrap token** — abadge issues a one-time `abe_...` token (10-minute TTL). The agent runtime redeems it via `auth.enroll`, generates a keypair locally, and uploads the public key.
     - **Direct enrollment** — paste an Ed25519 JWK public key the agent already has.
-
-    For `legacy_api_key`:
-    - abadge generates an `abl_...` (local) or `abg_...` (remote) key. **Shown once.**
   </Step>
   <Step title="Save the secret">
-    The success dialog displays the bootstrap token or API key. There is no way to retrieve it later.
+    The success dialog displays the bootstrap token. There is no way to retrieve it later.
   </Step>
 </Steps>
 
 <Warning>
-  Bootstrap tokens and API keys are shown exactly once. If you lose the value, revoke the agent and re-create it.
+  Bootstrap tokens are shown exactly once. If you lose the value, revoke the agent and re-create it.
 </Warning>
 
 ## Viewing an agent
@@ -46,11 +42,9 @@ The agent detail panel shows:
 - Permissions granted to this agent (with capability and expiry)
 - Recent audit entries scoped to this agent
 
-## Rotating credentials
+## Replacing an agent keypair
 
-Only legacy API key agents support rotation. **Rotate** generates a new `abl_/abg_` key and invalidates the old one. The new key is shown once.
-
-For `public_key_session` agents, rotation means re-enrolling: revoke the agent and create a new one, or have the agent re-issue a bootstrap token (`auth.issueBootstrapToken`) and re-enroll with a new keypair.
+Agents have no rotatable long-lived secret. To replace a keypair, re-enroll: revoke the agent and create a new one, or issue a fresh bootstrap token (`auth.issueBootstrapToken`) and re-enroll with a new keypair.
 
 ## Revoking an agent
 

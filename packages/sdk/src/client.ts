@@ -7,7 +7,6 @@ import type {
   AgentEnrollmentResult,
   AgentListResult,
   AgentResult,
-  AgentRotateResult,
   AgentSessionResult,
   AgentWithKey,
   AuditFilters,
@@ -40,7 +39,10 @@ import type {
 export interface AbadgeUserClientConfig {
   /** API endpoint URL (no trailing slash). */
   apiUrl: string;
-  /** User session token. */
+  /**
+   * User credential sent as `Authorization: Bearer`. Accepts either a Better
+   * Auth session token or a personal API key (prefixed `abu_`).
+   */
   sessionToken: string;
   /** Active organization ID. Sent as X-Abadge-Org-Id header for org-scoped requests. */
   orgId?: string;
@@ -92,16 +94,8 @@ export interface AbadgeAgentKeypairConfig {
   schedulerFn?: AbadgeScheduler;
 }
 
-/** Legacy API key auth for agents. */
-export interface AbadgeAgentApiKeyConfig {
-  /** API endpoint URL (no trailing slash). */
-  apiUrl: string;
-  /** Agent API key (prefixed `abl_`, `abg_`) or session token (prefixed `abs_`). */
-  apiKey: string;
-}
-
-/** Configuration for agent SDK clients. Supports keypair or API key auth. */
-export type AbadgeAgentClientConfig = AbadgeAgentKeypairConfig | AbadgeAgentApiKeyConfig;
+/** Configuration for agent SDK clients. Agents authenticate via Ed25519 keypair session exchange. */
+export type AbadgeAgentClientConfig = AbadgeAgentKeypairConfig;
 
 // ---------------------------------------------------------------------------
 // SdkTrpcClient — locally declared proxy type
@@ -157,7 +151,6 @@ interface SdkTrpcClient {
     create: TrpcMutation<CreateAgentInput, AgentWithKey>;
     list: TrpcQuery<ListPageInput, AgentListResult>;
     self: TrpcQueryWithoutInput<AgentResult>;
-    rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
   permissions: {
@@ -500,7 +493,6 @@ export class AbadgeUserClient {
     create: (data: CreateAgentInput) => Promise<AgentWithKey>;
     list: () => Promise<AgentListResult>;
     get: (agentId: string) => Promise<AgentResult>;
-    update: (agentId: string) => Promise<AgentRotateResult>;
     delete: (agentId: string) => Promise<SuccessResult>;
   };
 
@@ -610,8 +602,6 @@ export class AbadgeUserClient {
         }
         return { agent: found };
       },
-      update: (agentId) =>
-        call(() => this.client.agents.rotate.mutate({ agentId }), "Failed to rotate agent"),
       delete: (agentId) =>
         call(() => this.client.agents.revoke.mutate({ agentId }), "Failed to revoke agent"),
     };
@@ -843,28 +833,17 @@ export class AbadgeUserClient {
 // ---------------------------------------------------------------------------
 
 /**
- * SDK client for agent-facing operations. Supports two auth modes:
- * - **Keypair auth** (preferred): Ed25519 session exchange with automatic refresh.
- *   Call {@link connect} before using access methods.
- * - **API key auth**: Static API key (`abl_`, `abg_`, or `abs_` prefix).
+ * SDK client for agent-facing operations. Agents authenticate via Ed25519
+ * keypair session exchange (short-lived `abs_` session tokens) with automatic
+ * background refresh. Call {@link connect} before using access methods.
  *
  * All methods throw {@link AbadgeApiError} on failure with a typed
  * {@link ErrorCode} code.
  *
- * @example API key auth
+ * @example Keypair auth
  * ```typescript
  * import { AbadgeAgentClient } from "@abadge/sdk";
  *
- * const agent = new AbadgeAgentClient({
- *   apiUrl: "https://api.abadge.dev",
- *   apiKey: "abl_xxxxxxxxxxxx",
- * });
- *
- * const secret = await agent.access.read("item_id");
- * ```
- *
- * @example Keypair auth
- * ```typescript
  * const agent = new AbadgeAgentClient({
  *   apiUrl: "https://api.abadge.dev",
  *   agentId: "agent_id",
@@ -895,15 +874,11 @@ export class AbadgeAgentClient {
 
   constructor(config: AbadgeAgentClientConfig) {
     this.config = config;
-    if ("apiKey" in config) {
-      this.client = buildTrpcClient(config.apiUrl, config.apiKey);
-    } else {
-      // Keypair config — build an unauth client; connect() will set the token
-      this.client = buildUnauthTrpcClient(config.apiUrl);
-      // Fail fast: validate string keys at construction time rather than at connect()
-      if (typeof config.privateKey === "string") {
-        parseJwkString(config.privateKey);
-      }
+    // Keypair config — build an unauth client; connect() will set the token.
+    this.client = buildUnauthTrpcClient(config.apiUrl);
+    // Fail fast: validate string keys at construction time rather than at connect()
+    if (typeof config.privateKey === "string") {
+      parseJwkString(config.privateKey);
     }
   }
 
@@ -942,10 +917,6 @@ export class AbadgeAgentClient {
    * the initial `connect()` caller and the background refresh can react.
    */
   private async exchangeSessionOnce(): Promise<void> {
-    if (!("agentId" in this.config)) {
-      return;
-    }
-
     const { agentId, privateKey, apiUrl } = this.config;
 
     const unauthClient = buildUnauthTrpcClient(apiUrl);
@@ -981,9 +952,6 @@ export class AbadgeAgentClient {
 
   /** Schedule the next T-2min refresh based on the most recent session expiry. */
   private scheduleRefreshFromExpiry(): void {
-    if (!("agentId" in this.config)) {
-      return;
-    }
     const refreshDelay = Math.max(0, this.lastExpiresAtMs - Date.now() - 2 * 60 * 1000);
     this.armTimer(refreshDelay, () => {
       void this.refreshOnce(0);
@@ -1008,9 +976,7 @@ export class AbadgeAgentClient {
       this.scheduleRefreshFromExpiry();
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      if ("agentId" in this.config) {
-        this.config.onSessionError?.(error, attempt);
-      }
+      this.config.onSessionError?.(error, attempt);
       console.error(
         `[AbadgeAgentClient] Session refresh attempt ${attempt + 1} failed: ${error.message}`,
       );
@@ -1040,8 +1006,7 @@ export class AbadgeAgentClient {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
-    const schedule: AbadgeScheduler =
-      "agentId" in this.config && this.config.schedulerFn ? this.config.schedulerFn : setTimeout;
+    const schedule: AbadgeScheduler = this.config.schedulerFn ?? setTimeout;
     this.refreshTimer = schedule(callback, delayMs);
     this.refreshTimer?.unref?.();
   }

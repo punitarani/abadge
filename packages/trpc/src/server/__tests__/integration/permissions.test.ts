@@ -167,7 +167,7 @@ describe("permissions", () => {
     const aliceCaller = createOperatorCaller(db, auth, alice.headers, org.orgId);
     const aliceAgent = await aliceCaller.agents.create({
       name: "alice-agent-perm",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
       kind: "remote",
     });
 

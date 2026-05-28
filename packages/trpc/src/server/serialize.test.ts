@@ -244,7 +244,6 @@ describe("serializeAgent", () => {
       name: "bot",
       description: "primary",
       publicKey: "pk",
-      secretPrefix: null,
       enabled: true,
       revokedAt: ISO("2026-02-01T00:00:00Z"),
       lastUsedAt: ISO("2026-02-02T00:00:00Z"),
@@ -265,11 +264,10 @@ describe("serializeAgent", () => {
       createdBy: "u1",
       kind: "local_cli",
       locality: "local",
-      authMethod: "legacy_api_key",
-      name: "legacy",
+      authMethod: "public_key_session",
+      name: "unenrolled",
       description: null,
       publicKey: null,
-      secretPrefix: "abl_",
       enabled: true,
       revokedAt: null,
       lastUsedAt: null,
@@ -280,7 +278,6 @@ describe("serializeAgent", () => {
     expect(out.publicKeyConfigured).toBe(false);
     expect(out.revokedAt).toBeNull();
     expect(out.lastUsedAt).toBeNull();
-    expect(out.keyPrefix).toBe("abl_");
   });
 });
 

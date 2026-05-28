@@ -1,5 +1,4 @@
 import {
-  AGENT_AUTH_METHODS,
   AGENT_KINDS,
   AUDIT_EVENT_TYPES,
   AUDIT_RESULTS,
@@ -36,17 +35,14 @@ export const itemsFilterParsers = {
 };
 
 const agentKindFilters = [ALL, ...AGENT_KINDS] as const;
-const agentAuthFilters = [ALL, ...AGENT_AUTH_METHODS] as const;
 const agentStatusFilters = [ALL, "active", "revoked"] as const;
 
 export type AgentKindFilter = (typeof agentKindFilters)[number];
-export type AgentAuthFilter = (typeof agentAuthFilters)[number];
 export type AgentStatusFilter = (typeof agentStatusFilters)[number];
 
 export const agentsFilterParsers = {
   q: parseAsString.withDefault(""),
   kind: parseAsStringLiteral(agentKindFilters).withDefault(ALL),
-  auth: parseAsStringLiteral(agentAuthFilters).withDefault(ALL),
   status: parseAsStringLiteral(agentStatusFilters).withDefault(ALL),
   create: parseAsBoolean.withDefault(false),
 };

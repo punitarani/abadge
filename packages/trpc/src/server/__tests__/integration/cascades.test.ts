@@ -38,7 +38,6 @@ describe("cascade behavior", () => {
       orgId: org.orgId,
       name: "cascade-agent",
       kind: "remote",
-      authMethod: "legacy_api_key",
     });
 
     // Create two active sessions for the agent

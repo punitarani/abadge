@@ -1,6 +1,6 @@
 ---
 title: "AbadgeAgentClient"
-description: "Agent-authenticated client for accessing secrets. Keypair sessions preferred."
+description: "Agent-authenticated client for accessing secrets via Ed25519 keypair sessions."
 ---
 
 `AbadgeAgentClient` is the agent runtime client. It owns the bearer credential, runs the keypair challenge / session exchange, refreshes tokens before they expire, and exposes the `access.*` methods.
@@ -8,7 +8,7 @@ description: "Agent-authenticated client for accessing secrets. Keypair sessions
 ## Construction
 
 <Tabs>
-  <Tab title="Keypair (preferred)">
+  <Tab title="Keypair">
     ```ts
     import { AbadgeAgentClient } from "@abadge/sdk";
 
@@ -28,19 +28,19 @@ description: "Agent-authenticated client for accessing secrets. Keypair sessions
       Callback fired on each background refresh failure. After the bounded retry budget is exhausted, the client flips to `sessionExpired` and outgoing calls reject with `SESSION_REFRESH_FAILED`.
     </ParamField>
   </Tab>
-  <Tab title="Legacy API key">
+  <Tab title="Pre-exchanged session">
     ```ts
     import { AbadgeAgentClient } from "@abadge/sdk";
 
     const agent = new AbadgeAgentClient({
       apiUrl: "https://api.abadge.io",
-      apiKey: "abl_...",    // or abg_... for remote, or abs_... for a pre-exchanged session
+      apiKey: "abs_...",    // a short-lived session token minted elsewhere
     });
     ```
 
     <ParamField path="apiUrl" type="string" required />
     <ParamField path="apiKey" type="string" required>
-      Legacy agent API key (`abl_`, `abg_`) or a short-lived session token (`abs_`) minted elsewhere.
+      A short-lived agent session token (`abs_`) minted elsewhere. The client uses it directly and does not run the challenge / exchange itself.
     </ParamField>
   </Tab>
 </Tabs>
@@ -59,7 +59,7 @@ agent.disconnect();
 
 `connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain. The refresh timer is `.unref()`'d so it does not keep the event loop alive on its own.
 
-Legacy API-key clients do not need `connect()` — they use the long-lived bearer key directly.
+A client constructed with a pre-exchanged `abs_...` token does not need `connect()` — it uses that bearer token directly (and will not auto-refresh it).
 
 ## Enrollment
 

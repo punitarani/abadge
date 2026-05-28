@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { OneTimeSecretDisplay } from "@/components/dashboard/one-time-secret-display";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,7 +45,6 @@ const KIND_LABELS: Record<string, string> = {
 
 const AUTH_LABELS: Record<string, string> = {
   public_key_session: "Ed25519 keypair session",
-  legacy_api_key: "Legacy API key",
 };
 
 export default function AgentDetailPage(): React.ReactElement {
@@ -56,7 +54,6 @@ export default function AgentDetailPage(): React.ReactElement {
   const queryClient = useQueryClient();
 
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
-  const [rotatedKey, setRotatedKey] = useState<string | null>(null);
 
   const agentQuery = useQuery({
     queryKey: dashboardQueryKeys.agent(agentId),
@@ -95,17 +92,6 @@ export default function AgentDetailPage(): React.ReactElement {
 
   const itemLabelMap = useMemo(() => buildAuditItemLabelMap(items), [items]);
 
-  const rotateMutation = useMutation({
-    mutationFn: () => browserTrpcClient.agents.rotate.mutate({ agentId }),
-    onSuccess: (result) => {
-      setRotatedKey(result.apiKey);
-      toast.success("API key regenerated.");
-    },
-    onError: (error) => {
-      toast.error(getClientErrorMessage(error, "Failed to regenerate key"));
-    },
-  });
-
   const revokeMutation = useMutation({
     mutationFn: () => browserTrpcClient.agents.revoke.mutate({ agentId }),
     onSuccess: async () => {
@@ -140,41 +126,31 @@ export default function AgentDetailPage(): React.ReactElement {
   return (
     <AgentDetailContent
       agent={agent}
-      rotatedKey={rotatedKey}
-      rotateMutation={rotateMutation}
       revokeMutation={revokeMutation}
       agentPermissions={agentPermissions}
       itemLabelMap={itemLabelMap}
       auditEntries={auditEntries}
       auditPending={auditQuery.isPending}
-      onDismissKey={() => setRotatedKey(null)}
     />
   );
 }
 
 function AgentDetailContent({
   agent,
-  rotatedKey,
-  rotateMutation,
   revokeMutation,
   agentPermissions,
   itemLabelMap,
   auditEntries,
   auditPending,
-  onDismissKey,
 }: {
   agent: Agent;
-  rotatedKey: string | null;
-  rotateMutation: { mutate: () => void; isPending: boolean };
   revokeMutation: { mutate: () => void; isPending: boolean };
   agentPermissions: Permission[];
   itemLabelMap: Map<string, string>;
   auditEntries: AuditEntry[];
   auditPending: boolean;
-  onDismissKey: () => void;
 }): React.ReactElement {
   const isRevoked = !!agent.revokedAt;
-  const isLegacy = agent.authMethod === "legacy_api_key";
 
   return (
     <div className="space-y-8">
@@ -188,18 +164,7 @@ function AgentDetailContent({
       </nav>
 
       {/* Header */}
-      <AgentHeader
-        agent={agent}
-        isRevoked={isRevoked}
-        isLegacy={isLegacy}
-        rotateMutation={rotateMutation}
-        revokeMutation={revokeMutation}
-      />
-
-      {/* Rotated key display */}
-      {rotatedKey && (
-        <OneTimeSecretDisplay value={rotatedKey} type="api_key" onDismiss={onDismissKey} />
-      )}
+      <AgentHeader agent={agent} isRevoked={isRevoked} revokeMutation={revokeMutation} />
 
       {/* Metadata cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -229,8 +194,6 @@ function AgentDetailContent({
 function AgentHeader({
   agent,
   isRevoked,
-  isLegacy,
-  rotateMutation,
   revokeMutation,
 }: {
   agent: {
@@ -241,8 +204,6 @@ function AgentHeader({
     revokedAt: string | null;
   };
   isRevoked: boolean;
-  isLegacy: boolean;
-  rotateMutation: { mutate: () => void; isPending: boolean };
   revokeMutation: { mutate: () => void; isPending: boolean };
 }): React.ReactElement {
   return (
@@ -262,16 +223,6 @@ function AgentHeader({
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {isLegacy && !isRevoked && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => rotateMutation.mutate()}
-            disabled={rotateMutation.isPending}
-          >
-            {rotateMutation.isPending ? "Regenerating..." : "Regenerate token"}
-          </Button>
-        )}
         {!isRevoked && (
           <AlertDialog>
             <AlertDialogTrigger asChild>

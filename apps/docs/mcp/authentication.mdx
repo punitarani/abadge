@@ -5,7 +5,7 @@ description: "Configure the MCP server with Ed25519 keypair sessions. Env vars t
 
 The MCP server authenticates with **Ed25519 keypair sessions** — the same mechanism `AbadgeAgentClient` uses. It reads configuration from environment variables first, then falls back to `~/.abadge/config.json`.
 
-Legacy API keys (`ABADGE_AUTH_TOKEN` and similar) are **not** supported by the MCP server. New agents must use keypair sessions.
+The MCP server has no other auth method — there are no agent API keys. Every agent authenticates with a keypair session.
 
 ## Required configuration
 

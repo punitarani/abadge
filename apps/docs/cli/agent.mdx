@@ -1,6 +1,6 @@
 ---
 title: "abadge agent"
-description: "Register, list, rotate, and revoke automated callers."
+description: "Register, list, and revoke automated callers."
 ---
 
 ## `abadge agent add`
@@ -31,9 +31,8 @@ abadge agent add --name ci-bot --kind remote --public-key ./key.jwk
 | `--json` | no | Print raw JSON |
 
 <Note>
-  Legacy API-key auth is not creatable from the CLI. Use the dashboard or
-  `POST /v1/agents` with `authMethod: "legacy_api_key"` if you need one
-  for migration.
+  Agents authenticate only with Ed25519 keypair sessions. There is no
+  long-lived agent API key.
 </Note>
 
 ### `--mcp-config` (local_mcp only)
@@ -91,19 +90,6 @@ abadge agent list --json
 
 Output columns: `ID`, `Name`, `Kind`, `Locality`, `Enabled`, `Created`.
 
-## `abadge agent rotate <agent-id>`
-
-Rotate a legacy API key. Public-key agents cannot be rotated — instead
-revoke and re-enroll with a new keypair via `auth.issueBootstrapToken`
-plus `auth.enroll`.
-
-```bash
-abadge agent rotate <agent-id>
-abadge agent rotate <agent-id> --json
-```
-
-The new key is shown once.
-
 ## `abadge agent rm <agent-id>`
 
 Revoke an agent. Invalidates all active `abs_...` sessions and disables
@@ -114,7 +100,7 @@ abadge agent rm <agent-id>
 ```
 
 Permissions are not deleted; they remain visible (and useless) until the
-agent is rotated, removed, or re-enabled.
+agent is removed or re-enabled.
 
 ## `abadge agent mcp-config <agent-id>`
 

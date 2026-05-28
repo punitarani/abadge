@@ -18,4 +18,5 @@ export const dashboardQueryKeys = {
   orgAuditPrefix: (orgId: string) => ["audit", orgId] as const,
   orgMembers: (orgId: string) => ["members", orgId] as const,
   orgInvites: (orgId: string) => ["invites", orgId] as const,
+  orgApiKeys: (orgId: string) => ["api-keys", orgId] as const,
 };
