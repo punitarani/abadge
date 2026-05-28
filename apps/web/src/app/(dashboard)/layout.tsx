@@ -12,59 +12,7 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { VaultProvider } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
-
-interface OrgSummary {
-  id: string;
-  slug: string;
-  name: string;
-  logo: string | null;
-  // Non-optional: server schema (`organizations.list` -> Schema.Boolean) always
-  // populates this. Keeping it strict here means a future server-side regression
-  // (e.g. accidentally omitting the field) trips the typecheck instead of
-  // silently leaving `orgReady` permanently false and hanging the dashboard.
-  hasBootstrappedProfile: boolean;
-}
-
-type LayoutDecision =
-  | { kind: "wait" }
-  | { kind: "redirect"; to: string }
-  | { kind: "adopt"; org: OrgSummary }
-  | { kind: "ready" };
-
-/**
- * Pure decision function for dashboard layout routing, extracted to keep the
- * `useEffect` body linear and well under the cognitive-complexity limit.
- * Inputs are whatever state matters to the routing call; outputs are one of
- * four actions the effect applies.
- *
- * Rules (in order): wait for hydration/session, redirect unauthenticated to
- * login, wait for orgs query to succeed, redirect to /onboarding when the
- * user has no org or no fully set-up org, adopt the first usable org when
- * the stored one is stale, otherwise the layout is ready.
- */
-function decideLayoutAction(args: {
-  hydrated: boolean;
-  sessionPending: boolean;
-  session: unknown;
-  orgsStatus: "pending" | "error" | "success";
-  orgs: OrgSummary[];
-  activeOrgId: string | null;
-}): LayoutDecision {
-  if (!args.hydrated || args.sessionPending) return { kind: "wait" };
-  if (!args.session) return { kind: "redirect", to: "/login" };
-  if (args.orgsStatus !== "success") return { kind: "wait" };
-  if (args.orgs.length === 0) return { kind: "redirect", to: "/onboarding" };
-
-  const usableOrgs = args.orgs.filter((o) => o.hasBootstrappedProfile);
-  if (usableOrgs.length === 0) return { kind: "redirect", to: "/onboarding" };
-
-  const storedValid = args.activeOrgId != null && usableOrgs.some((o) => o.id === args.activeOrgId);
-  if (storedValid) return { kind: "ready" };
-
-  const first = usableOrgs[0];
-  if (!first) return { kind: "redirect", to: "/onboarding" };
-  return { kind: "adopt", org: first };
-}
+import { decideLayoutAction, type OrgSummary } from "./layout-triage";
 
 // biome-ignore lint/style/noRestrictedGlobals: Next.js replaces NEXT_PUBLIC_ at build time
 const USERJOT_PROJECT_ID = process.env.NEXT_PUBLIC_USERJOT_PROJECT_ID;
@@ -243,18 +191,16 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
   }
 
   // Inline loader while auth, orgs, or store hydration are pending. orgReady
-  // requires the active org to also have a bootstrapped profile — pre-§REVAMP
-  // this was load-bearing because `scopedSessionProcedure` rejected with
-  // `ONBOARDING_INCOMPLETE`; that gate has since been removed (Task 5.2). The
-  // check is retained as a UX guard to prevent the dashboard from rendering
-  // empty states for an org the user hasn't finished setting up. The effect
-  // above redirects to /onboarding; this render guard keeps the dashboard
-  // from briefly flashing broken state in that window. Crucially, the loader
-  // lives INSIDE `<SidebarInset>` (the parent layout renders the chrome
-  // unconditionally), so even during this gate the sidebar stays visible —
-  // the user no longer sees a full blank screen on transient state hiccups.
-  const orgReady =
-    hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId && o.hasBootstrappedProfile);
+  // requires only that the stored active org is one the user actually belongs
+  // to — it MUST NOT require a bootstrapped profile. Gating on
+  // `hasBootstrappedProfile` here (combined with the effect's redirect) made a
+  // profile-less org ping-pong between /overview and /onboarding forever, since
+  // onboarding's `decideResumeAction` sends any org straight back to the
+  // dashboard. A profile-less org renders the dashboard; the profiles page
+  // surfaces the recovery flow. The loader lives INSIDE `<SidebarInset>` (the
+  // parent layout renders the chrome unconditionally), so the sidebar stays
+  // visible during this gate — no full blank-screen flash on transient hiccups.
+  const orgReady = hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId);
   if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
     return (
       <div className="flex items-center justify-center py-12">
