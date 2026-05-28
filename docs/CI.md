@@ -15,7 +15,11 @@ E2E tests boot `wrangler dev` and the compiled CLI/MCP binaries; Bun's coverage 
 
 Bucket assignment (the source of truth) lives in `scripts/coverage/buckets.ts`.
 
-A `coverage-comment` job (PRs only) downloads both lcov artifacts, renders a summary table via `scripts/coverage/comment.ts`, and posts/updates a sticky PR comment via [`marocchino/sticky-pull-request-comment`](https://github.com/marocchino/sticky-pull-request-comment) (header: `coverage`). The job runs even if a test bucket fails (`if: always()`) and continues on missing artifacts so partial info still posts.
+A `coverage-comment` job (PRs only) downloads both lcov artifacts, renders the report via `scripts/coverage/comment.ts`, and posts/updates a sticky PR comment via [`marocchino/sticky-pull-request-comment`](https://github.com/marocchino/sticky-pull-request-comment) (header: `coverage`). The job runs even if a test bucket fails (`if: always()`) and continues on missing artifacts so partial info still posts.
+
+The comment opens with a **Change vs base** section — an Improved / Maintained / Worsened verdict plus per-bucket line/function deltas — followed by the absolute **Totals** table. The verdict is conservative: a regression in any bucket marks the whole PR worsened, otherwise any gain marks it improved. Deltas are compared on the rendered 2-decimal percentages, so sub-0.005% jitter reads as "maintained".
+
+The baseline is supplied by the `coverage-baseline` job, which runs only on push to `main`: it snapshots that run's lcov files into the GitHub Actions cache under key `coverage-baseline-<sha>`. PR runs restore it with the `coverage-baseline-` restore-key prefix — branch runs can read the default branch's cache, so this resolves to main's tip. Until `main` has run the job at least once there is no baseline, and the comment shows a "no baseline yet" note instead of the diff.
 
 Coverage is informational on this PR — no thresholds gate CI. The artifacts (`coverage-unit`, `coverage-integration`) on each run hold the full lcov files for local rendering (`bunx genhtml coverage/unit/lcov.info -o coverage/unit/html`) or editor inline-coverage extensions.
 

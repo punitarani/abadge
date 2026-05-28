@@ -37,6 +37,7 @@ export const BUCKETS: Record<Bucket, readonly string[]> = {
     "packages/trpc/src/server/*.test.ts",
     "packages/trpc/src/server/routers/*.test.ts",
     "scripts/*.test.ts",
+    "scripts/coverage/*.test.ts",
   ],
   integration: [
     "packages/trpc/src/server/__tests__/integration/**/*.test.ts",
