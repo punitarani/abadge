@@ -119,6 +119,25 @@ const decryptServerManagedItem = (
         },
         cachedContentKey,
       ),
+    ).pipe(
+      // §AB-0022 — an authorized read that fails server-side decryption (corrupt
+      // ciphertext, wrong/rotated key, missing DEK) still must leave an audit row.
+      // decryptServerEnvelope self-audits nothing, so record the denial here. The
+      // no-payload case is already audited above before this call runs. Audit-write
+      // failures are swallowed so they cannot mask the primary decrypt error.
+      Effect.tapError(() =>
+        logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId ?? undefined,
+          eventType,
+          result: "denied",
+          ipAddress: ctx.ipAddress,
+          meta: { reason: "decrypt_failed" },
+        }).pipe(Effect.catchAll(() => Effect.void)),
+      ),
     );
   });
 
@@ -132,6 +151,9 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
         .from(scope.tables.permissions)
         .where(
           and(
+            // Defense-in-depth: filter through the scoped-db org choke-point
+            // rather than relying on agentId/itemId being transitively in-org.
+            scope.orgScope("permissions"),
             eq(scope.tables.permissions.agentId, agentId),
             eq(scope.tables.permissions.itemId, itemId),
             eq(scope.tables.permissions.capability, capability),
@@ -628,6 +650,7 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
         .innerJoin(
           scope.tables.permissions,
           and(
+            scope.orgScope("permissions"),
             eq(scope.tables.permissions.itemId, scope.tables.items.id),
             eq(scope.tables.permissions.agentId, ctx.identity.agentId),
             eq(scope.tables.permissions.capability, "mount_env"),
@@ -1122,6 +1145,24 @@ export const redeemMount = (mountId: string) =>
         serverIv: item.serverIv as string,
         serverKeyVersion: item.serverKeyVersion,
       }),
+    ).pipe(
+      // §AB-0022 — an authorized redeem that fails server-side decryption still
+      // must leave an audit row (the no-payload case is audited above). Swallow
+      // audit-write failures so they cannot mask the primary decrypt error.
+      Effect.tapError(() =>
+        logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId ?? undefined,
+          eventType,
+          result: "denied",
+          deliveryMode,
+          ipAddress: ctx.ipAddress,
+          meta: { via: "mount_redeem", mountId, reason: "decrypt_failed" },
+        }).pipe(Effect.catchAll(() => Effect.void)),
+      ),
     );
     const payload = decodeServerManagedPayload(item.id, decrypted);
 

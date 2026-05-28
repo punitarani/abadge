@@ -8,7 +8,7 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 // §AB-0011 — the RLS backstop only enforces for NON-superuser, NON-BYPASSRLS roles
 // (the default test role is superuser and bypasses RLS, which is why the rest of the
 // suite is unaffected by enabling RLS). This test provisions a restricted role like
-// the production `abadge_app` and proves: the org GUC isolates rows, a wrong/unset
+// the production `app_runtime` and proves: the org GUC isolates rows, a wrong/unset
 // context FAILS CLOSED (zero rows, never an unfiltered leak), and the role genuinely
 // cannot bypass RLS.
 const TEST_DB_URL =

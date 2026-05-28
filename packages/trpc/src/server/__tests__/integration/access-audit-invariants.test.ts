@@ -192,6 +192,43 @@ describe("access pipeline audit invariants (AB-0022)", () => {
     expect(meta?.reason).toBe("decrypt_failed");
   });
 
+  test("corrupt ciphertext on mount redeem writes a denied audit row (decrypt_failed)", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "mount_env",
+      grantedBy: owner.userId,
+    });
+
+    // Mint a mount handle while the ciphertext is still valid (writes an "allowed" row).
+    const { mountId } = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+    expect(mountId).toBeTruthy();
+
+    // Corrupt the ciphertext, then redeem. Decryption fails at the crypto layer but
+    // the access was authorized, so §AB-0022 requires a denied audit row on the
+    // redeem path too — not just the access.read pipeline.
+    await db
+      .update(itemRecords)
+      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
+      .where(eq(itemRecords.id, item.itemId));
+
+    await expect(caller.access.redeemMount({ mountId })).rejects.toThrow();
+
+    const denied = await db
+      .select({ result: auditLogs.result, meta: auditLogs.meta })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.result, "denied")));
+    expect(denied).toHaveLength(1);
+    const meta = denied[0]?.meta as Record<string, unknown> | null;
+    expect(meta?.reason).toBe("decrypt_failed");
+    expect(meta?.via).toBe("mount_redeem");
+  });
+
   test("an expired permission writes a result='expired' audit row", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);

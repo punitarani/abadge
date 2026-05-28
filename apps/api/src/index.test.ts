@@ -49,14 +49,18 @@ const testEnv: Bindings = {
 };
 
 describe("api app", () => {
-  test("GET /health returns ok with db role info", async () => {
+  test("GET /health returns ok and does not leak the DB role to anon callers", async () => {
     const response = await app.request("http://localhost/health", undefined, testEnv);
     const body = (await response.json()) as { status: string; db: unknown };
 
     expect(response.status).toBe(200);
     expect(body.status).toBe("ok");
-    // db may be null when no DB binding is configured (e.g., unit test env).
-    expect(body).toHaveProperty("db");
+    // No DB binding in the unit env → db is null (a configured-but-unreachable DB
+    // returns 503 `degraded`). The role name and bypassRls attribute must never
+    // appear in the public payload.
+    expect(body.db).toBeNull();
+    expect(JSON.stringify(body)).not.toContain("bypassRls");
+    expect(JSON.stringify(body)).not.toContain("role");
   });
 
   test("tRPC endpoint is reachable", async () => {

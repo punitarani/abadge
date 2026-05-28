@@ -20,10 +20,20 @@ import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/sche
  *    imports of these tables outside this module, so a server file cannot reach
  *    a tenant table without going through an org scope.
  *
- * `run()` is transaction-oriented: the AB-0011 RLS backstop prepends
- * `SET LOCAL app.current_org` as the first statement of every scoped tx, so a
- * scoped read executed outside a transaction fails closed rather than running
- * unfiltered under Hyperdrive's connection pooling.
+ * Org isolation today is enforced entirely by the `organization_id` filters
+ * above — they are present on every scoped read/write by construction.
+ *
+ * `run()` is the building block for the AB-0011 RLS backstop: it opens a tx and
+ * sets the per-transaction GUC `app.current_org` (read by the FORCE-RLS policies
+ * in migration 0021) as the first statement. NOTE: `run()` is not yet wired into
+ * the request read path, so under the current owner/BYPASSRLS connection the
+ * RLS policies are inert and the filters above are the live control. Turning the
+ * backstop on for real — setting the GUC at the request boundary so it also
+ * covers the non-scoped pre-auth helpers, and reconciling the `agents` table
+ * (which must be read pre-org-context during auth) with org-keyed RLS — lands
+ * with the least-privilege role rollout (§AB-0012). Do NOT enable the NOBYPASSRLS
+ * runtime role until that wiring exists: with the GUC unset, every scoped read
+ * would fail closed to zero rows.
  */
 
 const TENANT_TABLES = { items, profiles, agents, permissions, auditLogs } as const;

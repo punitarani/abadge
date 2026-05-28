@@ -90,22 +90,35 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 app.get("/v1/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.all("/v1/*", (c) => handleV1Request(c));
 
-// Health check — also surfaces the DB role's BYPASSRLS attribute so deployment
-// misconfiguration (connecting as the owner instead of app_runtime) is visible.
-// §AB-0011/§AB-0012: rolbypassrls must be false in production.
+// Health check — liveness plus a lightweight DB-reachability probe.
+//
+// This endpoint is unauthenticated and unrate-limited, so it deliberately does
+// NOT expose the DB role name or its BYPASSRLS attribute in the response body
+// (that would leak the internal role to anonymous callers). The deployment-time
+// role assertion (rolbypassrls must be false once the least-privilege role is
+// live, §AB-0011/§AB-0012) is logged for operators here and enforced at startup
+// by the role rollout; it is not part of the public contract.
+//
+// Failure semantics: a configured-but-unreachable DB returns 503 `degraded` so
+// load balancers and uptime probes detect the outage instead of seeing a masked
+// `ok`. `db: null` means no DB binding is configured (e.g. the unit-test env).
 app.get("/health", async (c) => {
+  const connectionString = c.env.HYPERDRIVE?.connectionString ?? c.env.DATABASE_URL;
+  if (!connectionString) {
+    return c.json({ status: "ok", db: null });
+  }
   try {
-    const db = getDb(getConnectionString(c.env));
+    const db = getDb(connectionString);
     const [row] = await db.execute(
       sql`SELECT current_user AS role, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
     );
     const r = row as { role: string; rolbypassrls: boolean } | undefined;
-    return c.json({
-      status: "ok",
-      db: { role: r?.role ?? "unknown", bypassRls: r?.rolbypassrls ?? null },
-    });
-  } catch {
-    return c.json({ status: "ok", db: null });
+    // Operator signal in logs only — never in the anon-visible payload.
+    console.info(`[health] db reachable role=${r?.role ?? "unknown"} bypassRls=${r?.rolbypassrls}`);
+    return c.json({ status: "ok", db: { reachable: true } });
+  } catch (err) {
+    console.error("[health] db probe failed", err);
+    return c.json({ status: "degraded", db: { reachable: false } }, 503);
   }
 });
 

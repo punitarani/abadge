@@ -235,12 +235,8 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
       ),
     );
 
-    const [created] = yield* tryAsync(() =>
-      scope.executor
-        .select()
-        .from(scope.tables.profiles)
-        .where(eq(scope.tables.profiles.id, id))
-        .limit(1),
+    const created = yield* tryAsync(() =>
+      scope.findFirst("profiles", { where: eq(scope.tables.profiles.id, id) }),
     );
 
     if (!created) {

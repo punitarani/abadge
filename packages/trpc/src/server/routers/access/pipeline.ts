@@ -152,6 +152,9 @@ const lookupPermission = (
         .from(scope.tables.permissions)
         .where(
           and(
+            // Defense-in-depth: filter through the scoped-db org choke-point
+            // rather than relying on agentId/itemId being transitively in-org.
+            scope.orgScope("permissions"),
             eq(scope.tables.permissions.agentId, agentId),
             profileMatch ? or(itemMatch, profileMatch) : itemMatch,
           ),

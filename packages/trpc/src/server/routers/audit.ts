@@ -90,7 +90,6 @@ function buildEventTypeCondition(
 }
 
 interface AuditConditionsContext {
-  orgId: string;
   // §AB-0043 — null when the caller is an orphaned agent (no owning user).
   userId: string | null;
   role: string;
@@ -137,7 +136,6 @@ const listAuditEntries = (
     );
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const conditions = buildAuditConditions(scope.tables.auditLogs, input, {
-      orgId: ctx.identity.organizationId,
       userId: ctx.identity.userId,
       role,
       profileId: extra.profileId,
@@ -170,7 +168,6 @@ const listAuditEntriesForAgent = (
     const ctx = yield* AgentRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const conditions = buildAuditConditions(scope.tables.auditLogs, input, {
-      orgId: ctx.identity.agentOrganizationId,
       userId: ctx.identity.agentUserId,
       role: "member",
       profileId: extra.profileId,
