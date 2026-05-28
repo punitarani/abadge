@@ -127,6 +127,13 @@ interface TrpcQueryWithoutInput<TOutput> {
   query(): Promise<TOutput>;
 }
 
+interface TrpcMutationWithoutInput<TOutput> {
+  mutate(): Promise<TOutput>;
+}
+
+/** Optional keyset-pagination input shared by the cursor-paginated lists (§AB-0050). */
+type ListPageInput = { cursor?: string; limit?: number };
+
 interface SdkTrpcClient {
   auth: {
     createChallenge: TrpcMutation<{ agentId: string }, AgentChallengeResult>;
@@ -139,8 +146,8 @@ interface SdkTrpcClient {
   };
   items: {
     create: TrpcMutation<CreateItemInput, { id: string }>;
-    list: TrpcQueryWithoutInput<ItemListResult>;
-    listForAgent: TrpcQueryWithoutInput<ItemListResult>;
+    list: TrpcQuery<ListPageInput, ItemListResult>;
+    listForAgent: TrpcQuery<ListPageInput, ItemListResult>;
     get: TrpcQuery<{ itemId: string }, ItemResult>;
     update: TrpcMutation<
       { itemId: string; data: UpdateItemInput },
@@ -151,14 +158,14 @@ interface SdkTrpcClient {
   };
   agents: {
     create: TrpcMutation<CreateAgentInput, AgentWithKey>;
-    list: TrpcQueryWithoutInput<AgentListResult>;
+    list: TrpcQuery<ListPageInput, AgentListResult>;
     self: TrpcQueryWithoutInput<AgentResult>;
     rotate: TrpcMutation<{ agentId: string }, AgentRotateResult>;
     revoke: TrpcMutation<{ agentId: string }, SuccessResult>;
   };
   permissions: {
     create: TrpcMutation<CreatePermissionInput, PermissionListResult>;
-    list: TrpcQuery<PermissionFilters, PermissionListResult>;
+    list: TrpcQuery<PermissionFilters & ListPageInput, PermissionListResult>;
     revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
   access: {
@@ -239,9 +246,20 @@ interface SdkTrpcClient {
           slug: string;
           logo: string | null;
           createdAt: string;
+          isPersonal: boolean;
         };
       }
     >;
+    createPersonal: TrpcMutationWithoutInput<{
+      organization: {
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        isPersonal: boolean;
+      };
+    }>;
     list: TrpcQueryWithoutInput<{
       organizations: Array<{
         id: string;
@@ -251,6 +269,7 @@ interface SdkTrpcClient {
         createdAt: string;
         role: string;
         hasBootstrappedProfile: boolean;
+        isPersonal: boolean;
       }>;
     }>;
     get: TrpcQuery<{ orgId: string }, unknown>;
@@ -304,6 +323,50 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
   } catch (error) {
     throw AbadgeApiError.fromUnknown(error, fallback);
   }
+}
+
+/**
+ * The per-request page size the drainer asks for. Equal to the server's
+ * `MAX_PAGE_LIMIT` (§AB-0050); requesting the ceiling minimises round-trips.
+ * Asking for more would be rejected by input validation, not clamped.
+ */
+const DRAIN_PAGE_SIZE = 100;
+
+/**
+ * Pure runaway-loop guard. A `nextCursor` that never resolves to `null` means a
+ * server-side cursor bug; an unbounded client loop is worse than a loud failure.
+ * 1000 pages × the 100-row ceiling is far above any realistic org size.
+ */
+const MAX_DRAIN_PAGES = 1000;
+
+/**
+ * Follow `nextCursor` across every page of a cursor-paginated list and return
+ * the concatenation. The server caps each request (§AB-0050); this restores the
+ * "return everything" contract that the SDK list helpers had before pagination,
+ * so callers that need the full set (CLI export/import, list-then-find) keep
+ * working. Throws if pagination fails to terminate (see {@link MAX_DRAIN_PAGES}).
+ */
+async function drainPages<T>(
+  fetchPage: (
+    cursor: string | undefined,
+    limit: number,
+  ) => Promise<{ rows: readonly T[]; nextCursor: string | null }>,
+  fallback: string,
+): Promise<T[]> {
+  const all: T[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_DRAIN_PAGES; page++) {
+    const { rows, nextCursor } = await call(() => fetchPage(cursor, DRAIN_PAGE_SIZE), fallback);
+    all.push(...rows);
+    if (!nextCursor) return all;
+    cursor = nextCursor;
+  }
+  throw new AbadgeApiError(
+    500,
+    "PAGINATION_RUNAWAY",
+    `Pagination did not terminate after ${MAX_DRAIN_PAGES} pages`,
+    "This indicates a server-side cursor bug; report it with your X-Request-Id.",
+  );
 }
 
 function buildTrpcClient(apiUrl: string, token: string, orgId?: string): SdkTrpcClient {
@@ -394,7 +457,9 @@ export class AbadgeUserClient {
       id: string;
       name: string;
       slug: string;
+      isPersonal: boolean;
     }>;
+    createPersonal: () => ReturnType<AbadgeUserClient["createPersonalOrganization"]>;
     list: () => ReturnType<AbadgeUserClient["listOrganizations"]>;
     get: (orgId: string) => Promise<unknown>;
     update: (orgId: string, data: { name?: string }) => Promise<SuccessResult>;
@@ -445,6 +510,7 @@ export class AbadgeUserClient {
     // surface (marked @deprecated below) until the v0.6 removal.
     this.orgs = {
       create: (data) => this.createOrganization(data),
+      createPersonal: () => this.createPersonalOrganization(),
       list: () => this.listOrganizations(),
       get: (orgId) => this.getOrganization(orgId),
       update: (orgId, data) => this.updateOrganization(orgId, data),
@@ -543,7 +609,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.items.list()` instead. Removal target: v0.6.
    */
   async listItems(): Promise<ItemListResult> {
-    return call(() => this.client.items.list.query(), "Failed to list items");
+    const items = await drainPages(async (cursor, limit) => {
+      const page = await this.client.items.list.query({ cursor, limit });
+      return { rows: page.items, nextCursor: page.nextCursor };
+    }, "Failed to list items");
+    return { items, nextCursor: null };
   }
 
   /**
@@ -628,7 +698,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.agents.list()` instead. Removal target: v0.6.
    */
   async listAgents(): Promise<AgentListResult> {
-    return call(() => this.client.agents.list.query(), "Failed to list agents");
+    const agents = await drainPages(async (cursor, limit) => {
+      const page = await this.client.agents.list.query({ cursor, limit });
+      return { rows: page.agents, nextCursor: page.nextCursor };
+    }, "Failed to list agents");
+    return { agents, nextCursor: null };
   }
 
   /**
@@ -700,7 +774,11 @@ export class AbadgeUserClient {
    * @deprecated Use `client.permissions.list(filters)` instead. Removal target: v0.6.
    */
   async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
-    return call(() => this.client.permissions.list.query(filters), "Failed to list permissions");
+    const permissions = await drainPages(async (cursor, limit) => {
+      const page = await this.client.permissions.list.query({ ...filters, cursor, limit });
+      return { rows: page.permissions, nextCursor: page.nextCursor };
+    }, "Failed to list permissions");
+    return { permissions, nextCursor: null };
   }
 
   /**
@@ -742,10 +820,29 @@ export class AbadgeUserClient {
   async createOrganization(data: {
     name: string;
     slug?: string;
-  }): Promise<{ id: string; name: string; slug: string }> {
+  }): Promise<{ id: string; name: string; slug: string; isPersonal: boolean }> {
     const result = await call(
       () => this.client.organizations.create.mutate(data),
       "Failed to create organization",
+    );
+    return result.organization;
+  }
+
+  /**
+   * Create a personal account — a single-user workspace seeded with one
+   * `server_managed` profile. Takes no input; the name/slug are generated from
+   * the user record. Returns the org with `isPersonal: true`.
+   * @deprecated Use `client.orgs.createPersonal()` instead. Removal target: v0.6.
+   */
+  async createPersonalOrganization(): Promise<{
+    id: string;
+    name: string;
+    slug: string;
+    isPersonal: boolean;
+  }> {
+    const result = await call(
+      () => this.client.organizations.createPersonal.mutate(),
+      "Failed to create personal account",
     );
     return result.organization;
   }
@@ -763,6 +860,7 @@ export class AbadgeUserClient {
       createdAt: string;
       role: string;
       hasBootstrappedProfile: boolean;
+      isPersonal: boolean;
     }>;
   }> {
     return call(() => this.client.organizations.list.query(), "Failed to list organizations");
@@ -1304,7 +1402,25 @@ export class AbadgeAgentClient {
    * @returns Array of item summaries
    */
   async listItems(): Promise<ItemListResult> {
-    return this.authedCall(() => this.client.items.listForAgent.query(), "Failed to list items");
+    // The session guard is inlined rather than wrapping drainPages in
+    // authedCall: drainPages already routes each page through call(), and a
+    // second call() around it would re-normalize an AbadgeApiError into a
+    // generic 500/UNKNOWN, dropping the real statusCode/code/hint/meta.
+    if (this.sessionExpired) {
+      return Promise.reject(
+        new AbadgeApiError(
+          401,
+          "SESSION_REFRESH_FAILED",
+          "Agent session refresh exhausted; reconnect required",
+          "Call disconnect() + connect() again, or instantiate a fresh AbadgeAgentClient.",
+        ),
+      );
+    }
+    const items = await drainPages(async (cursor, limit) => {
+      const page = await this.client.items.listForAgent.query({ cursor, limit });
+      return { rows: page.items, nextCursor: page.nextCursor };
+    }, "Failed to list items");
+    return { items, nextCursor: null };
   }
 
   /**

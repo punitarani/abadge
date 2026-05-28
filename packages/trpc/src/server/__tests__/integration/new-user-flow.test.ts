@@ -60,7 +60,7 @@ describe("new-user flow (§ON6 createPersonalOrgForUser)", () => {
 
     const profileRows = await db.select().from(profiles).where(eq(profiles.organizationId, orgId));
     expect(profileRows).toHaveLength(1);
-    expect(profileRows[0]?.name).toBe("internal");
+    expect(profileRows[0]?.name).toBe("default");
     expect(profileRows[0]?.storageMode).toBe("server_managed");
     // server_managed profiles must not have ZK key material.
     expect(profileRows[0]?.wrappedRootKey).toBeFalsy();

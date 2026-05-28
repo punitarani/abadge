@@ -203,6 +203,38 @@ export const MAX_AGENT_METADATA_JSON_BYTES = 16 * 1024; // 16 KB
 /** §AGC1b — Maximum nesting depth for agent metadata JSON. */
 export const MAX_AGENT_METADATA_DEPTH = 8;
 
+/**
+ * Organization "type" stored in the existing `organization.metadata` text
+ * column. A personal org is a single-user workspace presented in the UI as a
+ * personal account rather than an organization. There is no dedicated schema
+ * column — the flag rides in `metadata` as the JSON string below.
+ */
+export const ORG_TYPE_PERSONAL = "personal" as const;
+
+/**
+ * Exact serialized string written to `organization.metadata` for personal
+ * orgs. Kept as one literal so the seed-time write and read-time parse cannot
+ * drift apart.
+ */
+export const PERSONAL_ORG_METADATA = `{"type":"${ORG_TYPE_PERSONAL}"}` as const;
+
+/** True iff `metadata` marks the org as a personal workspace. Malformed JSON,
+ * null, arrays, and non-personal types all return false. */
+export function isPersonalOrg(metadata: string | null | undefined): boolean {
+  if (!metadata) return false;
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      (parsed as { type?: unknown }).type === ORG_TYPE_PERSONAL
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Locality derived from agent kind */
 export function agentLocalityForKind(kind: AgentKind | "device" | "remote_agent"): AgentLocality {
   switch (kind) {

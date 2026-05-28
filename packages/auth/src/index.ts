@@ -12,7 +12,12 @@ export {
   safeAuditInsert,
 } from "./audit-hooks";
 export { type CloudflareEmailBinding, type MailerEmail, type MailerEnv, sendEmail } from "./mailer";
-export { createPersonalOrgForUser } from "./personal-org";
+export {
+  createPersonalOrgForUser,
+  type SeedOrgInput,
+  type SeedOrgResult,
+  seedOrgWithOwnerProfile,
+} from "./personal-org";
 export {
   type AuthEnv,
   createAuth,

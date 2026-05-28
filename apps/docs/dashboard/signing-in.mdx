@@ -14,8 +14,8 @@ The dashboard supports three sign-in methods. All of them produce a Better Auth 
   <Step title="Sign in">
     Enter the same email and password. The session cookie is set on success.
   </Step>
-  <Step title="Land in your personal organization">
-    On first sign-in, abadge creates a personal organization for you. You can rename it from **Settings → Organization** or create a separate org for your team.
+  <Step title="Choose how to get started">
+    Signup does not create an org for you. On first sign-in you land on `/onboarding` with three choices: **Personal account** (one click — creates a personal workspace with a default profile, ready to store secrets immediately), **Create a new organization** (for a team you'll own), or **Join with an invite** (paste an `abi_…` code or invite link). A personal account presents as a personal account rather than an org, holds one profile by default, and can register many agents — and you can still create or join team orgs later from the org switcher.
   </Step>
 </Steps>
 
@@ -30,8 +30,8 @@ If your deployment has the OAuth providers configured, the login page shows **Si
   <Step title="Approve">
     Approve the abadge app's requested scopes (email and profile).
   </Step>
-  <Step title="Land back in the dashboard">
-    On first sign-in, abadge creates a personal organization linked to your provider account. Subsequent sign-ins reuse it.
+  <Step title="Choose how to get started">
+    On first sign-in you land on `/onboarding` and pick **Personal account**, **Create a new organization**, or **Join with an invite** (same as the email/password flow above). Subsequent sign-ins go straight to the dashboard.
   </Step>
 </Steps>
 

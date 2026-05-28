@@ -17,7 +17,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateApiKey, generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, count, eq, isNull } from "@abadge/db";
+import { and, count, desc, eq, isNull } from "@abadge/db";
 import { agentEnrollmentTokens, agents as agentRecords, auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -37,6 +37,7 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
+import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializeAgent } from "../serialize";
 
 const AgentIdSchema = Schema.Struct({
@@ -164,17 +165,35 @@ const createAgent = (input: CreateAgentInput) =>
     };
   });
 
-const listAgents = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .select()
-      .from(agentRecords)
-      .where(eq(agentRecords.organizationId, ctx.identity.organizationId)),
-  );
-
-  return { agents: result.map(serializeAgent) };
+const AgentListQuerySchema = Schema.Struct({
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
 });
+
+const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    const result = yield* tryAsync(() =>
+      ctx.db
+        .select()
+        .from(agentRecords)
+        .where(
+          and(
+            eq(agentRecords.organizationId, ctx.identity.organizationId),
+            cursorCondition(agentRecords.createdAt, agentRecords.id, cursor),
+          ),
+        )
+        .orderBy(desc(agentRecords.createdAt), desc(agentRecords.id))
+        .limit(limit),
+    );
+
+    return { agents: result.map(serializeAgent), nextCursor: nextCursorFrom(result, limit) };
+  });
 
 const getAgent = (agentId: string) =>
   Effect.gen(function* () {
@@ -467,8 +486,11 @@ export const agentsRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgent(input))),
   list: scopedSessionProcedure("agents:read")
     .meta({ openapi: { method: "GET", path: "/agents", tags: ["agents"], protect: true } })
+    // §AB-0050 — input is optional so existing no-arg `list()` callers keep
+    // working (first page); pagination params are opt-in.
+    .input(strictSchema(Schema.UndefinedOr(AgentListQuerySchema)))
     .output(strictSchema(AgentListResultSchema))
-    .query(({ ctx }) => runSessionEffect(ctx, listAgents)),
+    .query(({ ctx, input }) => runSessionEffect(ctx, listAgents(input ?? {}))),
   self: agentProcedure
     .output(strictSchema(AgentResultSchema))
     .query(({ ctx }) => runAgentEffect(ctx, getCurrentAgent)),

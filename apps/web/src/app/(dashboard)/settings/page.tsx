@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { authClient } from "@/lib/auth-client";
+import { listAllItems } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
@@ -86,7 +87,7 @@ export default function SettingsPage(): React.ReactElement {
   // ---- Items (for danger zone count) ----
   const itemsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.items.list.query(),
+    queryFn: () => listAllItems(),
     enabled: !!activeOrgId,
   });
   const itemCount = itemsQuery.data?.items?.length ?? 0;

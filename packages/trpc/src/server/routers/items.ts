@@ -13,12 +13,6 @@ import {
   type UpdateItemInput,
   UpdateItemSchema,
 } from "@abadge/core";
-import { serverDecrypt, serverEncrypt } from "@abadge/crypto/server";
-import {
-  profileIdForServerAad,
-  SERVER_AAD_MIN_VERSION,
-  type ServerAadMeta,
-} from "@abadge/crypto/shared";
 import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
@@ -36,7 +30,9 @@ import {
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
+import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
+import { decryptServerEnvelope, encryptServerEnvelope } from "../server-envelope";
 
 const loadOwnedItem = (
   itemId: string,
@@ -81,7 +77,9 @@ const loadOwnedItem = (
 
 /**
  * ZK insert under an advisory lock (§I5-RACE).
- * Resolves the first ZK profile in the org, takes `pg_advisory_xact_lock` on
+ * Resolves the target ZK profile (an explicit `opts.profileId` from §AB-0002
+ * when given — already validated for org + mode by the caller — otherwise the
+ * org's first ZK profile, legacy behavior), takes `pg_advisory_xact_lock` on
  * it, re-reads keyVersion (defending against a rotate that committed between
  * the profile SELECT and the lock acquisition), optionally enforces CAS via
  * expectedKeyVersion, then inserts with cryptoVersion tagged to the current
@@ -97,6 +95,9 @@ async function insertZeroKnowledgeItem(
     encryptedItemKey: string;
     ciphertext: string;
     expectedKeyVersion: number | undefined;
+    // §AB-0002 — explicit target profile id; falls back to the org's first ZK
+    // profile when undefined to preserve legacy single-profile behavior.
+    profileId: string | undefined;
   },
 ): Promise<void> {
   const [profile] = await tx
@@ -106,6 +107,7 @@ async function insertZeroKnowledgeItem(
       and(
         eq(profiles.organizationId, opts.organizationId),
         eq(profiles.storageMode, "zero_knowledge"),
+        ...(opts.profileId ? [eq(profiles.id, opts.profileId)] : []),
       ),
     )
     .limit(1);
@@ -165,6 +167,95 @@ async function insertZeroKnowledgeItem(
   });
 }
 
+/**
+ * §AB-0001 / §AB-0002 — resolve the profile an item.create should target.
+ *
+ * With an explicit `profileId`: load it scoped to the caller's org and assert
+ * it matches the item's storage mode (PROFILE_NOT_FOUND if it isn't in the org,
+ * PROFILE_MODE_MISMATCH if the mode differs). Without one: pick the org's
+ * default profile of that mode — preferring the auto-seeded `externalId='default'`
+ * profile, then the oldest — so every server_managed item gets a real profileId
+ * instead of being created profile-less and silently excluded from
+ * profile-level grants.
+ */
+const resolveTargetProfile = (
+  storageMode: "zero_knowledge" | "server_managed",
+  explicitProfileId: string | undefined,
+) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+
+    if (explicitProfileId !== undefined) {
+      const [profile] = yield* tryAsync(() =>
+        ctx.db
+          .select({ id: profiles.id, storageMode: profiles.storageMode })
+          .from(profiles)
+          .where(
+            and(
+              eq(profiles.id, explicitProfileId),
+              eq(profiles.organizationId, ctx.identity.organizationId),
+            ),
+          )
+          .limit(1),
+      );
+      if (!profile) {
+        return yield* Effect.fail(
+          new NotFoundError({
+            code: "PROFILE_NOT_FOUND",
+            message: "Profile not found",
+            hint: "Confirm the profileId belongs to your organization.",
+          }),
+        );
+      }
+      if (profile.storageMode !== storageMode) {
+        return yield* Effect.fail(
+          new BadRequestError({
+            code: "BAD_REQUEST",
+            message: `Profile is ${profile.storageMode} but the item is ${storageMode}`,
+            hint: `Target a ${storageMode} profile, or change the item's storageMode to match.`,
+            meta: {
+              reason: "profile_mode_mismatch",
+              profileId: explicitProfileId,
+              profileStorageMode: profile.storageMode,
+              itemStorageMode: storageMode,
+            },
+          }),
+        );
+      }
+      return profile.id;
+    }
+
+    const [profile] = yield* tryAsync(() =>
+      ctx.db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(
+          and(
+            eq(profiles.organizationId, ctx.identity.organizationId),
+            eq(profiles.storageMode, storageMode),
+          ),
+        )
+        .orderBy(
+          sql`case when ${profiles.externalId} = 'default' then 0 else 1 end`,
+          profiles.createdAt,
+        )
+        .limit(1),
+    );
+    if (!profile) {
+      return yield* Effect.fail(
+        new NotFoundError({
+          code: "PROFILE_NOT_FOUND",
+          message: `No ${storageMode} profile found`,
+          hint:
+            storageMode === "zero_knowledge"
+              ? "Create a zero-knowledge profile before storing ZK items."
+              : "Create a server-managed profile before storing server-managed items.",
+        }),
+      );
+    }
+    return profile.id;
+  });
+
 const createItem = (input: CreateItemInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -176,6 +267,13 @@ const createItem = (input: CreateItemInput) =>
     const id = input.storageMode === "zero_knowledge" ? input.id : crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
+      // §AB-0002 — when the client targets an explicit profile, validate it
+      // (org ownership + ZK mode) up front so callers get PROFILE_NOT_FOUND /
+      // PROFILE_MODE_MISMATCH; default resolution + advisory lock stay inside
+      // insertZeroKnowledgeItem.
+      if (input.profileId !== undefined) {
+        yield* resolveTargetProfile("zero_knowledge", input.profileId);
+      }
       // tryAsync (not Effect.tryPromise) preserves the domain Error instance
       // thrown inside the tx callback, so toTrpcError's isDomainError check
       // maps ConflictError/NotFoundError to the correct tRPC code + cause.
@@ -189,6 +287,7 @@ const createItem = (input: CreateItemInput) =>
             encryptedItemKey: input.encryptedItemKey,
             ciphertext: input.ciphertext,
             expectedKeyVersion: input.expectedKeyVersion,
+            profileId: input.profileId,
           }),
         ),
       ).pipe(
@@ -209,20 +308,25 @@ const createItem = (input: CreateItemInput) =>
         ),
       );
     } else {
+      // §AB-0001 — bind the item to a real profile (the org's default
+      // server_managed profile, or an explicit one per §AB-0002) so that
+      // profile-level grants cover it (lookupPermission skips NULL-profile
+      // rows) and the AAD is profile-scoped instead of the null sentinel.
+      const targetProfileId = yield* resolveTargetProfile("server_managed", input.profileId);
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      // New server-managed writes are v2 AAD-bound (§W1S7-002). AAD binds
-      // ciphertext to (orgId, profileId, itemId, keyVersion) so a DB-write
-      // adversary cannot substitute rows across items or organizations.
-      // `profileIdForServerAad` is shared with every decrypt site so the
-      // null-profile fallback stays symmetric across encrypt and decrypt.
-      const aadMeta: ServerAadMeta = {
-        orgId: ctx.identity.organizationId,
-        profileId: profileIdForServerAad(null),
-        itemId: id,
-        keyVersion: SERVER_AAD_MIN_VERSION,
-      };
+      // §AB-0030 — encrypt under the profile's DEK (v3 envelope), provisioning
+      // the DEK on first use. AAD still binds (orgId, profileId, itemId,
+      // keyVersion) so a DB-write adversary can't substitute rows across items
+      // or organizations.
       const encrypted = yield* tryAsync(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
+        encryptServerEnvelope(
+          ctx.db,
+          ctx.env.ENCRYPTION_KEY,
+          ctx.identity.organizationId,
+          targetProfileId,
+          id,
+          plaintext,
+        ),
       );
 
       yield* tryAsync(() =>
@@ -230,6 +334,7 @@ const createItem = (input: CreateItemInput) =>
           id,
           createdBy: userId,
           organizationId: ctx.identity.organizationId,
+          profileId: targetProfileId,
           label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
           serverCiphertext: encrypted.ciphertext,
@@ -251,59 +356,85 @@ const createItem = (input: CreateItemInput) =>
     return { id };
   });
 
-const listItems = Effect.gen(function* () {
-  const ctx = yield* SessionRequestContextTag;
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .select({
-        id: items.id,
-        label: items.label,
-        storageMode: items.storageMode,
-        cryptoVersion: items.cryptoVersion,
-        contentVersion: items.contentVersion,
-        // §C2 — required so the web dashboard's profile-grant
-        // blast-radius dialog can count items in a profile without
-        // fetching item-detail rows for every item.
-        profileId: items.profileId,
-        createdAt: items.createdAt,
-        updatedAt: items.updatedAt,
-      })
-      .from(items)
-      .where(and(eq(items.organizationId, ctx.identity.organizationId), isNull(items.deletedAt)))
-      .orderBy(desc(items.createdAt)),
-  );
-
-  return { items: result.map(serializeItemSummary) };
+const ItemListQuerySchema = Schema.Struct({
+  cursor: Schema.optional(Schema.String),
+  limit: Schema.optional(
+    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+  ),
 });
 
-const listItemsForAgent = Effect.gen(function* () {
-  const ctx = yield* AgentRequestContextTag;
-  const result = yield* tryAsync(() =>
-    ctx.db
-      .selectDistinct({
-        id: items.id,
-        label: items.label,
-        storageMode: items.storageMode,
-        cryptoVersion: items.cryptoVersion,
-        contentVersion: items.contentVersion,
-        profileId: items.profileId,
-        createdAt: items.createdAt,
-        updatedAt: items.updatedAt,
-      })
-      .from(items)
-      .innerJoin(permissions, eq(permissions.itemId, items.id))
-      .where(
-        and(
-          eq(items.organizationId, ctx.identity.agentOrganizationId),
-          eq(permissions.agentId, ctx.identity.agentId),
-          isNull(items.deletedAt),
-        ),
-      )
-      .orderBy(desc(items.createdAt)),
-  );
+const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* SessionRequestContextTag;
+    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC): an immutable
+    // tuple, so a concurrent insert never shifts an existing page.
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    const result = yield* tryAsync(() =>
+      ctx.db
+        .select({
+          id: items.id,
+          label: items.label,
+          storageMode: items.storageMode,
+          cryptoVersion: items.cryptoVersion,
+          contentVersion: items.contentVersion,
+          // §C2 — required so the web dashboard's profile-grant
+          // blast-radius dialog can count items in a profile without
+          // fetching item-detail rows for every item.
+          profileId: items.profileId,
+          createdAt: items.createdAt,
+          updatedAt: items.updatedAt,
+        })
+        .from(items)
+        .where(
+          and(
+            eq(items.organizationId, ctx.identity.organizationId),
+            isNull(items.deletedAt),
+            cursorCondition(items.createdAt, items.id, cursor),
+          ),
+        )
+        .orderBy(desc(items.createdAt), desc(items.id))
+        .limit(limit),
+    );
 
-  return { items: result.map(serializeItemSummary) };
-});
+    return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
+  });
+
+const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
+  Effect.gen(function* () {
+    const ctx = yield* AgentRequestContextTag;
+    // §AB-0050 — the agent's grant set is not structurally bounded, so page it
+    // on the same (createdAt DESC, id DESC) keyset as the session list.
+    const limit = resolveLimit(input.limit);
+    const cursor = decodeCursor(input.cursor);
+    const result = yield* tryAsync(() =>
+      ctx.db
+        .selectDistinct({
+          id: items.id,
+          label: items.label,
+          storageMode: items.storageMode,
+          cryptoVersion: items.cryptoVersion,
+          contentVersion: items.contentVersion,
+          profileId: items.profileId,
+          createdAt: items.createdAt,
+          updatedAt: items.updatedAt,
+        })
+        .from(items)
+        .innerJoin(permissions, eq(permissions.itemId, items.id))
+        .where(
+          and(
+            eq(items.organizationId, ctx.identity.agentOrganizationId),
+            eq(permissions.agentId, ctx.identity.agentId),
+            isNull(items.deletedAt),
+            cursorCondition(items.createdAt, items.id, cursor),
+          ),
+        )
+        .orderBy(desc(items.createdAt), desc(items.id))
+        .limit(limit),
+    );
+
+    return { items: result.map(serializeItemSummary), nextCursor: nextCursorFrom(result, limit) };
+  });
 
 const getItem = (itemId: string) =>
   Effect.gen(function* () {
@@ -353,16 +484,17 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      // Rewrite always lands as v2 AAD-bound, even when the prior row was v1.
-      // This opportunistically migrates the row forward as it is touched.
-      const aadMeta: ServerAadMeta = {
-        orgId: ctx.identity.organizationId,
-        profileId: profileIdForServerAad(item.profileId),
-        itemId,
-        keyVersion: SERVER_AAD_MIN_VERSION,
-      };
+      // §AB-0030 — rewrite forward: v3 under the profile's DEK when the row has
+      // a profile, else v2 (legacy NULL-profile rows stay decryptable).
       const encrypted = yield* tryAsync(() =>
-        serverEncrypt(plaintext, ctx.env.ENCRYPTION_KEY, SERVER_AAD_MIN_VERSION, aadMeta),
+        encryptServerEnvelope(
+          ctx.db,
+          ctx.env.ENCRYPTION_KEY,
+          ctx.identity.organizationId,
+          item.profileId,
+          itemId,
+          plaintext,
+        ),
       );
 
       const updated = yield* tryAsync(() =>
@@ -436,24 +568,15 @@ const ownerReveal = (itemId: string) =>
       );
     }
 
-    const ciphertext = item.serverCiphertext;
-    const iv = item.serverIv;
-    const keyVersion = item.serverKeyVersion;
-
-    // v1 rows predate AAD binding and MUST be decrypted without AAD.
-    // v2+ rows carry AAD bound to (orgId, profileId, itemId, keyVersion).
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.organizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
+    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
     const decrypted = yield* tryAsync(() =>
-      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY, aadMeta),
+      decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.organizationId, {
+        id: item.id,
+        profileId: item.profileId,
+        serverCiphertext: item.serverCiphertext,
+        serverIv: item.serverIv,
+        serverKeyVersion: item.serverKeyVersion,
+      }),
     );
 
     yield* logSessionAudit({
@@ -525,11 +648,15 @@ export const itemsRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createItem(input))),
   list: scopedSessionProcedure("items:read")
     .meta({ openapi: { method: "GET", path: "/items", tags: ["items"], protect: true } })
+    // §AB-0050 — input is optional so existing no-arg `list()` callers keep
+    // working (first page); pagination params are opt-in.
+    .input(strictSchema(Schema.UndefinedOr(ItemListQuerySchema)))
     .output(strictSchema(ItemListResultSchema))
-    .query(({ ctx }) => runSessionEffect(ctx, listItems)),
+    .query(({ ctx, input }) => runSessionEffect(ctx, listItems(input ?? {}))),
   listForAgent: agentProcedure
+    .input(strictSchema(Schema.UndefinedOr(ItemListQuerySchema)))
     .output(strictSchema(ItemListResultSchema))
-    .query(({ ctx }) => runAgentEffect(ctx, listItemsForAgent)),
+    .query(({ ctx, input }) => runAgentEffect(ctx, listItemsForAgent(input ?? {}))),
   get: scopedSessionProcedure("items:read")
     .meta({
       openapi: { method: "GET", path: "/items/{itemId}", tags: ["items"], protect: true },

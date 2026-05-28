@@ -114,7 +114,16 @@ describe("AbadgeUserClient happy paths", () => {
 
     ["getAudit", "audit.list", "query", []],
   ] as const)("%s -> %s.%s", async (method, expectedPath, expectedKind, args) => {
-    const { user, calls } = makeUserClient({ ok: true });
+    // The list methods drain pages, reading the array key + nextCursor off each
+    // response; the shared return carries every key with a null cursor so a
+    // single page terminates the drain at exactly one recorded call.
+    const { user, calls } = makeUserClient({
+      ok: true,
+      items: [],
+      agents: [],
+      permissions: [],
+      nextCursor: null,
+    });
     await invoke(user, method, [...args]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.path).toBe(expectedPath);
@@ -128,6 +137,22 @@ describe("AbadgeUserClient happy paths", () => {
     const out = await user.createOrganization({ name: "x", slug: "x" });
     expect(out.id).toBe("org_1");
     expect(calls[0]?.path).toBe("organizations.create");
+  });
+
+  test("createPersonalOrganization unwraps result.organization (no input)", async () => {
+    const { user, calls } = makeUserClient({
+      organization: {
+        id: "org_p",
+        name: "Dana's workspace",
+        slug: "dana-ab12cd34",
+        isPersonal: true,
+      },
+    });
+    const out = await user.createPersonalOrganization();
+    expect(out.id).toBe("org_p");
+    expect(out.isPersonal).toBe(true);
+    expect(calls[0]?.path).toBe("organizations.createPersonal");
+    expect(calls[0]?.kind).toBe("mutate");
   });
 
   test("listOrganizations + getOrganization + updateOrganization + deleteOrganization", async () => {
@@ -433,6 +458,72 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
 });
 
 // -----------------------------------------------------------------------------
+// AbadgeUserClient — list methods drain pagination (§AB-0050 regression guard)
+// -----------------------------------------------------------------------------
+
+describe("AbadgeUserClient list methods drain every page", () => {
+  /** A stub whose `<arrayKey>.list.query` returns two pages, then stops. */
+  function twoPageUser(arrayKey: "items" | "agents" | "permissions"): AbadgeUserClient {
+    let n = 0;
+    const list = {
+      query: () => {
+        n++;
+        const page = {
+          [arrayKey]: [{ id: `${arrayKey}-${n}` }],
+          nextCursor: n === 1 ? "c1" : null,
+        };
+        return Promise.resolve(page);
+      },
+    };
+    const user = new AbadgeUserClient({ apiUrl: "http://x", sessionToken: "tok" });
+    (user as unknown as { client: unknown }).client = { [arrayKey]: { list } };
+    return user;
+  }
+
+  test("listItems concatenates pages and reports nextCursor=null", async () => {
+    const { items, nextCursor } = await twoPageUser("items").listItems();
+    expect(items.map((i) => (i as { id: string }).id)).toEqual(["items-1", "items-2"]);
+    expect(nextCursor).toBeNull();
+  });
+
+  test("listAgents concatenates pages and reports nextCursor=null", async () => {
+    const { agents, nextCursor } = await twoPageUser("agents").listAgents();
+    expect(agents.map((a) => (a as { id: string }).id)).toEqual(["agents-1", "agents-2"]);
+    expect(nextCursor).toBeNull();
+  });
+
+  test("listPermissions concatenates pages and reports nextCursor=null", async () => {
+    const { permissions, nextCursor } = await twoPageUser("permissions").listPermissions();
+    expect(permissions.map((p) => (p as { id: string }).id)).toEqual([
+      "permissions-1",
+      "permissions-2",
+    ]);
+    expect(nextCursor).toBeNull();
+  });
+});
+
+describe("AbadgeAgentClient.listItems drains the paginated agent item view", () => {
+  test("concatenates listForAgent pages and reports nextCursor=null", async () => {
+    let n = 0;
+    const listForAgent = {
+      query: () => {
+        n++;
+        return Promise.resolve({
+          items: [{ id: `agent-item-${n}` }],
+          nextCursor: n === 1 ? "c1" : null,
+        });
+      },
+    };
+    const agent = new AbadgeAgentClient({ apiUrl: "http://x", apiKey: "abl_test_key" });
+    (agent as unknown as { client: unknown }).client = { items: { listForAgent } };
+
+    const { items, nextCursor } = await agent.listItems();
+    expect(items.map((i) => (i as { id: string }).id)).toEqual(["agent-item-1", "agent-item-2"]);
+    expect(nextCursor).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------------
 // AbadgeUserClient — error paths
 // -----------------------------------------------------------------------------
 
@@ -487,7 +578,9 @@ describe("AbadgeAgentClient happy paths", () => {
     ["accessMount", "access.mount", "mutate", ["item_x", "env"]],
     ["bulkAccessMountEnv", "access.bulkMountEnv", "mutate", ["prof_x"]],
   ] as const)("%s -> %s.%s", async (method, expectedPath, expectedKind, args) => {
-    const { agent, calls } = makeAgentClient({ ok: true });
+    // listItems drains pages, reading items/nextCursor off the response, so the
+    // shared return must terminate a single page.
+    const { agent, calls } = makeAgentClient({ ok: true, items: [], nextCursor: null });
     await invoke(agent, method, [...args]);
     expect(calls[0]?.path).toBe(expectedPath);
     expect(calls[0]?.kind).toBe(expectedKind as RecordedCall["kind"]);

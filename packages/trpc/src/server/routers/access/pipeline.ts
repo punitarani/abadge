@@ -12,12 +12,6 @@ import {
   NotFoundError,
   resolveFieldValue,
 } from "@abadge/core";
-import { serverDecrypt } from "@abadge/crypto/server";
-import {
-  profileIdForServerAad,
-  SERVER_AAD_MIN_VERSION,
-  type ServerAadMeta,
-} from "@abadge/crypto/shared";
 import { and, eq, inArray, isNull, or } from "@abadge/db";
 import {
   auditLogs,
@@ -30,6 +24,7 @@ import { Effect } from "effect";
 import { buildAuditRow, logAgentAudit } from "../../audit";
 import { AgentRequestContextTag, tryAsync } from "../../effect";
 import { decodeServerManagedPayload } from "../../item-payload";
+import { decryptServerEnvelope } from "../../server-envelope";
 import { checkActionConstraint } from "./constraints";
 
 // ---------------------------------------------------------------------------
@@ -248,18 +243,15 @@ const decryptServerManaged = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    const aadMeta: ServerAadMeta | undefined =
-      keyVersion >= SERVER_AAD_MIN_VERSION
-        ? {
-            orgId: ctx.identity.agentOrganizationId,
-            profileId: profileIdForServerAad(item.profileId),
-            itemId: item.id,
-            keyVersion,
-          }
-        : undefined;
-
+    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
     return yield* tryAsync(() =>
-      serverDecrypt({ ciphertext, iv, keyVersion }, ctx.env.ENCRYPTION_KEY, aadMeta),
+      decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
+        id: item.id,
+        profileId: item.profileId,
+        serverCiphertext: ciphertext,
+        serverIv: iv,
+        serverKeyVersion: keyVersion,
+      }),
     );
   });
 

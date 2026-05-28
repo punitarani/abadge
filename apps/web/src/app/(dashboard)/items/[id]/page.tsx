@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { buildAuditAgentNameMap } from "@/lib/audit-display";
+import { listAllAgents, listAllPermissions } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
@@ -51,13 +52,13 @@ export default function ItemDetailPage(): React.ReactElement {
 
   const permissionsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgPermissions(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.permissions.list.query({}),
+    queryFn: () => listAllPermissions(),
     enabled: !!activeOrgId,
   });
 
   const agentsQuery = useQuery({
     queryKey: dashboardQueryKeys.orgAgents(activeOrgId ?? ""),
-    queryFn: () => browserTrpcClient.agents.list.query(),
+    queryFn: () => listAllAgents(),
     enabled: !!activeOrgId,
   });
 

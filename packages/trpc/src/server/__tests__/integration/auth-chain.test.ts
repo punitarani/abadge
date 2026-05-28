@@ -48,7 +48,7 @@ describe("auth chain integration", () => {
     const org = await seedOrg(auth, user.userId);
     const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
 
-    const result = await caller.agents.list();
+    const result = await caller.agents.list({});
     expect(result.agents).toEqual([]);
   });
 
@@ -59,7 +59,7 @@ describe("auth chain integration", () => {
     const caller = createUnauthenticatedCaller(db, auth);
 
     try {
-      await caller.agents.list();
+      await caller.agents.list({});
       expect.unreachable("agents.list should have thrown for unauthenticated request");
     } catch (error: unknown) {
       const trpcError = error as { code?: string };
@@ -77,7 +77,7 @@ describe("auth chain integration", () => {
     const caller = createUnauthenticatedCaller(db, auth, { headers });
 
     try {
-      await caller.agents.list();
+      await caller.agents.list({});
       expect.unreachable("agents.list should have thrown for fake session cookie");
     } catch (error: unknown) {
       const trpcError = error as { code?: string };
@@ -103,11 +103,11 @@ describe("auth chain integration", () => {
 
     // List agents scoped to org2 — should be empty
     const callerOrg2 = createOperatorCaller(db, auth, user.headers, org2.orgId);
-    const org2Agents = await callerOrg2.agents.list();
+    const org2Agents = await callerOrg2.agents.list({});
     expect(org2Agents.agents).toEqual([]);
 
     // List agents scoped to org1 — should contain the one we created
-    const org1Agents = await callerOrg1.agents.list();
+    const org1Agents = await callerOrg1.agents.list({});
     expect(org1Agents.agents).toHaveLength(1);
     expect(org1Agents.agents[0].name).toBe("org1-agent");
   });
@@ -126,7 +126,7 @@ describe("auth chain integration", () => {
 
     // Cookie auth exercises auth.api.getSession() in resolveSessionIdentity
     const caller = createOperatorCaller(db, auth, user.headers, org.orgId);
-    const result = await caller.agents.list();
+    const result = await caller.agents.list({});
     expect(result.agents).toEqual([]);
   });
 
@@ -143,7 +143,7 @@ describe("auth chain integration", () => {
 
     // Bearer auth exercises resolveBearerSessionIdentity in resolveSessionIdentity
     const caller = createOperatorCaller(db, auth, bearerHeaders, org.orgId);
-    const result = await caller.agents.list();
+    const result = await caller.agents.list({});
     expect(result.agents).toEqual([]);
   });
 });

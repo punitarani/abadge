@@ -264,7 +264,6 @@ export async function seedZkItem(
     storageMode: "zero_knowledge",
     encryptedItemKey: fakeBlob(56),
     ciphertext: fakeBlob(128),
-    contentNonce: fakeBlob(24),
   });
 
   return { itemId, label };

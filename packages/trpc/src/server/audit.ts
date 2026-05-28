@@ -8,6 +8,7 @@ import {
   tryAsync,
   UserRequestContextTag,
 } from "./effect";
+import { redactedJson } from "./log";
 
 // ---------------------------------------------------------------------------
 // auditDenied helpers (W2T12-003)
@@ -21,7 +22,7 @@ import {
 
 export interface DeniedAuditFields {
   organizationId: string;
-  userId: string;
+  userId: string | null;
   agentId?: string;
   itemId?: string;
   profileId?: string;
@@ -89,7 +90,7 @@ export const auditDeniedBase = <E extends Error>(
 
 export interface AuditEntryInput {
   organizationId: string;
-  userId: string;
+  userId: string | null;
   agentId?: string;
   itemId?: string;
   profileId?: string;
@@ -121,6 +122,19 @@ export function buildAuditRow(entry: AuditEntryInput) {
   };
 }
 
+// Best-effort second audit sink: emit each committed row as a marked structured
+// log line that ships off-box to an append-only store, so a DB-side deletion is
+// detectable as a row present in the sink but absent from the table. Redacted
+// like every structured log (a future caller could put a secret in `meta`), and
+// never throws — a sink failure must not invert or block the caller's mutation.
+export function mirrorAuditRow(row: ReturnType<typeof buildAuditRow>): void {
+  try {
+    console.log(redactedJson({ audit_mirror: 1, mirroredAt: new Date().toISOString(), ...row }));
+  } catch {
+    // Intentionally swallowed — the mirror is best-effort and must never throw.
+  }
+}
+
 // Never let an audit-write failure invert the caller's primary mutation.
 // On DB error: log a warning for operator visibility and return void.
 // A future dead-letter queue can replay from the warning stream.
@@ -129,9 +143,16 @@ function withAuditFailureWarning(
   effect: Effect.Effect<unknown, Error>,
 ): Effect.Effect<void, never> {
   return effect.pipe(
+    // Mirror only after the insert succeeds (tap skips the failure path): a row
+    // that never committed must not appear in the sink, or the divergence check
+    // would false-positive.
+    Effect.tap(() => Effect.sync(() => mirrorAuditRow(buildAuditRow(entry)))),
     Effect.catchAll((err) => {
+      // §AB-0091 — meta is redacted before logging so an audit-write failure
+      // can't surface a secret to Workers observability, even if a future
+      // caller puts sensitive data in `meta`.
       console.warn(
-        `audit_write_failed event_type=${entry.eventType} org=${entry.organizationId} user=${entry.userId} err=${err instanceof Error ? err.message : String(err)}`,
+        `audit_write_failed event_type=${entry.eventType} org=${entry.organizationId} user=${entry.userId} meta=${redactedJson(entry.meta ?? {})} err=${err instanceof Error ? err.message : String(err)}`,
       );
       return Effect.void;
     }),

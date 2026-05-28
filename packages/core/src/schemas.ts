@@ -160,6 +160,11 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   // server MUST use this value verbatim when inserting the row. Any server-side
   // replacement would break the AAD binding and make the item undecryptable.
   id: UuidString,
+  // §AB-0002 — optional explicit target profile. Omitted preserves legacy
+  // behavior (server resolves the org's first zero_knowledge profile). When
+  // set it MUST be a zero_knowledge profile in the caller's org; the client
+  // is responsible for having wrapped the DEK under that profile's root key.
+  profileId: Schema.optional(UuidString),
   label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
@@ -171,6 +176,10 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
 
 export const ServerManagedCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("server_managed"),
+  // §AB-0002 — optional explicit target profile. Omitted resolves the org's
+  // default server_managed profile. Must be a server_managed profile in the
+  // caller's org.
+  profileId: Schema.optional(UuidString),
   payload: ItemPayloadSchema,
 });
 
@@ -506,7 +515,8 @@ export const ItemDetailSchema = Schema.Union(
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
-  createdBy: NonEmptyString,
+  // §AB-0043 — null when the creating user has been deleted (agent orphaned, org-scoped).
+  createdBy: Schema.NullOr(NonEmptyString),
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
   authMethod: AgentAuthMethodSchema,
@@ -599,14 +609,16 @@ export const PermissionSchema = Schema.Struct({
   profileId: Schema.NullOr(NonEmptyString),
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  grantedBy: NonEmptyString,
+  // §AB-0043 — null when the granting user has been deleted (grant survives).
+  grantedBy: Schema.NullOr(NonEmptyString),
   createdAt: IsoDateString,
 });
 
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
   organizationId: NonEmptyString,
-  userId: NonEmptyString,
+  // §AB-0043 — null for an orphaned agent's actions (no actor-user).
+  userId: Schema.NullOr(NonEmptyString),
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
   profileId: Schema.NullOr(Schema.String),
@@ -724,6 +736,8 @@ export const ItemResultSchema = Schema.Struct({
 
 export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const AgentResultSchema = Schema.Struct({
@@ -732,10 +746,14 @@ export const AgentResultSchema = Schema.Struct({
 
 export const AgentListResultSchema = Schema.Struct({
   agents: Schema.Array(AgentSchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const PermissionListResultSchema = Schema.Struct({
   permissions: Schema.Array(PermissionSchema),
+  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const AuditListResultSchema = Schema.Struct({

@@ -1,0 +1,159 @@
+#!/bin/bash
+# <feature> live test harness.
+# Hits running API on http://localhost:8787 with real Better Auth bearer + agent bearer.
+#
+# Prerequisites (run once before this script):
+#   doppler run -- turbo dev --filter='!@abadge/docs' &  # stack up
+#   bash .claude/skills/live-test-matrix/scripts/bootstrap-test-user.sh > /tmp/bearer.txt
+#   mv ~/.abadge/config.json ~/.abadge/config.json.bak.pentest 2>/dev/null || true
+
+set -uo pipefail
+SESSION="$(cat /tmp/bearer.txt 2>/dev/null || echo "")"
+[ -z "$SESSION" ] && { echo "ERROR: no bearer in /tmp/bearer.txt — run bootstrap-test-user.sh first" >&2; exit 1; }
+API="http://localhost:8787"
+CLI="$PWD/packages/cli/dist/abadge"
+
+PASS=0
+FAIL=0
+declare -a FAILURES
+
+# --- helpers ---
+
+trpc() {
+  local proc="$1" body="$2" org="${3:-}"
+  if [ -n "$org" ]; then
+    curl -s -X POST "$API/trpc/$proc" \
+      -H "Authorization: Bearer $SESSION" \
+      -H "X-Abadge-Org-Id: $org" \
+      -H "Content-Type: application/json" \
+      -d "$body"
+  else
+    curl -s -X POST "$API/trpc/$proc" \
+      -H "Authorization: Bearer $SESSION" \
+      -H "Content-Type: application/json" \
+      -d "$body"
+  fi
+}
+
+trpc_q() {
+  local proc="$1" input="$2" org="${3:-}"
+  curl -s -G "$API/trpc/$proc" \
+    -H "Authorization: Bearer $SESSION" \
+    ${org:+-H "X-Abadge-Org-Id: $org"} \
+    --data-urlencode "input=$input"
+}
+
+# Agent-bearer variant — uses a different auth token (the agent's legacy_api_key
+# returned from agents.create). Set AGENT_KEY before calling.
+trpc_agent() {
+  local proc="$1" body="$2"
+  curl -s -X POST "$API/trpc/$proc" \
+    -H "Authorization: Bearer $AGENT_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$body"
+}
+
+err_code() {
+  # Domain errors land at .error.data.code OR .error.data.cause.code.
+  # NOT .error.json.data.code — that's a different tRPC variant.
+  echo "$1" | jq -r '.error.data.code // .error.data.cause.code // "none"' 2>/dev/null
+}
+
+ok() { echo "  🟢 $1"; PASS=$((PASS+1)); }
+fail() { echo "  🔴 $1: $2"; FAIL=$((FAIL+1)); FAILURES+=("$1: $2"); }
+hdr() { echo; echo "=== $1 ==="; }
+
+# --- Setup: test fixtures ---
+
+hdr "Setup: org + profile + items + agents"
+ORG=$(trpc organizations.create '{"name":"<feature> Test Org","slug":"<feature>-test-org"}')
+ORG_ID=$(echo "$ORG" | jq -r '.result.data.organization.id')
+echo "  orgId=$ORG_ID"
+
+# Create a server-managed profile via the API
+PROFILE=$(trpc profiles.create "{\"orgId\":\"$ORG_ID\",\"name\":\"test-profile\",\"storageMode\":\"server_managed\"}" "$ORG_ID")
+PROFILE_ID=$(echo "$PROFILE" | jq -r '.result.data.profile.id')
+echo "  profileId=$PROFILE_ID"
+
+# Create test items via the live API (kind=token + value field is the simplest)
+mkitem() {
+  local label="$1"
+  trpc items.create "{\"storageMode\":\"server_managed\",\"payload\":{\"label\":\"$label\",\"kind\":\"token\",\"fields\":{\"value\":\"sec-$label\"}}}" "$ORG_ID" \
+    | jq -r '.result.data.id'
+}
+ITEM_A=$(mkitem "item-a")
+ITEM_B=$(mkitem "item-b")
+
+# Create test agents (legacy_api_key returns a one-time bearer in result.data.apiKey)
+mkagent() {
+  local name="$1" kind="$2"
+  trpc agents.create "{\"name\":\"$name\",\"kind\":\"$kind\",\"authMethod\":\"legacy_api_key\"}" "$ORG_ID"
+}
+AGENT_RESP=$(mkagent "test-agent" "remote")
+AGENT_ID=$(echo "$AGENT_RESP" | jq -r '.result.data.agent.id')
+AGENT_KEY=$(echo "$AGENT_RESP" | jq -r '.result.data.apiKey')
+
+echo "  itemA=$ITEM_A  itemB=$ITEM_B  agentId=$AGENT_ID"
+
+# --- H — Happy paths ---
+
+hdr "H.1.1 <description>"
+RESP=$(trpc <procedure> "<body>" "$ORG_ID")
+# example assertion:
+#   [ "$(echo "$RESP" | jq -r '.result.data.X')" = "expected" ] && ok "..." || fail "H.1.1" "..."
+
+hdr "H.1.2 <variation>"
+# ...
+
+# --- E — Edge cases ---
+
+hdr "E.1.1 <description>"
+# ...
+
+# --- A — Adversarial ---
+
+hdr "A.1.1 invalid input"
+RESP=$(trpc <procedure> "<bad body>" "$ORG_ID")
+[ "$(err_code "$RESP")" = "<EXPECTED_CODE>" ] && ok "rejected with <CODE>" || fail "A.1.1" "code=$(err_code "$RESP")"
+
+# --- P — Pentests ---
+
+hdr "P.1 Bogus session token"
+RESP=$(curl -s -X POST "$API/trpc/<some-procedure>" \
+  -H "Authorization: Bearer fake-token" \
+  -H "X-Abadge-Org-Id: $ORG_ID" \
+  -H "Content-Type: application/json" \
+  -d '{}')
+[ "$(err_code "$RESP")" = "UNAUTHORIZED" ] && ok "UNAUTHORIZED for bogus token" || fail "P.1" "code=$(err_code "$RESP")"
+
+hdr "P.2 No auth header"
+RESP=$(curl -s -X POST "$API/trpc/<some-procedure>" \
+  -H "X-Abadge-Org-Id: $ORG_ID" \
+  -H "Content-Type: application/json" \
+  -d '{}')
+[ "$(err_code "$RESP")" = "UNAUTHORIZED" ] && ok "UNAUTHORIZED with no token" || fail "P.2" "code=$(err_code "$RESP")"
+
+# Cross-org: create a 2nd org and inject its IDs into operations on the 1st org.
+# Cross-profile: bind item-B to a different profile via DB UPDATE; verify access denied.
+# Tampered token: echo the bearer with one byte flipped; expect UNAUTHORIZED.
+# Enumeration: list-for-agent must exclude items the agent has no permission on.
+# AAD tampering: UPDATE items SET profile_id=<other> WHERE id=<encrypted-with-null>;
+#   reveal must fail with INTERNAL_SERVER_ERROR/500 (defence in depth).
+# Audit completeness: psql -c "SELECT count(*) FROM audit_logs WHERE result='denied' AND organization_id=...";
+#   expect ≥ count of failed pentest scenarios.
+
+# --- CLI binary smoke (optional) ---
+
+hdr "CLI: <smoke description>"
+CLI_OUT=$(ABADGE_API_URL="$API" ABADGE_SESSION_TOKEN="$SESSION" "$CLI" <subcommand> <args> 2>&1)
+echo "$CLI_OUT" | head -3
+[[ "$CLI_OUT" == *"<expected substring>"* ]] && ok "CLI behaved as expected" || fail "CLI" "out=$(echo "$CLI_OUT" | head -c 200)"
+
+# --- Tally ---
+
+echo
+echo "============================="
+echo "  <FEATURE> MATRIX: $PASS pass / $FAIL fail"
+echo "============================="
+[ $FAIL -gt 0 ] && for f in "${FAILURES[@]}"; do echo "  - $f"; done
+exit $FAIL

@@ -95,10 +95,13 @@ The principal is the bearer token (or IP for unauthenticated routes).
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/orgs` | session | Create an organization. Auto-creates a default `server_managed` profile (`externalId: "default"`). Response includes `defaultProfile`. |
+| `POST` | `/v1/orgs/personal` | session | Create a personal account (no request body). Auto-generates name/slug, flags the org personal (`metadata`), and seeds the same default `server_managed` profile. Same response shape as `POST /v1/orgs`, with `organization.isPersonal: true`. |
 | `GET` | `/v1/orgs` | session | List organizations the caller belongs to. |
 | `GET` | `/v1/orgs/{orgId}` | session | Fetch a single organization. |
 | `PATCH` | `/v1/orgs/{orgId}` | session (admin) | Update name, slug, or logo. |
 | `DELETE` | `/v1/orgs/{orgId}` | session (owner) | Soft-delete the organization. |
+
+Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs`, `GET /v1/orgs/{orgId}`) carry an `isPersonal` boolean. A personal account is a normal single-member org flagged via `organization.metadata`; it is presented in the dashboard as a personal account, holds one profile by default (more allowed), can hold many agents, and may coexist with team orgs the user creates or joins later.
 
 ### Members & invites
 
@@ -140,7 +143,7 @@ support either storage mode and may carry a customer-supplied `externalId`.
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/agents` | session (admin) | Register an agent. Default `authMethod=public_key_session`; pass `issueBootstrapToken: true` for unenrolled keypair agents, or `authMethod=legacy_api_key` to receive a one-time API key. |
-| `GET` | `/v1/agents` | session | List agents in the org. |
+| `GET` | `/v1/agents` | session | List agents in the org. Supports `limit`, `cursor`. |
 | `GET` | `/v1/agents/{agentId}` | session | Fetch agent details. |
 | `DELETE` | `/v1/agents/{agentId}` | session (admin) | Revoke an agent; cascade-revokes its permissions. |
 
@@ -190,7 +193,7 @@ profile):
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/permissions` | session (admin) | Create one or more grants atomically. |
-| `GET` | `/v1/permissions` | session | List grants. Supports `agentId`, `itemId`, `profileId` filters. |
+| `GET` | `/v1/permissions` | session | List grants. Supports `agentId`, `itemId`, `profileId` filters plus `limit`, `cursor`. |
 | `DELETE` | `/v1/permissions/{permissionId}` | session (admin) | Revoke a single grant. |
 
 ### Access (agent-facing)
@@ -219,8 +222,18 @@ See [`docs/FIELDS.md`](./FIELDS.md) for resolution rules.
 
 ## Pagination
 
-List endpoints accept `limit` (default 50, max 100) and `cursor` (opaque).
-The response shape is:
+Exactly these four list endpoints support cursor (keyset) pagination. Each
+accepts optional `limit` (default 50, max 100) and `cursor`, and returns the
+result array under its own key alongside `nextCursor`:
+
+| Endpoint | Array key |
+|----------|-----------|
+| `GET /v1/items` | `items` |
+| `GET /v1/agents` | `agents` |
+| `GET /v1/permissions` | `permissions` |
+| `GET /v1/audit` | `entries` |
+
+The response shape (using `/v1/items` as the example):
 
 ```json
 {
@@ -229,7 +242,15 @@ The response shape is:
 }
 ```
 
-When `nextCursor` is `null`, the page is the last page.
+* **`cursor` is opaque.** Pass back the exact `nextCursor` from the previous
+  page; never construct or parse it. The encoding is an implementation detail
+  and may change.
+* **Ordering is newest-first by creation time.** Pages are a stable keyset, so
+  rows are neither dropped nor duplicated across page boundaries even while new
+  records are being inserted concurrently.
+* **`nextCursor: null` means the last page.** Stop when it is `null`.
+* **Other list endpoints are not paginated.** Organizations, members, and
+  profiles return their full set in a single response.
 
 ## tRPC bridge
 

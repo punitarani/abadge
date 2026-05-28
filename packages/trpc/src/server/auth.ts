@@ -101,7 +101,8 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
 function auditAgentSessionReject(
   ctx: BaseRequestContext,
   input: {
-    userId: string;
+    // §AB-0043 — null when the rejected agent is orphaned (no owning user).
+    userId: string | null;
     agentId: string;
     organizationId: string;
     result: "denied" | "expired" | "revoked";
@@ -124,8 +125,14 @@ function auditAgentSessionReject(
   );
 }
 
-// Rate-limit audit writes for unrecognized bearers to prevent attacker-driven
-// audit-log amplification. 1 write per IP per 10s window.
+// Best-effort dampening of audit writes for unrecognized bearers, to reduce
+// attacker-driven audit-log amplification: ~1 write per IP per 10s window.
+// This counter is a module-level in-memory Map, so on Cloudflare Workers the
+// bound is per-isolate, not global: each isolate keeps its own counters and
+// isolates are ephemeral. A probe scattered across many isolates can therefore
+// exceed the nominal per-IP cap. The hard global bound on unauth probe volume
+// is the request-level rate-limit middleware (apps/api); this map only trims
+// redundant audit rows within a single isolate's lifetime.
 const UNAUTH_AUDIT_WINDOW_MS = 10_000;
 // Hard cap on map entries. Under a scattered-source attack the map would grow
 // unbounded (one entry per unique probe IP) — the cap bounds memory to
@@ -301,7 +308,13 @@ const verifyAgentSessionIdentity = (
         .where(
           and(
             eq(agentRecords.id, sessionRecord.agentId),
-            eq(agentRecords.createdBy, sessionRecord.userId),
+            // §AB-0043 — an orphaned agent (createdBy IS NULL) still validates its session;
+            // an owned agent's creator must still match the session's recorded user. The two
+            // null states move together — the user-delete FK SET-NULLs createdBy and the
+            // session's userId atomically — so a null session user pairs with a null createdBy.
+            sessionRecord.userId === null
+              ? isNull(agentRecords.createdBy)
+              : eq(agentRecords.createdBy, sessionRecord.userId),
           ),
         )
         .limit(1),

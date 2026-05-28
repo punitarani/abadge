@@ -53,6 +53,22 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint
 
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.0"
+      - run: bun install --frozen-lockfile
+      # AB-0101/AB-0104 — blocking gate: fail on any high/critical advisory that
+      # is not in .audit-allowlist.toml. Each allowlist entry carries a
+      # justification and an expiry; an expired entry also fails the build, so
+      # suppressions can't become permanent. See scripts/ci/audit-check.ts.
+      - name: Audit dependencies (high/critical)
+        run: bun scripts/ci/audit-check.ts
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest

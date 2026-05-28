@@ -49,6 +49,17 @@ The API worker encrypts and decrypts with a shared key.
 
 **Key source**: `ENCRYPTION_KEY` environment variable on the Cloudflare Worker, validated to decode to exactly 32 bytes (AES-256) at runtime. Decryption only happens after all authorization checks pass.
 
+#### AES-GCM random-IV ceiling and rotation trigger (AB-0031)
+
+Server-managed content uses AES-256-GCM with a random 96-bit IV. [NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf) caps a single key at **2³² random-IV encryptions** before the IV-collision probability exceeds 2⁻³²; a GCM IV collision under one key is catastrophic (plaintext XOR leak + authentication-key recovery).
+
+abadge keeps each key well inside that bound by two mechanisms:
+
+* **Per-profile DEKs (AB-0030)** — `serverKeyVersion >= 3` content is encrypted under a per-profile data-encryption key, not the global `ENCRYPTION_KEY`. The 2³² budget therefore applies *per profile*, not globally: a single profile would need 4 billion server-managed writes to approach the limit.
+* **Documented per-key rotation ceiling** — operationally, rotate (bump `serverKeyVersion` / re-derive the profile DEK) before any single key reaches **2²⁸ encryptions** (a 16× safety margin below the NIST bound). Rotation is a DEK rewrap with no content re-encryption (see the [key-rotation runbook](./runbooks/key-rotation.md)).
+
+**Decision — AES-GCM + per-profile DEK, not XChaCha20.** XChaCha20-Poly1305's 192-bit random nonce is collision-safe to ~2⁸⁰ without counting, which would remove the ceiling entirely. We keep AES-GCM because (a) per-profile DEKs already push the per-key budget far beyond any realistic single-profile write volume, (b) AES-GCM is the WebCrypto-native primitive on Cloudflare Workers (XChaCha would add a userspace dependency on the server hot path), and (c) the rotation machinery (`serverKeyVersion` + DEK rewrap) is needed for KEK rotation regardless. Operators should alert on per-profile server-managed write counts approaching 2²⁸ and rotate; revisit XChaCha if a single profile's write volume ever makes counting impractical.
+
 ### Comparison
 
 | Property | Zero-Knowledge | Server-Managed |
@@ -158,6 +169,14 @@ Every access request follows this exact order:
 
 Denied requests are audited and return an error. The order ensures no decryption happens unless fully authorized.
 
+### Tenancy isolation (defense in depth)
+
+Cross-organization isolation has two layers:
+
+1. **Scoped data-access layer (AB-0010, primary control).** All reads/writes of the org-scoped tenant tables (`items`, `profiles`, `agents`, `permissions`, `audit_logs`) go through `scopedDb(orgId)` in `packages/trpc`. Its `findMany`/`findFirst` bake `organization_id = orgId` into the WHERE clause and `insert` auto-sets it, so a query cannot omit the tenant filter by construction. A CI test bans direct imports of those tables outside the scoped layer (allowlisting a few documented exceptions: the audit writer, auth resolution, the role-check `profiles` router, and the cross-org onboarding query in `organizations`).
+
+2. **Row-level security backstop (AB-0011, DB-enforced).** `FORCE ROW LEVEL SECURITY` on `items`/`profiles`/`agents`/`permissions` with an `org_isolation` policy keyed on the `app.current_org` GUC, which `scopedDb.run()` sets per transaction via `set_config(..., true)` (transaction-local, so it survives Hyperdrive connection pooling). The policy **fails closed**: an unset or mismatched context returns zero rows, never an unfiltered leak. RLS applies to the NOSUPERUSER/NOBYPASSRLS runtime role (`abadge_app`, AB-0012); the migrator/owner and local superuser bypass it, so migrations and admin tooling are unaffected. RLS is a backstop — it catches a bug in the app-layer scope, turning "forgot to filter" from a leak into zero rows.
+
 ### Capability Enforcement Matrix
 
 | | ZK Item (Local) | ZK Item (Remote) | SM Item (Local) | SM Item (Remote) |
@@ -227,6 +246,7 @@ The MCP server adds additional protections for AI model contexts:
 ### Guarantees
 
 - **Append-only**: Audit entries are never updated or deleted
+- **Second sink**: Every committed row is also mirrored, best-effort, to an off-box append-only log sink; a divergence between that sink and the DB flags a DB-side deletion (`scripts/audit-divergence-check.ts`). The mirror never blocks or fails a request, and its structured output is redacted like every other log.
 - **No foreign keys**: Entries survive entity deletion (agents, items, permissions)
 - **Every attempt**: Both allowed and denied access is logged
 - **Metadata**: Structured `meta` field captures additional context per event type
@@ -269,6 +289,7 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 | Input validation | Effect Schema on all external input |
 | SQL injection | Drizzle ORM parameterized queries (no raw SQL) |
 | Audit write ordering | Audit entries are awaited before returning responses |
+| Authorization-read freshness | Hyperdrive query caching **disabled** on the config resource, so revocations/expirations are never stale-served (Hyperdrive caches read-only `SELECT`s ~60s with no write-invalidation). Disable + verify: `wrangler hyperdrive update <id> --caching-disabled true`. See [ADR-002](decisions/002-hyperdrive-authz-cache-disabled.md). |
 
 ### Credential Handling on Disk
 

@@ -17,6 +17,9 @@ import {
   INVITE_TOKEN_PREFIX,
   INVITE_TOKEN_TTL_MS,
   isCapabilityAllowed,
+  isPersonalOrg,
+  ORG_TYPE_PERSONAL,
+  PERSONAL_ORG_METADATA,
   STANDARD_FIELDS_BY_KIND,
 } from "./constants";
 import { CreateAgentSchema, ItemPayloadSchema } from "./schemas";
@@ -183,5 +186,37 @@ describe("schema validation", () => {
         fields: { username: "alice", password: "secret" },
       }),
     ).toBe(true);
+  });
+});
+
+describe("isPersonalOrg", () => {
+  test("PERSONAL_ORG_METADATA serializes the personal type and round-trips", () => {
+    expect(JSON.parse(PERSONAL_ORG_METADATA)).toEqual({ type: ORG_TYPE_PERSONAL });
+    expect(isPersonalOrg(PERSONAL_ORG_METADATA)).toBe(true);
+  });
+
+  test("recognizes a personal metadata string", () => {
+    expect(isPersonalOrg('{"type":"personal"}')).toBe(true);
+    // Extra keys alongside the personal type are still personal.
+    expect(isPersonalOrg('{"type":"personal","extra":1}')).toBe(true);
+  });
+
+  test("returns false for null, undefined, and empty string", () => {
+    expect(isPersonalOrg(null)).toBe(false);
+    expect(isPersonalOrg(undefined)).toBe(false);
+    expect(isPersonalOrg("")).toBe(false);
+  });
+
+  test("returns false for malformed JSON", () => {
+    expect(isPersonalOrg("{not json")).toBe(false);
+    expect(isPersonalOrg("personal")).toBe(false);
+  });
+
+  test("returns false for non-personal or non-object payloads", () => {
+    expect(isPersonalOrg('{"type":"team"}')).toBe(false);
+    expect(isPersonalOrg("{}")).toBe(false);
+    expect(isPersonalOrg('["personal"]')).toBe(false);
+    expect(isPersonalOrg('"personal"')).toBe(false);
+    expect(isPersonalOrg("null")).toBe(false);
   });
 });
