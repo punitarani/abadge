@@ -25,14 +25,14 @@ control that stops the app role from wiping the audit trail wholesale.
 
 ## Provisioning
 
-Apply [`packages/db/least-privilege.sql`](../../packages/db/least-privilege.sql)
+Apply [`scripts/least-privilege.sql`](../../scripts/least-privilege.sql)
 as the database owner. On PlanetScale, run it from the console / a privileged
 psql session (role management is not a Drizzle migration — migrations run as the
 owner and must not depend on the app role existing). Substitute your branch's
 actual database name for `abadge` in the `GRANT CONNECT` statement if it differs.
 
 ```bash
-psql "$OWNER_DATABASE_URL" -f packages/db/least-privilege.sql
+psql "$OWNER_DATABASE_URL" -f scripts/least-privilege.sql
 ```
 
 ## Cutover

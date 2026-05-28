@@ -6,7 +6,7 @@ import { getTestDb, migrateTestDb } from "../helpers/test-db";
 /**
  * §AB-0012 — the application runtime must connect as a least-privilege,
  * non-owner role. This proves the GRANT/REVOKE policy in
- * `packages/db/least-privilege.sql`: the role is NOSUPERUSER/NOBYPASSRLS, can
+ * `scripts/least-privilege.sql`: the role is NOSUPERUSER/NOBYPASSRLS, can
  * do normal DML, and CANNOT mutate the audit trail (the TRUNCATE revoke closes
  * the gap the 0018 trigger can't — TRUNCATE bypasses row-level triggers).
  *
