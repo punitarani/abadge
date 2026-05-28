@@ -56,6 +56,7 @@ interface Org {
   logo: string | null;
   createdAt: string;
   hasBootstrappedProfile: boolean;
+  isPersonal: boolean;
 }
 
 function OrgIcon({ org, size = "md" }: { org: Org; size?: "sm" | "md" }): React.ReactElement {
@@ -155,12 +156,15 @@ export function OrgSwitcher(): React.ReactElement {
                     logo: null,
                     createdAt: "",
                     hasBootstrappedProfile: false,
+                    isPersonal: false,
                   }
                 }
               />
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{currentOrg?.name ?? "Select org"}</span>
-                <span className="truncate text-xs">Organization</span>
+                <span className="truncate text-xs">
+                  {currentOrg?.isPersonal ? "Personal" : "Organization"}
+                </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
             </SidebarMenuButton>
@@ -171,7 +175,7 @@ export function OrgSwitcher(): React.ReactElement {
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Organizations
+              Workspaces
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {orgs.map((org) => (

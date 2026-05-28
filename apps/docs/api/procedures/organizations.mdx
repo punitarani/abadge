@@ -16,7 +16,19 @@ The `organizations` router covers the top-level isolation boundary plus member m
   URL-safe identifier. Auto-generated if omitted.
 </ParamField>
 
-**Returns:** `{ id, name, slug }`.
+**Returns:** `{ organization, defaultProfile }`. `organization` includes `isPersonal: false`.
+
+## `organizations.createPersonal`
+
+**Tier:** `userProcedure` — requires an authenticated user, but no active-org context. The one-click "Personal account" path in onboarding.
+
+**Input:** none.
+
+Auto-generates a workspace name and slug from the user record (falling back to `"Personal workspace"`), then transactionally seeds a personal org (flagged via `organization.metadata`), the owner `member` row, and a default `server_managed` profile (`name`/`externalId` both `"default"`) — reusing the same seed builder as `organizations.create`.
+
+**Returns:** the same `{ organization, defaultProfile }` shape as `organizations.create`, with `organization.isPersonal: true`.
+
+A personal account is structurally a normal single-member org: it holds one profile by default (more allowed), can hold many agents, and may coexist with team orgs the user creates or joins later.
 
 ## `organizations.list`
 
@@ -36,11 +48,12 @@ The `organizations` router covers the top-level isolation boundary plus member m
     createdAt: string;
     role: "owner" | "admin" | "member";
     hasBootstrappedProfile: boolean;
+    isPersonal: boolean;
   }>;
 }
 ```
 
-`hasBootstrappedProfile` is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`. The dashboard onboarding-resume flow uses it to skip a per-org `profiles.list` round trip.
+`hasBootstrappedProfile` is `true` when the org has at least one server-managed profile or a zero-knowledge profile with a non-null `wrappedRootKey`. The dashboard onboarding-resume flow uses it to skip a per-org `profiles.list` round trip. `isPersonal` is `true` for personal accounts (orgs flagged via `organization.metadata`); the dashboard labels these "Personal" rather than "Organization".
 
 ## `organizations.get`
 
@@ -48,7 +61,7 @@ The `organizations` router covers the top-level isolation boundary plus member m
 
 <ParamField path="orgId" type="string" required />
 
-**Returns:** the organization record.
+**Returns:** the organization record (includes `isPersonal`).
 
 ## `organizations.update`
 

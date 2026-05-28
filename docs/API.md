@@ -95,10 +95,13 @@ The principal is the bearer token (or IP for unauthenticated routes).
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `POST` | `/v1/orgs` | session | Create an organization. Auto-creates a default `server_managed` profile (`externalId: "default"`). Response includes `defaultProfile`. |
+| `POST` | `/v1/orgs/personal` | session | Create a personal account (no request body). Auto-generates name/slug, flags the org personal (`metadata`), and seeds the same default `server_managed` profile. Same response shape as `POST /v1/orgs`, with `organization.isPersonal: true`. |
 | `GET` | `/v1/orgs` | session | List organizations the caller belongs to. |
 | `GET` | `/v1/orgs/{orgId}` | session | Fetch a single organization. |
 | `PATCH` | `/v1/orgs/{orgId}` | session (admin) | Update name, slug, or logo. |
 | `DELETE` | `/v1/orgs/{orgId}` | session (owner) | Soft-delete the organization. |
+
+Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs`, `GET /v1/orgs/{orgId}`) carry an `isPersonal` boolean. A personal account is a normal single-member org flagged via `organization.metadata`; it is presented in the dashboard as a personal account, holds one profile by default (more allowed), can hold many agents, and may coexist with team orgs the user creates or joins later.
 
 ### Members & invites
 

@@ -9,6 +9,7 @@
 
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createPersonalOrgForUser } from "@abadge/auth";
+import { isPersonalOrg } from "@abadge/core";
 import { eq } from "@abadge/db";
 import { auditLogs, member, organization, profiles, user as userTable } from "@abadge/db/schema";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
@@ -37,7 +38,7 @@ describe("createPersonalOrgForUser", () => {
     return id;
   }
 
-  test("happy path — inserts org + owner member + internal profile + audit row", async () => {
+  test("happy path — inserts personal org + owner member + default profile + audit row", async () => {
     const userId = await seedRawUser("alice@example.com", "Alice Smith");
 
     await createPersonalOrgForUser(db, {
@@ -52,6 +53,8 @@ describe("createPersonalOrgForUser", () => {
     if (!org) throw new Error("expected org row");
     expect(org.name).toBe("Alice Smith's workspace");
     expect(org.slug.startsWith("alice-")).toBe(true);
+    // The org is flagged personal via metadata (no dedicated column).
+    expect(isPersonalOrg(org.metadata)).toBe(true);
 
     const members = await db.select().from(member).where(eq(member.organizationId, org.id));
     expect(members).toHaveLength(1);
@@ -60,7 +63,9 @@ describe("createPersonalOrgForUser", () => {
 
     const profileRows = await db.select().from(profiles).where(eq(profiles.organizationId, org.id));
     expect(profileRows).toHaveLength(1);
-    expect(profileRows[0]?.name).toBe("internal");
+    // Matches the user-facing flow: name and externalId are both "default".
+    expect(profileRows[0]?.name).toBe("default");
+    expect(profileRows[0]?.externalId).toBe("default");
     expect(profileRows[0]?.storageMode).toBe("server_managed");
 
     const audits = await db.select().from(auditLogs).where(eq(auditLogs.organizationId, org.id));

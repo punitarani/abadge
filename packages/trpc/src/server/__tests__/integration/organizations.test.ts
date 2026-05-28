@@ -61,6 +61,7 @@ describe("organizations.create atomicity + slug translation", () => {
     });
 
     expect(result.organization.slug).toBe("acme-ok");
+    expect(result.organization.isPersonal).toBe(false);
     expect(result.defaultProfile.name).toBe("default");
     expect(result.defaultProfile.externalId).toBe("default");
     expect(result.defaultProfile.storageMode).toBe("server_managed");

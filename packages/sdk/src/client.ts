@@ -127,6 +127,10 @@ interface TrpcQueryWithoutInput<TOutput> {
   query(): Promise<TOutput>;
 }
 
+interface TrpcMutationWithoutInput<TOutput> {
+  mutate(): Promise<TOutput>;
+}
+
 /** Optional keyset-pagination input shared by the cursor-paginated lists (§AB-0050). */
 type ListPageInput = { cursor?: string; limit?: number };
 
@@ -242,9 +246,20 @@ interface SdkTrpcClient {
           slug: string;
           logo: string | null;
           createdAt: string;
+          isPersonal: boolean;
         };
       }
     >;
+    createPersonal: TrpcMutationWithoutInput<{
+      organization: {
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        isPersonal: boolean;
+      };
+    }>;
     list: TrpcQueryWithoutInput<{
       organizations: Array<{
         id: string;
@@ -254,6 +269,7 @@ interface SdkTrpcClient {
         createdAt: string;
         role: string;
         hasBootstrappedProfile: boolean;
+        isPersonal: boolean;
       }>;
     }>;
     get: TrpcQuery<{ orgId: string }, unknown>;
@@ -441,7 +457,9 @@ export class AbadgeUserClient {
       id: string;
       name: string;
       slug: string;
+      isPersonal: boolean;
     }>;
+    createPersonal: () => ReturnType<AbadgeUserClient["createPersonalOrganization"]>;
     list: () => ReturnType<AbadgeUserClient["listOrganizations"]>;
     get: (orgId: string) => Promise<unknown>;
     update: (orgId: string, data: { name?: string }) => Promise<SuccessResult>;
@@ -492,6 +510,7 @@ export class AbadgeUserClient {
     // surface (marked @deprecated below) until the v0.6 removal.
     this.orgs = {
       create: (data) => this.createOrganization(data),
+      createPersonal: () => this.createPersonalOrganization(),
       list: () => this.listOrganizations(),
       get: (orgId) => this.getOrganization(orgId),
       update: (orgId, data) => this.updateOrganization(orgId, data),
@@ -801,10 +820,29 @@ export class AbadgeUserClient {
   async createOrganization(data: {
     name: string;
     slug?: string;
-  }): Promise<{ id: string; name: string; slug: string }> {
+  }): Promise<{ id: string; name: string; slug: string; isPersonal: boolean }> {
     const result = await call(
       () => this.client.organizations.create.mutate(data),
       "Failed to create organization",
+    );
+    return result.organization;
+  }
+
+  /**
+   * Create a personal account — a single-user workspace seeded with one
+   * `server_managed` profile. Takes no input; the name/slug are generated from
+   * the user record. Returns the org with `isPersonal: true`.
+   * @deprecated Use `client.orgs.createPersonal()` instead. Removal target: v0.6.
+   */
+  async createPersonalOrganization(): Promise<{
+    id: string;
+    name: string;
+    slug: string;
+    isPersonal: boolean;
+  }> {
+    const result = await call(
+      () => this.client.organizations.createPersonal.mutate(),
+      "Failed to create personal account",
     );
     return result.organization;
   }
@@ -822,6 +860,7 @@ export class AbadgeUserClient {
       createdAt: string;
       role: string;
       hasBootstrappedProfile: boolean;
+      isPersonal: boolean;
     }>;
   }> {
     return call(() => this.client.organizations.list.query(), "Failed to list organizations");
