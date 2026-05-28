@@ -161,14 +161,31 @@ export const userProcedure = publicProcedure.use(async ({ ctx, next }) => {
  * cast is safe: both `Database` and `Transaction` expose `.transaction()` (the
  * latter as a savepoint); the cast only sidesteps the union-method signature.
  */
-function withOrgContext<T>(
+function withOrgContext<T extends { ok: boolean }>(
   db: Database | Transaction,
   orgId: string,
   fn: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
   return (db as Database).transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
-    return fn(tx);
+    const result = await fn(tx);
+    if (result.ok) return result;
+    // tRPC's `next()` RESOLVES with `{ ok: false, error }` on a procedure error
+    // rather than throwing, so we must decide commit-vs-rollback ourselves:
+    //  - a DOMAIN error (e.g. a denied/expired access) leaves the pg transaction
+    //    HEALTHY, and the access pipeline has already written an audit row that
+    //    MUST persist ("every denied attempt is logged") — so commit by returning.
+    //  - a failed SQL statement (e.g. a unique violation) has ABORTED the pg
+    //    transaction; returning would let drizzle COMMIT and surface a raw DB
+    //    error that masks the mapped domain error — so roll back and surface
+    //    result.error instead.
+    // A no-op probe distinguishes the two: it throws 25P02 only on an aborted tx.
+    try {
+      await tx.execute(sql`select 1`);
+      return result;
+    } catch {
+      throw (result as { error?: unknown }).error;
+    }
   });
 }
 

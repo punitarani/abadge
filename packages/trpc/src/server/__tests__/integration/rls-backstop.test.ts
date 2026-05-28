@@ -54,6 +54,16 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
     await db.execute(
       sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${sql.raw(RLS_ROLE)}`,
     );
+    // Sequence USAGE so the role can INSERT into serial-id tables (e.g. audit_logs
+    // via audit_logs_id_seq). Mirrors what migration 0022_least_privilege_role
+    // grants the production `app_runtime` role; without it, any procedure that
+    // writes an audit row fails with "permission denied for sequence".
+    await db.execute(
+      sql`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${sql.raw(RLS_ROLE)}`,
+    );
+    await db.execute(
+      sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${sql.raw(RLS_ROLE)}`,
+    );
     rlsDb = createDb(rlsRoleUrl());
   });
 
@@ -62,7 +72,11 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
       await db.execute(
         sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM ${sql.raw(RLS_ROLE)}`,
       );
+      await db.execute(
+        sql`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE USAGE, SELECT ON SEQUENCES FROM ${sql.raw(RLS_ROLE)}`,
+      );
       await db.execute(sql`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${sql.raw(RLS_ROLE)}`);
+      await db.execute(sql`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM ${sql.raw(RLS_ROLE)}`);
       await db.execute(sql`REVOKE USAGE ON SCHEMA public FROM ${sql.raw(RLS_ROLE)}`);
       await db.execute(sql`DROP ROLE IF EXISTS ${sql.raw(RLS_ROLE)}`);
     } catch {

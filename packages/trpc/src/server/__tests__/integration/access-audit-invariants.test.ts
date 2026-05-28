@@ -111,30 +111,38 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       grantedBy: owner.userId,
     });
 
-    // Throw only on `tx.insert(auditLogs)`; the reservation insert earlier in
-    // the same tx must roll back with it. The pipeline runs both writes on `tx`
-    // (not `ctx.db`), and agent auth uses selects + a lastUsedAt update, so the
-    // auth path is untouched by this Proxy.
+    // Throw only on `insert(auditLogs)`; the reservation insert in the same
+    // (sub)transaction must roll back with it. §AB-0011: the GUC middleware now
+    // opens the request transaction and the pipeline's reservation+audit writes
+    // run in a nested SAVEPOINT of it, so the hijack must recurse into nested
+    // `.transaction()` calls — otherwise the savepoint would get a non-hijacked tx
+    // and the simulated failure would never fire. Agent auth uses selects + a
+    // lastUsedAt update before the tx, so the auth path is untouched.
+    const hijackTx = (txLike: object): unknown =>
+      new Proxy(txLike, {
+        get(t, p, r) {
+          if (p === "insert") {
+            return (table: unknown) => {
+              if (table === auditLogs) {
+                throw new Error("simulated audit insert failure");
+              }
+              return (t as { insert: (x: unknown) => unknown }).insert(table);
+            };
+          }
+          if (p === "transaction") {
+            return (cb: (tx: unknown) => Promise<unknown>) =>
+              (t as { transaction: (f: (x: unknown) => unknown) => unknown }).transaction((inner) =>
+                cb(hijackTx(inner as object)),
+              );
+          }
+          return Reflect.get(t, p, r);
+        },
+      });
     const hijackedDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "transaction") {
           return (cb: (tx: unknown) => Promise<unknown>) =>
-            (target as Database).transaction((tx) => {
-              const hijackedTx = new Proxy(tx as object, {
-                get(t2, p2, r2) {
-                  if (p2 === "insert") {
-                    return (table: unknown) => {
-                      if (table === auditLogs) {
-                        throw new Error("simulated audit insert failure");
-                      }
-                      return (t2 as { insert: (t: unknown) => unknown }).insert(table);
-                    };
-                  }
-                  return Reflect.get(t2, p2, r2);
-                },
-              });
-              return cb(hijackedTx);
-            });
+            (target as Database).transaction((tx) => cb(hijackTx(tx as object)));
         }
         return Reflect.get(target, prop, receiver);
       },
@@ -149,8 +157,9 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .where(eq(mountReservations.agentId, agent.agentId));
     expect(reservations).toHaveLength(0);
 
-    // The whole tx rolls back, so NO audit row survives — not just the
-    // "allowed" one. A compensating row written outside the tx would trip this.
+    // The savepoint holding the reservation + audit writes rolls back, so NO
+    // audit row survives — not just the "allowed" one. A compensating row written
+    // outside that transaction would trip this.
     const audits = await db
       .select({ id: auditLogs.id })
       .from(auditLogs)
