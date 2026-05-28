@@ -66,4 +66,4 @@ Then run a **sampled decrypt** across N random server-managed items per org (via
 ## Notes
 
 - Rotation does not touch RLS, audit, or auth. The DAL's `scopedDb` continues to set `app.current_org` per transaction (AB-0011).
-- The migrator/owner role performs the rewrap; the runtime `abadge_app` role (AB-0012) needs only the DML it already has.
+- The migrator/owner role performs the rewrap; the runtime `app_runtime` role (AB-0012) needs only the DML it already has.

@@ -93,11 +93,11 @@ app.all("/v1/*", (c) => handleV1Request(c));
 // Health check — liveness plus a lightweight DB-reachability probe.
 //
 // This endpoint is unauthenticated and unrate-limited, so it deliberately does
-// NOT expose the DB role name or its BYPASSRLS attribute in the response body
-// (that would leak the internal role to anonymous callers). The deployment-time
-// role assertion (rolbypassrls must be false once the least-privilege role is
-// live, §AB-0011/§AB-0012) is logged for operators here and enforced at startup
-// by the role rollout; it is not part of the public contract.
+// NOT expose the DB role name or its attributes in the response body (that would
+// leak the internal role to anonymous callers). The deployment-time role
+// assertions are logged for operators here, not part of the public contract:
+//   - rolbypassrls must be false once the least-privilege role is live (§AB-0011),
+//   - the role must NOT hold UPDATE on audit_logs (§AB-0012/§AB-0020).
 //
 // Failure semantics: a configured-but-unreachable DB returns 503 `degraded` so
 // load balancers and uptime probes detect the outage instead of seeing a masked
@@ -110,11 +110,19 @@ app.get("/health", async (c) => {
   try {
     const db = getDb(connectionString);
     const [row] = await db.execute(
-      sql`SELECT current_user AS role, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
+      sql`SELECT current_user AS role, rolbypassrls,
+                 has_table_privilege(current_user, 'audit_logs', 'UPDATE') AS audit_update
+          FROM pg_roles WHERE rolname = current_user`,
     );
-    const r = row as { role: string; rolbypassrls: boolean } | undefined;
-    // Operator signal in logs only — never in the anon-visible payload.
+    const r = row as { role: string; rolbypassrls: boolean; audit_update: boolean } | undefined;
+    // Operator signals in logs only — never in the anon-visible payload.
     console.info(`[health] db reachable role=${r?.role ?? "unknown"} bypassRls=${r?.rolbypassrls}`);
+    if (r?.audit_update === true) {
+      console.warn(
+        "[§AB-0012] current DB role has UPDATE on audit_logs — run migration " +
+          "0023_least_privilege_role to revoke write access.",
+      );
+    }
     return c.json({ status: "ok", db: { reachable: true } });
   } catch (err) {
     console.error("[health] db probe failed", err);
