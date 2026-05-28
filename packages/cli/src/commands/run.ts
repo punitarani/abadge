@@ -84,8 +84,8 @@ export async function runWithUseRedeemBulk(
     );
   }
   if (result.items.length === 0) {
-    // Nothing to inject — spawn the bare command with the parent env. This
-    // matches the legacy bulkAccessMountEnv path's behavior on an empty profile.
+    // Nothing to inject — spawn the bare command with the parent env (the
+    // expected behavior for a profile with no mountable items).
     const proc = Bun.spawn([executable, ...args], {
       env: process.env as Record<string, string>,
       stdout: "inherit",

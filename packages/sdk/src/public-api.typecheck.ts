@@ -84,8 +84,20 @@ export const _abadgeNamespaceRuntime = { User: Abadge.User, Agent: Abadge.Agent 
 
 // @ts-expect-error createItem removed — use user.items.create
 type _LegacyCreateItem = AbadgeUserClient["createItem"];
+// @ts-expect-error createAgent removed — use user.agents.create
+type _LegacyCreateAgent = AbadgeUserClient["createAgent"];
+// @ts-expect-error createPermission removed — use user.permissions.create
+type _LegacyCreatePermission = AbadgeUserClient["createPermission"];
+// @ts-expect-error getAudit removed from the user client — use user.audit.list
+type _LegacyUserGetAudit = AbadgeUserClient["getAudit"];
 // @ts-expect-error accessReveal removed — use agent.access.read
 type _LegacyAccessReveal = AbadgeAgentClient["accessReveal"];
+// @ts-expect-error accessMount removed — use agent.access.use
+type _LegacyAccessMount = AbadgeAgentClient["accessMount"];
+// @ts-expect-error accessCiphertext removed — use agent.access.read
+type _LegacyAccessCiphertext = AbadgeAgentClient["accessCiphertext"];
+// @ts-expect-error bulkAccessMountEnv removed — use agent.access.useProfile
+type _LegacyBulkAccessMountEnv = AbadgeAgentClient["bulkAccessMountEnv"];
 type _UserHasItemsCreate = Assert<
   AbadgeUserClient["items"]["create"] extends (...args: never[]) => Promise<{ id: string }>
     ? true

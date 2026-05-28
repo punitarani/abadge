@@ -13,15 +13,12 @@ import type {
   AuditFilters,
   AuditListResult,
   BootstrapVaultInput,
-  BulkMountEnvResponse,
   ChangePasswordInput,
-  CiphertextAccessResponse,
   CreateAgentInput,
   CreateItemInput,
   CreatePermissionInput,
   ItemListResult,
   ItemResult,
-  MountAccessResponse,
   PermissionFilters,
   PermissionListResult,
   ProfileUseAccessResponse,
@@ -169,13 +166,6 @@ interface SdkTrpcClient {
     revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
   access: {
-    ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
-    reveal: TrpcMutation<{ itemId: string; field?: string }, RevealAccessResponse>;
-    mount: TrpcMutation<
-      { itemId: string; mountType: "env" | "file"; field?: string },
-      MountAccessResponse
-    >;
-    bulkMountEnv: TrpcMutation<{ profileId: string }, BulkMountEnvResponse>;
     read: TrpcMutation<{ itemId: string; field?: string; purpose?: string }, ReadAccessResponse>;
     use: TrpcMutation<
       {
@@ -432,7 +422,7 @@ async function resolvePrivateKey(
  *   sessionToken: "user_session_token",
  * });
  *
- * const { agents } = await client.listAgents();
+ * const { agents } = await client.agents.list();
  * ```
  */
 export class AbadgeUserClient {
@@ -870,7 +860,7 @@ export class AbadgeUserClient {
  *   apiKey: "abl_xxxxxxxxxxxx",
  * });
  *
- * const secret = await agent.accessReveal("item_id");
+ * const secret = await agent.access.read("item_id");
  * ```
  *
  * @example Keypair auth
@@ -881,7 +871,7 @@ export class AbadgeUserClient {
  *   privateKey: ed25519PrivateKey,
  * });
  * await agent.connect();
- * const secret = await agent.accessReveal("item_id");
+ * const secret = await agent.access.read("item_id");
  * ```
  */
 /**
