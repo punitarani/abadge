@@ -82,7 +82,7 @@ import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 const agent = new AbadgeAgentClient({ apiUrl, apiKey });
 
 try {
-  const result = await agent.accessReveal(itemId);
+  const result = await agent.access.read(itemId);
 } catch (err) {
   if (err instanceof AbadgeApiError) {
     console.error(err.code);    // e.g. "PERMISSION_DENIED"
@@ -101,12 +101,12 @@ pass:
 
 ```ts
 try {
-  await agent.accessReveal(itemId);
+  await agent.access.read(itemId);
 } catch (err) {
   if (err instanceof AbadgeApiError && err.code === "MULTI_FIELD_ITEM") {
     const fields = err.meta?.availableFields as string[];
     // retry with a specific field:
-    await agent.accessReveal(itemId, fields[0]);
+    await agent.access.read(itemId, { field: fields[0] });
   }
 }
 ```

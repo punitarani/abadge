@@ -30,7 +30,7 @@ For `VALIDATION_ERROR`, validation issues are delivered inside `meta.issues` as 
 import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
 try {
-  const { payload } = await agent.accessReveal(itemId, "password");
+  const result = await agent.access.read(itemId, { field: "password" });
 } catch (err) {
   if (err instanceof AbadgeApiError) {
     console.error(`${err.code}: ${err.message}`);
@@ -80,11 +80,11 @@ See the full code list in [Errors](/api/errors).
 
 ```ts
 try {
-  await agent.accessReveal(itemId);
+  await agent.access.read(itemId);
 } catch (err) {
   if (err instanceof AbadgeApiError && err.code === "MULTI_FIELD_ITEM") {
     const fields = err.meta?.availableFields as string[];
-    return await agent.accessReveal(itemId, fields[0]);
+    return await agent.access.read(itemId, { field: fields[0] });
   }
   throw err;
 }
@@ -96,12 +96,12 @@ try {
 
 ```ts
 try {
-  await agent.accessReveal(itemId);
+  await agent.access.read(itemId);
 } catch (err) {
   if (err instanceof AbadgeApiError && err.code === "SESSION_REFRESH_FAILED") {
     agent.disconnect();
     await agent.connect();
-    return await agent.accessReveal(itemId);
+    return await agent.access.read(itemId);
   }
   throw err;
 }
@@ -129,7 +129,7 @@ catch (err) {
 The SDK uses a `SecretValue` opaque wrapper to discourage accidental logging or serialization of secret data. The wrapper requires an explicit `.expose()` call to access the underlying string:
 
 ```ts
-const result = await agent.accessReveal(itemId);
+const result = await agent.access.read(itemId);
 // result.value is a SecretValue — cannot be directly logged or serialized
 const plaintext = result.value.expose();
 ```

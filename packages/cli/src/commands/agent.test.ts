@@ -151,18 +151,20 @@ describe("registerKeypairAgent (exported helper)", () => {
   let logSpy: ReturnType<typeof spyOn>;
   let errorSpy: ReturnType<typeof spyOn>;
 
-  // Stub UserClient — only `createAgent` is exercised by the helpers.
+  // Stub UserClient — only `agents.create` is exercised by the helpers.
   function makeStubClient(returns: unknown): {
-    client: { createAgent: (...args: unknown[]) => Promise<unknown> };
+    client: { agents: { create: (...args: unknown[]) => Promise<unknown> } };
     calls: unknown[];
   } {
     const calls: unknown[] = [];
     return {
       client: {
-        createAgent: async (input: unknown) => {
-          calls.push(input);
-          if (returns instanceof Error) throw returns;
-          return returns;
+        agents: {
+          create: async (input: unknown) => {
+            calls.push(input);
+            if (returns instanceof Error) throw returns;
+            return returns;
+          },
         },
       },
       calls,

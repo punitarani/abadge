@@ -134,7 +134,7 @@ The SDK uses a `SecretValue` opaque type to prevent accidental logging or serial
 data. The type requires an explicit `.expose()` call to access the underlying string value:
 
 ```ts
-const result = await agent.accessReveal(itemId);
+const result = await agent.access.read(itemId);
 // result.value is a SecretValue — cannot be directly logged or serialized
 const plaintext = result.value.expose(); // explicit unwrap
 ```

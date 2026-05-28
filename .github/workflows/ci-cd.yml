@@ -304,6 +304,9 @@ jobs:
           bun-version: "1.3.0"
       - run: bun install --frozen-lockfile
       - uses: dopplerhq/cli-action@v3
+      - name: Verify Hyperdrive cache is disabled (§AB-0052)
+        working-directory: apps/api
+        run: doppler run -- bun ../../scripts/ci/check-hyperdrive-cache.ts
       - working-directory: apps/api
         run: doppler run -- bun run deploy
 

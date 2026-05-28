@@ -90,56 +90,26 @@ async function invoke(target: object, method: string, args: unknown[]): Promise<
 
 describe("AbadgeUserClient happy paths", () => {
   test.each([
-    ["createItem", "items.create", "mutate", [{ storageMode: "server_managed", payload: {} }]],
-    ["listItems", "items.list", "query", []],
-    ["getItem", "items.get", "query", ["item_x"]],
-    ["updateItem", "items.update", "mutate", ["item_x", { contentVersion: 1, payload: {} }]],
     ["ownerReveal", "items.ownerReveal", "mutate", ["item_x"]],
-    ["deleteItem", "items.delete", "mutate", ["item_x"]],
-
-    ["createAgent", "agents.create", "mutate", [{ name: "a", kind: "remote" }]],
-    ["listAgents", "agents.list", "query", []],
-    ["rotateAgent", "agents.rotate", "mutate", ["agent_x"]],
-    ["revokeAgent", "agents.revoke", "mutate", ["agent_x"]],
     ["issueBootstrapToken", "auth.issueBootstrapToken", "mutate", ["agent_x"]],
-
-    [
-      "createPermission",
-      "permissions.create",
-      "mutate",
-      [{ agentId: "a", itemId: "i", capabilities: ["mount_env"] }],
-    ],
-    ["listPermissions", "permissions.list", "query", []],
-    ["revokePermission", "permissions.revoke", "mutate", ["perm_x"]],
-
-    ["getAudit", "audit.list", "query", []],
   ] as const)("%s -> %s.%s", async (method, expectedPath, expectedKind, args) => {
-    // The list methods drain pages, reading the array key + nextCursor off each
-    // response; the shared return carries every key with a null cursor so a
-    // single page terminates the drain at exactly one recorded call.
-    const { user, calls } = makeUserClient({
-      ok: true,
-      items: [],
-      agents: [],
-      permissions: [],
-      nextCursor: null,
-    });
+    const { user, calls } = makeUserClient({ ok: true });
     await invoke(user, method, [...args]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.path).toBe(expectedPath);
     expect(calls[0]?.kind).toBe(expectedKind as RecordedCall["kind"]);
   });
 
-  test("createOrganization unwraps result.organization", async () => {
+  test("orgs.create unwraps result.organization", async () => {
     const { user, calls } = makeUserClient({
       organization: { id: "org_1", name: "x", slug: "x" },
     });
-    const out = await user.createOrganization({ name: "x", slug: "x" });
+    const out = await user.orgs.create({ name: "x", slug: "x" });
     expect(out.id).toBe("org_1");
     expect(calls[0]?.path).toBe("organizations.create");
   });
 
-  test("createPersonalOrganization unwraps result.organization (no input)", async () => {
+  test("orgs.createPersonal unwraps result.organization (no input)", async () => {
     const { user, calls } = makeUserClient({
       organization: {
         id: "org_p",
@@ -148,28 +118,28 @@ describe("AbadgeUserClient happy paths", () => {
         isPersonal: true,
       },
     });
-    const out = await user.createPersonalOrganization();
+    const out = await user.orgs.createPersonal();
     expect(out.id).toBe("org_p");
     expect(out.isPersonal).toBe(true);
     expect(calls[0]?.path).toBe("organizations.createPersonal");
     expect(calls[0]?.kind).toBe("mutate");
   });
 
-  test("listOrganizations + getOrganization + updateOrganization + deleteOrganization", async () => {
+  test("orgs.list + orgs.get + orgs.update + orgs.delete", async () => {
     const { user: u1, calls: c1 } = makeUserClient({ organizations: [] });
-    await u1.listOrganizations();
+    await u1.orgs.list();
     expect(c1[0]?.path).toBe("organizations.list");
 
     const { user: u2, calls: c2 } = makeUserClient({});
-    await u2.getOrganization("org_x");
+    await u2.orgs.get("org_x");
     expect(c2[0]?.path).toBe("organizations.get");
 
     const { user: u3, calls: c3 } = makeUserClient({ ok: true });
-    await u3.updateOrganization("org_x", { name: "n" });
+    await u3.orgs.update("org_x", { name: "n" });
     expect(c3[0]?.path).toBe("organizations.update");
 
     const { user: u4, calls: c4 } = makeUserClient({ ok: true });
-    await u4.deleteOrganization("org_x");
+    await u4.orgs.delete("org_x");
     expect(c4[0]?.path).toBe("organizations.delete");
   });
 
@@ -237,7 +207,7 @@ describe("AbadgeUserClient happy paths", () => {
           const { user, calls } = makeUserClient({
             profile: { id: "p_1", name: "n", storageMode: "server_managed" },
           });
-          await user.createProfile({ orgId: "o", name: "n" });
+          await user.profiles.create({ orgId: "o", name: "n" });
           return calls[0]?.path;
         },
         "profiles.create",
@@ -245,7 +215,7 @@ describe("AbadgeUserClient happy paths", () => {
       [
         async () => {
           const { user, calls } = makeUserClient({ profiles: [] });
-          await user.listProfiles("org_x");
+          await user.profiles.list("org_x");
           return calls[0]?.path;
         },
         "profiles.list",
@@ -253,7 +223,7 @@ describe("AbadgeUserClient happy paths", () => {
       [
         async () => {
           const { user, calls } = makeUserClient({});
-          await user.getProfile("p_1");
+          await user.profiles.get("p_1");
           return calls[0]?.path;
         },
         "profiles.get",
@@ -293,7 +263,7 @@ describe("AbadgeUserClient happy paths", () => {
       [
         async () => {
           const { user, calls } = makeUserClient({ ok: true });
-          await user.deleteProfile("p_1");
+          await user.profiles.delete("p_1");
           return calls[0]?.path;
         },
         "profiles.delete",
@@ -480,20 +450,20 @@ describe("AbadgeUserClient list methods drain every page", () => {
     return user;
   }
 
-  test("listItems concatenates pages and reports nextCursor=null", async () => {
-    const { items, nextCursor } = await twoPageUser("items").listItems();
+  test("items.list concatenates pages and reports nextCursor=null", async () => {
+    const { items, nextCursor } = await twoPageUser("items").items.list();
     expect(items.map((i) => (i as { id: string }).id)).toEqual(["items-1", "items-2"]);
     expect(nextCursor).toBeNull();
   });
 
-  test("listAgents concatenates pages and reports nextCursor=null", async () => {
-    const { agents, nextCursor } = await twoPageUser("agents").listAgents();
+  test("agents.list concatenates pages and reports nextCursor=null", async () => {
+    const { agents, nextCursor } = await twoPageUser("agents").agents.list();
     expect(agents.map((a) => (a as { id: string }).id)).toEqual(["agents-1", "agents-2"]);
     expect(nextCursor).toBeNull();
   });
 
-  test("listPermissions concatenates pages and reports nextCursor=null", async () => {
-    const { permissions, nextCursor } = await twoPageUser("permissions").listPermissions();
+  test("permissions.list concatenates pages and reports nextCursor=null", async () => {
+    const { permissions, nextCursor } = await twoPageUser("permissions").permissions.list();
     expect(permissions.map((p) => (p as { id: string }).id)).toEqual([
       "permissions-1",
       "permissions-2",
@@ -530,8 +500,8 @@ describe("AbadgeAgentClient.listItems drains the paginated agent item view", () 
 describe("AbadgeUserClient error paths", () => {
   test("any tRPC reject is wrapped as AbadgeApiError with fallback message", async () => {
     const { user } = makeUserClient(new Error("boom"));
-    await expect(user.listItems()).rejects.toBeInstanceOf(AbadgeApiError);
-    await expect(user.listItems()).rejects.toMatchObject({
+    await expect(user.items.list()).rejects.toBeInstanceOf(AbadgeApiError);
+    await expect(user.items.list()).rejects.toMatchObject({
       message: "boom",
     });
   });
@@ -549,7 +519,7 @@ describe("AbadgeUserClient error paths", () => {
     const { user } = makeUserClient(rejectsWith(trpcLike));
     let caught: unknown;
     try {
-      await user.getProfile("p_x");
+      await user.profiles.get("p_x");
     } catch (err) {
       caught = err;
     }
@@ -573,10 +543,6 @@ describe("AbadgeAgentClient happy paths", () => {
     ["listItems", "items.listForAgent", "query", []],
     ["getItem", "items.get", "query", ["item_x"]],
     ["getAudit", "audit.listForAgent", "query", []],
-    ["accessCiphertext", "access.ciphertext", "mutate", ["item_x"]],
-    ["accessReveal", "access.reveal", "mutate", ["item_x"]],
-    ["accessMount", "access.mount", "mutate", ["item_x", "env"]],
-    ["bulkAccessMountEnv", "access.bulkMountEnv", "mutate", ["prof_x"]],
   ] as const)("%s -> %s.%s", async (method, expectedPath, expectedKind, args) => {
     // listItems drains pages, reading items/nextCursor off the response, so the
     // shared return must terminate a single page.
@@ -584,32 +550,6 @@ describe("AbadgeAgentClient happy paths", () => {
     await invoke(agent, method, [...args]);
     expect(calls[0]?.path).toBe(expectedPath);
     expect(calls[0]?.kind).toBe(expectedKind as RecordedCall["kind"]);
-  });
-
-  test("accessReveal omits field when not provided, includes it when given", async () => {
-    const a = makeAgentClient({ payload: { fields: {} } });
-    await a.agent.accessReveal("item_x");
-    expect(a.calls[0]?.input).toEqual({ itemId: "item_x" });
-
-    const b = makeAgentClient({ payload: { fields: {} } });
-    await b.agent.accessReveal("item_x", "password");
-    expect(b.calls[0]?.input).toEqual({ itemId: "item_x", field: "password" });
-  });
-
-  test("accessMount sends mountType and optional field", async () => {
-    const a = makeAgentClient({ storageMode: "server_managed", payload: { fields: {} } });
-    await a.agent.accessMount("item_x", "file");
-    expect(a.calls[0]?.input).toEqual({ itemId: "item_x", mountType: "file" });
-
-    const b = makeAgentClient({ storageMode: "server_managed", payload: { fields: {} } });
-    await b.agent.accessMount("item_x", "env", "value");
-    expect(b.calls[0]?.input).toEqual({ itemId: "item_x", mountType: "env", field: "value" });
-  });
-
-  test("bulkAccessMountEnv passes profileId straight through", async () => {
-    const a = makeAgentClient({ items: [] });
-    await a.agent.bulkAccessMountEnv("prof_1");
-    expect(a.calls[0]?.input).toEqual({ profileId: "prof_1" });
   });
 
   // §RM-PR2 — unified access namespace

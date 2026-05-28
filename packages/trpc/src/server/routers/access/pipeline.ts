@@ -13,17 +13,12 @@ import {
   resolveFieldValue,
 } from "@abadge/core";
 import { and, eq, inArray, isNull, or } from "@abadge/db";
-import {
-  auditLogs,
-  items as itemRecords,
-  mountReservations,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
+import { mountReservations } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { buildAuditRow, logAgentAudit } from "../../audit";
 import { AgentRequestContextTag, tryAsync } from "../../effect";
 import { decodeServerManagedPayload } from "../../item-payload";
+import { type ScopedDb, scopedDb } from "../../scoped-db";
 import { decryptServerEnvelope } from "../../server-envelope";
 import { checkActionConstraint } from "./constraints";
 
@@ -133,30 +128,34 @@ const lookupPermission = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const caps = legacyCapsForAction(action);
 
     // Item-level grants are always considered. Profile-level grants only when
     // the item belongs to a profile (NULL would broaden the predicate to every
     // unbound row in the table).
     const itemMatch = and(
-      eq(permissionRecords.itemId, itemId),
-      inArray(permissionRecords.capability, caps),
+      eq(scope.tables.permissions.itemId, itemId),
+      inArray(scope.tables.permissions.capability, caps),
     );
     const profileMatch =
       profileId !== null
         ? and(
-            eq(permissionRecords.profileId, profileId),
-            inArray(permissionRecords.capability, caps),
+            eq(scope.tables.permissions.profileId, profileId),
+            inArray(scope.tables.permissions.capability, caps),
           )
         : null;
 
     const rows = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(permissionRecords)
+        .from(scope.tables.permissions)
         .where(
           and(
-            eq(permissionRecords.agentId, agentId),
+            // Defense-in-depth: filter through the scoped-db org choke-point
+            // rather than relying on agentId/itemId being transitively in-org.
+            scope.orgScope("permissions"),
+            eq(scope.tables.permissions.agentId, agentId),
             profileMatch ? or(itemMatch, profileMatch) : itemMatch,
           ),
         ),
@@ -191,15 +190,16 @@ const lookupPermission = (
 const loadItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const [item] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(itemRecords)
+        .from(scope.tables.items)
         .where(
           and(
-            eq(itemRecords.id, itemId),
-            eq(itemRecords.organizationId, ctx.identity.agentOrganizationId),
-            isNull(itemRecords.deletedAt),
+            eq(scope.tables.items.id, itemId),
+            scope.orgScope("items"),
+            isNull(scope.tables.items.deletedAt),
           ),
         )
         .limit(1),
@@ -212,7 +212,7 @@ const loadItem = (itemId: string) =>
 // ---------------------------------------------------------------------------
 
 const decryptServerManaged = (
-  item: typeof itemRecords.$inferSelect,
+  item: ScopedDb["tables"]["items"]["$inferSelect"],
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
 ) =>
   Effect.gen(function* () {
@@ -367,7 +367,26 @@ export const resolveAccess = (
     // 4. Branch on action × storageMode.
     if (action === "read") {
       if (item.storageMode === "server_managed") {
-        const decrypted = yield* decryptServerManaged(item, "access.reveal");
+        // §AB-0022 — If AES-GCM decryption throws (corrupt ciphertext, wrong key),
+        // the authorized access still must produce an audit row. IntegrityError
+        // is already self-audited inside decryptServerManaged; skip it here.
+        const decrypted = yield* decryptServerManaged(item, "access.reveal").pipe(
+          Effect.tapError((err) =>
+            !(err instanceof IntegrityError)
+              ? logAgentAudit({
+                  organizationId: ctx.identity.agentOrganizationId,
+                  userId: ctx.identity.agentUserId,
+                  agentId: ctx.identity.agentId,
+                  itemId,
+                  profileId: item.profileId ?? undefined,
+                  eventType: "access.reveal",
+                  result: "denied",
+                  ipAddress: ctx.ipAddress,
+                  meta: { reason: "decrypt_failed", action: "read" },
+                })
+              : Effect.void,
+          ),
+        );
         const payload = decodeServerManagedPayload(item.id, decrypted);
 
         let delivered: ItemPayload & { label: string } = payload;
@@ -467,7 +486,8 @@ export const resolveAccess = (
           envVarName: envVarName ?? null,
           expiresAt,
         });
-        await tx.insert(auditLogs).values(
+        const txScope = scopedDb(tx, ctx.identity.agentOrganizationId);
+        await tx.insert(txScope.tables.auditLogs).values(
           buildAuditRow({
             organizationId: ctx.identity.agentOrganizationId,
             userId: ctx.identity.agentUserId,
@@ -509,21 +529,17 @@ export const resolveProfileAccess = (
 > =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const { profileId, action, delivery, purpose } = input;
     const eventType = eventTypeForAction(action, delivery);
 
     // Verify profile belongs to the agent's org BEFORE returning anything.
     // Cross-org probing returns NOT_FOUND so existence isn't leaked.
     const [profileRow] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: profileRecords.id })
-        .from(profileRecords)
-        .where(
-          and(
-            eq(profileRecords.id, profileId),
-            eq(profileRecords.organizationId, ctx.identity.agentOrganizationId),
-          ),
-        )
+      scope.executor
+        .select({ id: scope.tables.profiles.id })
+        .from(scope.tables.profiles)
+        .where(and(eq(scope.tables.profiles.id, profileId), scope.orgScope("profiles")))
         .limit(1),
     );
     if (!profileRow) {
@@ -538,14 +554,14 @@ export const resolveProfileAccess = (
 
     // Load every active item in the profile.
     const rows = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(itemRecords)
+        .from(scope.tables.items)
         .where(
           and(
-            eq(itemRecords.profileId, profileId),
-            eq(itemRecords.organizationId, ctx.identity.agentOrganizationId),
-            isNull(itemRecords.deletedAt),
+            scope.orgScope("items"),
+            eq(scope.tables.items.profileId, profileId),
+            isNull(scope.tables.items.deletedAt),
           ),
         )
         .limit(MAX_PROFILE_USE_ITEMS + 1),
@@ -682,9 +698,12 @@ export const resolveProfileAccess = (
     if (pendingReservations.length > 0) {
       yield* tryAsync(() =>
         ctx.db.transaction(async (tx) => {
+          const txScope = scopedDb(tx, ctx.identity.agentOrganizationId);
           await tx.insert(mountReservations).values(pendingReservations);
           if (pendingAudits.length > 0) {
-            await tx.insert(auditLogs).values(pendingAudits.map((a) => buildAuditRow(a)));
+            await tx
+              .insert(txScope.tables.auditLogs)
+              .values(pendingAudits.map((a) => buildAuditRow(a)));
           }
         }),
       );

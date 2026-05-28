@@ -22,7 +22,7 @@ export function createProfileCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const result = await client.createProfile({
+        const result = await client.profiles.create({
           orgId,
           name: opts.name,
           description: opts.description,
@@ -43,7 +43,7 @@ export function createProfileCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const { profiles } = await client.listProfiles(orgId);
+        const { profiles } = await client.profiles.list(orgId);
 
         if (opts.json) {
           json(profiles);
@@ -74,7 +74,7 @@ export function createProfileCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const { profiles } = await client.listProfiles(orgId);
+        const { profiles } = await client.profiles.list(orgId);
         const profile = profiles.find((p) => p.id === nameOrId || p.name === nameOrId);
         if (!profile) {
           error(`Profile '${nameOrId}' not found.`);

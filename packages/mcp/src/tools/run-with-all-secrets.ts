@@ -123,13 +123,15 @@ export async function handler(
   const startMs = Date.now();
   const client = await getApiClient(config);
 
-  const bulk = await client.bulkAccessMountEnv(input.profileId);
+  const bulk = await client.access.use({ profileId: input.profileId }, { delivery: "env" });
+  if (!("items" in bulk)) throw new Error("Expected profile-scoped access response");
 
   const envMap: Record<string, string> = {};
   // Track which item produced which env var so a collision error names both.
   const envSource: Record<string, { itemId: string; label: string }> = {};
 
-  for (const item of bulk.items) {
+  for (const mount of bulk.items) {
+    const item = await client.access.redeemMount(mount.mountId);
     const resolved = await resolveOne(item);
     if (!resolved) continue;
 

@@ -13,13 +13,13 @@ const stack = useTestStack();
 
 async function setupOrg(apiUrl: string, sessionToken: string, label: string) {
   const userClient = new AbadgeUserClient({ apiUrl, sessionToken });
-  const org = await userClient.createOrganization({
+  const org = await userClient.orgs.create({
     name: `Org ${label}`,
     slug: `org-${label}-${crypto.randomUUID()}`,
   });
   const scoped = new AbadgeUserClient({ apiUrl, sessionToken, orgId: org.id });
   // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
-  const item = await scoped.createItem({
+  const item = await scoped.items.create({
     storageMode: "server_managed",
     payload: {
       v: 1,
@@ -29,7 +29,7 @@ async function setupOrg(apiUrl: string, sessionToken: string, label: string) {
       fields: { value: `sk-${label}` },
     },
   });
-  const agent = await scoped.createAgent({
+  const agent = await scoped.agents.create({
     name: `agent-${label}`,
     kind: "remote",
     authMethod: "legacy_api_key",
@@ -47,7 +47,7 @@ describe("cross-org isolation", () => {
     // Inject orgB's agentId into an orgA call.
     let captured: AbadgeApiError | null = null;
     try {
-      await orgA.scoped.createPermission({
+      await orgA.scoped.permissions.create({
         agentId: orgB.agentId,
         itemId: orgA.itemId,
         capabilities: ["reveal_plaintext"],
@@ -61,7 +61,7 @@ describe("cross-org isolation", () => {
     // Inject orgB's itemId.
     captured = null;
     try {
-      await orgA.scoped.createPermission({
+      await orgA.scoped.permissions.create({
         agentId: orgA.agentId,
         itemId: orgB.itemId,
         capabilities: ["reveal_plaintext"],

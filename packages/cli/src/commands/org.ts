@@ -15,7 +15,7 @@ export function createOrgCommand(): Command {
     .action(async (opts: { name: string; slug?: string }) => {
       try {
         const client = await createUserApiClient();
-        const org = await client.createOrganization({ name: opts.name, slug: opts.slug });
+        const org = await client.orgs.create({ name: opts.name, slug: opts.slug });
         success(`Organization created: ${org.name} (${org.id})`);
       } catch (err) {
         error(errorMessage(err, "Failed to create organization."));
@@ -30,7 +30,7 @@ export function createOrgCommand(): Command {
     .action(async (opts: { json?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const { organizations } = await client.listOrganizations();
+        const { organizations } = await client.orgs.list();
 
         if (opts.json) {
           json(organizations);
@@ -60,7 +60,7 @@ export function createOrgCommand(): Command {
     .action(async (idOrSlug: string) => {
       try {
         const client = await createUserApiClient();
-        const { organizations } = await client.listOrganizations();
+        const { organizations } = await client.orgs.list();
         const org = organizations.find((o) => o.id === idOrSlug || o.slug === idOrSlug);
         if (!org) {
           error(`Organization '${idOrSlug}' not found.`);
