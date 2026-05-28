@@ -75,9 +75,8 @@ export default function DashboardLayout({
  * Lives INSIDE `<SidebarInset>` so the sidebar/header chrome stay visible
  * during gating and the user never sees a full blank-screen flash. The
  * redirect-to-login and redirect-to-onboarding behavior is driven by a single
- * `useEffect` calling `decideLayoutAction()` (a pure function with its own
- * tests in `decideLayoutAction.test.ts` if present, or kept here as a
- * standalone export-friendly helper).
+ * `useEffect` calling `decideLayoutAction()` — a pure function extracted to
+ * `./layout-triage` and unit-tested in `layout-triage.test.ts`.
  */
 function DashboardGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
