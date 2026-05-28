@@ -1,0 +1,327 @@
+---
+# abadge-security-audit — plan seed
+#
+# Cells are keyed by {wave}{agent-id}. Each cell assigns a scope paragraph
+# to one subagent. The controller copies this file into
+# docs/security-audit/<run-id>/state/plan.yaml at init time, then rewrites
+# individual cell.status as they progress through: pending -> in_progress
+# -> completed | blocked.
+#
+# Wave gating: controller will not dispatch a wave-N+1 cell until every
+# cell in wave N has reached a terminal status AND the wave-N triager has
+# produced wave-reports/wave-<N>-triage.md.
+
+version: 1
+
+wave_1:
+  # Surface recon — inventory + invariants per package/layer.
+  - id: W1S01
+    agent_template: wave1-surface
+    surface: "packages/crypto"
+    scope: |
+      Audit every source file under packages/crypto/. Inventory primitives
+      (Argon2id, XChaCha20-Poly1305, AES-256-GCM, Ed25519, API-key hash,
+      token generators). For each: confirm library (noble/webcrypto), confirm
+      nonce derivation, AAD usage, constant-time compares, KDF param lower
+      bounds. Map every entry point (exports) and every trust-boundary it
+      crosses. Invariants: "server never sees root key or plaintext ZK item",
+      "AEAD always binds itemId via AAD", "API-key compare constant-time".
+    status: pending
+  - id: W1S02
+    agent_template: wave1-surface
+    surface: "packages/trpc"
+    scope: |
+      Audit every router and middleware under packages/trpc/. For every
+      procedure: publicProcedure vs sessionProcedure vs agentProcedure
+      choice, permission + capability checks, org-scope filter, audit-log
+      write on every outcome (allowed/denied/expired/revoked), cascade
+      handlers (onAgentRevoked, onItemDeleted, onMemberRemoved),
+      safeAuditInsert silent-failure paths, resolveFieldValue usage.
+    status: pending
+  - id: W1S03
+    agent_template: wave1-surface
+    surface: "apps/api"
+    scope: |
+      Audit apps/api/ Hono app. Route mount order, rate-limiter correctness
+      (per-IP vs per-isolate, which routes gated), CORS trusted origins,
+      security headers on every response, Better Auth catch-all
+      method-gating, error response shape / information disclosure,
+      payload-size caps.
+    status: pending
+  - id: W1S04
+    agent_template: wave1-surface
+    surface: "packages/auth + better-auth wiring"
+    scope: |
+      Audit packages/auth/ and every Better-Auth integration point. Social
+      provider config (Google, GitHub), pre-claim takeover on account
+      linking, device-code exchange atomicity, trusted-origin list,
+      session cookie flags (Secure, SameSite, __Host-), CSRF posture,
+      verification token TTLs.
+    status: pending
+  - id: W1S05
+    agent_template: wave1-surface
+    surface: "packages/db"
+    scope: |
+      Audit packages/db/ schema + client. Indexes enforced where
+      invariants require (unique agentId+itemId+capability, unique
+      orgId+name on profiles), soft-delete correctness, no FK on
+      audit_logs (intentional), no cross-org leak via shared indexes,
+      Drizzle predicate coverage for org filter. Flag any raw-SQL usage.
+    status: pending
+  - id: W1S06
+    agent_template: wave1-surface
+    surface: "packages/daemon"
+    scope: |
+      Audit packages/daemon/. Unix-socket perms (0600), PID-file race,
+      VaultState in-memory root-key lifetime, auto-lock timer, RPC
+      validation on every method (vault.*, item.*, exec.env, exec.mount,
+      exec.cleanup), temp-file perms on mount (0600), cleanup on crash,
+      signal handling, buffer/connection caps.
+    status: pending
+  - id: W1S07
+    agent_template: wave1-surface
+    surface: "packages/cli"
+    scope: |
+      Audit packages/cli/. Device-code login flow, token storage at
+      ~/.abadge/config.json, --value rejection on TTY, env-var passthrough
+      in `run`, error-hint rendering, no long-lived secret on disk.
+    status: pending
+  - id: W1S08
+    agent_template: wave1-surface
+    surface: "packages/mcp"
+    scope: |
+      Audit packages/mcp/. Tool schemas (zod) vs server schemas (Effect),
+      run_with_secret redaction (encoding bypass, length bypass, 4KB cap),
+      mount_secret opaque mountId, orphan cleanup on startup, keypair
+      vs legacy auth path, never-log-raw-secret invariant.
+    status: pending
+  - id: W1S09
+    agent_template: wave1-surface
+    surface: "packages/sdk"
+    scope: |
+      Audit packages/sdk/. AbadgeUserClient vs AbadgeAgentClient paths,
+      keypair session exchange + T-2min refresh, error-envelope fidelity,
+      no plaintext persistence.
+    status: pending
+  - id: W1S10
+    agent_template: wave1-surface
+    surface: "apps/web"
+    scope: |
+      Audit apps/web/. Device-code approval UX, one-time API-key display,
+      vault security page (password change, recovery key, key rotation),
+      reliance on backend auth (no client-side permission enforcement),
+      Next.js headers/CSP config.
+    status: pending
+  - id: W1S11
+    agent_template: wave1-surface
+    surface: "packages/core + env + config"
+    scope: |
+      Audit packages/core/, packages/env/, packages/config/. Effect Schema
+      definitions — strict vs passthrough, error shape correctness (code,
+      message, hint, meta), constants (ITEM_KINDS, CAPABILITIES, TTLs)
+      matching invariants, env-var validation on every deploy target.
+    status: pending
+
+wave_2:
+  # Threat-class sweep — 12 OWASP-style categories across all surfaces.
+  - id: W2T01
+    agent_template: wave2-threat
+    class: "T01 Authentication fall-through"
+    scope: |
+      Hunt publicProcedure misuse, bearer-resolver paths that return
+      identity without enabled/!revoked check, Better Auth catch-all
+      method-gating errors, OAuth pre-claim takeover. Cross-reference
+      every Wave-1 surface note.
+    status: pending
+  - id: W2T02
+    agent_template: wave2-threat
+    class: "T02 Authorization & capability"
+    scope: |
+      Every reveal/mount path verifies (orgId, permission, capability,
+      expiry, agent-enabled). requireOrgRole call sites correct. Owner-only
+      endpoints. Permission grants on revoked agents blocked.
+    status: pending
+  - id: W2T03
+    agent_template: wave2-threat
+    class: "T03 Cryptographic correctness"
+    scope: |
+      AAD bound to itemId + orgId on every AEAD encrypt/decrypt; KDF lower
+      bounds; Ed25519 domain separation; constant-time API-key compare;
+      nonce freshness (never reused); key-version tracking.
+    status: pending
+  - id: W2T04
+    agent_template: wave2-threat
+    class: "T04 Session lifecycle"
+    scope: |
+      Every token hashed pre-storage; expiry enforced on every use; revoke
+      propagates to in-flight; device-code exchange atomic; bootstrap /
+      challenge / session TTLs honoured.
+    status: pending
+  - id: W2T05
+    agent_template: wave2-threat
+    class: "T05 Input validation"
+    scope: |
+      Every external input validated by Effect Schema (strict); MCP zod
+      schemas match server Effect schemas; no passthrough where strict is
+      required; bounded string + JSON field limits.
+    status: pending
+  - id: W2T06
+    agent_template: wave2-threat
+    class: "T06 Information disclosure"
+    scope: |
+      Error envelopes scrubbed; enumeration oracles closed (slug check,
+      agent existence); Cache-Control on secret responses; per-agent
+      secret-prefix visibility scoped to owner.
+    status: pending
+  - id: W2T07
+    agent_template: wave2-threat
+    class: "T07 Races / TOCTOU"
+    scope: |
+      Permission/agent revoke vs in-flight; profiles.bootstrap atomic;
+      daemon chmod after bind; mount perm-check → open race; enrollment
+      token single-use under concurrent exchange.
+    status: pending
+  - id: W2T08
+    agent_template: wave2-threat
+    class: "T08 Secret leakage"
+    scope: |
+      MCP run_with_secret redaction (long secret, encoding bypass); audit-
+      log meta echoing input; tRPC ValidationError echoing values; CLI run
+      env passthrough; daemon log scrubbing.
+    status: pending
+  - id: W2T09
+    agent_template: wave2-threat
+    class: "T09 Rate limiting & DoS"
+    scope: |
+      Per-IP vs per-isolate limiter scope; unauth endpoints (createChallenge,
+      device-code) table growth; Argon2id memory pin sanity; payload size
+      caps; daemon connection + buffer caps.
+    status: pending
+  - id: W2T10
+    agent_template: wave2-threat
+    class: "T10 Supply chain"
+    scope: |
+      Lockfile / package.json integrity; "latest" pins; GitHub Actions
+      pinned to SHA; Better Auth CLI vs runtime version drift; workspace
+      dep on private packages.
+    status: pending
+  - id: W2T11
+    agent_template: wave2-threat
+    class: "T11 Headers / cookies / CORS / CSP"
+    scope: |
+      HSTS, X-Content-Type-Options, COOP, CORP, Referrer-Policy, CSP on
+      every public origin; cookie Secure/SameSite/__Host-; CORS methods
+      minimised; exposed headers minimal.
+    status: pending
+  - id: W2T12
+    agent_template: wave2-threat
+    class: "T12 Audit log integrity"
+    scope: |
+      Every allowed AND denied attempt logged; safeAuditInsert silent-
+      failure paths; unrecognised-bearer events audited; IP spoofability
+      outside Cloudflare; audit.throw semantics inverted (does it suppress
+      caller error?).
+    status: pending
+
+wave_3:
+  # Adversarial scenarios — static exploit pathing per attacker model.
+  - id: W3P01
+    agent_template: wave3-pentest
+    scenario: "Anonymous internet user reveals an item"
+    scope: |
+      Goal: extract plaintext of an item without any valid session/API key.
+      Enumerate every candidate entry point, trace guards, declare NEG/POS.
+    status: pending
+  - id: W3P02
+    agent_template: wave3-pentest
+    scenario: "Low-priv org member reads another member's profile items"
+    scope: |
+      Goal: org member with no permission grants reads items via cross-
+      member enumeration or cascade bypass.
+    status: pending
+  - id: W3P03
+    agent_template: wave3-pentest
+    scenario: "Cross-org item access"
+    scope: |
+      Goal: authenticated user in org A reaches item in org B via ID
+      guessing, missing org filter, or tRPC context spoofing.
+    status: pending
+  - id: W3P04
+    agent_template: wave3-pentest
+    scenario: "Agent escalates capabilities"
+    scope: |
+      Goal: agent with read_ciphertext only achieves reveal_plaintext via
+      route confusion, alternate mount endpoint, or client-side permission
+      cache.
+    status: pending
+  - id: W3P05
+    agent_template: wave3-pentest
+    scenario: "Revoked agent accesses secret"
+    scope: |
+      Goal: agent whose revokedAt is set and/or session revoked manages to
+      reveal an item via cached session, in-flight request, or hash-prefix
+      collision.
+    status: pending
+  - id: W3P06
+    agent_template: wave3-pentest
+    scenario: "Bootstrap token replay / multi-use"
+    scope: |
+      Goal: unenrolled agent reuses a bootstrap token to enrol twice, or
+      a stolen token registers a rogue keypair.
+    status: pending
+  - id: W3P07
+    agent_template: wave3-pentest
+    scenario: "Challenge signature bypass"
+    scope: |
+      Goal: obtain a session token without holding the private key —
+      weak canonicalisation, challenge reuse, missing domain separation,
+      signature-format confusion.
+    status: pending
+  - id: W3P08
+    agent_template: wave3-pentest
+    scenario: "Daemon same-host lateral attacker"
+    scope: |
+      Goal: different-uid user on the same host steals secrets through
+      daemon socket, PID-file race, mount-file perms window.
+    status: pending
+  - id: W3P09
+    agent_template: wave3-pentest
+    scenario: "MCP prompt-injection pulls plaintext"
+    scope: |
+      Goal: malicious tool caller extracts raw secret despite redaction —
+      long secret, encoding bypass, tool-return channel, stderr leak,
+      partial match.
+    status: pending
+  - id: W3P10
+    agent_template: wave3-pentest
+    scenario: "Audit-log evasion"
+    scope: |
+      Goal: attacker accesses an item but produces no audit row — via
+      safeAuditInsert swallow, untracked code path, or cascade timing.
+    status: pending
+  - id: W3P11
+    agent_template: wave3-pentest
+    scenario: "Server-managed key rotation / downgrade"
+    scope: |
+      Goal: force decryption under old keyVersion, or induce re-encryption
+      that drops AAD.
+    status: pending
+  - id: W3P12
+    agent_template: wave3-pentest
+    scenario: "Device-code auth abuse"
+    scope: |
+      Goal: hijack another user's device-code approval, replay code,
+      attach agent to attacker session, enumerate codes.
+    status: pending
+
+wave_4:
+  # Verification — fresh-eyes re-check of every Critical + High.
+  # Controller populates these cells dynamically from triager output of
+  # wave 3; we leave placeholders here.
+  - id: W4V_AUTO
+    agent_template: wave4-verifier
+    scope: |
+      Controller-populated. One verifier batch per 3-6 Critical+High
+      findings. Each verifier independently re-reads cited code, confirms
+      or invalidates, updates finding's Verified: field.
+    status: deferred
