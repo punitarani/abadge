@@ -7,6 +7,7 @@ export interface SeedOrgInput {
   userId: string;
   name: string;
   slug: string;
+  logo?: string | null;
   /** JSON string for `organization.metadata` (e.g. PERSONAL_ORG_METADATA). */
   metadata?: string | null;
   profileName: string;
@@ -42,6 +43,7 @@ export async function seedOrgWithOwnerProfile(
     id: orgId,
     name: input.name,
     slug: input.slug,
+    logo: input.logo ?? null,
     metadata: input.metadata ?? null,
     createdAt,
   });

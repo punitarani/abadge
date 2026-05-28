@@ -250,13 +250,18 @@ function serializeOrg(row: typeof organization.$inferSelect) {
   };
 }
 
+const slugTaken = (slug: string) =>
+  new ConflictError({
+    code: "SLUG_TAKEN",
+    message: `The slug "${slug}" is already in use`,
+    hint: "Choose a different organization slug.",
+  });
+
 const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* UserRequestContextTag;
     const userId = ctx.identity.userId;
-    const orgId = crypto.randomUUID();
     const slug = input.slug ?? toSlug(input.name);
-    const now = new Date();
 
     const [existingSlug] = yield* tryAsync(() =>
       ctx.db
@@ -267,88 +272,51 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     );
 
     if (existingSlug) {
-      return yield* Effect.fail(
-        new ConflictError({
-          code: "SLUG_TAKEN",
-          message: `The slug "${slug}" is already in use`,
-          hint: "Choose a different organization slug.",
-        }),
-      );
+      return yield* Effect.fail(slugTaken(slug));
     }
 
-    // Org + owner-member + default profile must succeed or fail together. The
-    // slug-race loser's unique-violation is translated below to SLUG_TAKEN
-    // (mirrors profiles.create / permissions.create). The auto-seeded
-    // server_managed profile makes the org immediately usable — no
-    // separate `profiles.create` round trip on the happy path.
-    const profileId = crypto.randomUUID();
-    yield* tryAsync(() =>
-      ctx.db.transaction(async (tx) => {
-        await tx.insert(organization).values({
-          id: orgId,
+    // Org + owner-member + default `server_managed` profile succeed or fail
+    // together via the shared seed builder; the slug-race loser's unique
+    // violation is translated to SLUG_TAKEN. The auto-seeded profile makes the
+    // org immediately usable with no separate `profiles.create` round trip.
+    const seed = yield* tryAsync(() =>
+      ctx.db.transaction((tx) =>
+        seedOrgWithOwnerProfile(tx, {
+          userId,
           name: input.name,
           slug,
           logo: input.logo ?? null,
-          createdAt: now,
-        });
-
-        await tx.insert(member).values({
-          id: crypto.randomUUID(),
-          organizationId: orgId,
-          userId,
-          role: "owner",
-          createdAt: now,
-        });
-
-        // §REVAMP-PR3 (Task 5.1) — default profile is `server_managed` so
-        // no client-side KDF / ZK password is required to provision. Users
-        // can add ZK profiles later via `profiles.create`. `externalId` is
-        // `"default"` so external provisioning tools have a stable handle.
-        await tx.insert(profiles).values({
-          id: profileId,
-          organizationId: orgId,
-          name: "default",
-          externalId: "default",
-          storageMode: "server_managed",
-          keyVersion: 1,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }),
+          profileName: "default",
+          profileExternalId: "default",
+        }),
+      ),
     ).pipe(
       Effect.catchIf(
         (e: Error) => isUniqueViolation(e),
-        () =>
-          Effect.fail(
-            new ConflictError({
-              code: "SLUG_TAKEN",
-              message: `The slug "${slug}" is already in use`,
-              hint: "Choose a different organization slug.",
-            }),
-          ),
+        () => Effect.fail(slugTaken(slug)),
       ),
     );
 
     yield* logUserAudit({
-      organizationId: orgId,
+      organizationId: seed.orgId,
       userId,
       eventType: "org.create",
       result: "allowed",
       ipAddress: ctx.ipAddress,
-      meta: { slug, autoDefaultProfile: profileId },
+      meta: { slug, autoDefaultProfile: seed.profileId },
     });
 
     return {
       organization: {
-        id: orgId,
+        id: seed.orgId,
         name: input.name,
         slug,
         logo: input.logo ?? null,
-        createdAt: now.toISOString(),
+        createdAt: seed.createdAt.toISOString(),
         isPersonal: false,
       },
       defaultProfile: {
-        id: profileId,
+        id: seed.profileId,
         name: "default",
         externalId: "default",
         storageMode: "server_managed" as const,
@@ -359,14 +327,11 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
 
 // One-click personal account: no input. Auto-generates a workspace name/slug
 // from the user row and seeds a personal org (flagged via metadata) + a single
-// server_managed "default" profile, reusing the shared seed builder. The
-// generated slug carries an 8-char random suffix, so collisions are
-// astronomically rare; the bounded retry exists only so this no-input action
-// never surfaces SLUG_TAKEN to the caller. Personal users can still create or
-// join team orgs later — coexistence rides on the existing X-Abadge-Org-Id
-// resolution with no extra wiring here.
-const PERSONAL_SLUG_ATTEMPTS = 3;
-
+// server_managed "default" profile via the shared seed builder. toSlug appends
+// an 8-char random suffix, so a collision is astronomically rare; if one ever
+// occurs it surfaces SLUG_TAKEN (same as createOrg) and the user retries.
+// Personal users can still create or join team orgs later — coexistence rides
+// on the existing X-Abadge-Org-Id resolution with no extra wiring here.
 const createPersonalOrg = Effect.gen(function* () {
   const ctx = yield* UserRequestContextTag;
   const userId = ctx.identity.userId;
@@ -381,72 +346,46 @@ const createPersonalOrg = Effect.gen(function* () {
 
   const trimmedName = userRow?.name?.trim();
   const displayName = trimmedName ? `${trimmedName}'s workspace` : "Personal workspace";
-  const slugBase = trimmedName || userRow?.email?.split("@")[0] || "personal";
+  const slug = toSlug(trimmedName || userRow?.email?.split("@")[0] || "personal");
 
-  let seeded: { orgId: string; profileId: string; createdAt: Date } | null = null;
-  let slug = "";
-
-  for (let attempt = 0; attempt < PERSONAL_SLUG_ATTEMPTS; attempt++) {
-    slug = toSlug(slugBase);
-    const outcome = yield* tryAsync(() =>
-      ctx.db.transaction((tx) =>
-        seedOrgWithOwnerProfile(tx, {
-          userId,
-          name: displayName,
-          slug,
-          metadata: PERSONAL_ORG_METADATA,
-          profileName: "default",
-          profileExternalId: "default",
-        }),
-      ),
-    ).pipe(
-      Effect.map((r) => ({ ok: true as const, result: r })),
-      Effect.catchIf(
-        (e: Error) => isUniqueViolation(e),
-        () => Effect.succeed({ ok: false as const, result: null }),
-      ),
-    );
-
-    if (outcome.ok) {
-      seeded = {
-        orgId: outcome.result.orgId,
-        profileId: outcome.result.profileId,
-        createdAt: outcome.result.createdAt,
-      };
-      break;
-    }
-  }
-
-  if (!seeded) {
-    return yield* Effect.fail(
-      new ConflictError({
-        code: "SLUG_TAKEN",
-        message: "Could not allocate a unique workspace slug",
-        hint: "Try again in a moment.",
+  const seed = yield* tryAsync(() =>
+    ctx.db.transaction((tx) =>
+      seedOrgWithOwnerProfile(tx, {
+        userId,
+        name: displayName,
+        slug,
+        metadata: PERSONAL_ORG_METADATA,
+        profileName: "default",
+        profileExternalId: "default",
       }),
-    );
-  }
+    ),
+  ).pipe(
+    Effect.catchIf(
+      (e: Error) => isUniqueViolation(e),
+      () => Effect.fail(slugTaken(slug)),
+    ),
+  );
 
   yield* logUserAudit({
-    organizationId: seeded.orgId,
+    organizationId: seed.orgId,
     userId,
     eventType: "org.create",
     result: "allowed",
     ipAddress: ctx.ipAddress,
-    meta: { slug, personal: true, autoDefaultProfile: seeded.profileId },
+    meta: { slug, personal: true, autoDefaultProfile: seed.profileId },
   });
 
   return {
     organization: {
-      id: seeded.orgId,
+      id: seed.orgId,
       name: displayName,
       slug,
       logo: null,
-      createdAt: seeded.createdAt.toISOString(),
+      createdAt: seed.createdAt.toISOString(),
       isPersonal: true,
     },
     defaultProfile: {
-      id: seeded.profileId,
+      id: seed.profileId,
       name: "default",
       externalId: "default",
       storageMode: "server_managed" as const,

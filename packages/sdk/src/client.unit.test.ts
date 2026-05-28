@@ -139,6 +139,22 @@ describe("AbadgeUserClient happy paths", () => {
     expect(calls[0]?.path).toBe("organizations.create");
   });
 
+  test("createPersonalOrganization unwraps result.organization (no input)", async () => {
+    const { user, calls } = makeUserClient({
+      organization: {
+        id: "org_p",
+        name: "Dana's workspace",
+        slug: "dana-ab12cd34",
+        isPersonal: true,
+      },
+    });
+    const out = await user.createPersonalOrganization();
+    expect(out.id).toBe("org_p");
+    expect(out.isPersonal).toBe(true);
+    expect(calls[0]?.path).toBe("organizations.createPersonal");
+    expect(calls[0]?.kind).toBe("mutate");
+  });
+
   test("listOrganizations + getOrganization + updateOrganization + deleteOrganization", async () => {
     const { user: u1, calls: c1 } = makeUserClient({ organizations: [] });
     await u1.listOrganizations();
