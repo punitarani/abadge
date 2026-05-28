@@ -1,9 +1,6 @@
 ---
-"@abadge/core": minor
-"@abadge/db": minor
-"@abadge/trpc": minor
-"@abadge/sdk": minor
-"@abadge/cli": minor
+"@abadge/cli": patch
+"@abadge/mcp": patch
 ---
 
 Add personal user API keys (`abu_`) and remove the legacy agent API key method.
