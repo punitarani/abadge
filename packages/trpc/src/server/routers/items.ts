@@ -13,8 +13,7 @@ import {
   type UpdateItemInput,
   UpdateItemSchema,
 } from "@abadge/core";
-import { and, desc, eq, isNull, sql, type Transaction } from "@abadge/db";
-import { auditLogs, items, permissions, profiles } from "@abadge/db/schema";
+import { and, desc, eq, isNull, sql } from "@abadge/db";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import { onItemDeleted } from "../cascades";
@@ -31,6 +30,7 @@ import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../ini
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { scopedDb, type ScopedDb } from "../scoped-db";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 import { decryptServerEnvelope, encryptServerEnvelope } from "../server-envelope";
 
@@ -40,15 +40,16 @@ const loadOwnedItem = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const [item] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(items)
+        .from(scope.tables.items)
         .where(
           and(
-            eq(items.id, itemId),
-            eq(items.organizationId, ctx.identity.organizationId),
-            isNull(items.deletedAt),
+            eq(scope.tables.items.id, itemId),
+            scope.orgScope("items"),
+            isNull(scope.tables.items.deletedAt),
           ),
         )
         .limit(1),
@@ -86,11 +87,10 @@ const loadOwnedItem = (
  * keyVersion. Designed to be called from inside `ctx.db.transaction(...)`.
  */
 async function insertZeroKnowledgeItem(
-  tx: Transaction,
+  txScope: ScopedDb,
   opts: {
     id: string;
     userId: string;
-    organizationId: string;
     label: string;
     encryptedItemKey: string;
     ciphertext: string;
@@ -100,14 +100,16 @@ async function insertZeroKnowledgeItem(
     profileId: string | undefined;
   },
 ): Promise<void> {
+  const tx = txScope.executor;
+  const profilesTable = txScope.tables.profiles;
   const [profile] = await tx
-    .select({ id: profiles.id, keyVersion: profiles.keyVersion })
-    .from(profiles)
+    .select({ id: profilesTable.id, keyVersion: profilesTable.keyVersion })
+    .from(profilesTable)
     .where(
       and(
-        eq(profiles.organizationId, opts.organizationId),
-        eq(profiles.storageMode, "zero_knowledge"),
-        ...(opts.profileId ? [eq(profiles.id, opts.profileId)] : []),
+        txScope.orgScope("profiles"),
+        eq(profilesTable.storageMode, "zero_knowledge"),
+        ...(opts.profileId ? [eq(profilesTable.id, opts.profileId)] : []),
       ),
     )
     .limit(1);
@@ -130,9 +132,9 @@ async function insertZeroKnowledgeItem(
   // Re-read keyVersion UNDER the lock; defends against a rotate that committed
   // between the profile SELECT and the advisory-lock acquisition.
   const [locked] = await tx
-    .select({ keyVersion: profiles.keyVersion })
-    .from(profiles)
-    .where(eq(profiles.id, profile.id));
+    .select({ keyVersion: profilesTable.keyVersion })
+    .from(profilesTable)
+    .where(eq(profilesTable.id, profile.id));
 
   if (!locked) {
     throw new NotFoundError({
@@ -154,10 +156,9 @@ async function insertZeroKnowledgeItem(
     });
   }
 
-  await tx.insert(items).values({
+  await txScope.insert("items", {
     id: opts.id,
     createdBy: opts.userId,
-    organizationId: opts.organizationId,
     profileId: profile.id,
     label: opts.label,
     storageMode: "zero_knowledge",
@@ -184,16 +185,17 @@ const resolveTargetProfile = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
 
     if (explicitProfileId !== undefined) {
       const [profile] = yield* tryAsync(() =>
-        ctx.db
-          .select({ id: profiles.id, storageMode: profiles.storageMode })
-          .from(profiles)
+        scope.executor
+          .select({ id: scope.tables.profiles.id, storageMode: scope.tables.profiles.storageMode })
+          .from(scope.tables.profiles)
           .where(
             and(
-              eq(profiles.id, explicitProfileId),
-              eq(profiles.organizationId, ctx.identity.organizationId),
+              eq(scope.tables.profiles.id, explicitProfileId),
+              scope.orgScope("profiles"),
             ),
           )
           .limit(1),
@@ -226,18 +228,18 @@ const resolveTargetProfile = (
     }
 
     const [profile] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: profiles.id })
-        .from(profiles)
+      scope.executor
+        .select({ id: scope.tables.profiles.id })
+        .from(scope.tables.profiles)
         .where(
           and(
-            eq(profiles.organizationId, ctx.identity.organizationId),
-            eq(profiles.storageMode, storageMode),
+            scope.orgScope("profiles"),
+            eq(scope.tables.profiles.storageMode, storageMode),
           ),
         )
         .orderBy(
-          sql`case when ${profiles.externalId} = 'default' then 0 else 1 end`,
-          profiles.createdAt,
+          sql`case when ${scope.tables.profiles.externalId} = 'default' then 0 else 1 end`,
+          scope.tables.profiles.createdAt,
         )
         .limit(1),
     );
@@ -279,10 +281,9 @@ const createItem = (input: CreateItemInput) =>
       // maps ConflictError/NotFoundError to the correct tRPC code + cause.
       yield* tryAsync(() =>
         ctx.db.transaction((tx) =>
-          insertZeroKnowledgeItem(tx, {
+          insertZeroKnowledgeItem(scopedDb(tx, ctx.identity.organizationId), {
             id,
             userId,
-            organizationId: ctx.identity.organizationId,
             label: resolveStoredLabel(id, input.label),
             encryptedItemKey: input.encryptedItemKey,
             ciphertext: input.ciphertext,
@@ -329,11 +330,11 @@ const createItem = (input: CreateItemInput) =>
         ),
       );
 
+      const scope = scopedDb(ctx.db, ctx.identity.organizationId);
       yield* tryAsync(() =>
-        ctx.db.insert(items).values({
+        scope.insert("items", {
           id,
           createdBy: userId,
-          organizationId: ctx.identity.organizationId,
           profileId: targetProfileId,
           label: resolveStoredLabel(id, input.payload.label),
           storageMode: "server_managed",
@@ -366,34 +367,35 @@ const ItemListQuerySchema = Schema.Struct({
 const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     // §AB-0050 — keyset pagination over (createdAt DESC, id DESC): an immutable
     // tuple, so a concurrent insert never shifts an existing page.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({
-          id: items.id,
-          label: items.label,
-          storageMode: items.storageMode,
-          cryptoVersion: items.cryptoVersion,
-          contentVersion: items.contentVersion,
+          id: scope.tables.items.id,
+          label: scope.tables.items.label,
+          storageMode: scope.tables.items.storageMode,
+          cryptoVersion: scope.tables.items.cryptoVersion,
+          contentVersion: scope.tables.items.contentVersion,
           // §C2 — required so the web dashboard's profile-grant
           // blast-radius dialog can count items in a profile without
           // fetching item-detail rows for every item.
-          profileId: items.profileId,
-          createdAt: items.createdAt,
-          updatedAt: items.updatedAt,
+          profileId: scope.tables.items.profileId,
+          createdAt: scope.tables.items.createdAt,
+          updatedAt: scope.tables.items.updatedAt,
         })
-        .from(items)
+        .from(scope.tables.items)
         .where(
           and(
-            eq(items.organizationId, ctx.identity.organizationId),
-            isNull(items.deletedAt),
-            cursorCondition(items.createdAt, items.id, cursor),
+            scope.orgScope("items"),
+            isNull(scope.tables.items.deletedAt),
+            cursorCondition(scope.tables.items.createdAt, scope.tables.items.id, cursor),
           ),
         )
-        .orderBy(desc(items.createdAt), desc(items.id))
+        .orderBy(desc(scope.tables.items.createdAt), desc(scope.tables.items.id))
         .limit(limit),
     );
 
@@ -403,33 +405,34 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
 const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     // §AB-0050 — the agent's grant set is not structurally bounded, so page it
     // on the same (createdAt DESC, id DESC) keyset as the session list.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .selectDistinct({
-          id: items.id,
-          label: items.label,
-          storageMode: items.storageMode,
-          cryptoVersion: items.cryptoVersion,
-          contentVersion: items.contentVersion,
-          profileId: items.profileId,
-          createdAt: items.createdAt,
-          updatedAt: items.updatedAt,
+          id: scope.tables.items.id,
+          label: scope.tables.items.label,
+          storageMode: scope.tables.items.storageMode,
+          cryptoVersion: scope.tables.items.cryptoVersion,
+          contentVersion: scope.tables.items.contentVersion,
+          profileId: scope.tables.items.profileId,
+          createdAt: scope.tables.items.createdAt,
+          updatedAt: scope.tables.items.updatedAt,
         })
-        .from(items)
-        .innerJoin(permissions, eq(permissions.itemId, items.id))
+        .from(scope.tables.items)
+        .innerJoin(scope.tables.permissions, eq(scope.tables.permissions.itemId, scope.tables.items.id))
         .where(
           and(
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            eq(permissions.agentId, ctx.identity.agentId),
-            isNull(items.deletedAt),
-            cursorCondition(items.createdAt, items.id, cursor),
+            scope.orgScope("items"),
+            eq(scope.tables.permissions.agentId, ctx.identity.agentId),
+            isNull(scope.tables.items.deletedAt),
+            cursorCondition(scope.tables.items.createdAt, scope.tables.items.id, cursor),
           ),
         )
-        .orderBy(desc(items.createdAt), desc(items.id))
+        .orderBy(desc(scope.tables.items.createdAt), desc(scope.tables.items.id))
         .limit(limit),
     );
 
@@ -458,10 +461,11 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
     const ctx = yield* SessionRequestContextTag;
     const item = yield* loadOwnedItem(itemId, "item.update");
 
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     if (input.storageMode === "zero_knowledge") {
       const updated = yield* tryAsync(() =>
-        ctx.db
-          .update(items)
+        scope.executor
+          .update(scope.tables.items)
           .set({
             label: resolveStoredLabel(itemId, input.label),
             encryptedItemKey: input.encryptedItemKey,
@@ -469,8 +473,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
-          .returning({ id: items.id }),
+          .where(and(eq(scope.tables.items.id, itemId), eq(scope.tables.items.contentVersion, input.contentVersion), scope.orgScope("items")))
+          .returning({ id: scope.tables.items.id }),
       );
 
       if (updated.length === 0) {
@@ -498,8 +502,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       );
 
       const updated = yield* tryAsync(() =>
-        ctx.db
-          .update(items)
+        scope.executor
+          .update(scope.tables.items)
           .set({
             label: resolveStoredLabel(itemId, input.payload.label),
             serverCiphertext: encrypted.ciphertext,
@@ -508,8 +512,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(items.id, itemId), eq(items.contentVersion, input.contentVersion)))
-          .returning({ id: items.id }),
+          .where(and(eq(scope.tables.items.id, itemId), eq(scope.tables.items.contentVersion, input.contentVersion), scope.orgScope("items")))
+          .returning({ id: scope.tables.items.id }),
       );
 
       if (updated.length === 0) {
@@ -605,10 +609,10 @@ const deleteItem = (itemId: string) =>
     const now = new Date();
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
-        await tx.update(items).set({ deletedAt: now }).where(eq(items.id, itemId));
+        const txScope = scopedDb(tx, ctx.identity.organizationId);
+        await tx.update(txScope.tables.items).set({ deletedAt: now }).where(and(eq(txScope.tables.items.id, itemId), txScope.orgScope("items")));
 
-        await tx.insert(auditLogs).values({
-          organizationId: ctx.identity.organizationId,
+        await txScope.insert("auditLogs", {
           userId: ctx.identity.userId,
           itemId,
           surface: "api",

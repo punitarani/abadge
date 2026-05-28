@@ -13,12 +13,9 @@ import {
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
 import {
-  auditLogs,
   invitation,
-  items,
   member,
   organization,
-  profiles,
   user,
 } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
@@ -35,6 +32,7 @@ import {
   UserRequestContextTag,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure, userProcedure } from "../init";
+import { scopedDb } from "../scoped-db";
 
 const OrgIdSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -412,17 +410,20 @@ const listOrgs = Effect.gen(function* () {
   // (server_managed OR zk-with-wrappedRootKey). One round trip per page replaces
   // the dashboard's previous N+1 profiles.list-per-org pattern. Empty-orgs case
   // skips the query entirely.
+  // Use any orgId for scope.tables access; the actual org filter is via inArray.
   const orgIds = rows.map((r) => r.id);
   const bootstrappedOrgIds = new Set<string>();
   if (orgIds.length > 0) {
+    // Use the first orgId for scope.tables access (all orgIds are valid, table ref is the same).
+    const profilesTable = scopedDb(ctx.db, orgIds[0] ?? "").tables.profiles;
     const profileRows = yield* tryAsync(() =>
       ctx.db
-        .selectDistinct({ organizationId: profiles.organizationId })
-        .from(profiles)
+        .selectDistinct({ organizationId: profilesTable.organizationId })
+        .from(profilesTable)
         .where(
           and(
-            inArray(profiles.organizationId, orgIds),
-            or(eq(profiles.storageMode, "server_managed"), isNotNull(profiles.wrappedRootKey)),
+            inArray(profilesTable.organizationId, orgIds),
+            or(eq(profilesTable.storageMode, "server_managed"), isNotNull(profilesTable.wrappedRootKey)),
           ),
         ),
     );
@@ -541,11 +542,12 @@ const deleteOrg = (orgId: string) =>
       ),
     );
 
+    const scope = scopedDb(ctx.db, orgId);
     const activeItems = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: items.id })
-        .from(items)
-        .where(and(eq(items.organizationId, orgId), isNull(items.deletedAt)))
+      scope.executor
+        .select({ id: scope.tables.items.id })
+        .from(scope.tables.items)
+        .where(and(scope.orgScope("items"), isNull(scope.tables.items.deletedAt)))
         .limit(1),
     );
 
@@ -1022,10 +1024,10 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
     // over ctx.db and would commit outside the transaction boundary.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const txScope = scopedDb(tx, orgId);
         await tx.delete(member).where(eq(member.id, memberId));
 
-        await tx.insert(auditLogs).values({
-          organizationId: orgId,
+        await txScope.insert("auditLogs", {
           userId: ctx.identity.userId,
           surface: "api",
           eventType: "org.member_remove",

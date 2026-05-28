@@ -28,7 +28,6 @@ import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/s
 import { and, count, eq, gt, isNull, lt } from "@abadge/db";
 import {
   agentEnrollmentTokens,
-  agents as agentRecords,
   agentSessionChallenges,
   agentSessions,
 } from "@abadge/db/schema";
@@ -50,7 +49,16 @@ import {
   scopedSessionProcedure,
   sessionProcedure,
 } from "../init";
+import { scopedDb, tenantTables } from "../scoped-db";
 import { serializeAgent } from "../serialize";
+
+// Pre-auth agent table reference — no org scope available at query time.
+// §routers/auth — enrollAgent, createAgentChallenge, exchangeAgentSession run
+// before any org context is established (BaseRequestContextTag). These queries
+// look up agents by agentId / bootstrap token / challenge; the org filter is
+// applied after the agent row is loaded (via its organizationId field).
+// loadOwnedAgent and revokeAgentSession (post-auth) use scopedDb instead.
+const agentRecords = tenantTables.agents;
 
 type OwnedAgentRow = Pick<
   typeof agentRecords.$inferSelect,
@@ -206,15 +214,16 @@ const ensureAgentEligibleForSessionExchange = (agent: OwnedAgentRow) =>
 const loadOwnedAgent = (agentId: string) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const [agent] = (yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(agentRecords)
+        .from(scope.tables.agents)
         .where(
           and(
-            eq(agentRecords.id, agentId),
-            eq(agentRecords.createdBy, ctx.identity.userId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
+            eq(scope.tables.agents.id, agentId),
+            eq(scope.tables.agents.createdBy, ctx.identity.userId),
+            scope.orgScope("agents"),
           ),
         )
         .limit(1),
@@ -767,23 +776,24 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const tokenHash = yield* tryAsync(() => hashApiKey(input.token));
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     // Sessions carry no org column, so join the agent to scope revocation to the
     // caller's active org. §AB-0043 — this also reaches orphaned sessions whose
     // userId was SET NULL when the creating user was deleted; the previous
     // `eq(userId, caller)` filter could never match those rows.
     const [sessionRecord] = (yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({
           id: agentSessions.id,
           userId: agentSessions.userId,
           agentId: agentSessions.agentId,
         })
         .from(agentSessions)
-        .innerJoin(agentRecords, eq(agentRecords.id, agentSessions.agentId))
+        .innerJoin(scope.tables.agents, eq(scope.tables.agents.id, agentSessions.agentId))
         .where(
           and(
             eq(agentSessions.tokenHash, tokenHash),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
+            scope.orgScope("agents"),
             isNull(agentSessions.revokedAt),
           ),
         )

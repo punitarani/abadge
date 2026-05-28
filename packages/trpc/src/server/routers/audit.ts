@@ -21,13 +21,13 @@ import {
   roleRank,
   scopedSessionProcedure,
 } from "../init";
+import { scopedDb, type ScopedDb } from "../scoped-db";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,
   normalizeAuditEventType,
   serializeAuditEntry,
 } from "../serialize";
-import { type ScopedDb, scopedDb } from "../scoped-db";
 
 const AUDIT_EVENT_TYPE_FILTERS = [...AUDIT_EVENT_TYPES, ...LEGACY_AUDIT_EVENT_TYPES] as const;
 

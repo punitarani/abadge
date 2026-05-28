@@ -10,7 +10,6 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, isNull, sql } from "@abadge/db";
-import { auditLogs, items, permissions as permissionRecords, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -21,6 +20,7 @@ import {
   tryAsync,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
+import { scopedDb } from "../scoped-db";
 import { serializeProfile } from "../serialize";
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
@@ -98,8 +98,16 @@ const loadProfile = (
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
+    // loadProfile uses scopedDb for the table reference; no org filter is applied
+    // here because the profile is looked up by ID across all orgs, and ownership
+    // is verified immediately after via requireOrgRole on profile.organizationId.
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const [profile] = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1),
+      scope.executor
+        .select()
+        .from(scope.tables.profiles)
+        .where(eq(scope.tables.profiles.id, profileId))
+        .limit(1),
     );
 
     if (!profile) {
@@ -152,9 +160,14 @@ const loadProfileForWrite = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
 
     const [profile] = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1),
+      scope.executor
+        .select()
+        .from(scope.tables.profiles)
+        .where(eq(scope.tables.profiles.id, profileId))
+        .limit(1),
     );
 
     if (!profile) {
@@ -205,10 +218,10 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
     const id = crypto.randomUUID();
     const now = new Date();
 
+    const scope = scopedDb(ctx.db, orgId);
     yield* tryAsync(() =>
-      ctx.db.insert(profiles).values({
+      scope.insert("profiles", {
         id,
-        organizationId: orgId,
         name,
         externalId: externalId ?? null,
         description: description ?? null,
@@ -231,7 +244,11 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
     );
 
     const [created] = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.id, id)).limit(1),
+      scope.executor
+        .select()
+        .from(scope.tables.profiles)
+        .where(eq(scope.tables.profiles.id, id))
+        .limit(1),
     );
 
     if (!created) {
@@ -263,7 +280,7 @@ const listProfiles = (orgId: string) =>
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"));
 
     const rows = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.organizationId, orgId)),
+      scopedDb(ctx.db, orgId).findMany("profiles"),
     );
 
     return { profiles: rows.map(serializeProfile) };
@@ -291,17 +308,18 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
     // sequential case (already bootstrapped) and the concurrent case (two
     // callers race past the SELECT above). The loser sees 0 rows in RETURNING
     // and gets PROFILE_ALREADY_EXISTS; no silent overwrite.
+    const scope = scopedDb(ctx.db, profile.organizationId);
     const updated = yield* tryAsync(() =>
-      ctx.db
-        .update(profiles)
+      scope.executor
+        .update(scope.tables.profiles)
         .set({
           wrappedRootKey,
           kdfSalt,
           kdfParams: kdfParams as unknown as KdfParams,
           updatedAt: new Date(),
         })
-        .where(and(eq(profiles.id, profileId), isNull(profiles.wrappedRootKey)))
-        .returning({ id: profiles.id }),
+        .where(and(eq(scope.tables.profiles.id, profileId), isNull(scope.tables.profiles.wrappedRootKey), scope.orgScope("profiles")))
+        .returning({ id: scope.tables.profiles.id }),
     );
 
     if (updated.length === 0) {
@@ -350,16 +368,17 @@ const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePas
       );
     }
 
+    const scope = scopedDb(ctx.db, profile.organizationId);
     yield* tryAsync(() =>
-      ctx.db
-        .update(profiles)
+      scope.executor
+        .update(scope.tables.profiles)
         .set({
           wrappedRootKey,
           kdfSalt,
           kdfParams: kdfParams as unknown as KdfParams,
           updatedAt: new Date(),
         })
-        .where(eq(profiles.id, profileId)),
+        .where(and(eq(scope.tables.profiles.id, profileId), scope.orgScope("profiles"))),
     );
 
     yield* logSessionAudit({
@@ -395,11 +414,12 @@ const setupProfileRecovery = (input: Schema.Schema.Type<typeof ProfileSetupRecov
       );
     }
 
+    const scope = scopedDb(ctx.db, profile.organizationId);
     yield* tryAsync(() =>
-      ctx.db
-        .update(profiles)
+      scope.executor
+        .update(scope.tables.profiles)
         .set({ recoveryWrappedRootKey, updatedAt: new Date() })
-        .where(eq(profiles.id, profileId)),
+        .where(and(eq(scope.tables.profiles.id, profileId), scope.orgScope("profiles"))),
     );
 
     yield* logSessionAudit({
@@ -438,6 +458,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     // catch preserves the Error instance, and toTrpcError maps it by isDomainError.
     const nextKeyVersion = yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const txScope = scopedDb(tx, profile.organizationId);
         // Serialize with concurrent items.create on the same profile (§I5-RACE).
         // Raw SQL because pg_advisory_xact_lock is not expressible in Drizzle's typed API.
         // The lock is released automatically on txn commit/rollback.
@@ -450,12 +471,12 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
         // that committed between loadProfileForWrite and the lock acquisition.
         const [locked] = await tx
           .select({
-            keyVersion: profiles.keyVersion,
-            wrappedRootKey: profiles.wrappedRootKey,
-            recoveryWrappedRootKey: profiles.recoveryWrappedRootKey,
+            keyVersion: txScope.tables.profiles.keyVersion,
+            wrappedRootKey: txScope.tables.profiles.wrappedRootKey,
+            recoveryWrappedRootKey: txScope.tables.profiles.recoveryWrappedRootKey,
           })
-          .from(profiles)
-          .where(eq(profiles.id, profileId));
+          .from(txScope.tables.profiles)
+          .where(eq(txScope.tables.profiles.id, profileId));
 
         if (!locked?.wrappedRootKey) {
           throw new NotFoundError({
@@ -468,13 +489,14 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
         const txNextKeyVersion = locked.keyVersion + 1;
 
         const zkItemsInProfile = await tx
-          .select({ id: items.id })
-          .from(items)
+          .select({ id: txScope.tables.items.id })
+          .from(txScope.tables.items)
           .where(
             and(
-              eq(items.profileId, profileId),
-              eq(items.storageMode, "zero_knowledge"),
-              isNull(items.deletedAt),
+              txScope.orgScope("items"),
+              eq(txScope.tables.items.profileId, profileId),
+              eq(txScope.tables.items.storageMode, "zero_knowledge"),
+              isNull(txScope.tables.items.deletedAt),
             ),
           );
 
@@ -493,15 +515,15 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
         // concurrent rotates, but the explicit keyVersion check documents the invariant
         // and protects against any future refactor that loses the lock.
         const updated = await tx
-          .update(profiles)
+          .update(txScope.tables.profiles)
           .set({
             wrappedRootKey,
             recoveryWrappedRootKey: recoveryWrappedRootKey ?? locked.recoveryWrappedRootKey,
             keyVersion: txNextKeyVersion,
             updatedAt: new Date(),
           })
-          .where(and(eq(profiles.id, profileId), eq(profiles.keyVersion, locked.keyVersion)))
-          .returning({ id: profiles.id });
+          .where(and(eq(txScope.tables.profiles.id, profileId), eq(txScope.tables.profiles.keyVersion, locked.keyVersion), txScope.orgScope("profiles")))
+          .returning({ id: txScope.tables.profiles.id });
 
         if (updated.length === 0) {
           throw new ConflictError({
@@ -516,13 +538,13 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
         // so concurrent deletes don't race the rotate.
         for (const r of rekeyedItems) {
           await tx
-            .update(items)
+            .update(txScope.tables.items)
             .set({
               encryptedItemKey: r.encryptedItemKey,
               cryptoVersion: txNextKeyVersion,
               updatedAt: new Date(),
             })
-            .where(and(eq(items.id, r.itemId), eq(items.profileId, profileId)));
+            .where(and(eq(txScope.tables.items.id, r.itemId), eq(txScope.tables.items.profileId, profileId), txScope.orgScope("items")));
         }
 
         return txNextKeyVersion;
@@ -548,11 +570,14 @@ const deleteProfile = (profileId: string) =>
 
     const profile = yield* loadProfileForWrite(profileId, userId, "profile.delete");
 
+    const scope = scopedDb(ctx.db, profile.organizationId);
     const activeItems = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: items.id })
-        .from(items)
-        .where(and(eq(items.profileId, profileId), isNull(items.deletedAt)))
+      scope.executor
+        .select({ id: scope.tables.items.id })
+        .from(scope.tables.items)
+        .where(
+          and(scope.orgScope("items"), eq(scope.tables.items.profileId, profileId), isNull(scope.tables.items.deletedAt)),
+        )
         .limit(1),
     );
 
@@ -574,17 +599,20 @@ const deleteProfile = (profileId: string) =>
     // state is unreachable.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
+        const txScope = scopedDb(tx, profile.organizationId);
         const grants = await tx
           .select({
-            id: permissionRecords.id,
-            agentId: permissionRecords.agentId,
-            capability: permissionRecords.capability,
+            id: txScope.tables.permissions.id,
+            agentId: txScope.tables.permissions.agentId,
+            capability: txScope.tables.permissions.capability,
           })
-          .from(permissionRecords)
-          .where(eq(permissionRecords.profileId, profileId));
+          .from(txScope.tables.permissions)
+          .where(
+            and(txScope.orgScope("permissions"), eq(txScope.tables.permissions.profileId, profileId)),
+          );
 
         if (grants.length > 0) {
-          await tx.insert(auditLogs).values(
+          await tx.insert(txScope.tables.auditLogs).values(
             grants.map((g) => ({
               organizationId: profile.organizationId,
               userId,
@@ -603,7 +631,9 @@ const deleteProfile = (profileId: string) =>
           );
         }
 
-        await tx.delete(profiles).where(eq(profiles.id, profileId));
+        await tx
+          .delete(txScope.tables.profiles)
+          .where(and(eq(txScope.tables.profiles.id, profileId), txScope.orgScope("profiles")));
       }),
     );
 

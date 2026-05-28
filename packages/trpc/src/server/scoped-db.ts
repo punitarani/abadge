@@ -28,6 +28,15 @@ import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/sche
 
 const TENANT_TABLES = { items, profiles, agents, permissions, auditLogs } as const;
 
+/**
+ * Direct table references for code that needs to query tenant tables without
+ * an org scope (e.g. pre-auth procedures in routers/auth.ts that do not have
+ * an org context at the time of the query). ALL callers of these references
+ * must add explicit WHERE filters; the ban on direct schema imports forces
+ * this through code review rather than only through static analysis.
+ */
+export const tenantTables = TENANT_TABLES;
+
 export type Executor = Database | Transaction;
 export type TenantTableName = keyof typeof TENANT_TABLES;
 type TenantTable<T extends TenantTableName> = (typeof TENANT_TABLES)[T];

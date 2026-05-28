@@ -14,7 +14,6 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, desc, eq, inArray, or } from "@abadge/db";
-import { scopedDb } from "../scoped-db";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -31,6 +30,7 @@ import {
   scopedSessionProcedure,
 } from "../init";
 import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import { scopedDb } from "../scoped-db";
 import { serializePermission } from "../serialize";
 
 const PermissionIdSchema = Schema.Struct({
@@ -167,14 +167,15 @@ const createPermission = (input: CreatePermissionInput) =>
 
       // Pre-check duplicates for profile-target rows.
       const existingProfileRows = yield* tryAsync(() =>
-        ctx.db
-          .select({ capability: permissionRecords.capability })
-          .from(permissionRecords)
+        scope.executor
+          .select({ capability: scope.tables.permissions.capability })
+          .from(scope.tables.permissions)
           .where(
             and(
-              eq(permissionRecords.agentId, input.agentId),
-              eq(permissionRecords.profileId, input.profileId),
-              inArray(permissionRecords.capability, requested),
+              scope.orgScope("permissions"),
+              eq(scope.tables.permissions.agentId, input.agentId),
+              eq(scope.tables.permissions.profileId, input.profileId),
+              inArray(scope.tables.permissions.capability, requested),
             ),
           ),
       );
