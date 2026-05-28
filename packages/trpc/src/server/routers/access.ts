@@ -46,7 +46,7 @@ import { decodeServerManagedPayload } from "../item-payload";
 import {
   decryptServerEnvelope,
   loadProfileContentKey,
-  SERVER_ENVELOPE_VERSION,
+  SERVER_DEK_MIN_VERSION,
 } from "../server-envelope";
 import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
 
@@ -741,7 +741,7 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
       if (
         cachedContentKey === undefined &&
         item.serverKeyVersion !== null &&
-        item.serverKeyVersion >= SERVER_ENVELOPE_VERSION
+        item.serverKeyVersion >= SERVER_DEK_MIN_VERSION
       ) {
         cachedContentKey = yield* tryAsync(() =>
           loadProfileContentKey(

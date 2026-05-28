@@ -277,8 +277,22 @@ AAD is unchanged from v2: the canonical `(orgId, profileId, itemId, keyVersion)`
 | 1 | `ENCRYPTION_KEY` | none | legacy; predates AAD binding |
 | 2 | `ENCRYPTION_KEY` | `(orgId, profileId\|sentinel, itemId, 2)` | §AB-0001 direct-key + AAD |
 | 3 | profile DEK | `(orgId, profileId, itemId, 3)` | §AB-0030 per-profile envelope |
+| 4 | profile DEK | `(orgId, profileId, itemId, 4)` | §AB-0032 v3 + key-commitment prefix |
 
-Decrypt **must** branch on the stored `server_key_version`: v1/v2 unwrap nothing and decrypt under `ENCRYPTION_KEY`; v3 unwraps `server_wrapped_dek` and decrypts under the DEK. New writes are always v3.
+Decrypt **must** branch on the stored `server_key_version`: v1/v2 unwrap nothing and decrypt under `ENCRYPTION_KEY`; v3/v4 unwrap `server_wrapped_dek` and decrypt under the DEK; v4 additionally verifies and strips the key-commitment prefix first. New writes are always v4.
+
+### Key commitment (`server_key_version = 4`, §AB-0032)
+
+AES-GCM is not key-committing — a ciphertext can in principle be crafted to decrypt validly under two keys. v4 prefixes a 32-byte key-commitment tag to `server_ciphertext`:
+
+```
+server_ciphertext (v4) = base64(
+  HMAC-SHA256(profileDEK, "abadge/server-envelope/key-commitment/v1")  // 32 bytes
+  || AES-256-GCM(profileDEK, payload)
+)
+```
+
+On decrypt the commitment is recomputed from the resolved DEK and compared **constant-time** before AES-GCM runs; a mismatch rejects the ciphertext (it was not produced under this key). v1–v3 carry no commitment and decrypt unchanged.
 
 ### `ENCRYPTION_KEY` rotation (v3)
 

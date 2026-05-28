@@ -23,15 +23,19 @@ import { profiles } from "@abadge/db/schema";
  *   v2 — content under ENCRYPTION_KEY, AAD-bound.
  *   v3 — content under a per-profile DEK (itself wrapped by ENCRYPTION_KEY,
  *        the wrap bound to (orgId, profileId)), AAD-bound.
+ *   v4 — v3 + a key-commitment tag prefixed to the ciphertext (§AB-0032).
  *
- * New writes are v3. The decrypt path branches on the stored
- * `serverKeyVersion`, so existing v1/v2 rows keep decrypting unchanged.
+ * New writes are v4. The decrypt path branches on the stored `serverKeyVersion`,
+ * so existing v1/v2/v3 rows keep decrypting unchanged.
  */
 
 type Db = Database | Transaction;
 
-/** Envelope version used for new server-managed writes. */
-export const SERVER_ENVELOPE_VERSION = 3;
+/** Minimum version whose content is encrypted under a per-profile DEK (v3 and v4). */
+export const SERVER_DEK_MIN_VERSION = 3;
+
+/** Envelope version for new server-managed writes (v4 = per-profile DEK + AAD + key commitment). */
+export const SERVER_ENVELOPE_VERSION = 4;
 
 interface ServerCipherRow {
   id: string;
@@ -68,8 +72,8 @@ async function loadWrappedDek(db: Db, profileId: string): Promise<string | null>
 
 /**
  * Unwrap a profile's server DEK into the base64 content key used to decrypt its
- * v3 items. Bulk callers scoped to a single profile resolve this once and pass
- * it to {@link decryptServerEnvelope} to avoid re-reading the DEK per item.
+ * per-profile (v3/v4) items. Bulk callers scoped to a single profile resolve this
+ * once and pass it to {@link decryptServerEnvelope} to avoid re-reading the DEK per item.
  */
 export async function loadProfileContentKey(
   db: Db,
@@ -79,14 +83,14 @@ export async function loadProfileContentKey(
 ): Promise<string> {
   const wrapped = await loadWrappedDek(db, profileId);
   if (!wrapped) {
-    throw new Error(`v3 server decrypt: profile ${profileId} has no wrapped DEK`);
+    throw new Error(`server decrypt: profile ${profileId} has no wrapped DEK`);
   }
   return toBase64(await unwrapServerDek(encryptionKey, wrapped, { orgId, profileId }));
 }
 
 /**
  * Decrypt a server-managed row, resolving its content key from the version.
- * For v3 rows, `cachedContentKey` (from {@link loadProfileContentKey}) may be
+ * For v3/v4 rows, `cachedContentKey` (from {@link loadProfileContentKey}) may be
  * supplied to reuse an already-unwrapped DEK; it MUST belong to `item.profileId`.
  */
 export async function decryptServerEnvelope(
@@ -101,11 +105,9 @@ export async function decryptServerEnvelope(
     throw new Error(`server item ${item.id} is missing ciphertext/iv/keyVersion`);
   }
   let contentKey = encryptionKey;
-  if (serverKeyVersion >= SERVER_ENVELOPE_VERSION) {
+  if (serverKeyVersion >= SERVER_DEK_MIN_VERSION) {
     if (!item.profileId) {
-      throw new Error(
-        `v3 server item ${item.id} has keyVersion=${serverKeyVersion} but no profileId`,
-      );
+      throw new Error(`server item ${item.id} has keyVersion=${serverKeyVersion} but no profileId`);
     }
     contentKey =
       cachedContentKey ?? (await loadProfileContentKey(db, encryptionKey, orgId, item.profileId));
@@ -145,7 +147,8 @@ async function ensureProfileDek(
  * Encrypt a server-managed payload.
  *
  * With a `profileId` (always the case for new items, which resolve a default
- * profile): v3 under the profile's DEK, provisioned on first use. Without one
+ * profile): v4 (per-profile DEK + key commitment) under the profile's DEK,
+ * provisioned on first use. Without one
  * (a legacy NULL-profile row being updated before its profile is backfilled):
  * fall back to v2 under the master key with the no-profile sentinel AAD, so the
  * row stays decryptable without forcing a profile it doesn't have.
