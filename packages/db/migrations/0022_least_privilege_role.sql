@@ -26,7 +26,9 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_runtime') THEN
     -- 2. Connect + read the schema (but not create objects in it).
-    GRANT CONNECT ON DATABASE abadge TO app_runtime;
+    --    Use format() because GRANT CONNECT requires a literal identifier;
+    --    current_database() makes the migration portable across env names.
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO app_runtime', current_database());
     GRANT USAGE ON SCHEMA public TO app_runtime;
     REVOKE CREATE ON SCHEMA public FROM app_runtime;
 
