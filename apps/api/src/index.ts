@@ -114,9 +114,7 @@ app.get("/health", async (c) => {
                  has_table_privilege(current_user, 'audit_logs', 'UPDATE') AS audit_update
           FROM pg_roles WHERE rolname = current_user`,
     );
-    const r = row as
-      | { role: string; rolbypassrls: boolean; audit_update: boolean }
-      | undefined;
+    const r = row as { role: string; rolbypassrls: boolean; audit_update: boolean } | undefined;
     // Operator signals in logs only — never in the anon-visible payload.
     console.info(`[health] db reachable role=${r?.role ?? "unknown"} bypassRls=${r?.rolbypassrls}`);
     if (r?.audit_update === true) {
