@@ -1,4 +1,5 @@
 import { createAuth, getTrustedOrigins } from "@abadge/auth";
+import { sql } from "@abadge/db";
 import { validateWorkerEnv } from "@abadge/env/worker";
 import { handleTrpcRequest } from "@abadge/trpc/server";
 import { Hono } from "hono";
@@ -89,8 +90,24 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 app.get("/v1/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.all("/v1/*", (c) => handleV1Request(c));
 
-// Health check
-app.get("/health", (c) => c.json({ status: "ok" }));
+// Health check — also surfaces the DB role's BYPASSRLS attribute so deployment
+// misconfiguration (connecting as the owner instead of app_runtime) is visible.
+// §AB-0011/§AB-0012: rolbypassrls must be false in production.
+app.get("/health", async (c) => {
+  try {
+    const db = getDb(getConnectionString(c.env));
+    const [row] = await db.execute(
+      sql`SELECT current_user AS role, rolbypassrls FROM pg_roles WHERE rolname = current_user`,
+    );
+    const r = row as { role: string; rolbypassrls: boolean } | undefined;
+    return c.json({
+      status: "ok",
+      db: { role: r?.role ?? "unknown", bypassRls: r?.rolbypassrls ?? null },
+    });
+  } catch {
+    return c.json({ status: "ok", db: null });
+  }
+});
 
 // §ENV2c — canonical 404 envelope for unmatched routes.
 app.notFound((c) =>

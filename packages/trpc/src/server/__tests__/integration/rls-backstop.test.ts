@@ -154,6 +154,22 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
     await truncateAll();
   });
 
+  test("a bare non-transactional query fails closed — SET LOCAL never applied (AC3)", async () => {
+    // Seed a live row so we know there is data to leak if RLS failed open.
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    await seedServerItem(db, { userId: user.userId, orgId: org.orgId, label: "ac3" });
+
+    // SET LOCAL is transaction-scoped. A bare SELECT outside any explicit tx runs
+    // in its own implicit autocommit transaction where the GUC was never set.
+    // current_setting('app.current_org', true) returns NULL → NULL = NULL is never
+    // TRUE → zero rows, never an unfiltered leak.
+    const bare = await rlsDb.select({ id: items.id }).from(items);
+    expect(bare).toEqual([]);
+
+    await truncateAll();
+  });
+
   test("scopedDb.run sets the org GUC so the runtime app role sees its own rows", async () => {
     const user = await seedUser(auth);
     const org = await seedOrg(auth, user.userId);

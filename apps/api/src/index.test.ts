@@ -49,12 +49,14 @@ const testEnv: Bindings = {
 };
 
 describe("api app", () => {
-  test("GET /health returns ok", async () => {
+  test("GET /health returns ok with db role info", async () => {
     const response = await app.request("http://localhost/health", undefined, testEnv);
-    const body = (await response.json()) as { status: string };
+    const body = (await response.json()) as { status: string; db: unknown };
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ status: "ok" });
+    expect(body.status).toBe("ok");
+    // db may be null when no DB binding is configured (e.g., unit test env).
+    expect(body).toHaveProperty("db");
   });
 
   test("tRPC endpoint is reachable", async () => {

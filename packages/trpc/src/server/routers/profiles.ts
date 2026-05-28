@@ -98,16 +98,12 @@ const loadProfile = (
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    // loadProfile uses scopedDb for the table reference; no org filter is applied
-    // here because the profile is looked up by ID across all orgs, and ownership
-    // is verified immediately after via requireOrgRole on profile.organizationId.
+    // Use scopedDb.findFirst so the org filter is baked in: a profileId from a
+    // different org returns undefined (same "not found" path) rather than a
+    // different error shape that would reveal the profileId exists in another org.
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
-    const [profile] = yield* tryAsync(() =>
-      scope.executor
-        .select()
-        .from(scope.tables.profiles)
-        .where(eq(scope.tables.profiles.id, profileId))
-        .limit(1),
+    const profile = yield* tryAsync(() =>
+      scope.findFirst("profiles", { where: eq(scope.tables.profiles.id, profileId) }),
     );
 
     if (!profile) {
@@ -162,12 +158,8 @@ const loadProfileForWrite = (
     const ctx = yield* SessionRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
 
-    const [profile] = yield* tryAsync(() =>
-      scope.executor
-        .select()
-        .from(scope.tables.profiles)
-        .where(eq(scope.tables.profiles.id, profileId))
-        .limit(1),
+    const profile = yield* tryAsync(() =>
+      scope.findFirst("profiles", { where: eq(scope.tables.profiles.id, profileId) }),
     );
 
     if (!profile) {
