@@ -298,7 +298,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     );
 
     yield* logUserAudit({
-      organizationId: seed.orgId,
+      organizationId: seed.org.id,
       userId,
       eventType: "org.create",
       result: "allowed",
@@ -307,14 +307,7 @@ const createOrg = (input: Schema.Schema.Type<typeof CreateOrganizationSchema>) =
     });
 
     return {
-      organization: {
-        id: seed.orgId,
-        name: input.name,
-        slug,
-        logo: input.logo ?? null,
-        createdAt: seed.createdAt.toISOString(),
-        isPersonal: false,
-      },
+      organization: serializeOrg(seed.org),
       defaultProfile: {
         id: seed.profileId,
         name: "default",
@@ -367,7 +360,7 @@ const createPersonalOrg = Effect.gen(function* () {
   );
 
   yield* logUserAudit({
-    organizationId: seed.orgId,
+    organizationId: seed.org.id,
     userId,
     eventType: "org.create",
     result: "allowed",
@@ -376,14 +369,7 @@ const createPersonalOrg = Effect.gen(function* () {
   });
 
   return {
-    organization: {
-      id: seed.orgId,
-      name: displayName,
-      slug,
-      logo: null,
-      createdAt: seed.createdAt.toISOString(),
-      isPersonal: true,
-    },
+    organization: serializeOrg(seed.org),
     defaultProfile: {
       id: seed.profileId,
       name: "default",

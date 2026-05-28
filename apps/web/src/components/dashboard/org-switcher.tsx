@@ -175,7 +175,7 @@ export function OrgSwitcher(): React.ReactElement {
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-xs text-muted-foreground">
-              Organizations
+              Workspaces
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {orgs.map((org) => (

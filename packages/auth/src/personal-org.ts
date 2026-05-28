@@ -15,10 +15,11 @@ export interface SeedOrgInput {
 }
 
 export interface SeedOrgResult {
-  orgId: string;
+  /** The inserted organization row, so callers can serialize it through one
+   * path (e.g. tRPC `serializeOrg`) instead of rebuilding the shape inline. */
+  org: typeof organization.$inferSelect;
   memberId: string;
   profileId: string;
-  createdAt: Date;
 }
 
 /**
@@ -34,23 +35,23 @@ export async function seedOrgWithOwnerProfile(
   tx: Transaction,
   input: SeedOrgInput,
 ): Promise<SeedOrgResult> {
-  const orgId = crypto.randomUUID();
   const memberId = crypto.randomUUID();
   const profileId = crypto.randomUUID();
   const createdAt = new Date();
 
-  await tx.insert(organization).values({
-    id: orgId,
+  const org: typeof organization.$inferSelect = {
+    id: crypto.randomUUID(),
     name: input.name,
     slug: input.slug,
     logo: input.logo ?? null,
     metadata: input.metadata ?? null,
     createdAt,
-  });
+  };
+  await tx.insert(organization).values(org);
 
   await tx.insert(member).values({
     id: memberId,
-    organizationId: orgId,
+    organizationId: org.id,
     userId: input.userId,
     role: "owner",
     createdAt,
@@ -58,7 +59,7 @@ export async function seedOrgWithOwnerProfile(
 
   await tx.insert(profiles).values({
     id: profileId,
-    organizationId: orgId,
+    organizationId: org.id,
     name: input.profileName,
     externalId: input.profileExternalId ?? null,
     storageMode: "server_managed",
@@ -67,7 +68,7 @@ export async function seedOrgWithOwnerProfile(
     updatedAt: createdAt,
   });
 
-  return { orgId, memberId, profileId, createdAt };
+  return { org, memberId, profileId };
 }
 
 /**
@@ -96,7 +97,7 @@ export async function createPersonalOrgForUser(
   const slug = `${slugBase || "user"}-${crypto.randomUUID().slice(0, 6)}`;
   const name = user.name ? `${user.name}'s workspace` : "Personal workspace";
 
-  const { orgId } = await db.transaction((tx) =>
+  const { org } = await db.transaction((tx) =>
     seedOrgWithOwnerProfile(tx, {
       userId: user.id,
       name,
@@ -108,7 +109,7 @@ export async function createPersonalOrgForUser(
   );
 
   await safeAuditInsert(db, {
-    organizationId: orgId,
+    organizationId: org.id,
     userId: user.id,
     eventType: "org.create",
     result: "allowed",
