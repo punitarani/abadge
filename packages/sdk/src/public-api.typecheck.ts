@@ -82,13 +82,17 @@ type _AbadgeNamespaceHasAgent = Assert<
 // Reference the runtime values so the import is not narrowed to `import type`.
 export const _abadgeNamespaceRuntime = { User: Abadge.User, Agent: Abadge.Agent } as const;
 
-type _UserHasCreateItem = Assert<
-  AbadgeUserClient["createItem"] extends (...args: never[]) => Promise<{ id: string }>
+// @ts-expect-error createItem removed — use user.items.create
+type _LegacyCreateItem = AbadgeUserClient["createItem"];
+// @ts-expect-error accessReveal removed — use agent.access.read
+type _LegacyAccessReveal = AbadgeAgentClient["accessReveal"];
+type _UserHasItemsCreate = Assert<
+  AbadgeUserClient["items"]["create"] extends (...args: never[]) => Promise<{ id: string }>
     ? true
     : false
 >;
-type _AgentHasAccessReveal = Assert<
-  AbadgeAgentClient["accessReveal"] extends (...args: never[]) => Promise<unknown> ? true : false
+type _AgentHasAccessRead = Assert<
+  AbadgeAgentClient["access"]["read"] extends (...args: never[]) => Promise<unknown> ? true : false
 >;
 type _AgentHasGetCurrentAgent = Assert<
   AbadgeAgentClient["getCurrentAgent"] extends () => Promise<unknown> ? true : false
