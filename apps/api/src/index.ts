@@ -93,7 +93,7 @@ app.all("/v1/*", (c) => handleV1Request(c));
 // §AB-0012 / §AB-0020 — Privilege assertion on first health check.
 //
 // Warn (non-fatal) if the current DB role still has UPDATE on audit_logs,
-// which 0023_least_privilege_role should have revoked.
+// which 0022_least_privilege_role should have revoked.
 // Runs at most once per Worker cold-start; any failure (missing table, no DB,
 // pre-migration environment) is swallowed so CI and dev are unaffected.
 let _auditPrivilegeChecked = false;

@@ -37,6 +37,18 @@ psql "$OWNER_DATABASE_URL" -f scripts/least-privilege.sql
 
 ## Cutover
 
+> [!WARNING]
+> **Do not cut over to `app_runtime` yet.** Migration `0021_rls_backstop` FORCE-enables
+> row-level security keyed on the `app.current_org` GUC, but no application read path
+> sets that GUC today (`scopedDb.run()` exists but is not yet wired into the routers),
+> and agent authentication reads the `agents` table before any org context exists.
+> Connecting the app as the `NOBYPASSRLS` `app_runtime` role before that wiring lands
+> would fail closed: every tenant read returns zero rows (blank dashboard) and agent
+> auth fails (every agent request 401s) — a silent, total outage. Provisioning the role
+> now (the steps above) is safe; perform the cutover below only once the RLS GUC wiring
+> (request-path `set_config('app.current_org', …)` + an `agents` RLS reconciliation) has
+> shipped and is covered by a restricted-role integration test.
+
 1. Provision `app_runtime` (above) and set its password / connection secret.
 2. Point the **application** connection at `app_runtime`: update the API worker's
    `DATABASE_URL` (the Hyperdrive binding's origin connection string) to use the

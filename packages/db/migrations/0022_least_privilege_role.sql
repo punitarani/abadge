@@ -37,7 +37,13 @@ BEGIN
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_runtime;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_runtime;
 
-    -- 4. Same DML on tables created by future migrations (run by the owner).
+    -- 4. Same DML on tables created by future migrations. NOTE: ALTER DEFAULT
+    --    PRIVILEGES with no FOR ROLE clause applies only to objects created by
+    --    the role running THIS statement (the migrator/owner). This is correct
+    --    only while every migration is applied by that same owner role; a future
+    --    migration run by a different owner would create tables app_runtime
+    --    cannot touch (runtime "permission denied"). Keep all migrations on one
+    --    owner, or extend this with FOR ROLE if that ever changes.
     ALTER DEFAULT PRIVILEGES IN SCHEMA public
       REVOKE ALL ON TABLES FROM app_runtime;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public
