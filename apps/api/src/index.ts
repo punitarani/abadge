@@ -1,4 +1,5 @@
 import { createAuth, getTrustedOrigins } from "@abadge/auth";
+import { sql } from "@abadge/db";
 import { validateWorkerEnv } from "@abadge/env/worker";
 import { handleTrpcRequest } from "@abadge/trpc/server";
 import { Hono } from "hono";
@@ -89,8 +90,36 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 app.get("/v1/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.all("/v1/*", (c) => handleV1Request(c));
 
+// §AB-0012 / §AB-0020 — Privilege assertion on first health check.
+//
+// Warn (non-fatal) if the current DB role still has UPDATE on audit_logs,
+// which 0023_least_privilege_role should have revoked.
+// Runs at most once per Worker cold-start; any failure (missing table, no DB,
+// pre-migration environment) is swallowed so CI and dev are unaffected.
+let _auditPrivilegeChecked = false;
+
 // Health check
-app.get("/health", (c) => c.json({ status: "ok" }));
+app.get("/health", async (c) => {
+  if (!_auditPrivilegeChecked) {
+    _auditPrivilegeChecked = true;
+    Promise.resolve()
+      .then(async () => {
+        const db = getDb(getConnectionString(c.env));
+        const rows = await db.execute(
+          sql`SELECT has_table_privilege(current_user, 'audit_logs', 'UPDATE') AS has_update`,
+        );
+        const hasUpdate = (rows as unknown as Array<{ has_update: boolean }>)[0]?.has_update;
+        if (hasUpdate === true) {
+          console.warn(
+            "[§AB-0012] current DB role has UPDATE on audit_logs — " +
+              "run migration 0023_least_privilege_role to revoke write access.",
+          );
+        }
+      })
+      .catch(() => {});
+  }
+  return c.json({ status: "ok" });
+});
 
 // §ENV2c — canonical 404 envelope for unmatched routes.
 app.notFound((c) =>
