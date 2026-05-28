@@ -16,7 +16,7 @@ export type { ValidationIssue } from "./validation-issue";
  * @example
  * ```typescript
  * try {
- *   await client.getProfile(profileId);
+ *   await client.profiles.get(profileId);
  * } catch (err) {
  *   if (err instanceof AbadgeApiError && err.code === "PROFILE_NOT_FOUND") {
  *     // handle missing profile

@@ -160,7 +160,28 @@
       "idx": 22,
       "version": "7",
       "when": 1779945600000,
-      "tag": "0022_agents_rls_exemption",
+      "tag": "0022_backfill_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1779945660000,
+      "tag": "0023_least_privilege_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779945720000,
+      "tag": "0024_nonce_ceiling",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779945780000,
+      "tag": "0025_agents_rls_exemption",
       "breakpoints": true
     }
   ]

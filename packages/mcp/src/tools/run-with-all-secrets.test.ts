@@ -9,9 +9,39 @@ const fakeConfig = {
   privateKey: "{}",
 } as never;
 
-function clientReturning(items: unknown[]) {
+type ItemData = {
+  storageMode: "server_managed" | "zero_knowledge";
+  itemId: string;
+  label: string;
+  payload?: { fields: Record<string, string> };
+  encryptedItemKey?: string;
+  ciphertext?: string;
+  profileId?: string;
+  contentVersion?: number;
+};
+
+function clientReturning(items: ItemData[]) {
+  const mountMap = new Map<string, ItemData & { delivery: "env" }>();
+  const mounts = items.map((item, i) => {
+    const mountId = `mount-${i}`;
+    mountMap.set(mountId, { ...item, delivery: "env" as const });
+    return {
+      itemId: item.itemId,
+      mountId,
+      delivery: "env" as const,
+      expiresAt: "2099-01-01T00:00:00Z",
+    };
+  });
+
   return {
-    bulkAccessMountEnv: async () => ({ items }),
+    access: {
+      use: async () => ({ items: mounts }),
+      redeemMount: async (mountId: string) => {
+        const item = mountMap.get(mountId);
+        if (!item) throw new Error(`Unknown mountId: ${mountId}`);
+        return item;
+      },
+    },
   } as never;
 }
 

@@ -63,14 +63,19 @@ Pass the optional `field` parameter to `use_secret` or `mount_secret`:
 
 ## Using Fields in the SDK
 
-Pass `field` as the second argument to `accessReveal`, or third argument to `accessMount`:
+Pass `field` as an option to `access.read`, or in the opts object to `access.use`:
 
 ```ts
-// Reveal only the password field
-const result = await agent.accessReveal(itemId, "password");
+// Read only the password field (server-managed item)
+const result = await agent.access.read(itemId, { field: "password" });
+if (result.storageMode !== "server_managed") throw new Error("Expected server_managed item");
+const password = result.payload.fields.password;
 
 // Mount the private_key field as a file
-const mounted = await agent.accessMount(itemId, "file", "private_key");
+const { mountId } = await agent.access.use(
+  { itemId },
+  { delivery: "file", field: "private_key" },
+);
 ```
 
 ## Multi-Field Item Error

@@ -22,6 +22,8 @@ describe("roadmap schema foundations", () => {
       "recoveryWrappedRootKey",
       // §AB-0030 — per-profile server-managed DEK, wrapped under ENCRYPTION_KEY.
       "serverWrappedDek",
+      // §AB-0031 — nonce-ceiling counter for AES-GCM saturation tracking.
+      "serverEncryptionCount",
       "keyVersion",
       "createdAt",
       "updatedAt",

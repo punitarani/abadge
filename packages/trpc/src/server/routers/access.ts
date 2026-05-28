@@ -32,17 +32,13 @@ import {
   UseAccessSchema,
 } from "@abadge/core";
 import { and, eq, gt, isNull, or, sql } from "@abadge/db";
-import {
-  items,
-  mountReservations,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
+import { mountReservations } from "@abadge/db/schema";
 import { Cause, Effect, Schema } from "effect";
 import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import {
   decryptServerEnvelope,
   loadProfileContentKey,
@@ -94,7 +90,7 @@ const failMissingServerManagedData = (
   });
 
 const decryptServerManagedItem = (
-  item: typeof items.$inferSelect,
+  item: ScopedDb["tables"]["items"]["$inferSelect"],
   eventType: "access.reveal" | "access.mount_env" | "access.mount_file",
   cachedContentKey?: string,
 ) =>
@@ -123,21 +119,44 @@ const decryptServerManagedItem = (
         },
         cachedContentKey,
       ),
+    ).pipe(
+      // §AB-0022 — an authorized read that fails server-side decryption (corrupt
+      // ciphertext, wrong/rotated key, missing DEK) still must leave an audit row.
+      // decryptServerEnvelope self-audits nothing, so record the denial here. The
+      // no-payload case is already audited above before this call runs. Audit-write
+      // failures are swallowed so they cannot mask the primary decrypt error.
+      Effect.tapError(() =>
+        logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId ?? undefined,
+          eventType,
+          result: "denied",
+          ipAddress: ctx.ipAddress,
+          meta: { reason: "decrypt_failed" },
+        }).pipe(Effect.catchAll(() => Effect.void)),
+      ),
     );
   });
 
 const checkPermission = (agentId: string, itemId: string, capability: Capability) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const [permission] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(permissionRecords)
+        .from(scope.tables.permissions)
         .where(
           and(
-            eq(permissionRecords.agentId, agentId),
-            eq(permissionRecords.itemId, itemId),
-            eq(permissionRecords.capability, capability),
+            // Defense-in-depth: filter through the scoped-db org choke-point
+            // rather than relying on agentId/itemId being transitively in-org.
+            scope.orgScope("permissions"),
+            eq(scope.tables.permissions.agentId, agentId),
+            eq(scope.tables.permissions.itemId, itemId),
+            eq(scope.tables.permissions.capability, capability),
           ),
         )
         .limit(1),
@@ -157,15 +176,16 @@ const checkPermission = (agentId: string, itemId: string, capability: Capability
 const loadAccessibleItem = (itemId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
     const [item] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(items)
+        .from(scope.tables.items)
         .where(
           and(
-            eq(items.id, itemId),
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            isNull(items.deletedAt),
+            eq(scope.tables.items.id, itemId),
+            scope.orgScope("items"),
+            isNull(scope.tables.items.deletedAt),
           ),
         )
         .limit(1),
@@ -594,18 +614,15 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
       );
     }
 
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+
     // Verify the profile belongs to the agent's org BEFORE returning anything.
     // Cross-org probing returns NOT_FOUND so existence isn't leaked.
     const [profile] = yield* tryAsync(() =>
-      ctx.db
-        .select({ id: profileRecords.id })
-        .from(profileRecords)
-        .where(
-          and(
-            eq(profileRecords.id, input.profileId),
-            eq(profileRecords.organizationId, ctx.identity.agentOrganizationId),
-          ),
-        )
+      scope.executor
+        .select({ id: scope.tables.profiles.id })
+        .from(scope.tables.profiles)
+        .where(and(eq(scope.tables.profiles.id, input.profileId), scope.orgScope("profiles")))
         .limit(1),
     );
     if (!profile) {
@@ -624,26 +641,30 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     // mirrors checkPermission's tri-state collapsed into a SQL predicate.
     const now = new Date();
     const rows = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select({
-          item: items,
-          permissionExpiresAt: permissionRecords.expiresAt,
+          item: scope.tables.items,
+          permissionExpiresAt: scope.tables.permissions.expiresAt,
         })
-        .from(items)
+        .from(scope.tables.items)
         .innerJoin(
-          permissionRecords,
+          scope.tables.permissions,
           and(
-            eq(permissionRecords.itemId, items.id),
-            eq(permissionRecords.agentId, ctx.identity.agentId),
-            eq(permissionRecords.capability, "mount_env"),
+            scope.orgScope("permissions"),
+            eq(scope.tables.permissions.itemId, scope.tables.items.id),
+            eq(scope.tables.permissions.agentId, ctx.identity.agentId),
+            eq(scope.tables.permissions.capability, "mount_env"),
           ),
         )
         .where(
           and(
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            eq(items.profileId, input.profileId),
-            isNull(items.deletedAt),
-            or(isNull(permissionRecords.expiresAt), gt(permissionRecords.expiresAt, now)),
+            scope.orgScope("items"),
+            eq(scope.tables.items.profileId, input.profileId),
+            isNull(scope.tables.items.deletedAt),
+            or(
+              isNull(scope.tables.permissions.expiresAt),
+              gt(scope.tables.permissions.expiresAt, now),
+            ),
           ),
         )
         .limit(BULK_MOUNT_ENV_MAX_ITEMS + 1),
@@ -1005,18 +1026,20 @@ export const redeemMount = (mountId: string) =>
     const deliveryMode =
       reservation.delivery === "file" ? ("mount_file" as const) : ("mount_env" as const);
 
+    const redeemScope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+
     // Load the item (org-scoped, soft-delete-aware). If the item disappeared
     // between mint and redeem, treat it as integrity error — the reservation
     // FK should normally cascade, but a concurrent soft-delete is possible.
     const [item] = yield* tryAsync(() =>
-      ctx.db
+      redeemScope.executor
         .select()
-        .from(items)
+        .from(redeemScope.tables.items)
         .where(
           and(
-            eq(items.id, reservation.itemId),
-            eq(items.organizationId, ctx.identity.agentOrganizationId),
-            isNull(items.deletedAt),
+            eq(redeemScope.tables.items.id, reservation.itemId),
+            redeemScope.orgScope("items"),
+            isNull(redeemScope.tables.items.deletedAt),
           ),
         )
         .limit(1),
@@ -1122,6 +1145,24 @@ export const redeemMount = (mountId: string) =>
         serverIv: item.serverIv as string,
         serverKeyVersion: item.serverKeyVersion,
       }),
+    ).pipe(
+      // §AB-0022 — an authorized redeem that fails server-side decryption still
+      // must leave an audit row (the no-payload case is audited above). Swallow
+      // audit-write failures so they cannot mask the primary decrypt error.
+      Effect.tapError(() =>
+        logAgentAudit({
+          organizationId: ctx.identity.agentOrganizationId,
+          userId: ctx.identity.agentUserId,
+          agentId: ctx.identity.agentId,
+          itemId: item.id,
+          profileId: item.profileId ?? undefined,
+          eventType,
+          result: "denied",
+          deliveryMode,
+          ipAddress: ctx.ipAddress,
+          meta: { via: "mount_redeem", mountId, reason: "decrypt_failed" },
+        }).pipe(Effect.catchAll(() => Effect.void)),
+      ),
     );
     const payload = decodeServerManagedPayload(item.id, decrypted);
 

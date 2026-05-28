@@ -106,7 +106,7 @@ export async function registerKeypairAgent(
   // expects a JSON-serialized JWK, not the raw base64url x value.
   const publicKeySerialized = JSON.stringify(publicKeyJwk);
 
-  const result = await client.createAgent({
+  const result = await client.agents.create({
     name: opts.name,
     kind: opts.kind,
     publicKey: publicKeySerialized,
@@ -170,7 +170,7 @@ export async function registerBootstrapAgent(
   client: AbadgeUserClient,
   opts: { name: string; kind: AgentKind; description?: string; json?: boolean },
 ): Promise<void> {
-  const result = await client.createAgent({
+  const result = await client.agents.create({
     name: opts.name,
     kind: opts.kind,
     issueBootstrapToken: true,
@@ -221,7 +221,7 @@ export async function registerWithExistingPublicKey(
   }
   const publicKeySerialized = JSON.stringify(jwk);
 
-  const result = await client.createAgent({
+  const result = await client.agents.create({
     name: opts.name,
     kind: opts.kind,
     publicKey: publicKeySerialized,
@@ -355,7 +355,7 @@ export function createAgentCommand(): Command {
     .action(async (opts: { json?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const agents = (await client.listAgents()).agents;
+        const agents = (await client.agents.list()).agents;
 
         if (opts.json) {
           json(agents);
@@ -386,7 +386,7 @@ export function createAgentCommand(): Command {
     .action(async (id: string, opts: { json?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const result = await client.rotateAgent(id);
+        const result = await client.agents.update(id);
 
         if (opts.json) {
           json({ apiKey: result.apiKey, keyPrefix: result.keyPrefix });
@@ -409,7 +409,7 @@ export function createAgentCommand(): Command {
     .action(async (id: string) => {
       try {
         const client = await createUserApiClient();
-        await client.revokeAgent(id);
+        await client.agents.delete(id);
         success(`Agent ${id} revoked.`);
       } catch (err) {
         error(errorMessage(err, "Failed to revoke agent."));

@@ -42,7 +42,7 @@ function printEntries(entries: Array<{ key: string; value: string }>, format: st
 
 async function runExport(format: string): Promise<void> {
   const userClient = await createUserApiClient();
-  const items = (await userClient.listItems()).items;
+  const items = (await userClient.items.list()).items;
 
   const exported: Array<{ key: string; value: string }> = [];
 

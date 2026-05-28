@@ -7,10 +7,11 @@ export async function resolveSecret(
   itemId: string,
   mountType: "env" | "file",
   field?: string,
-  _purpose?: string,
+  purpose?: string,
 ): Promise<string> {
-  // TODO: forward _purpose to client.accessMount once the SDK accepts it
-  const result = await client.accessMount(itemId, mountType, field);
+  const useResult = await client.access.use({ itemId }, { delivery: mountType, field, purpose });
+  if (!("mountId" in useResult)) throw new Error("Expected item-scoped access response");
+  const result = await client.access.redeemMount(useResult.mountId);
 
   if (result.storageMode === "zero_knowledge") {
     try {

@@ -25,7 +25,7 @@ async function setup(): Promise<{
   const apiUrl = stack.apiUrl();
   const owner = await signupAndLogin(apiUrl);
   const userClient = new AbadgeUserClient({ apiUrl, sessionToken: owner.sessionToken });
-  const org = await userClient.createOrganization({
+  const org = await userClient.orgs.create({
     name: "MCP RWS",
     slug: `mcp-rws-${crypto.randomUUID()}`,
   });
@@ -36,7 +36,7 @@ async function setup(): Promise<{
   });
   // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
 
-  const item = await scoped.createItem({
+  const item = await scoped.items.create({
     storageMode: "server_managed",
     payload: {
       v: 1,
@@ -54,14 +54,14 @@ async function setup(): Promise<{
   const publicJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
   const privateJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
 
-  const agent = await scoped.createAgent({
+  const agent = await scoped.agents.create({
     name: "mcp-rws-agent",
     kind: "local_mcp",
     authMethod: "public_key_session",
     publicKey: JSON.stringify(publicJwk),
   });
 
-  await scoped.createPermission({
+  await scoped.permissions.create({
     agentId: agent.agent.id,
     itemId: item.id,
     capabilities: ["mount_env"],

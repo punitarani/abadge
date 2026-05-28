@@ -1,6 +1,6 @@
 {
-  "id": "5c9b7105-48b1-44e9-9fcb-857e67937ff9",
-  "prevId": "4b05da26-fcd4-4742-bd24-bb2d5e876ace",
+  "id": "12eba7c5-f712-4986-b421-ee60293b56ab",
+  "prevId": "b9da2235-d194-4408-89be-de58926680eb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2221,6 +2221,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "server_encryption_count": {
+          "name": "server_encryption_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "key_version": {
           "name": "key_version",

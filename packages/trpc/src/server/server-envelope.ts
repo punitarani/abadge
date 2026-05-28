@@ -11,7 +11,7 @@ import {
   type ServerAadMeta,
   toBase64,
 } from "@abadge/crypto/shared";
-import { and, type Database, eq, isNull, type Transaction } from "@abadge/db";
+import { and, type Database, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { profiles } from "@abadge/db/schema";
 
 /**
@@ -171,5 +171,40 @@ export async function encryptServerEnvelope(
     itemId,
     keyVersion,
   };
-  return serverEncrypt(plaintext, contentKey, keyVersion, aad);
+  const result = await serverEncrypt(plaintext, contentKey, keyVersion, aad);
+
+  // §AB-0031 — track this profile's AES-GCM encryption count against the
+  // per-profile-DEK nonce budget. Only v3+ (per-profile DEK) writes are counted
+  // here; v1/v2 NULL-profile rows encrypt under the master ENCRYPTION_KEY, whose
+  // (separate, shared) budget this per-profile counter intentionally does not
+  // track — see docs/SECURITY.md §AB-0031.
+  //
+  // Awaited (not fire-and-forget): an un-awaited update on a `db` that is a
+  // transaction can execute after the tx closes and be lost, silently
+  // under-counting — the dangerous direction for a budget. Awaiting makes the
+  // increment join the caller's transaction when one is passed (committing or
+  // rolling back atomically with the write) and otherwise biases to over-count.
+  // The count is advisory (warn-only), so a failure must not block the write,
+  // but it is logged rather than swallowed so under-counts are visible.
+  if (profileId) {
+    try {
+      const [row] = await db
+        .update(profiles)
+        .set({ serverEncryptionCount: sql`${profiles.serverEncryptionCount} + 1` })
+        .where(eq(profiles.id, profileId))
+        .returning({ count: profiles.serverEncryptionCount });
+      if (row && row.count >= 134_217_728) {
+        console.warn(
+          `[abadge] profile ${profileId} server_encryption_count=${row.count} approaching the per-key AES-GCM nonce budget (warn at 2^27, rotate by 2^28) — rotate the profile DEK and reset the counter (docs/runbooks/key-rotation.md §B)`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[abadge] failed to increment server_encryption_count for profile ${profileId}`,
+        err,
+      );
+    }
+  }
+
+  return result;
 }

@@ -40,7 +40,7 @@ Use on suspected disclosure of a single profile's DEK, or to bound a profile's A
 
 1. `oldDek = unwrapServerDek(ENCRYPTION_KEY, profile.server_wrapped_dek, { orgId, profileId })`; `newDek = generateServerDek()`.
 2. In one transaction per batch, for each server-managed item in the profile: decrypt under `oldDek` (with its stored AAD), re-encrypt under `newDek` via `serverEncrypt` with a bumped `serverKeyVersion` and the new AAD (`keyVersion` is part of the AAD tuple), update `server_ciphertext`/`server_iv`/`server_key_version`.
-3. `UPDATE profiles SET server_wrapped_dek = wrapServerDek(ENCRYPTION_KEY, newDek, { orgId, profileId })`.
+3. `UPDATE profiles SET server_wrapped_dek = wrapServerDek(ENCRYPTION_KEY, newDek, { orgId, profileId }), server_encryption_count = 0 WHERE id = profileId`. Resetting `server_encryption_count` to 0 in the same statement is **required** (AB-0031): the new DEK starts with a fresh AES-GCM nonce budget, so leaving the old count pins the advisory warning above its threshold and mis-tracks the new key's budget.
 4. **Validate**, then discard `oldDek`.
 
 **Rollback:** keep `oldDek` (wrapped) until validation passes; re-run with old/new swapped to revert.
@@ -66,4 +66,4 @@ Then run a **sampled decrypt** across N random server-managed items per org (via
 ## Notes
 
 - Rotation does not touch RLS, audit, or auth. The DAL's `scopedDb` continues to set `app.current_org` per transaction (AB-0011).
-- The migrator/owner role performs the rewrap; the runtime `abadge_app` role (AB-0012) needs only the DML it already has.
+- The migrator/owner role performs the rewrap; the runtime `app_runtime` role (AB-0012) needs only the DML it already has.
