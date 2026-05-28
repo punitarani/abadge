@@ -112,7 +112,7 @@ app.get("/health", async (c) => {
         if (hasUpdate === true) {
           console.warn(
             "[§AB-0012] current DB role has UPDATE on audit_logs — " +
-              "run migration 0023_least_privilege_role to revoke write access.",
+              "run migration 0022_least_privilege_role to revoke write access.",
           );
         }
       })
