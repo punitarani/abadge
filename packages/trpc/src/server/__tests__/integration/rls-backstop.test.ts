@@ -1,8 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb, type Database, eq, sql } from "@abadge/db";
-import { items } from "@abadge/db/schema";
-import { seedOrg, seedServerItem, seedUser } from "../helpers/seed";
+import { items, permissions } from "@abadge/db/schema";
+import {
+  seedAgent,
+  seedAgentSession,
+  seedOrg,
+  seedPermission,
+  seedServerItem,
+  seedUser,
+} from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
+import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 // §AB-0011 — the RLS backstop only enforces for NON-superuser, NON-BYPASSRLS roles
@@ -164,6 +172,146 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
     const scope = scopedDb(rlsDb, org.orgId);
     const rows = await scope.run((s) => s.findMany("items"));
     expect(rows.map((r) => r.id)).toEqual([item.itemId]);
+
+    await truncateAll();
+  });
+
+  // ---------------------------------------------------------------------------
+  // §AB-0011 activation — real tRPC procedures driven over the NOBYPASSRLS role.
+  //
+  // The default integration role is a superuser that BYPASSES RLS, so these are
+  // the ONLY tests that prove the request-path GUC wiring (the init.ts middleware
+  // plus the organizations/profiles/auth edge cases) actually works end to end.
+  // Seeding uses the superuser `db` (RLS-bypassing, so state always lands); the
+  // caller's `ctx.db` is `rlsDb`, so the procedures themselves run as the
+  // restricted role and are subject to RLS.
+  // ---------------------------------------------------------------------------
+
+  test("nested savepoint inherits the org GUC; the GUC does not bleed across transactions", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    const item = await seedServerItem(db, { userId: user.userId, orgId: org.orgId, label: "sp" });
+
+    // A nested tx() (savepoint) under a GUC-set outer tx sees the org's rows — the
+    // property the request-path middleware relies on so cascade deletes (which run
+    // as a savepoint of the request transaction) inherit the org context.
+    const seenInSavepoint = await rlsDb.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.current_org', ${org.orgId}, true)`);
+      return tx.transaction((inner) => inner.select({ id: items.id }).from(items));
+    });
+    expect(seenInSavepoint.map((r) => r.id)).toEqual([item.itemId]);
+
+    // A fresh transaction with no GUC sees nothing — per-transaction locality
+    // holds under the max:1 pool, so the GUC never bleeds from a prior request.
+    const seenFresh = await rlsDb.transaction((tx) => tx.select({ id: items.id }).from(items));
+    expect(seenFresh).toEqual([]);
+
+    await truncateAll();
+  });
+
+  test("scopedSessionProcedure: items.list returns the org's rows under the restricted role", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    const item = await seedServerItem(db, { userId: user.userId, orgId: org.orgId, label: "live" });
+
+    const operator = createOperatorCaller(rlsDb, auth, user.headers, org.orgId);
+    const res = await operator.items.list({});
+    expect(res.items.some((i: { id: string }) => i.id === item.itemId)).toBe(true);
+
+    await truncateAll();
+  });
+
+  test("agentProcedure: access.read authenticates (agents RLS-exempt) and decrypts under the restricted role", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    const item = await seedServerItem(db, {
+      userId: user.userId,
+      orgId: org.orgId,
+      fields: { username: "admin", password: "s3cret" },
+    });
+    const agent = await seedAgent(db, { userId: user.userId, orgId: org.orgId, kind: "local_cli" });
+    const session = await seedAgentSession(db, { agentId: agent.agentId, userId: user.userId });
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: user.userId,
+    });
+
+    // Agent auth reads agentSessions (not RLS) then agents (RLS-exempt, 0022)
+    // pre-org; the agentProcedure then sets the org GUC for the access pipeline.
+    const agentCaller = createAgentCaller(rlsDb, auth, session.rawToken);
+    const res = await agentCaller.access.read({ itemId: item.itemId });
+    if (res.storageMode !== "server_managed") throw new Error("expected server_managed payload");
+    expect(res.payload.fields.password).toBe("s3cret");
+
+    await truncateAll();
+  });
+
+  test("cross-org isolation holds through real procedures under the restricted role", async () => {
+    const userA = await seedUser(auth);
+    const orgA = await seedOrg(auth, userA.userId);
+    const userB = await seedUser(auth);
+    const orgB = await seedOrg(auth, userB.userId);
+    const itemB = await seedServerItem(db, {
+      userId: userB.userId,
+      orgId: orgB.orgId,
+      label: "b-secret",
+    });
+
+    const operatorA = createOperatorCaller(rlsDb, auth, userA.headers, orgA.orgId);
+    // org A's caller cannot fetch org B's item by id...
+    await expect(operatorA.items.get({ itemId: itemB.itemId })).rejects.toThrow();
+    // ...and it never appears in the list.
+    const list = await operatorA.items.list({});
+    expect(list.items.some((i: { id: string }) => i.id === itemB.itemId)).toBe(false);
+
+    await truncateAll();
+  });
+
+  test("cascade integrity: items.delete deletes the item's permissions under the restricted role", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    const item = await seedServerItem(db, { userId: user.userId, orgId: org.orgId });
+    const agent = await seedAgent(db, { userId: user.userId, orgId: org.orgId, kind: "local_cli" });
+    const perm = await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: user.userId,
+    });
+
+    const operator = createOperatorCaller(rlsDb, auth, user.headers, org.orgId);
+    await operator.items.delete({ itemId: item.itemId });
+
+    // Read back as the superuser: the cascade (onItemDeleted, a savepoint under the
+    // request's org-GUC transaction) must have deleted the grant. Without the GUC
+    // wiring the delete would match zero permission rows and the grant would
+    // survive the item deletion — a security regression.
+    const remaining = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(eq(permissions.id, perm.permissionId));
+    expect(remaining).toEqual([]);
+
+    await truncateAll();
+  });
+
+  test("organizations.list reports each org's bootstrap state for a multi-org user (per-org GUC)", async () => {
+    const user = await seedUser(auth);
+    const orgA = await seedOrg(auth, user.userId); // each seeds a default server_managed profile
+    const orgB = await seedOrg(auth, user.userId);
+
+    const operator = createOperatorCaller(rlsDb, auth, user.headers);
+    const res = await operator.organizations.list();
+    const orgs = res.organizations as Array<{ id: string; hasBootstrappedProfile: boolean }>;
+    const byId = new Map(orgs.map((o) => [o.id, o]));
+    // A naive single-org GUC would let at most one org report bootstrapped; the
+    // per-org loop must report both.
+    expect(byId.get(orgA.orgId)?.hasBootstrappedProfile).toBe(true);
+    expect(byId.get(orgB.orgId)?.hasBootstrappedProfile).toBe(true);
 
     await truncateAll();
   });

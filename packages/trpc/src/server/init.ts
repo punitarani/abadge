@@ -1,6 +1,6 @@
 import { ForbiddenError, NotFoundError } from "@abadge/core";
-import type { Database } from "@abadge/db";
-import { and, eq } from "@abadge/db";
+import type { Database, Transaction } from "@abadge/db";
+import { and, eq, sql } from "@abadge/db";
 import { agents, member } from "@abadge/db/schema";
 import { initTRPC, type TRPCError } from "@trpc/server";
 import { Effect } from "effect";
@@ -22,7 +22,7 @@ export function roleRank(role: string): number {
 
 /** Returns the caller's role if they are a member of the org with at least minRole; throws ForbiddenError otherwise. */
 export async function requireOrgRole(
-  db: Database,
+  db: Database | Transaction,
   orgId: string,
   userId: string,
   minRole: "owner" | "admin" | "member",
@@ -151,6 +151,27 @@ export const userProcedure = publicProcedure.use(async ({ ctx, next }) => {
   }
 });
 
+/**
+ * §AB-0011 — run `fn` inside a transaction whose first statement sets the
+ * `app.current_org` GUC that the FORCE-RLS policies read. `set_config(_,_,true)`
+ * is transaction-local — the only form that survives Hyperdrive connection
+ * pooling. A router that later opens `ctx.db.transaction(...)` nests as a
+ * SAVEPOINT and inherits this GUC, so cascade deletes on `permissions` etc. run
+ * under the right org context without touching cascade code. The `as Database`
+ * cast is safe: both `Database` and `Transaction` expose `.transaction()` (the
+ * latter as a savepoint); the cast only sidesteps the union-method signature.
+ */
+function withOrgContext<T>(
+  db: Database | Transaction,
+  orgId: string,
+  fn: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  return (db as Database).transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
+    return fn(tx);
+  });
+}
+
 export const scopedSessionProcedure = (_scope: string) =>
   sessionProcedure.use(async ({ ctx, next }) => {
     try {
@@ -161,13 +182,20 @@ export const scopedSessionProcedure = (_scope: string) =>
           hint: "Create or join an organization first.",
         });
       }
-      await requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member");
+      // requireOrgRole reads `member` (not an RLS table) on the pooled connection
+      // before the org transaction opens — fine, and it must run before we commit
+      // to an org context.
+      const orgId = ctx.identity.organizationId;
+      await requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member");
       // §REVAMP-PR3 Task 5.2 — the at-use onboarding-completeness gate was
       // dropped here. `organizations.create` now auto-seeds a default
       // server_managed profile in the same transaction (Task 5.1), so an org
       // is unbootstrapped only if a user explicitly deletes every profile —
       // an action that already requires admin role and is itself audit-logged.
-      return await next({ ctx });
+      //
+      // §AB-0011 — run the rest of the request under the org GUC so every
+      // tenant-table query is RLS-scoped to this org.
+      return await withOrgContext(ctx.db, orgId, (tx) => next({ ctx: { ...ctx, db: tx } }));
     } catch (error) {
       // Convert domain errors (ForbiddenError, etc.) into TRPCError with the
       // proper status and domain code preserved in `data`. Without this, any
@@ -179,25 +207,30 @@ export const scopedSessionProcedure = (_scope: string) =>
 
 export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
+    // Identity resolution reads the `agents` table BEFORE the org is known (the
+    // org is derived from the agent row). It runs on the pooled connection,
+    // pre-transaction; `agents` is RLS-exempt (migration 0022_agents_rls_exemption)
+    // precisely so this pre-org read is not fail-closed under the runtime role.
     const identity = await Effect.runPromise(resolveAgentIdentity(ctx));
     // §REVAMP-PR3 Task 5.2 — the agent-side onboarding gate was dropped here.
     // Auto-seeded default profiles (Task 5.1) make the gate redundant on the
     // happy path; the rare "all profiles deleted" case surfaces as a domain
     // error from individual access procedures, not a blanket middleware
     // reject. Per-procedure audit rows for denied access remain unchanged.
-    return next({
-      ctx: {
-        ...ctx,
-        identity,
-      } satisfies AgentRequestContext,
-    });
+    //
+    // §AB-0011 — open the org GUC transaction only after identity resolution, so
+    // every tenant-table query in the access pipeline is RLS-scoped to the
+    // agent's org.
+    return await withOrgContext(ctx.db, identity.agentOrganizationId, (tx) =>
+      next({ ctx: { ...ctx, identity, db: tx } satisfies AgentRequestContext }),
+    );
   } catch (error) {
     throw toTrpcError(error);
   }
 });
 
 export async function requireAgentOwnership(
-  db: Database,
+  db: Database | Transaction,
   agentId: string,
   userId: string,
   orgId: string,

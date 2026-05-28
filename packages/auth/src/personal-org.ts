@@ -1,5 +1,6 @@
 import { PERSONAL_ORG_METADATA } from "@abadge/core";
 import type { Database, Transaction } from "@abadge/db";
+import { sql } from "@abadge/db";
 import { member, organization, profiles } from "@abadge/db/schema";
 import { safeAuditInsert } from "./audit-hooks";
 
@@ -56,6 +57,12 @@ export async function seedOrgWithOwnerProfile(
     role: "owner",
     createdAt,
   });
+
+  // §AB-0011 — the org was just minted, so no middleware could have set the
+  // org GUC yet; set it here (transaction-local) so the default-profile INSERT
+  // below passes the FORCE-RLS WITH CHECK on `profiles`. `organization`/`member`
+  // are not RLS tables, so their inserts above are unaffected by ordering.
+  await tx.execute(sql`select set_config('app.current_org', ${org.id}, true)`);
 
   await tx.insert(profiles).values({
     id: profileId,

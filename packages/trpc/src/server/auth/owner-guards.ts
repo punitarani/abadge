@@ -1,5 +1,5 @@
 import { ConflictError, ForbiddenError } from "@abadge/core";
-import type { Database } from "@abadge/db";
+import type { Database, Transaction } from "@abadge/db";
 import { and, count, eq, ne } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { roleRank } from "../init";
@@ -9,7 +9,7 @@ import { roleRank } from "../init";
  * about to remove or demote a specific member, count the REMAINING owners).
  */
 export async function countOwners(
-  db: Database,
+  db: Database | Transaction,
   orgId: string,
   excludeMemberId?: string,
 ): Promise<number> {
@@ -57,7 +57,7 @@ export function assertCanAssignRole(actorRole: string, targetRole: string): void
  * defects otherwise.
  */
 export async function assertOwnersRemainAfterChange(
-  db: Database,
+  db: Database | Transaction,
   orgId: string,
   memberIdBeingChanged: string,
   targetCurrentRole: string,

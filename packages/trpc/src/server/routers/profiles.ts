@@ -20,7 +20,7 @@ import {
   strictSchema,
   tryAsync,
 } from "../effect";
-import { createTrpcRouter, requireOrgRole, sessionProcedure } from "../init";
+import { createTrpcRouter, requireOrgRole, scopedSessionProcedure } from "../init";
 import { serializeProfile } from "../serialize";
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
@@ -625,7 +625,7 @@ const KeyVersionResultSchema = Schema.Struct({
 });
 
 export const profilesRouter = createTrpcRouter({
-  create: sessionProcedure
+  create: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "POST",
@@ -638,7 +638,7 @@ export const profilesRouter = createTrpcRouter({
     .output(strictSchema(ProfileResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createProfile(input))),
 
-  list: sessionProcedure
+  list: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "GET",
@@ -651,7 +651,7 @@ export const profilesRouter = createTrpcRouter({
     .output(strictSchema(ProfileListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listProfiles(input.orgId))),
 
-  get: sessionProcedure
+  get: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "GET",
@@ -664,7 +664,7 @@ export const profilesRouter = createTrpcRouter({
     .output(strictSchema(ProfileResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, getProfile(input.profileId))),
 
-  bootstrap: sessionProcedure
+  bootstrap: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "POST",
@@ -677,17 +677,17 @@ export const profilesRouter = createTrpcRouter({
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, bootstrapProfile(input))),
 
-  changePassword: sessionProcedure
+  changePassword: scopedSessionProcedure("profiles")
     .input(strictSchema(ProfileChangePasswordSchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, changeProfilePassword(input))),
 
-  setupRecovery: sessionProcedure
+  setupRecovery: scopedSessionProcedure("profiles")
     .input(strictSchema(ProfileSetupRecoverySchema))
     .output(strictSchema(SuccessResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, setupProfileRecovery(input))),
 
-  rotateKey: sessionProcedure
+  rotateKey: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "POST",
@@ -700,7 +700,7 @@ export const profilesRouter = createTrpcRouter({
     .output(strictSchema(KeyVersionResultSchema))
     .mutation(({ ctx, input }) => runSessionEffect(ctx, rotateProfileKey(input))),
 
-  delete: sessionProcedure
+  delete: scopedSessionProcedure("profiles")
     .meta({
       openapi: {
         method: "DELETE",
