@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, type Database, eq } from "@abadge/db";
-import { auditLogs, mountReservations } from "@abadge/db/schema";
+import { auditLogs, items as itemRecords, mountReservations } from "@abadge/db/schema";
+import { toBase64 } from "@abadge/crypto/shared";
 import {
   seedAgent,
   seedAgentSession,
@@ -156,6 +157,39 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .from(auditLogs)
       .where(eq(auditLogs.agentId, agent.agentId));
     expect(audits).toHaveLength(0);
+  });
+
+  test("corrupt ciphertext on authorized server_managed read writes denied audit row", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+
+    // Overwrite ciphertext with random bytes so AES-GCM decryption fails at the
+    // crypto layer — the permission is valid, so the audit row must still appear.
+    await db
+      .update(itemRecords)
+      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
+      .where(eq(itemRecords.id, item.itemId));
+
+    await expect(caller.access.read({ itemId: item.itemId })).rejects.toThrow();
+
+    const audits = await db
+      .select({ result: auditLogs.result, eventType: auditLogs.eventType, meta: auditLogs.meta })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.itemId, item.itemId)));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.result).toBe("denied");
+    expect(audits[0]?.eventType).toBe("access.reveal");
+    const meta = audits[0]?.meta as Record<string, unknown> | null;
+    expect(meta?.reason).toBe("decrypt_failed");
   });
 
   test("an expired permission writes a result='expired' audit row", async () => {

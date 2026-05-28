@@ -367,7 +367,26 @@ export const resolveAccess = (
     // 4. Branch on action × storageMode.
     if (action === "read") {
       if (item.storageMode === "server_managed") {
-        const decrypted = yield* decryptServerManaged(item, "access.reveal");
+        // §AB-0022 — If AES-GCM decryption throws (corrupt ciphertext, wrong key),
+        // the authorized access still must produce an audit row. IntegrityError
+        // is already self-audited inside decryptServerManaged; skip it here.
+        const decrypted = yield* decryptServerManaged(item, "access.reveal").pipe(
+          Effect.tapError((err) =>
+            !(err instanceof IntegrityError)
+              ? logAgentAudit({
+                  organizationId: ctx.identity.agentOrganizationId,
+                  userId: ctx.identity.agentUserId,
+                  agentId: ctx.identity.agentId,
+                  itemId,
+                  profileId: item.profileId ?? undefined,
+                  eventType: "access.reveal",
+                  result: "denied",
+                  ipAddress: ctx.ipAddress,
+                  meta: { reason: "decrypt_failed", action: "read" },
+                })
+              : Effect.void,
+          ),
+        );
         const payload = decodeServerManagedPayload(item.id, decrypted);
 
         let delivered: ItemPayload & { label: string } = payload;
