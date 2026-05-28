@@ -5,11 +5,12 @@
 -- connects as. The owner keeps DDL rights; `app_runtime` gets DML only and
 -- cannot mutate the audit trail.
 --
--- audit_logs immutability is enforced two ways:
+-- audit_logs immutability is defended on two layers:
 --   1. The 0018 `audit_logs_no_mutation` trigger rejects UPDATE/DELETE for any
 --      role (even a superuser) — but TRUNCATE bypasses row-level triggers.
---   2. The REVOKE below removes UPDATE/DELETE/TRUNCATE from `app_runtime`, so the
---      app can never erase audit rows. TRUNCATE is only stopped here.
+--   2. Step 5 REVOKEs the UPDATE/DELETE granted in step 3. TRUNCATE is never
+--      granted to this non-owner role, so the gap the trigger leaves for TRUNCATE
+--      is closed by the role simply never holding the privilege.
 --
 -- See docs/runbooks/least-privilege-db-role.md for the production (PlanetScale)
 -- provisioning + connection-cutover procedure.
@@ -32,5 +33,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO app_runtime;
 
--- 5. audit_logs is append-only for the application: INSERT + SELECT only.
+-- 5. Strip write access to audit_logs (leaving INSERT + SELECT): REVOKE the
+--    UPDATE/DELETE granted in step 3. TRUNCATE was never granted, so revoking it
+--    too is belt-and-suspenders against a future GRANT ALL.
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM app_runtime;

@@ -116,8 +116,13 @@ describe("least-privilege application role (§AB-0012)", () => {
       const itemsCount = await restricted.execute(sql`SELECT count(*) FROM items`);
       expect(itemsCount).toBeDefined();
 
-      // Audit mutation is denied at the privilege layer — including TRUNCATE,
-      // which the row-level immutability trigger cannot catch.
+      // Every audit write verb is denied at the privilege layer — including
+      // TRUNCATE, which the row-level immutability trigger cannot catch. The
+      // privilege check fires before the trigger, so each statement fails with
+      // "permission denied" rather than the trigger's raise.
+      expect(await denialMessage(sql`UPDATE audit_logs SET result = result`)).toMatch(
+        /permission denied/i,
+      );
       expect(await denialMessage(sql`DELETE FROM audit_logs`)).toMatch(/permission denied/i);
       expect(await denialMessage(sql`TRUNCATE audit_logs`)).toMatch(/permission denied/i);
     } finally {
