@@ -240,7 +240,7 @@ Does not own:
 
 ## Data model summary
 
-* `organization` — org-scoped isolation boundary (Better Auth table). Users create or join their first organization through the onboarding flow (`/onboarding`, `/join`, or org-switcher); signup does not auto-create an org. Agents and permissions are scoped to an org.
+* `organization` — org-scoped isolation boundary (Better Auth table). Users create a personal account, create an organization, or join one through the onboarding flow (`/onboarding`, `/join`, or org-switcher); signup does not auto-create an org. A personal account is a normal org flagged `metadata = {"type":"personal"}` (no dedicated column); the only differences are presentation (labelled "Personal") and one-click creation. Agents and permissions are scoped to an org.
 * `profiles` — encryption boundaries within an org. Fields: orgId, name, storageMode (zero\_knowledge or server\_managed), wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion. One profile can hold many items.
 * `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt. Note: `encryptedItemKey` carries the XChaCha20-Poly1305 key-wrap nonce prepended in its first 24 bytes; there is no separate `keyNonce` column.
 * `agents` — service accounts scoped to an org. Fields: orgId, createdBy (nullable; `ON DELETE SET NULL` — deleting the creating user orphans the agent rather than deleting it, §AB-0043), kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
@@ -256,14 +256,16 @@ Does not own:
 
 ### Onboarding (first login)
 
-* signup redirects the user to `/onboarding`; no personal org is auto-created
-* `/onboarding` presents two options:
+* signup redirects the user to `/onboarding`; no org (personal or otherwise) is auto-created
+* `/onboarding` presents three options:
+  * **Personal account** — a one-click action (no name/slug form). `organizations.createPersonal` (no input) auto-generates a workspace name/slug from the user row and transactionally seeds a *personal* org — flagged via `organization.metadata = {"type":"personal"}` (see `PERSONAL_ORG_METADATA` / `isPersonalOrg` in `@abadge/core`) — plus the owner `member` row and a default `server_managed` profile (name and `externalId` both `"default"`). A personal account is presented in the UI as a personal account rather than an organization, but is structurally a normal single-member org: it can hold many agents, the user can add more profiles later, and the user can still create or join team orgs later (coexistence rides on the existing `X-Abadge-Org-Id` resolution). Profile-count is the default of one, not a hard cap.
   * **Create a new organization** — a single step (`CreateOrgForm`). `organizations.create` transactionally inserts the org row, the owner `member` row, **and a default `server_managed` profile** (name and `externalId` both `"default"`) so the org is usable with no separate profile-bootstrap step. On success the user lands at `/overview`. Additional profiles — including `zero_knowledge` profiles with their own password — are added later from the profiles page (`profiles.create`, plus `profiles.bootstrap` for ZK).
   * **Join with an invite code** — paste a raw invite token (`abi_…`) or a full invite URL; the form calls `organizations.members.getInviteInfo` to preview, then `organizations.members.acceptInvite` on confirmation
 * the shared `InviteAcceptForm` component also backs `/join?token=…` (manual-paste route) and the dashboard org-switcher "Join another organization…" dialog — one entry point should never diverge from the others
 * on success, the zustand `useOrgStore.setActiveOrg` is populated so the dashboard layout renders without a stale-org round trip
 * the resume-triage on mount (`decideResumeAction`): redirects to `/overview` whenever the user has any org (PR3's auto-seeded default profile makes every normally-created org immediately usable); falls through to the **Choose** screen only when the user has no orgs at all. An admin who has deleted the default profile recovers from the profiles page, not from onboarding.
-* `createPersonalOrgForUser` in `packages/auth/src/personal-org.ts` is retained for tests and explicit admin seeding only; it is NOT wired to any Better Auth hook. Both it and the user-facing `organizations.create` seed a default `server_managed` profile, so created orgs are immediately usable.
+* `organizations.list`/`get` carry an `isPersonal` boolean (derived from `organization.metadata` via `isPersonalOrg`) so the dashboard can label a personal workspace as "Personal" rather than "Organization".
+* `createPersonalOrgForUser` in `packages/auth/src/personal-org.ts` is retained for tests and explicit admin seeding only; it is NOT wired to any Better Auth hook. It and the user-facing `organizations.createPersonal` share the `seedOrgWithOwnerProfile` builder (also in `personal-org.ts`) and both stamp the personal metadata flag + seed a default `server_managed` profile, so created orgs are immediately usable. `organizations.create` (team orgs) seeds the same default profile but no personal flag.
 
 ### Item create (zero\_knowledge)
 

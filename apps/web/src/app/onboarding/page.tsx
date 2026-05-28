@@ -1,6 +1,7 @@
 "use client";
 
-import { Building2, TicketCheck } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Building2, TicketCheck, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -8,7 +9,9 @@ import { useEffect, useState } from "react";
 import { CreateOrgForm } from "@/components/onboarding/create-org-form";
 import { InviteAcceptForm } from "@/components/onboarding/invite-accept-form";
 import { authClient } from "@/lib/auth-client";
-import { browserTrpcClient } from "@/lib/trpc-browser";
+import { dashboardQueryKeys } from "@/lib/query-keys";
+import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
+import { useOrgStore } from "@/stores/org-store";
 import { decideResumeAction } from "./onboarding-triage";
 
 type OnboardingMode = "choose" | "create" | "join";
@@ -28,6 +31,28 @@ export default function OnboardingPage(): React.ReactElement | null {
   // Tracks the resume-triage mount effect so we don't flash the form while
   // we decide whether the user should redirect to overview.
   const [isCheckingOrgs, setIsCheckingOrgs] = useState(true);
+
+  // Personal account is a one-click action (no name/slug form): create the
+  // hidden personal org, adopt it as active, and head to the dashboard.
+  const queryClient = useQueryClient();
+  const [creatingPersonal, setCreatingPersonal] = useState(false);
+  const [personalError, setPersonalError] = useState("");
+
+  async function handleCreatePersonal(): Promise<void> {
+    setPersonalError("");
+    setCreatingPersonal(true);
+    try {
+      const { organization: org } = await browserTrpcClient.organizations.createPersonal.mutate();
+      useOrgStore
+        .getState()
+        .setActiveOrg({ id: org.id, slug: org.slug, name: org.name, logo: org.logo ?? null });
+      void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
+      router.push("/overview");
+    } catch (err) {
+      setPersonalError(getClientErrorMessage(err, "Failed to create your personal account"));
+      setCreatingPersonal(false);
+    }
+  }
 
   // Auth guard — unauthenticated visitors shouldn't see the create-org form.
   // Redirect happens in an effect to avoid side-effects during render.
@@ -98,11 +123,32 @@ export default function OnboardingPage(): React.ReactElement | null {
                   <p className="text-sm text-muted-foreground">How do you want to get started?</p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={handleCreatePersonal}
+                    disabled={creatingPersonal}
+                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                      <UserRound className="h-5 w-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-base font-semibold">
+                        {creatingPersonal ? "Setting up…" : "Personal account"}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Just for you. One profile to store secrets right away — add agents and more
+                        profiles later.
+                      </p>
+                    </div>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setMode("create")}
-                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                    disabled={creatingPersonal}
+                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <Building2 className="h-5 w-5" />
@@ -119,7 +165,8 @@ export default function OnboardingPage(): React.ReactElement | null {
                   <button
                     type="button"
                     onClick={() => setMode("join")}
-                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+                    disabled={creatingPersonal}
+                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <TicketCheck className="h-5 w-5" />
@@ -132,6 +179,10 @@ export default function OnboardingPage(): React.ReactElement | null {
                     </div>
                   </button>
                 </div>
+
+                {personalError && (
+                  <p className="text-center text-sm text-destructive">{personalError}</p>
+                )}
               </div>
             )}
 

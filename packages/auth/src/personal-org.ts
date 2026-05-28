@@ -1,20 +1,86 @@
-import type { Database } from "@abadge/db";
+import { PERSONAL_ORG_METADATA } from "@abadge/core";
+import type { Database, Transaction } from "@abadge/db";
 import { member, organization, profiles } from "@abadge/db/schema";
 import { safeAuditInsert } from "./audit-hooks";
 
+export interface SeedOrgInput {
+  userId: string;
+  name: string;
+  slug: string;
+  /** JSON string for `organization.metadata` (e.g. PERSONAL_ORG_METADATA). */
+  metadata?: string | null;
+  profileName: string;
+  profileExternalId?: string | null;
+}
+
+export interface SeedOrgResult {
+  orgId: string;
+  memberId: string;
+  profileId: string;
+  createdAt: Date;
+}
+
 /**
- * Creates a personal org + server_managed "internal" profile for a given user.
+ * Inserts an org + its owner `member` + a default `server_managed` profile.
  *
- * Explicit seeding helper. Signup does NOT auto-invoke this any more — users
- * create or join their first organization through the /onboarding flow
- * (see apps/web/src/app/onboarding/page.tsx). This function is retained for:
+ * The caller owns the transaction boundary (pass a `tx`) so it can decide how
+ * to translate unique-violations (e.g. slug collisions). Always seeds a
+ * server_managed profile — ZK profiles need client-supplied KDF material that
+ * a server-only helper cannot produce. Shared by `createPersonalOrgForUser`
+ * and the `organizations.createPersonal` tRPC procedure.
+ */
+export async function seedOrgWithOwnerProfile(
+  tx: Transaction,
+  input: SeedOrgInput,
+): Promise<SeedOrgResult> {
+  const orgId = crypto.randomUUID();
+  const memberId = crypto.randomUUID();
+  const profileId = crypto.randomUUID();
+  const createdAt = new Date();
+
+  await tx.insert(organization).values({
+    id: orgId,
+    name: input.name,
+    slug: input.slug,
+    metadata: input.metadata ?? null,
+    createdAt,
+  });
+
+  await tx.insert(member).values({
+    id: memberId,
+    organizationId: orgId,
+    userId: input.userId,
+    role: "owner",
+    createdAt,
+  });
+
+  await tx.insert(profiles).values({
+    id: profileId,
+    organizationId: orgId,
+    name: input.profileName,
+    externalId: input.profileExternalId ?? null,
+    storageMode: "server_managed",
+    keyVersion: 1,
+    createdAt,
+    updatedAt: createdAt,
+  });
+
+  return { orgId, memberId, profileId, createdAt };
+}
+
+/**
+ * Creates a personal org + default `server_managed` profile for a user.
+ *
+ * Explicit seeding helper. Signup does NOT auto-invoke this — users create or
+ * join their first organization (or pick "Personal") through the /onboarding
+ * flow (see apps/web/src/app/onboarding/page.tsx; the user-facing personal
+ * path is `organizations.createPersonal`). Retained for:
  * - tests that need a seeded org without driving the UI
  * - potential admin / migration scripts
  *
- * Design decisions:
- * - Always server_managed: ZK profiles require client-supplied KDF material,
- *   which is not available in a server-only helper.
- * - The caller owns error handling. This function will throw on DB failure.
+ * The seeded org is flagged personal via `organization.metadata` and its
+ * profile matches the user-facing flow (`name`/`externalId` both `"default"`).
+ * The caller owns error handling; this function throws on DB failure.
  */
 export async function createPersonalOrgForUser(
   db: Database,
@@ -26,38 +92,18 @@ export async function createPersonalOrgForUser(
     .replace(/^-+|-+$/g, "")
     .slice(0, 20);
   const slug = `${slugBase || "user"}-${crypto.randomUUID().slice(0, 6)}`;
-  const orgId = crypto.randomUUID();
-  const memberId = crypto.randomUUID();
-  const profileId = crypto.randomUUID();
-  const now = new Date();
+  const name = user.name ? `${user.name}'s workspace` : "Personal workspace";
 
-  await db.transaction(async (tx) => {
-    await tx.insert(organization).values({
-      id: orgId,
-      name: user.name ? `${user.name}'s workspace` : "Personal workspace",
-      slug,
-      createdAt: now,
-    });
-
-    await tx.insert(member).values({
-      id: memberId,
-      organizationId: orgId,
+  const { orgId } = await db.transaction((tx) =>
+    seedOrgWithOwnerProfile(tx, {
       userId: user.id,
-      role: "owner",
-      createdAt: now,
-    });
-
-    // server_managed: safe default; no client-side KDF material is available
-    // during signup. The user can bootstrap a ZK profile later.
-    await tx.insert(profiles).values({
-      id: profileId,
-      organizationId: orgId,
-      name: "internal",
-      storageMode: "server_managed",
-      createdAt: now,
-      updatedAt: now,
-    });
-  });
+      name,
+      slug,
+      metadata: PERSONAL_ORG_METADATA,
+      profileName: "default",
+      profileExternalId: "default",
+    }),
+  );
 
   await safeAuditInsert(db, {
     organizationId: orgId,
