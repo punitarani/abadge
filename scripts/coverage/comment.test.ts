@@ -126,6 +126,25 @@ describe("renderComment", () => {
     expect(body.indexOf("### Change vs base")).toBeLessThan(body.indexOf("### Totals"));
   });
 
+  it("renders the diff table but a no-comparison headline when current lcov is missing", () => {
+    // Baseline cached on main, but this run produced no lcov (tests failed):
+    // the comparison is impossible even though the baseline side exists.
+    const body = renderComment({
+      buckets: ["unit", "integration"],
+      data: {
+        unit: { current: null, baseline: totals(8, 10, 5, 10) },
+        integration: { current: null, baseline: totals(8, 10, 5, 10) },
+      },
+      baselineLabel: "latest `main`",
+      bucketsLink: link,
+    });
+    expect(body).toContain("**No comparison**");
+    expect(body).toContain("one or both sides");
+    // hasBaseline is true, so the diff table still renders (with n/a deltas).
+    expect(body).toContain("| Bucket | Lines | Δ Lines | Functions | Δ Functions |");
+    expect(body).toContain("n/a");
+  });
+
   it("puts the verdict and diff table above the totals", () => {
     const body = renderComment({
       buckets: ["unit", "integration"],

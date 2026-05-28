@@ -111,7 +111,7 @@ const VERDICT_HEADLINE: Record<Verdict, string> = {
   improved: "**Improved** — coverage increased relative to the base branch.",
   worsened: "**Worsened** — coverage decreased relative to the base branch.",
   maintained: "**Maintained** — coverage is unchanged relative to the base branch.",
-  "n/a": "**No comparison** — coverage data was not available on both sides.",
+  "n/a": "**No comparison** — coverage data was not available on one or both sides.",
 };
 
 export type BucketData = { current: Totals | null; baseline: Totals | null };

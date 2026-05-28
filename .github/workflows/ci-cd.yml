@@ -207,6 +207,9 @@ jobs:
         continue-on-error: true
       - name: Save coverage baseline to cache
         uses: actions/cache/save@v4
+        # Stay green even if both artifact downloads were skipped (no lcov on
+        # the runner): a missing baseline this run just keeps the prior one.
+        continue-on-error: true
         with:
           path: |
             baseline/unit/lcov.info
