@@ -11,7 +11,7 @@ import {
   type ServerAadMeta,
   toBase64,
 } from "@abadge/crypto/shared";
-import { and, type Database, eq, isNull, type Transaction } from "@abadge/db";
+import { and, type Database, eq, isNull, sql, type Transaction } from "@abadge/db";
 import { profiles } from "@abadge/db/schema";
 
 /**
@@ -171,5 +171,24 @@ export async function encryptServerEnvelope(
     itemId,
     keyVersion,
   };
-  return serverEncrypt(plaintext, contentKey, keyVersion, aad);
+  const result = await serverEncrypt(plaintext, contentKey, keyVersion, aad);
+
+  // §AB-0031 — best-effort counter increment; never let a bookkeeping failure
+  // block the write path.
+  if (profileId) {
+    db.update(profiles)
+      .set({ serverEncryptionCount: sql`${profiles.serverEncryptionCount} + 1` })
+      .where(eq(profiles.id, profileId))
+      .returning({ count: profiles.serverEncryptionCount })
+      .then(([row]) => {
+        if (row && row.count >= 134_217_728) {
+          console.warn(
+            `[abadge] profile ${profileId} server_encryption_count=${row.count} approaching AES-GCM nonce limit — consider rotating`,
+          );
+        }
+      })
+      .catch(() => {});
+  }
+
+  return result;
 }

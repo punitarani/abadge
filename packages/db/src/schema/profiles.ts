@@ -1,6 +1,15 @@
 import { STORAGE_MODES } from "@abadge/core";
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
 export const profiles = pgTable(
@@ -26,6 +35,12 @@ export const profiles = pgTable(
     // (base64 iv ‖ AES-256-GCM(masterKey, DEK)). NULL until the profile's first
     // v3 server-managed write provisions it. Only server_managed profiles use it.
     serverWrappedDek: text("server_wrapped_dek"),
+    // §AB-0031 — running count of AES-256-GCM encryptions performed under this
+    // profile's DEK. Warn operators when approaching the 2^32 nonce-reuse bound;
+    // threshold is 2^27 (~134 M) to give ample lead time before saturation.
+    serverEncryptionCount: bigint("server_encryption_count", { mode: "number" })
+      .notNull()
+      .default(0),
     keyVersion: integer("key_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
