@@ -169,6 +169,13 @@
       "when": 1779945660000,
       "tag": "0023_least_privilege_role",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779945720000,
+      "tag": "0024_nonce_ceiling",
+      "breakpoints": true
     }
   ]
 }
