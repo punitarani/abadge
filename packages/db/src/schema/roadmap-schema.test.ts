@@ -78,8 +78,6 @@ describe("roadmap schema foundations", () => {
       "kind",
       "locality",
       "authMethod",
-      "secretHash",
-      "secretPrefix",
       "publicKey",
       "enabled",
       "revokedAt",

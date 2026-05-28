@@ -59,8 +59,10 @@ const ROLE_BADGE_STYLES: Record<string, string> = {
 
 function getInitials(label: string): string {
   const parts = label.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0].slice(0, 1) + parts[1].slice(0, 1)).toUpperCase();
+  const first = (parts[0] ?? "").charAt(0);
+  const second = (parts[1] ?? "").charAt(0);
+  if (first && second) {
+    return (first + second).toUpperCase();
   }
   return label.slice(0, 2).toUpperCase();
 }
