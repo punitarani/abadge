@@ -49,6 +49,17 @@ The API worker encrypts and decrypts with a shared key.
 
 **Key source**: `ENCRYPTION_KEY` environment variable on the Cloudflare Worker, validated to decode to exactly 32 bytes (AES-256) at runtime. Decryption only happens after all authorization checks pass.
 
+#### AES-GCM random-IV ceiling and rotation trigger (AB-0031)
+
+Server-managed content uses AES-256-GCM with a random 96-bit IV. [NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf) caps a single key at **2³² random-IV encryptions** before the IV-collision probability exceeds 2⁻³²; a GCM IV collision under one key is catastrophic (plaintext XOR leak + authentication-key recovery).
+
+abadge keeps each key well inside that bound by two mechanisms:
+
+* **Per-profile DEKs (AB-0030)** — `serverKeyVersion >= 3` content is encrypted under a per-profile data-encryption key, not the global `ENCRYPTION_KEY`. The 2³² budget therefore applies *per profile*, not globally: a single profile would need 4 billion server-managed writes to approach the limit.
+* **Documented per-key rotation ceiling** — operationally, rotate (bump `serverKeyVersion` / re-derive the profile DEK) before any single key reaches **2²⁸ encryptions** (a 16× safety margin below the NIST bound). Rotation is a DEK rewrap with no content re-encryption (see the [key-rotation runbook](./runbooks/key-rotation.md)).
+
+**Decision — AES-GCM + per-profile DEK, not XChaCha20.** XChaCha20-Poly1305's 192-bit random nonce is collision-safe to ~2⁸⁰ without counting, which would remove the ceiling entirely. We keep AES-GCM because (a) per-profile DEKs already push the per-key budget far beyond any realistic single-profile write volume, (b) AES-GCM is the WebCrypto-native primitive on Cloudflare Workers (XChaCha would add a userspace dependency on the server hot path), and (c) the rotation machinery (`serverKeyVersion` + DEK rewrap) is needed for KEK rotation regardless. Operators should alert on per-profile server-managed write counts approaching 2²⁸ and rotate; revisit XChaCha if a single profile's write volume ever makes counting impractical.
+
 ### Comparison
 
 | Property | Zero-Knowledge | Server-Managed |
