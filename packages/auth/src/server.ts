@@ -1,4 +1,4 @@
-import { type Database, onMemberRemoved } from "@abadge/db";
+import { type Database, onMemberRemoved, sql } from "@abadge/db";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, deviceAuthorization, openAPI, organization } from "better-auth/plugins";
@@ -231,10 +231,16 @@ export function createAuth(db: Database, env: AuthEnv): any {
 
             // Run the full cascade (revoke agents, sessions, grants) so the
             // plugin path is consistent with the tRPC removeMember path.
+            // §AB-0011 — set the org GUC first: onMemberRemoved deletes the
+            // removed member's `permissions` rows (an RLS table), which would
+            // affect zero rows under the NOBYPASSRLS runtime role without it.
             try {
-              await db.transaction((tx) =>
-                onMemberRemoved(tx, organization.id, member.userId, user.id),
-              );
+              await db.transaction(async (tx) => {
+                await tx.execute(
+                  sql`select set_config('app.current_org', ${organization.id}, true)`,
+                );
+                return onMemberRemoved(tx, organization.id, member.userId, user.id);
+              });
             } catch (err) {
               console.warn(
                 `auth_hook_cascade_failed org=${organization.id} removedUser=${member.userId} err=${err instanceof Error ? err.message : String(err)}`,

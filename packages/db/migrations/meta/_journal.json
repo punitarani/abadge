@@ -176,6 +176,13 @@
       "when": 1779945720000,
       "tag": "0024_nonce_ceiling",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779945780000,
+      "tag": "0025_agents_rls_exemption",
+      "breakpoints": true
     }
   ]
 }

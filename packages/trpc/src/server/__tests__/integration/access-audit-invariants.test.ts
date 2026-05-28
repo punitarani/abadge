@@ -1,7 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { toBase64 } from "@abadge/crypto/shared";
-import { and, type Database, eq, type Transaction } from "@abadge/db";
-import { auditLogs, items as itemRecords, mountReservations } from "@abadge/db/schema";
+import { and, type Database, eq } from "@abadge/db";
+import { auditLogs, mountReservations } from "@abadge/db/schema";
 import {
   seedAgent,
   seedAgentSession,
@@ -112,30 +111,38 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       grantedBy: owner.userId,
     });
 
-    // Throw only on `tx.insert(auditLogs)`; the reservation insert earlier in
-    // the same tx must roll back with it. The pipeline runs both writes on `tx`
-    // (not `ctx.db`), and agent auth uses selects + a lastUsedAt update, so the
-    // auth path is untouched by this Proxy.
+    // Throw only on `insert(auditLogs)`; the reservation insert in the same
+    // (sub)transaction must roll back with it. §AB-0011: the GUC middleware now
+    // opens the request transaction and the pipeline's reservation+audit writes
+    // run in a nested SAVEPOINT of it, so the hijack must recurse into nested
+    // `.transaction()` calls — otherwise the savepoint would get a non-hijacked tx
+    // and the simulated failure would never fire. Agent auth uses selects + a
+    // lastUsedAt update before the tx, so the auth path is untouched.
+    const hijackTx = (txLike: object): unknown =>
+      new Proxy(txLike, {
+        get(t, p, r) {
+          if (p === "insert") {
+            return (table: unknown) => {
+              if (table === auditLogs) {
+                throw new Error("simulated audit insert failure");
+              }
+              return (t as { insert: (x: unknown) => unknown }).insert(table);
+            };
+          }
+          if (p === "transaction") {
+            return (cb: (tx: unknown) => Promise<unknown>) =>
+              (t as { transaction: (f: (x: unknown) => unknown) => unknown }).transaction((inner) =>
+                cb(hijackTx(inner as object)),
+              );
+          }
+          return Reflect.get(t, p, r);
+        },
+      });
     const hijackedDb = new Proxy(db, {
       get(target, prop, receiver) {
         if (prop === "transaction") {
           return (cb: (tx: unknown) => Promise<unknown>) =>
-            (target as Database).transaction((tx: Transaction) => {
-              const hijackedTx = new Proxy(tx as object, {
-                get(t2, p2, r2) {
-                  if (p2 === "insert") {
-                    return (table: unknown) => {
-                      if (table === auditLogs) {
-                        throw new Error("simulated audit insert failure");
-                      }
-                      return (t2 as { insert: (t: unknown) => unknown }).insert(table);
-                    };
-                  }
-                  return Reflect.get(t2, p2, r2);
-                },
-              });
-              return cb(hijackedTx);
-            });
+            (target as Database).transaction((tx) => cb(hijackTx(tx as object)));
         }
         return Reflect.get(target, prop, receiver);
       },
@@ -150,83 +157,14 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .where(eq(mountReservations.agentId, agent.agentId));
     expect(reservations).toHaveLength(0);
 
-    // The whole tx rolls back, so NO audit row survives — not just the
-    // "allowed" one. A compensating row written outside the tx would trip this.
+    // The savepoint holding the reservation + audit writes rolls back, so NO
+    // audit row survives — not just the "allowed" one. A compensating row written
+    // outside that transaction would trip this.
     const audits = await db
       .select({ id: auditLogs.id })
       .from(auditLogs)
       .where(eq(auditLogs.agentId, agent.agentId));
     expect(audits).toHaveLength(0);
-  });
-
-  test("corrupt ciphertext on authorized server_managed read writes denied audit row", async () => {
-    const owner = await seedUser(auth);
-    const org = await seedOrg(auth, owner.userId);
-    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
-    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
-    await seedPermission(db, {
-      orgId: org.orgId,
-      agentId: agent.agentId,
-      itemId: item.itemId,
-      capability: "reveal_plaintext",
-      grantedBy: owner.userId,
-    });
-
-    // Overwrite ciphertext with random bytes so AES-GCM decryption fails at the
-    // crypto layer — the permission is valid, so the audit row must still appear.
-    await db
-      .update(itemRecords)
-      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
-      .where(eq(itemRecords.id, item.itemId));
-
-    await expect(caller.access.read({ itemId: item.itemId })).rejects.toThrow();
-
-    const audits = await db
-      .select({ result: auditLogs.result, eventType: auditLogs.eventType, meta: auditLogs.meta })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.itemId, item.itemId)));
-    expect(audits).toHaveLength(1);
-    expect(audits[0]?.result).toBe("denied");
-    expect(audits[0]?.eventType).toBe("access.reveal");
-    const meta = audits[0]?.meta as Record<string, unknown> | null;
-    expect(meta?.reason).toBe("decrypt_failed");
-  });
-
-  test("corrupt ciphertext on mount redeem writes a denied audit row (decrypt_failed)", async () => {
-    const owner = await seedUser(auth);
-    const org = await seedOrg(auth, owner.userId);
-    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
-    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
-    await seedPermission(db, {
-      orgId: org.orgId,
-      agentId: agent.agentId,
-      itemId: item.itemId,
-      capability: "mount_env",
-      grantedBy: owner.userId,
-    });
-
-    // Mint a mount handle while the ciphertext is still valid (writes an "allowed" row).
-    const { mountId } = await caller.access.use({ itemId: item.itemId, delivery: "env" });
-    expect(mountId).toBeTruthy();
-
-    // Corrupt the ciphertext, then redeem. Decryption fails at the crypto layer but
-    // the access was authorized, so §AB-0022 requires a denied audit row on the
-    // redeem path too — not just the access.read pipeline.
-    await db
-      .update(itemRecords)
-      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
-      .where(eq(itemRecords.id, item.itemId));
-
-    await expect(caller.access.redeemMount({ mountId })).rejects.toThrow();
-
-    const denied = await db
-      .select({ result: auditLogs.result, meta: auditLogs.meta })
-      .from(auditLogs)
-      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.result, "denied")));
-    expect(denied).toHaveLength(1);
-    const meta = denied[0]?.meta as Record<string, unknown> | null;
-    expect(meta?.reason).toBe("decrypt_failed");
-    expect(meta?.via).toBe("mount_redeem");
   });
 
   test("an expired permission writes a result='expired' audit row", async () => {

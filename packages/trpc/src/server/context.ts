@@ -1,5 +1,5 @@
 import { type CloudflareEmailBinding, createAuth } from "@abadge/auth";
-import type { Database } from "@abadge/db";
+import type { Database, Transaction } from "@abadge/db";
 import { createDb } from "@abadge/db";
 import { validateWorkerEnv, type WorkerEnv } from "@abadge/env/worker";
 export interface HyperdriveBindingLike {
@@ -17,7 +17,13 @@ export interface BaseRequestContext {
   resHeaders: Headers;
   env: AppBindings;
   validatedEnv: WorkerEnv;
-  db: Database;
+  // §AB-0011 — the org-scoped procedures (scopedSessionProcedure / agentProcedure)
+  // replace this with a transaction that has `app.current_org` set (the GUC the
+  // FORCE-RLS policies read), so every tenant-table query the request issues runs
+  // under that org context. Pre-org procedures (publicProcedure / userProcedure)
+  // and pre-auth identity resolution see the pooled Database. Both are structurally
+  // PgDatabase, so downstream query code is identical for either.
+  db: Database | Transaction;
   auth: ReturnType<typeof createAuth>;
   ipAddress?: string;
 }

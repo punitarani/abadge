@@ -11,8 +11,16 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
-import { invitation, member, organization, user } from "@abadge/db/schema";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "@abadge/db";
+import {
+  auditLogs,
+  invitation,
+  items,
+  member,
+  organization,
+  profiles,
+  user,
+} from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
 import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
@@ -27,7 +35,6 @@ import {
   UserRequestContextTag,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure, userProcedure } from "../init";
-import { scopedDb } from "../scoped-db";
 
 const OrgIdSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -401,31 +408,37 @@ const listOrgs = Effect.gen(function* () {
       .limit(LIST_ORGS_LIMIT),
   );
 
-  // Second query: fetch organizationId for any profile that is "bootstrapped"
-  // (server_managed OR zk-with-wrappedRootKey). One round trip per page replaces
-  // the dashboard's previous N+1 profiles.list-per-org pattern. Empty-orgs case
-  // skips the query entirely.
-  // Use any orgId for scope.tables access; the actual org filter is via inArray.
+  // Second query: for each org the user belongs to, determine whether it has a
+  // "bootstrapped" profile (server_managed OR zk-with-wrappedRootKey).
+  //
+  // §AB-0011 — `profiles` is under FORCE RLS keyed on the single-valued
+  // `app.current_org` GUC, so a cross-org `inArray(...)` read cannot work under
+  // the runtime role: only the one org matching the GUC would be visible and
+  // every other org would falsely report "unbootstrapped" (breaking the
+  // onboarding redirect for multi-org users). Probe per org inside one
+  // transaction, re-setting the GUC each iteration (set_config is mutable within
+  // a transaction). orgIds is bounded by LIST_ORGS_LIMIT.
   const orgIds = rows.map((r) => r.id);
   const bootstrappedOrgIds = new Set<string>();
   if (orgIds.length > 0) {
-    // Use the first orgId for scope.tables access (all orgIds are valid, table ref is the same).
-    const profilesTable = scopedDb(ctx.db, orgIds[0] ?? "").tables.profiles;
-    const profileRows = yield* tryAsync(() =>
-      ctx.db
-        .selectDistinct({ organizationId: profilesTable.organizationId })
-        .from(profilesTable)
-        .where(
-          and(
-            inArray(profilesTable.organizationId, orgIds),
-            or(
-              eq(profilesTable.storageMode, "server_managed"),
-              isNotNull(profilesTable.wrappedRootKey),
-            ),
-          ),
-        ),
+    yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        for (const orgId of orgIds) {
+          await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
+          const [row] = await tx
+            .select({ organizationId: profiles.organizationId })
+            .from(profiles)
+            .where(
+              and(
+                eq(profiles.organizationId, orgId),
+                or(eq(profiles.storageMode, "server_managed"), isNotNull(profiles.wrappedRootKey)),
+              ),
+            )
+            .limit(1);
+          if (row) bootstrappedOrgIds.add(row.organizationId);
+        }
+      }),
     );
-    for (const p of profileRows) bootstrappedOrgIds.add(p.organizationId);
   }
 
   return {
@@ -540,13 +553,18 @@ const deleteOrg = (orgId: string) =>
       ),
     );
 
-    const scope = scopedDb(ctx.db, orgId);
+    // §AB-0011 — `items` is under FORCE RLS; set the org GUC so this guard read
+    // sees the org's rows under the runtime role (otherwise it returns zero and a
+    // non-empty org would be deletable, bypassing the ORG_NOT_EMPTY safety check).
     const activeItems = yield* tryAsync(() =>
-      scope.executor
-        .select({ id: scope.tables.items.id })
-        .from(scope.tables.items)
-        .where(and(scope.orgScope("items"), isNull(scope.tables.items.deletedAt)))
-        .limit(1),
+      ctx.db.transaction(async (tx) => {
+        await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
+        return tx
+          .select({ id: items.id })
+          .from(items)
+          .where(and(eq(items.organizationId, orgId), isNull(items.deletedAt)))
+          .limit(1);
+      }),
     );
 
     if (activeItems.length > 0) {
@@ -1022,10 +1040,16 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
     // over ctx.db and would commit outside the transaction boundary.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
-        const txScope = scopedDb(tx, orgId);
+        // §AB-0011 — removeMember runs on sessionProcedure (no GUC middleware), but
+        // onMemberRemoved deletes the removed member's `permissions` rows (an RLS
+        // table). Set the org GUC first or the cascade delete affects zero rows
+        // under the runtime role and stale grants survive the removal.
+        await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
+
         await tx.delete(member).where(eq(member.id, memberId));
 
-        await txScope.insert("auditLogs", {
+        await tx.insert(auditLogs).values({
+          organizationId: orgId,
           userId: ctx.identity.userId,
           surface: "api",
           eventType: "org.member_remove",
