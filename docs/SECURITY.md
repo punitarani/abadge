@@ -134,7 +134,7 @@ The SDK uses a `SecretValue` opaque type to prevent accidental logging or serial
 data. The type requires an explicit `.expose()` call to access the underlying string value:
 
 ```ts
-const result = await agent.accessReveal(itemId);
+const result = await agent.access.read(itemId);
 // result.value is a SecretValue — cannot be directly logged or serialized
 const plaintext = result.value.expose(); // explicit unwrap
 ```
@@ -175,7 +175,7 @@ Cross-organization isolation has two layers:
 
 1. **Scoped data-access layer (AB-0010, primary control).** All reads/writes of the org-scoped tenant tables (`items`, `profiles`, `agents`, `permissions`, `audit_logs`) go through `scopedDb(orgId)` in `packages/trpc`. Its `findMany`/`findFirst` bake `organization_id = orgId` into the WHERE clause and `insert` auto-sets it, so a query cannot omit the tenant filter by construction. A CI test bans direct imports of those tables outside the scoped layer (allowlisting a few documented exceptions: the audit writer, auth resolution, the role-check `profiles` router, and the cross-org onboarding query in `organizations`).
 
-2. **Row-level security backstop (AB-0011, DB-enforced).** `FORCE ROW LEVEL SECURITY` on `items`/`profiles`/`agents`/`permissions` with an `org_isolation` policy keyed on the `app.current_org` GUC, which `scopedDb.run()` sets per transaction via `set_config(..., true)` (transaction-local, so it survives Hyperdrive connection pooling). The policy **fails closed**: an unset or mismatched context returns zero rows, never an unfiltered leak. RLS applies to the NOSUPERUSER/NOBYPASSRLS runtime role (`abadge_app`, AB-0012); the migrator/owner and local superuser bypass it, so migrations and admin tooling are unaffected. RLS is a backstop — it catches a bug in the app-layer scope, turning "forgot to filter" from a leak into zero rows.
+2. **Row-level security backstop (AB-0011, DB-enforced).** `FORCE ROW LEVEL SECURITY` on `items`/`profiles`/`agents`/`permissions` with an `org_isolation` policy keyed on the `app.current_org` GUC, set transaction-locally via `set_config(..., true)` (so it survives Hyperdrive connection pooling) by `scopedDb.run()`. The policy **fails closed**: an unset or mismatched context returns zero rows, never an unfiltered leak. The backstop targets the NOSUPERUSER/NOBYPASSRLS runtime role (`app_runtime`, created by migration 0022, AB-0012); the migrator/owner and local superuser bypass it, so migrations and admin tooling are unaffected. **Status — not yet active:** the policies are deployed, but `scopedDb.run()` is not yet wired into the request read path and agent auth reads `agents` before an org context exists, so the app must keep connecting as the owner/BYPASSRLS role until the GUC wiring ships (see `docs/runbooks/least-privilege-db-role.md`). Until then, org isolation is enforced solely by the app-layer scoped-DB `organization_id` filters; RLS is the staged-but-dormant backstop that will catch a "forgot to filter" bug once the runtime role is cut over.
 
 ### Capability Enforcement Matrix
 

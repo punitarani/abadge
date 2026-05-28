@@ -72,7 +72,7 @@ export function createPermissionCommand(): Command {
           const client = await createUserApiClient();
           // Length is guarded above; cast narrows to the non-empty tuple
           // shape demanded by CreatePermissionSchema (Schema.NonEmptyArray).
-          const result = await client.createPermission({
+          const result = await client.permissions.create({
             agentId: opts.agentId,
             itemId: opts.itemId,
             capabilities: capabilities as [Capability, ...Capability[]],
@@ -106,7 +106,7 @@ export function createPermissionCommand(): Command {
       try {
         const client = await createUserApiClient();
         const permissions = (
-          await client.listPermissions({
+          await client.permissions.list({
             agentId: opts.agentId,
             itemId: opts.itemId,
           })
@@ -140,7 +140,7 @@ export function createPermissionCommand(): Command {
     .action(async (id: string) => {
       try {
         const client = await createUserApiClient();
-        await client.revokePermission(id);
+        await client.permissions.delete(id);
         success(`Permission ${id} revoked.`);
       } catch (err) {
         error(errorMessage(err, "Failed to revoke permission."));

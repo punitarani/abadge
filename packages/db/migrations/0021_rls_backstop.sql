@@ -12,10 +12,10 @@
 -- is never TRUE, so an unset context yields ZERO rows — never an unfiltered leak.
 --
 -- FORCE ROW LEVEL SECURITY makes the table owner subject to the policy too; only
--- superuser / BYPASSRLS roles bypass it. The runtime app role (`abadge_app`,
--- NOSUPERUSER NOBYPASSRLS, see packages/db/least-privilege.sql + AB-0012) is
--- subject; the migrator/owner and local superuser are not (so migrations and
--- admin tooling are unaffected).
+-- superuser / BYPASSRLS roles bypass it. The runtime app role (`app_runtime`,
+-- NOSUPERUSER NOBYPASSRLS, created by migration 0022_least_privilege_role; see
+-- also scripts/least-privilege.sql + AB-0012) is subject; the migrator/owner and
+-- local superuser are not (so migrations and admin tooling are unaffected).
 --
 -- audit_logs is intentionally NOT under RLS: it is append-only (AB-0020 trigger),
 -- written by the audit-writer infrastructure with an explicit org, and must accept

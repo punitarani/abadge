@@ -115,11 +115,12 @@ describe("profiles.bootstrap atomic race (W2T7-003)", () => {
     }
   });
 
-  test("unowned profile: FORBIDDEN not PROFILE_ALREADY_EXISTS", async () => {
+  test("unowned profile: NOT_FOUND (no existence leak) not PROFILE_ALREADY_EXISTS", async () => {
     // User A creates a ZK profile; User B (member of a different org) tries to bootstrap it.
-    // loadProfileForWrite finds the row but requireOrgRole rejects B — a non-member of Org A.
-    // The expected tRPC error is FORBIDDEN (MEMBER_INSUFFICIENT_ROLE), NOT PROFILE_ALREADY_EXISTS,
-    // which proves ownership is checked before the atomic UPDATE runs.
+    // loadProfileForWrite uses scopedDb.findFirst which filters by org first — a cross-org
+    // profileId is indistinguishable from a non-existent one (PROFILE_NOT_FOUND), preventing
+    // cross-org existence oracle attacks. The key invariant is still enforced: User B's key
+    // is never written, and the error surfaces before the atomic UPDATE runs.
     const userA = await seedUser(auth);
     const orgA = await seedOrg(auth, userA.userId, { name: "Org A", slug: "org-a" });
     const profileA = await seedProfile(db, orgA.orgId, { storageMode: "zero_knowledge" });
@@ -141,12 +142,14 @@ describe("profiles.bootstrap atomic race (W2T7-003)", () => {
           hashLength: 32,
         },
       });
-      expect.unreachable("cross-org bootstrap should have thrown FORBIDDEN");
+      expect.unreachable("cross-org bootstrap should have thrown NOT_FOUND");
     } catch (error: unknown) {
       const err = error as { code?: string; cause?: { code?: string } };
-      // FORBIDDEN (not PROFILE_ALREADY_EXISTS) confirms ownership is enforced before the UPDATE
-      expect(err.code).toBe("FORBIDDEN");
-      expect(err.cause?.code).toBe("MEMBER_INSUFFICIENT_ROLE");
+      // NOT_FOUND (not PROFILE_ALREADY_EXISTS and not FORBIDDEN) — org-scoped lookup means
+      // a cross-org profileId is indistinguishable from a non-existent one, closing the
+      // existence oracle. Ownership is still enforced before any write.
+      expect(err.code).toBe("NOT_FOUND");
+      expect(err.cause?.code).toBe("PROFILE_NOT_FOUND");
     }
 
     // Confirm User B's key was NOT written to the profile (ownership gate held).

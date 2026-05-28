@@ -18,7 +18,7 @@ async function resolveZkProfileId(client: AbadgeUserClient): Promise<string> {
   if (!config?.activeOrgId) {
     throw new Error("No active organization configured. Run `abadge org use <orgId>` first.");
   }
-  const result = await client.listProfiles(config.activeOrgId);
+  const result = await client.profiles.list(config.activeOrgId);
   const zkProfile = result.profiles.find((p) => p.storageMode === "zero_knowledge");
   if (!zkProfile) {
     throw new Error(
@@ -128,7 +128,7 @@ export function createItemCommand(): Command {
       try {
         const client = await createUserApiClient();
         const values = await readCreateItemValues(opts);
-        const result = await client.createItem(
+        const result = await client.items.create(
           await buildCreateItemInput(values, () => resolveZkProfileId(client)),
         );
         if (opts.json) {
@@ -150,7 +150,7 @@ export function createItemCommand(): Command {
     .action(async (opts: { json?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const items = (await client.listItems()).items;
+        const items = (await client.items.list()).items;
 
         if (opts.json) {
           json(items);
@@ -180,7 +180,7 @@ export function createItemCommand(): Command {
     .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const item = (await client.getItem(id)).item;
+        const item = (await client.items.get(id)).item;
 
         if (!opts.reveal || item.storageMode !== "zero_knowledge") {
           if (opts.json) {
@@ -227,7 +227,7 @@ export function createItemCommand(): Command {
     .action(async (id: string, opts: { json?: boolean }) => {
       try {
         const client = await createUserApiClient();
-        const currentItem = (await client.getItem(id)).item;
+        const currentItem = (await client.items.get(id)).item;
         const label = await prompt("Label: ");
         const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
         const value = await prompt("Value (secret): ", true);
@@ -258,7 +258,7 @@ export function createItemCommand(): Command {
             itemId: currentItem.id,
             contentVersion: nextContentVersion,
           });
-          result = await client.updateItem(id, {
+          result = await client.items.update(id, {
             storageMode: "zero_knowledge",
             label,
             encryptedItemKey: encrypted.encryptedItemKey,
@@ -266,7 +266,7 @@ export function createItemCommand(): Command {
             contentVersion: currentItem.contentVersion,
           });
         } else {
-          result = await client.updateItem(id, {
+          result = await client.items.update(id, {
             storageMode: "server_managed",
             payload,
             contentVersion: currentItem.contentVersion,
@@ -301,7 +301,7 @@ export function createItemCommand(): Command {
 
       try {
         const client = await createUserApiClient();
-        await client.deleteItem(id);
+        await client.items.delete(id);
         success(`Item ${id} deleted.`);
       } catch (err) {
         error(errorMessage(err, "Failed to delete item."));

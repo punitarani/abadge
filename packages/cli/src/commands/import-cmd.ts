@@ -28,7 +28,7 @@ export interface ImportSummary {
   failed: number;
 }
 
-type ImportClient = Pick<AbadgeUserClient, "listItems" | "createItem" | "updateItem">;
+type ImportClient = Pick<AbadgeUserClient, "items">;
 
 function parseEnvFile(content: string): EnvEntry[] {
   return content
@@ -80,7 +80,7 @@ async function importEntry(
       return "updated";
     }
     try {
-      await client.updateItem(existing.id, {
+      await client.items.update(existing.id, {
         storageMode: "server_managed",
         payload,
         contentVersion: existing.contentVersion,
@@ -98,7 +98,7 @@ async function importEntry(
     return "created";
   }
   try {
-    await client.createItem({ storageMode: "server_managed", payload });
+    await client.items.create({ storageMode: "server_managed", payload });
     success(`Imported '${entry.key}'`);
     return "created";
   } catch (err) {
@@ -113,7 +113,7 @@ export async function importEntries(
   kind: ItemKind,
   opts: ImportOptions,
 ): Promise<ImportSummary> {
-  const existing = (await client.listItems()).items;
+  const existing = (await client.items.list()).items;
   const existingByLabel = new Map(existing.map((i) => [i.label, i]));
 
   const summary: ImportSummary = {

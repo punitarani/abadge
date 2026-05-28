@@ -75,44 +75,48 @@ After enrollment, future `connect()` calls use the keypair session exchange.
 
 These enforce the capability matrix and audit every attempt.
 
-### `accessCiphertext(itemId)`
+### `access.read(itemId, opts?)`
 
-Read the encrypted blob of a zero-knowledge item for local decryption.
+Read an item. Server-managed items return the decrypted payload; ZK items return the encrypted envelope for local daemon decryption.
 
-**Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
+**Requires:** `reveal_plaintext` (server-managed) or `read_ciphertext` (ZK, local only).
 
-```ts
-const {
-  encryptedItemKey,
-  ciphertext,
-  cryptoVersion,
-} = await agent.accessCiphertext(itemId);
-```
-
-### `accessReveal(itemId, field?)`
-
-Decrypt and return a field value from a server-managed item.
-
-**Requires:** `reveal_plaintext` permission. Server-managed item only.
+Returns a discriminated union on `storageMode`:
 
 ```ts
-const { payload } = await agent.accessReveal(itemId);
+const result = await agent.access.read(itemId);
+if (result.storageMode === "server_managed") {
+  const value = result.payload.fields.password;
+} else {
+  // ZK envelope: decrypt client-side via daemon
+  const { encryptedItemKey, ciphertext, cryptoVersion } = result;
+}
 
-// Specific field for a multi-field item
-const { payload: fieldPayload } = await agent.accessReveal(itemId, "password");
+// Specific field for a multi-field server-managed item
+const result = await agent.access.read(itemId, { field: "password" });
+if (result.storageMode !== "server_managed") throw new Error("Expected server_managed");
+const value = result.payload.fields.password;
 ```
 
-### `accessMount(itemId, mountType, field?)`
+### `access.use(target, opts)`
 
-Request item data for local injection (env var or temp file).
+Mint a short-lived mount handle for local injection (env var or temp file). The daemon redeems the handle for the actual material.
 
 **Requires:** `mount_env` or `mount_file` permission. Local agent only.
 
 ```ts
-const data = await agent.accessMount(itemId, "env", "password");
-```
+// Single item
+const { mountId } = await agent.access.use(
+  { itemId },
+  { delivery: "env", field: "password" },
+);
 
-For server-managed items, `data.payload` carries the resolved field value. For zero-knowledge items, `data` carries the encrypted blob (the daemon decrypts).
+// All items in a profile the agent has use grants on
+const handles = await agent.access.use(
+  { profileId: "prof_..." },
+  { delivery: "env" },
+);
+```
 
 ## Other methods
 
@@ -131,7 +135,7 @@ Recover by calling `disconnect()` and `connect()` again, or instantiate a fresh 
 
 ```ts
 try {
-  const { payload } = await agent.accessReveal(itemId);
+  const result = await agent.access.read(itemId);
 } catch (err) {
   if (err instanceof AbadgeApiError && err.code === "SESSION_REFRESH_FAILED") {
     agent.disconnect();
@@ -154,8 +158,9 @@ const agent = new AbadgeAgentClient({
 
 await agent.connect();
 
-const { payload } = await agent.accessReveal(itemId);
-const token = payload.fields.token as string;
+const result = await agent.access.read(itemId);
+if (result.storageMode !== "server_managed") throw new Error("Expected server_managed item");
+const token = result.payload.fields.token as string;
 
 // Use the token...
 
@@ -164,7 +169,7 @@ agent.disconnect();
 
 ## Field delivery
 
-The `field` parameter on `accessReveal` and `accessMount` selects a specific named field from a multi-field item. Resolution is centralized in `resolveFieldValue` from `@abadge/core/secret-delivery` (re-exported from the SDK).
+The `field` option on `access.read` and `access.use` selects a specific named field from a multi-field item. Resolution is centralized in `resolveFieldValue` from `@abadge/core/secret-delivery` (re-exported from the SDK).
 
 | Case | Result |
 |---|---|

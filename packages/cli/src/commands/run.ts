@@ -1,4 +1,4 @@
-import type { BulkMountEnvItem, RedeemMountResponse } from "@abadge/core";
+import type { RedeemMountResponse } from "@abadge/core";
 import type { BulkExecItem } from "@abadge/daemon";
 import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
@@ -8,11 +8,7 @@ import { daemonExpandEnv, daemonExpandEnvBulk } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
 
-/**
- * §RM-PR4 — Run an item via the unified `access.use` → `redeemMount` →
- * daemon path. Mirrors {@link runWithExpandEnv} (which uses the legacy
- * `accessMount`); kept side-by-side until the legacy method is removed in v0.6.
- */
+/** Run an item via the unified `access.use` → `redeemMount` → daemon path. */
 export async function runWithUseRedeem(
   client: AbadgeAgentClient,
   itemId: string,
@@ -88,8 +84,8 @@ export async function runWithUseRedeemBulk(
     );
   }
   if (result.items.length === 0) {
-    // Nothing to inject — spawn the bare command with the parent env. This
-    // matches the legacy bulkAccessMountEnv path's behavior on an empty profile.
+    // Nothing to inject — spawn the bare command with the parent env (the
+    // expected behavior for a profile with no mountable items).
     const proc = Bun.spawn([executable, ...args], {
       env: process.env as Record<string, string>,
       stdout: "inherit",
@@ -136,99 +132,6 @@ export async function runWithUseRedeemBulk(
     }
     throw new Error(
       "abadge run --all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge profile unlock",
-      { cause: err },
-    );
-  }
-}
-
-export async function runWithExpandEnv(
-  client: AbadgeAgentClient,
-  itemId: string,
-  executable: string,
-  args: string[],
-): Promise<never> {
-  // accessMount may surface API errors (e.g. PERMISSION_DENIED) that carry a
-  // hint. Resolve the mount first so those propagate untouched; only the
-  // subsequent daemon call gets the daemon-availability fallback.
-  const mounted = await client.accessMount(itemId, "env");
-  try {
-    // §W1S7-001 — ZK path needs (profileId, itemId, contentVersion) to rebuild
-    // the XChaCha20-Poly1305 AAD in the daemon; server-managed path has nothing
-    // to decrypt here so the meta is null.
-    const zkMeta =
-      mounted.storageMode === "zero_knowledge"
-        ? {
-            profileId: mounted.profileId,
-            itemId: mounted.itemId,
-            contentVersion: mounted.contentVersion,
-          }
-        : null;
-    const res = await daemonExpandEnv(
-      mounted.storageMode === "zero_knowledge" ? mounted.encryptedItemKey : null,
-      mounted.storageMode === "zero_knowledge" ? mounted.ciphertext : null,
-      mounted.storageMode === "server_managed" ? mounted.payload : null,
-      executable,
-      args,
-      zkMeta,
-    );
-    process.exit(res.exitCode);
-  } catch (err) {
-    if (err instanceof AbadgeApiError) {
-      throw err;
-    }
-    throw new Error(
-      "--expand-env requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start\n" +
-        "hint: Daemonless --expand-env support is coming in v0.1.",
-      { cause: err },
-    );
-  }
-}
-
-/**
- * Convert the API's BulkMountEnvItem (typed by Effect Schema) into the
- * daemon's BulkExecItem (a plain TS union). The shapes are isomorphic but
- * the readonly modifiers from Effect's Schema.Array don't survive the
- * cross-package boundary cleanly.
- */
-function toBulkExecItem(item: BulkMountEnvItem): BulkExecItem {
-  if (item.storageMode === "zero_knowledge") {
-    return {
-      itemId: item.itemId,
-      label: item.label,
-      storageMode: "zero_knowledge",
-      encryptedItemKey: item.encryptedItemKey,
-      ciphertext: item.ciphertext,
-      profileId: item.profileId,
-      contentVersion: item.contentVersion,
-    };
-  }
-  return {
-    itemId: item.itemId,
-    label: item.label,
-    storageMode: "server_managed",
-    payload: item.payload,
-  };
-}
-
-export async function runWithAll(
-  client: AbadgeAgentClient,
-  profileId: string,
-  executable: string,
-  args: string[],
-): Promise<never> {
-  const bulk = await client.bulkAccessMountEnv(profileId);
-  try {
-    const items = bulk.items.map(toBulkExecItem);
-    const res = await daemonExpandEnvBulk(items, executable, args);
-    process.exit(res.exitCode);
-  } catch (err) {
-    if (err instanceof AbadgeApiError) {
-      throw err;
-    }
-    throw new Error(
-      "--all requires the local daemon.\n" +
         "hint: Start it with: abadge daemon start && abadge profile unlock",
       { cause: err },
     );
@@ -301,17 +204,8 @@ export function createRunCommand(): Command {
               );
               process.exit(1);
             }
-            // §RM-PR4 — route the bulk path through `access.useProfile` +
-            // `redeemMount` so every mint is recorded in `mount_reservations`
-            // and audited as `via=mount_redeem`. The legacy
-            // `runWithAll`/`bulkAccessMountEnv` path stays for one release
-            // (callers exercising it directly via the SDK).
             await runWithUseRedeemBulk(client, profileId, executable, command.slice(1));
           } else if (opts.expandEnv) {
-            // §RM-PR4 — same flip as --all, but for the single-item field-
-            // expansion mode. The legacy `runWithExpandEnv`/`accessMount`
-            // path remains importable from this module for one release.
-            // opts.item is guaranteed by the mutex check above.
             await runWithUseRedeem(client, opts.item as string, executable, command.slice(1));
           } else {
             const secretValue = await resolveSecretValue(

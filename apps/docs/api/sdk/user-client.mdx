@@ -34,11 +34,11 @@ const client = new AbadgeUserClient({
 ## Organizations
 
 ```ts
-client.createOrganization({ name, slug? });
-client.listOrganizations();
-client.getOrganization(orgId);
-client.updateOrganization(orgId, { name });
-client.deleteOrganization(orgId);
+client.orgs.create({ name, slug? });
+client.orgs.list();
+client.orgs.get(orgId);
+client.orgs.update(orgId, { name });
+client.orgs.delete(orgId);
 
 client.listMembers(orgId);
 client.inviteMember(orgId, { role });           // no email param — invites are token-based
@@ -52,14 +52,14 @@ client.updateMemberRole(orgId, memberId, role);
 ## Profiles
 
 ```ts
-client.createProfile({
+client.profiles.create({
   orgId: string;
   name: string;
   description?: string;
   storageMode: "zero_knowledge" | "server_managed";
 });
-client.listProfiles(orgId);
-client.getProfile(profileId);
+client.profiles.list(orgId);
+client.profiles.get(profileId);
 client.bootstrapProfile(profileId, { wrappedRootKey, kdfSalt, kdfParams });
 client.changeProfilePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams });
 client.setupProfileRecovery(profileId, { recoveryWrappedRootKey });
@@ -68,14 +68,14 @@ client.rotateProfileKey(profileId, {
   recoveryWrappedRootKey?,
   rekeyedItems,
 });
-client.deleteProfile(profileId);
+client.profiles.delete(profileId);
 ```
 
 ## Items
 
 ```ts
 // Zero-knowledge item
-client.createItem({
+client.items.create({
   storageMode: "zero_knowledge";
   label: string;
   encryptedItemKey: string;
@@ -83,27 +83,27 @@ client.createItem({
 });
 
 // Server-managed item
-client.createItem({
+client.items.create({
   storageMode: "server_managed";
   label: string;
   payload: ItemPayload;
 });
 
-client.listItems();              // no profileId param; scoped to active org
-client.getItem(itemId);
-client.updateItem(itemId, data); // data shape matches items.update — includes contentVersion
-client.deleteItem(itemId);
+client.items.list();             // scoped to active org
+client.items.get(itemId);
+client.items.update(itemId, data); // data shape matches items.update — includes contentVersion
+client.items.delete(itemId);
 
 // Owner reveal for server-managed items. Returns { payload: ItemPayload }.
 // Pick fields from payload.fields yourself — the user-client method takes no
-// field argument. Use AbadgeAgentClient.accessReveal for field-level resolution.
+// field argument. Use agent.access.read for field-level resolution.
 client.ownerReveal(itemId);
 ```
 
 ## Agents
 
 ```ts
-client.createAgent({
+client.agents.create({
   name: string;
   kind: "local_cli" | "local_mcp" | "remote";
   authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
@@ -112,9 +112,9 @@ client.createAgent({
   metadata?: Record<string, unknown>;   // put description, owner tags, etc. here
 });
 
-client.listAgents();
-client.rotateAgent(agentId);            // legacy API key only
-client.revokeAgent(agentId);
+client.agents.list();
+client.agents.update(agentId);          // rotate legacy API key
+client.agents.delete(agentId);          // revoke agent
 
 // Issue a fresh bootstrap token for an existing agent.
 client.issueBootstrapToken(agentId);
@@ -123,21 +123,21 @@ client.issueBootstrapToken(agentId);
 ## Permissions
 
 ```ts
-client.createPermission({
+client.permissions.create({
   agentId: string;
   itemId: string;
-  capability: Capability;
+  capabilities: Capability[];
   expiresAt?: string;        // ISO 8601
 });
 
-client.listPermissions({ agentId?, itemId? });
-client.revokePermission(permissionId);
+client.permissions.list({ agentId?, itemId? });
+client.permissions.delete(permissionId);
 ```
 
 ## Audit
 
 ```ts
-client.getAudit({
+client.audit.list({
   agentId?: string;
   itemId?: string;
   eventType?: AuditEventType;
@@ -158,9 +158,8 @@ const client = new AbadgeUserClient({
   orgId: "org_...",
 });
 
-const { id: itemId } = await client.createItem({
+const { id: itemId } = await client.items.create({
   storageMode: "server_managed",
-  label: "GitHub Deploy Token",
   payload: {
     v: 1,
     label: "GitHub Deploy Token",
@@ -170,16 +169,16 @@ const { id: itemId } = await client.createItem({
   },
 });
 
-const { agent, bootstrapToken } = await client.createAgent({
+const { agent, bootstrapToken } = await client.agents.create({
   name: "github-actions-deploy",
   kind: "remote",
   issueBootstrapToken: true,
 });
 
-await client.createPermission({
+await client.permissions.create({
   agentId: agent.id,
   itemId,
-  capability: "reveal_plaintext",
+  capabilities: ["reveal_plaintext"],
   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 });
 ```

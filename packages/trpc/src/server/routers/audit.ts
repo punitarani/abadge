@@ -5,7 +5,6 @@ import {
   AuditResultSchema,
 } from "@abadge/core";
 import { and, desc, eq, isNull, lt, or, type SQL } from "@abadge/db";
-import { auditLogs } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import {
   AgentRequestContextTag,
@@ -22,6 +21,7 @@ import {
   roleRank,
   scopedSessionProcedure,
 } from "../init";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,
@@ -62,7 +62,10 @@ function normalizeAuditQuery(input: Schema.Schema.Type<typeof AuditQueryInputSch
   };
 }
 
-function buildEventTypeCondition(eventType: NonNullable<AuditQuery["eventType"]>): SQL {
+function buildEventTypeCondition(
+  table: ScopedDb["tables"]["auditLogs"],
+  eventType: NonNullable<AuditQuery["eventType"]>,
+): SQL {
   const eventTypes = getAuditEventTypeFilters(eventType);
   const [firstEventType, ...remainingEventTypes] = eventTypes;
 
@@ -71,12 +74,12 @@ function buildEventTypeCondition(eventType: NonNullable<AuditQuery["eventType"]>
   }
 
   if (remainingEventTypes.length === 0) {
-    return eq(auditLogs.eventType, firstEventType);
+    return eq(table.eventType, firstEventType);
   }
 
   const condition = or(
-    eq(auditLogs.eventType, firstEventType),
-    ...remainingEventTypes.map((candidate) => eq(auditLogs.eventType, candidate)),
+    eq(table.eventType, firstEventType),
+    ...remainingEventTypes.map((candidate) => eq(table.eventType, candidate)),
   );
 
   if (!condition) {
@@ -87,7 +90,6 @@ function buildEventTypeCondition(eventType: NonNullable<AuditQuery["eventType"]>
 }
 
 interface AuditConditionsContext {
-  orgId: string;
   // §AB-0043 — null when the caller is an orphaned agent (no owning user).
   userId: string | null;
   role: string;
@@ -96,26 +98,29 @@ interface AuditConditionsContext {
   field?: string;
 }
 
-function buildAuditConditions(input: AuditQuery, ctx: AuditConditionsContext): SQL[] {
-  const conditions: SQL[] = [eq(auditLogs.organizationId, ctx.orgId)];
+function buildAuditConditions(
+  table: ScopedDb["tables"]["auditLogs"],
+  input: AuditQuery,
+  ctx: AuditConditionsContext,
+): SQL[] {
+  // org scope is handled by scopedDb; do not add it here.
+  const conditions: SQL[] = [];
 
   // Non-admin users can only see their own audit entries
   if (roleRank(ctx.role) < roleRank("admin")) {
     // §AB-0043 — an orphaned agent (userId null) sees the org's ownerless audit rows
     // (its own bucket); `eq(userId, null)` matches nothing under SQL NULL semantics.
-    conditions.push(
-      ctx.userId === null ? isNull(auditLogs.userId) : eq(auditLogs.userId, ctx.userId),
-    );
+    conditions.push(ctx.userId === null ? isNull(table.userId) : eq(table.userId, ctx.userId));
   }
 
-  if (input.eventType) conditions.push(buildEventTypeCondition(input.eventType));
-  if (input.result) conditions.push(eq(auditLogs.result, input.result));
-  if (input.agentId) conditions.push(eq(auditLogs.agentId, input.agentId));
-  if (input.itemId) conditions.push(eq(auditLogs.itemId, input.itemId));
-  if (ctx.profileId) conditions.push(eq(auditLogs.profileId, ctx.profileId));
-  if (ctx.surface) conditions.push(eq(auditLogs.surface, ctx.surface));
-  if (ctx.field) conditions.push(eq(auditLogs.field, ctx.field));
-  if (input.cursor) conditions.push(lt(auditLogs.id, Number(input.cursor)));
+  if (input.eventType) conditions.push(buildEventTypeCondition(table, input.eventType));
+  if (input.result) conditions.push(eq(table.result, input.result));
+  if (input.agentId) conditions.push(eq(table.agentId, input.agentId));
+  if (input.itemId) conditions.push(eq(table.itemId, input.itemId));
+  if (ctx.profileId) conditions.push(eq(table.profileId, ctx.profileId));
+  if (ctx.surface) conditions.push(eq(table.surface, ctx.surface));
+  if (ctx.field) conditions.push(eq(table.field, ctx.field));
+  if (input.cursor) conditions.push(lt(table.id, Number(input.cursor)));
 
   return conditions;
 }
@@ -129,8 +134,8 @@ const listAuditEntries = (
     const role = yield* tryAsync(() =>
       requireOrgRole(ctx.db, ctx.identity.organizationId, ctx.identity.userId, "member"),
     );
-    const conditions = buildAuditConditions(input, {
-      orgId: ctx.identity.organizationId,
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
+    const conditions = buildAuditConditions(scope.tables.auditLogs, input, {
       userId: ctx.identity.userId,
       role,
       profileId: extra.profileId,
@@ -140,11 +145,11 @@ const listAuditEntries = (
 
     const limit = input.limit ?? 50;
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.id))
+        .from(scope.tables.auditLogs)
+        .where(and(scope.orgScope("auditLogs"), ...conditions))
+        .orderBy(desc(scope.tables.auditLogs.id))
         .limit(limit),
     );
 
@@ -161,8 +166,8 @@ const listAuditEntriesForAgent = (
 ) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
-    const conditions = buildAuditConditions(input, {
-      orgId: ctx.identity.agentOrganizationId,
+    const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
+    const conditions = buildAuditConditions(scope.tables.auditLogs, input, {
       userId: ctx.identity.agentUserId,
       role: "member",
       profileId: extra.profileId,
@@ -172,11 +177,11 @@ const listAuditEntriesForAgent = (
 
     const limit = input.limit ?? 50;
     const result = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.id))
+        .from(scope.tables.auditLogs)
+        .where(and(scope.orgScope("auditLogs"), ...conditions))
+        .orderBy(desc(scope.tables.auditLogs.id))
         .limit(limit),
     );
 
