@@ -30,9 +30,7 @@ const PERMANENT_EXEMPT = new Set<string>([
 function importsTenantTable(source: string): boolean {
   // Named import (runtime only — exclude `import type`): flag when a tenant
   // table is among the bindings.
-  for (const m of source.matchAll(
-    /import\s*\{([^}]*)\}\s*from\s*["']@abadge\/db\/schema["']/g,
-  )) {
+  for (const m of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@abadge\/db\/schema["']/g)) {
     if (TENANT_TABLES.some((t) => new RegExp(`\\b${t}\\b`).test(m[1] ?? ""))) return true;
   }
   // Namespace import exposes every table including the tenant ones, so `schema.items`

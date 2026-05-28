@@ -585,12 +585,7 @@ const revokePermission = (permissionId: string) =>
       scope.executor
         .select({ id: scope.tables.agents.id })
         .from(scope.tables.agents)
-        .where(
-          and(
-            eq(scope.tables.agents.id, permission.agentId),
-            scope.orgScope("agents"),
-          ),
-        )
+        .where(and(eq(scope.tables.agents.id, permission.agentId), scope.orgScope("agents")))
         .limit(1),
     );
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { and, type Database, eq } from "@abadge/db";
-import { auditLogs, items as itemRecords, mountReservations } from "@abadge/db/schema";
 import { toBase64 } from "@abadge/crypto/shared";
+import { and, type Database, eq, type Transaction } from "@abadge/db";
+import { auditLogs, items as itemRecords, mountReservations } from "@abadge/db/schema";
 import {
   seedAgent,
   seedAgentSession,
@@ -120,7 +120,7 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       get(target, prop, receiver) {
         if (prop === "transaction") {
           return (cb: (tx: unknown) => Promise<unknown>) =>
-            (target as Database).transaction((tx) => {
+            (target as Database).transaction((tx: Transaction) => {
               const hijackedTx = new Proxy(tx as object, {
                 get(t2, p2, r2) {
                   if (p2 === "insert") {
