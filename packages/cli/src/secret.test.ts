@@ -11,13 +11,12 @@ import { resolveSecretValue } from "./secret";
  *
  * Tests here exercise the same surface contract as before — given an item id,
  * the function returns the decrypted secret string (or throws on
- * multi-field/daemon-unavailable cases) — but they pin the new code path by
- * mocking `access.use` and `access.redeemMount`. A regression to the legacy
- * `accessMount` path would fail the "MUST NOT call accessMount" assertion.
+ * multi-field/daemon-unavailable cases) — by mocking `access.use` and
+ * `access.redeemMount`. The legacy `accessMount` method was removed in
+ * §AB-0080, so regressing to it is now a compile error rather than something a
+ * runtime spy must guard.
  */
-function buildSmAccessClient(
-  fields: Record<string, string>,
-): AbadgeAgentClient & { accessMount: () => Promise<never> } {
+function buildSmAccessClient(fields: Record<string, string>): AbadgeAgentClient {
   return {
     access: {
       use: async () => ({ mountId: "mnt_x", delivery: "env", expiresAt: "" }),
@@ -29,12 +28,7 @@ function buildSmAccessClient(
         itemId: "item_123",
       }),
     },
-    accessMount: async () => {
-      throw new Error(
-        "accessMount must NOT be called from resolveSecretValue (review C3 regression)",
-      );
-    },
-  } as unknown as AbadgeAgentClient & { accessMount: () => Promise<never> };
+  } as unknown as AbadgeAgentClient;
 }
 
 describe("resolveSecretValue (§RM-PR4 — redeemMount path)", () => {
@@ -79,13 +73,13 @@ describe("resolveSecretValue (§RM-PR4 — redeemMount path)", () => {
     );
   });
 
-  // PR4 review C3 — pin that the legacy mount path is no longer reachable
-  // from the canonical resolver. If a future refactor regresses to
-  // `client.accessMount(...)`, the spy throws and the test fails.
-  test("never invokes the legacy accessMount path (audit uniformity)", async () => {
+  // PR4 review C3 — pin the canonical mint→redeem lifecycle: resolveSecretValue
+  // calls access.use then access.redeemMount exactly once each. The legacy
+  // accessMount method was removed in §AB-0080, so regressing to it is now a
+  // compile error rather than something a runtime spy must guard.
+  test("mints and redeems exactly once (audit uniformity)", async () => {
     let useCalls = 0;
     let redeemCalls = 0;
-    let accessMountCalls = 0;
     const client = {
       access: {
         use: async () => {
@@ -103,15 +97,10 @@ describe("resolveSecretValue (§RM-PR4 — redeemMount path)", () => {
           };
         },
       },
-      accessMount: async () => {
-        accessMountCalls++;
-        throw new Error("accessMount must not be reached");
-      },
     } as unknown as AbadgeAgentClient;
 
     await expect(resolveSecretValue(client, "item_x", "env")).resolves.toBe("ok");
     expect(useCalls).toBe(1);
     expect(redeemCalls).toBe(1);
-    expect(accessMountCalls).toBe(0);
   });
 });

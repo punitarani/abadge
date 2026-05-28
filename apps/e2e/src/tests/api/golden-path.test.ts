@@ -24,7 +24,7 @@ describe("api golden path", () => {
     });
 
     // 2. create org (server seeds no profile — caller is responsible)
-    const org = await orgUserClient.createOrganization({
+    const org = await orgUserClient.orgs.create({
       name: "E2E Org",
       slug: `e2e-${crypto.randomUUID()}`,
     });
@@ -41,7 +41,7 @@ describe("api golden path", () => {
     // (§REVAMP-PR3 Task 5.1), so no explicit createProfile is needed here.
 
     // 4. create a server-managed item
-    const { id: itemId } = await userClient.createItem({
+    const { id: itemId } = await userClient.items.create({
       storageMode: "server_managed",
       payload: {
         v: 1,
@@ -60,7 +60,7 @@ describe("api golden path", () => {
     const publicJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
     const privateJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
 
-    const agent2 = await userClient.createAgent({
+    const agent2 = await userClient.agents.create({
       name: "deploy-bot-2",
       kind: "remote",
       authMethod: "public_key_session",
@@ -69,7 +69,7 @@ describe("api golden path", () => {
     expect(agent2.agent.id).toBeDefined();
 
     // 6. grant reveal_plaintext
-    const grant = await userClient.createPermission({
+    const grant = await userClient.permissions.create({
       agentId: agent2.agent.id,
       itemId,
       capabilities: ["reveal_plaintext"],
@@ -86,12 +86,13 @@ describe("api golden path", () => {
 
     try {
       // 8. agent reveals the item
-      const reveal = await agentClient.accessReveal(itemId);
+      const reveal = await agentClient.access.read(itemId);
+      if (reveal.storageMode !== "server_managed") throw new Error("Expected server_managed item");
       expect(reveal.payload.fields.password).toBe("s3cret!");
       expect(reveal.payload.fields.host).toBe("db.acme.com");
 
       // 9. audit trail records the allowed access
-      const audit = await userClient.getAudit({
+      const audit = await userClient.audit.list({
         itemId,
         eventType: "access.reveal",
         result: "allowed",

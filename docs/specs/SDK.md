@@ -34,20 +34,20 @@ import { AbadgeUserClient } from "@abadge/sdk";
 
 const client = new AbadgeUserClient({
   apiUrl: "https://api.abadge.dev",
-  token: sessionToken,
+  sessionToken: sessionToken,
 });
 ```
 
 ### Organizations
 
 ```typescript
-client.createOrganization({ name, slug? })
-client.listOrganizations()
-client.getOrganization(orgId)
-client.updateOrganization(orgId, { name, slug })
-client.deleteOrganization(orgId)
+client.orgs.create({ name, slug? })
+client.orgs.list()
+client.orgs.get(orgId)
+client.orgs.update(orgId, { name })
+client.orgs.delete(orgId)
 client.listMembers(orgId)
-client.inviteMember(orgId, email, role)
+client.inviteMember(orgId, { role })
 client.removeMember(orgId, userId)
 client.updateMemberRole(orgId, userId, role)
 ```
@@ -55,21 +55,21 @@ client.updateMemberRole(orgId, userId, role)
 ### Profiles
 
 ```typescript
-client.createProfile(orgId, { name, description?, storageMode? })
-client.listProfiles(orgId)
-client.getProfile(profileId)
+client.profiles.create({ orgId, name, description?, storageMode? })
+client.profiles.list(orgId)
+client.profiles.get(profileId)
 client.bootstrapProfile(profileId, { wrappedRootKey, kdfSalt, kdfParams })
 client.changeProfilePassword(profileId, { wrappedRootKey, kdfSalt, kdfParams })
 client.setupProfileRecovery(profileId, { recoveryWrappedRootKey })
 client.rotateProfileKey(profileId, { wrappedRootKey, recoveryWrappedRootKey?, rekeyedItems })
-client.deleteProfile(profileId)
+client.profiles.delete(profileId)
 ```
 
 ### Items
 
 ```typescript
 // Create (zero_knowledge)
-client.createItem({
+client.items.create({
   profileId: string;
   storageMode: "zero_knowledge";
   label: string;
@@ -80,7 +80,7 @@ client.createItem({
 })
 
 // Create (server_managed)
-client.createItem({
+client.items.create({
   profileId: string;
   storageMode: "server_managed";
   label: string;
@@ -89,20 +89,19 @@ client.createItem({
   payload: ItemPayload;
 })
 
-client.listItems(profileId?)
-client.getItem(itemId)
-client.updateItem(itemId, data)   // optimistic concurrency via contentVersion
-client.deleteItem(itemId)
+client.items.list()
+client.items.get(itemId)
+client.items.update(itemId, data)   // optimistic concurrency via contentVersion
+client.items.delete(itemId)
 
-// Owner reveal — returns { payload: ItemPayload } for the requested field
-client.ownerRevealItem(itemId, field?)
+// Owner reveal — returns { payload: ItemPayload }
+client.ownerReveal(itemId)
 ```
 
 ### Agents
 
 ```typescript
-client.createAgent({
-  organizationId: string;
+client.agents.create({
   name: string;
   kind: AgentKind;
   description?: string;
@@ -111,10 +110,10 @@ client.createAgent({
   issueBootstrapToken?: boolean;
 })
 
-client.listAgents()
-client.getAgent(agentId)
-client.rotateAgent(agentId)
-client.revokeAgent(agentId)
+client.agents.list()
+client.agents.get(agentId)
+client.agents.update(agentId)   // rotate legacy API key
+client.agents.delete(agentId)  // revoke agent
 
 // Issue a bootstrap token for an existing agent
 client.issueBootstrapToken(agentId)
@@ -123,27 +122,23 @@ client.issueBootstrapToken(agentId)
 ### Permissions
 
 ```typescript
-client.createPermission({
+client.permissions.create({
   agentId: string;
   itemId: string;
-  capability: Capability;
+  capabilities: Capability[];
   expiresAt?: string;  // ISO 8601
 })
 
-client.listPermissions({ agentId?, itemId? })
-client.revokePermission(permissionId)
+client.permissions.list({ agentId?, itemId? })
+client.permissions.delete(permissionId)
 ```
 
 ### Audit
 
 ```typescript
-client.listAuditEntries({
-  orgId?: string;
-  profileId?: string;
+client.audit.list({
   agentId?: string;
   itemId?: string;
-  surface?: string;
-  field?: string;
   eventType?: AuditEventType;
   result?: AuditResult;
   cursor?: string;
@@ -201,59 +196,66 @@ agent.enroll(bootstrapToken: string, publicKey: string)
 
 These methods enforce the capability matrix and log every attempt.
 
-#### `agent.accessCiphertext(itemId)`
+#### `agent.access.read(itemId, opts?)`
 
-Read the encrypted blob of a ZK item for local decryption.
+Read an item. For server-managed items returns the decrypted payload. For ZK items returns the encrypted envelope for local daemon decryption.
 
-**Requires:** `read_ciphertext` permission. Local agent only. ZK item only.
+**Requires:** `reveal_plaintext` (server-managed) or `read_ciphertext` (ZK, local only).
 
-```typescript
-const { encryptedItemKey, ciphertext, contentNonce, cryptoVersion } =
-  await agent.accessCiphertext(itemId);
-```
-
-#### `agent.accessReveal(itemId, field?)`
-
-Decrypt and return a field value from a server-managed item. Returns `{ payload: ItemPayload }`.
-
-**Requires:** `reveal_plaintext` permission. Server-managed item only.
+Returns a discriminated union on `storageMode`:
 
 ```typescript
-const { payload } = await agent.accessReveal(itemId);
+const result = await agent.access.read(itemId);
+if (result.storageMode === "server_managed") {
+  const value = result.payload.fields.password;
+} else {
+  // ZK envelope: decrypt client-side via daemon
+  const { encryptedItemKey, ciphertext, cryptoVersion } = result;
+}
 
-// With a specific field
-const { payload: fieldPayload } = await agent.accessReveal(itemId, "password");
+// With a specific field (server-managed only)
+const result = await agent.access.read(itemId, { field: "password" });
 ```
 
-#### `agent.accessMount(itemId, mountType, field?)`
+#### `agent.access.use(target, opts)`
 
-Request item data for local injection (env var or temp file).
+Mint a short-lived mount handle for local injection (env var or temp file). The daemon redeems the handle for the actual material.
 
 **Requires:** `mount_env` or `mount_file` permission. Local agent only.
 
 ```typescript
-const data = await agent.accessMount(itemId, "env", "password");
+// Single item
+const { mountId } = await agent.access.use(
+  { itemId: "item_..." },
+  { delivery: "env", field: "password" }
+);
+
+// All items in a profile
+const handles = await agent.access.use(
+  { profileId: "prof_..." },
+  { delivery: "env" }
+);
 ```
 
 ### Other Methods
 
 ```typescript
-agent.getSelf()                        // Get this agent's own record
-agent.listItems(profileId)             // Metadata only
-agent.listAuditEntries(orgId, filters?) // Structured audit listing
+agent.getCurrentAgent()                // Get this agent's own record
+agent.listItems()                      // Metadata only
+agent.getAudit(filters?)               // Structured audit listing
 ```
 
 ---
 
 ## Return Types
 
-`accessReveal` returns `{ payload: ItemPayload }` where `ItemPayload` contains the decrypted item fields. The payload is a plain object, not wrapped in an opaque type.
+`access.read` returns a discriminated union on `storageMode`. For `"server_managed"` items the response is `{ storageMode: "server_managed", payload: ItemPayload }`. For `"zero_knowledge"` items the response is the encrypted envelope `{ storageMode: "zero_knowledge", encryptedItemKey, ciphertext, cryptoVersion, itemId, profileId, contentVersion }` for local daemon decryption.
 
 ---
 
 ## Field Delivery
 
-The `field` parameter on `access.reveal` and `access.mount` selects a specific named field from a multi-field item. Field resolution is handled by `resolveFieldValue` from `@abadge/core/secret-delivery`, re-exported from the SDK for convenience.
+The `field` option on `access.read` and `access.use` selects a specific named field from a multi-field item. Field resolution is handled by `resolveFieldValue` from `@abadge/core/secret-delivery`, re-exported from the SDK for convenience.
 
 Behavior:
 - If `field` is omitted and the item has exactly one field, that field is returned
@@ -291,7 +293,9 @@ class AbadgeApiError extends Error {
 import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
 try {
-  const { payload } = await agent.accessReveal(itemId, "password");
+  const result = await agent.access.read(itemId, { field: "password" });
+  if (result.storageMode !== "server_managed") throw new Error("Expected server_managed item");
+  const value = result.payload.fields.password;
 } catch (err) {
   if (err instanceof AbadgeApiError) {
     console.error(`${err.code}: ${err.message}`);
@@ -305,7 +309,7 @@ try {
         // Named field not present in item; err.meta has available fields
         break;
       case "MULTI_FIELD_ITEM":
-        // Item has multiple fields; specify --field
+        // Item has multiple fields; specify field option
         break;
     }
   }
@@ -347,16 +351,13 @@ import { AbadgeUserClient } from "@abadge/sdk";
 
 const client = new AbadgeUserClient({
   apiUrl: "https://api.abadge.dev",
-  token: userSessionToken,
+  sessionToken: userSessionToken,
 });
 
 // Create a server-managed item
-const { id: itemId } = await client.createItem({
+const { id: itemId } = await client.items.create({
   profileId: "prof_...",
   storageMode: "server_managed",
-  label: "GitHub Deploy Token",
-  kind: "token",
-  tags: ["ci", "github"],
   payload: {
     v: 1,
     label: "GitHub Deploy Token",
@@ -367,18 +368,17 @@ const { id: itemId } = await client.createItem({
 });
 
 // Register an agent (defaults to public_key_session)
-const { agent, bootstrapToken } = await client.createAgent({
-  organizationId: "org_...",
+const { agent, bootstrapToken } = await client.agents.create({
   name: "github-actions-deploy",
   kind: "remote",
   issueBootstrapToken: true,
 });
 
 // Grant reveal_plaintext capability
-await client.createPermission({
+await client.permissions.create({
   agentId: agent.id,
   itemId,
-  capability: "reveal_plaintext",
+  capabilities: ["reveal_plaintext"],
   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 });
 ```
@@ -396,8 +396,9 @@ const agent = new AbadgeAgentClient({
 
 await agent.connect();
 
-const { payload } = await agent.accessReveal(itemId);
-const token = payload.fields.token;
+const result = await agent.access.read(itemId);
+if (result.storageMode !== "server_managed") throw new Error("Expected server_managed item");
+const token = result.payload.fields.token;
 
 // Use the token...
 
@@ -407,7 +408,7 @@ agent.disconnect();
 ### Audit: Review access history
 
 ```typescript
-const { entries, nextCursor } = await client.listAuditEntries({
+const { entries, nextCursor } = await client.audit.list({
   itemId,
   limit: 10,
 });

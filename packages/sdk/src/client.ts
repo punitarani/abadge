@@ -13,15 +13,12 @@ import type {
   AuditFilters,
   AuditListResult,
   BootstrapVaultInput,
-  BulkMountEnvResponse,
   ChangePasswordInput,
-  CiphertextAccessResponse,
   CreateAgentInput,
   CreateItemInput,
   CreatePermissionInput,
   ItemListResult,
   ItemResult,
-  MountAccessResponse,
   PermissionFilters,
   PermissionListResult,
   ProfileUseAccessResponse,
@@ -169,13 +166,6 @@ interface SdkTrpcClient {
     revoke: TrpcMutation<{ permissionId: string }, SuccessResult>;
   };
   access: {
-    ciphertext: TrpcMutation<{ itemId: string }, CiphertextAccessResponse>;
-    reveal: TrpcMutation<{ itemId: string; field?: string }, RevealAccessResponse>;
-    mount: TrpcMutation<
-      { itemId: string; mountType: "env" | "file"; field?: string },
-      MountAccessResponse
-    >;
-    bulkMountEnv: TrpcMutation<{ profileId: string }, BulkMountEnvResponse>;
     read: TrpcMutation<{ itemId: string; field?: string; purpose?: string }, ReadAccessResponse>;
     use: TrpcMutation<
       {
@@ -432,7 +422,7 @@ async function resolvePrivateKey(
  *   sessionToken: "user_session_token",
  * });
  *
- * const { agents } = await client.listAgents();
+ * const { agents } = await client.agents.list();
  * ```
  */
 export class AbadgeUserClient {
@@ -440,9 +430,7 @@ export class AbadgeUserClient {
   protected readonly client: SdkTrpcClient;
 
   /**
-   * §RM-PR4 — Namespaced API surface. Prefer these over the top-level
-   * methods, which remain for one release and route through the same tRPC
-   * paths.
+   * §RM-PR4 — Namespaced API surface.
    *
    * @example
    * ```typescript
@@ -459,90 +447,159 @@ export class AbadgeUserClient {
       slug: string;
       isPersonal: boolean;
     }>;
-    createPersonal: () => ReturnType<AbadgeUserClient["createPersonalOrganization"]>;
-    list: () => ReturnType<AbadgeUserClient["listOrganizations"]>;
+    createPersonal: () => Promise<{ id: string; name: string; slug: string; isPersonal: boolean }>;
+    list: () => Promise<{
+      organizations: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        logo: string | null;
+        createdAt: string;
+        role: string;
+        hasBootstrappedProfile: boolean;
+        isPersonal: boolean;
+      }>;
+    }>;
     get: (orgId: string) => Promise<unknown>;
     update: (orgId: string, data: { name?: string }) => Promise<SuccessResult>;
     delete: (orgId: string) => Promise<SuccessResult>;
   };
 
   readonly profiles: {
-    create: AbadgeUserClient["createProfile"];
-    list: AbadgeUserClient["listProfiles"];
-    get: AbadgeUserClient["getProfile"];
+    create: (data: {
+      orgId: string;
+      name: string;
+      description?: string;
+      storageMode?: string;
+    }) => Promise<{ id: string; name: string; storageMode: string }>;
+    list: (orgId: string) => Promise<{
+      profiles: Array<{
+        id: string;
+        name: string;
+        storageMode: string;
+        organizationId: string;
+        keyVersion: number;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    }>;
+    get: (profileId: string) => Promise<unknown>;
     update: (profileId: string, data: ChangePasswordInput) => Promise<SuccessResult>;
-    delete: AbadgeUserClient["deleteProfile"];
+    delete: (profileId: string) => Promise<SuccessResult>;
   };
 
   readonly items: {
-    create: AbadgeUserClient["createItem"];
-    list: AbadgeUserClient["listItems"];
-    get: AbadgeUserClient["getItem"];
-    update: AbadgeUserClient["updateItem"];
-    delete: AbadgeUserClient["deleteItem"];
+    create: (data: CreateItemInput) => Promise<{ id: string }>;
+    list: () => Promise<ItemListResult>;
+    get: (id: string) => Promise<ItemResult>;
+    update: (id: string, data: UpdateItemInput) => Promise<{ ok: boolean; contentVersion: number }>;
+    delete: (id: string) => Promise<SuccessResult>;
   };
 
   readonly agents: {
-    create: AbadgeUserClient["createAgent"];
-    list: AbadgeUserClient["listAgents"];
+    create: (data: CreateAgentInput) => Promise<AgentWithKey>;
+    list: () => Promise<AgentListResult>;
     get: (agentId: string) => Promise<AgentResult>;
     update: (agentId: string) => Promise<AgentRotateResult>;
-    delete: AbadgeUserClient["revokeAgent"];
+    delete: (agentId: string) => Promise<SuccessResult>;
   };
 
   readonly permissions: {
-    create: AbadgeUserClient["createPermission"];
-    list: AbadgeUserClient["listPermissions"];
+    create: (data: CreatePermissionInput) => Promise<PermissionListResult>;
+    list: (filters?: PermissionFilters) => Promise<PermissionListResult>;
     get: (permissionId: string) => Promise<unknown>;
     update: (permissionId: string) => Promise<SuccessResult>;
-    delete: AbadgeUserClient["revokePermission"];
+    delete: (permissionId: string) => Promise<SuccessResult>;
   };
 
   readonly audit: {
-    list: AbadgeUserClient["getAudit"];
+    list: (filters?: AuditFilters) => Promise<AuditListResult>;
   };
 
   constructor(config: AbadgeUserClientConfig) {
     this.client = buildTrpcClient(config.apiUrl, config.sessionToken, config.orgId);
 
-    // §RM-PR4 — namespaces delegate to the existing top-level methods so there
-    // is exactly one implementation per route. The legacy methods stay on the
-    // surface (marked @deprecated below) until the v0.6 removal.
     this.orgs = {
-      create: (data) => this.createOrganization(data),
-      createPersonal: () => this.createPersonalOrganization(),
-      list: () => this.listOrganizations(),
-      get: (orgId) => this.getOrganization(orgId),
-      update: (orgId, data) => this.updateOrganization(orgId, data),
-      delete: (orgId) => this.deleteOrganization(orgId),
+      create: async (data) => {
+        const result = await call(
+          () => this.client.organizations.create.mutate(data),
+          "Failed to create organization",
+        );
+        return result.organization;
+      },
+      createPersonal: async () => {
+        const result = await call(
+          () => this.client.organizations.createPersonal.mutate(),
+          "Failed to create personal account",
+        );
+        return result.organization;
+      },
+      list: () =>
+        call(() => this.client.organizations.list.query(), "Failed to list organizations"),
+      get: (orgId) =>
+        call(() => this.client.organizations.get.query({ orgId }), "Failed to fetch organization"),
+      update: (orgId, data) =>
+        call(
+          () => this.client.organizations.update.mutate({ orgId, ...data }),
+          "Failed to update organization",
+        ),
+      delete: (orgId) =>
+        call(
+          () => this.client.organizations.delete.mutate({ orgId }),
+          "Failed to delete organization",
+        ),
     };
 
     this.profiles = {
-      create: (data) => this.createProfile(data),
-      list: (orgId) => this.listProfiles(orgId),
-      get: (profileId) => this.getProfile(profileId),
-      // Profile metadata is largely immutable; "update" surfaces the password
-      // change path which is the only post-creation mutation a user can do.
-      update: (profileId, data) => this.changeProfilePassword(profileId, data),
-      delete: (profileId) => this.deleteProfile(profileId),
+      create: async (data) => {
+        const result = await call(
+          () => this.client.profiles.create.mutate(data),
+          "Failed to create profile",
+        );
+        return result.profile;
+      },
+      list: (orgId) =>
+        call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles"),
+      get: (profileId) =>
+        call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile"),
+      update: (profileId, data) =>
+        call(
+          () => this.client.profiles.changePassword.mutate({ profileId, ...data }),
+          "Failed to change profile password",
+        ),
+      delete: (profileId) =>
+        call(() => this.client.profiles.delete.mutate({ profileId }), "Failed to delete profile"),
     };
 
     this.items = {
-      create: (data) => this.createItem(data),
-      list: () => this.listItems(),
-      get: (id) => this.getItem(id),
-      update: (id, data) => this.updateItem(id, data),
-      delete: (id) => this.deleteItem(id),
+      create: (data) => call(() => this.client.items.create.mutate(data), "Failed to create item"),
+      list: async () => {
+        const items = await drainPages(async (cursor, limit) => {
+          const page = await this.client.items.list.query({ cursor, limit });
+          return { rows: page.items, nextCursor: page.nextCursor };
+        }, "Failed to list items");
+        return { items, nextCursor: null };
+      },
+      get: (id) => call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item"),
+      update: (id, data) =>
+        call(() => this.client.items.update.mutate({ itemId: id, data }), "Failed to update item"),
+      delete: (id) =>
+        call(() => this.client.items.delete.mutate({ itemId: id }), "Failed to delete item"),
     };
 
     this.agents = {
-      create: (data) => this.createAgent(data),
-      list: () => this.listAgents(),
-      // No tRPC procedure for fetching a single user-owned agent record by id
-      // today; list-and-find is the documented path.
+      create: (data) =>
+        call(() => this.client.agents.create.mutate(data), "Failed to create agent"),
+      list: async () => {
+        const agents = await drainPages(async (cursor, limit) => {
+          const page = await this.client.agents.list.query({ cursor, limit });
+          return { rows: page.agents, nextCursor: page.nextCursor };
+        }, "Failed to list agents");
+        return { agents, nextCursor: null };
+      },
       get: async (agentId: string) => {
-        const { agents } = await this.listAgents();
-        const found = agents.find((a) => a.id === agentId);
+        const { agents } = await this.agents.list();
+        const found = agents.find((a: { id: string }) => a.id === agentId);
         if (!found) {
           throw new AbadgeApiError(
             404,
@@ -553,19 +610,25 @@ export class AbadgeUserClient {
         }
         return { agent: found };
       },
-      // "update" on an agent rotates its credential (the only mutation
-      // exposed today). Returns the one-time rotated key.
-      update: (agentId) => this.rotateAgent(agentId),
-      delete: (agentId) => this.revokeAgent(agentId),
+      update: (agentId) =>
+        call(() => this.client.agents.rotate.mutate({ agentId }), "Failed to rotate agent"),
+      delete: (agentId) =>
+        call(() => this.client.agents.revoke.mutate({ agentId }), "Failed to revoke agent"),
     };
 
     this.permissions = {
-      create: (data) => this.createPermission(data),
-      list: (filters?: PermissionFilters) => this.listPermissions(filters),
-      // No standalone `permissions.get` procedure; list with filters covers it.
+      create: (data) =>
+        call(() => this.client.permissions.create.mutate(data), "Failed to create permission"),
+      list: async (filters = {}) => {
+        const permissions = await drainPages(async (cursor, limit) => {
+          const page = await this.client.permissions.list.query({ ...filters, cursor, limit });
+          return { rows: page.permissions, nextCursor: page.nextCursor };
+        }, "Failed to list permissions");
+        return { permissions, nextCursor: null };
+      },
       get: async (permissionId: string) => {
-        const { permissions } = await this.listPermissions();
-        const found = permissions.find((p) => p.id === permissionId);
+        const { permissions } = await this.permissions.list();
+        const found = permissions.find((p: { id: string }) => p.id === permissionId);
         if (!found) {
           throw new AbadgeApiError(
             404,
@@ -576,158 +639,32 @@ export class AbadgeUserClient {
         }
         return found;
       },
-      // Permissions are immutable except for revocation; `update` is an alias
-      // for `delete` so the CRUD shape stays uniform.
-      update: (permissionId) => this.revokePermission(permissionId),
-      delete: (permissionId) => this.revokePermission(permissionId),
+      update: (permissionId) =>
+        call(
+          () => this.client.permissions.revoke.mutate({ permissionId }),
+          "Failed to revoke permission",
+        ),
+      delete: (permissionId) =>
+        call(
+          () => this.client.permissions.revoke.mutate({ permissionId }),
+          "Failed to revoke permission",
+        ),
     };
 
     this.audit = {
-      list: (filters?: AuditFilters) => this.getAudit(filters),
+      list: (filters = {}) =>
+        call(() => this.client.audit.list.query(filters), "Failed to fetch audit log"),
     };
   }
 
-  // -- Items ----------------------------------------------------------------
-
   /**
-   * Create a new encrypted item. Accepts either zero-knowledge (client-encrypted)
-   * or server-managed (plaintext payload encrypted by the server) input.
+   * Reveal an item's plaintext as the owning user (bypasses agent permission check).
+   * Only available to org members with the owner/admin role.
    *
-   * @param data - Item data discriminated by storageMode
-   * @returns The new item's ID
-   * @throws {AbadgeApiError} VALIDATION_ERROR
-   * @deprecated Use `client.items.create(data)` instead. Removal target: v0.6.
+   * @param itemId - Item ID
    */
-  async createItem(data: CreateItemInput): Promise<{ id: string }> {
-    return call(() => this.client.items.create.mutate(data), "Failed to create item");
-  }
-
-  /**
-   * List all items for the current user (metadata only, no encrypted data).
-   *
-   * @returns Array of item summaries
-   * @deprecated Use `client.items.list()` instead. Removal target: v0.6.
-   */
-  async listItems(): Promise<ItemListResult> {
-    const items = await drainPages(async (cursor, limit) => {
-      const page = await this.client.items.list.query({ cursor, limit });
-      return { rows: page.items, nextCursor: page.nextCursor };
-    }, "Failed to list items");
-    return { items, nextCursor: null };
-  }
-
-  /**
-   * Retrieve a single item with full detail. For zero-knowledge items, includes
-   * the encrypted blob; for server-managed items, includes metadata only.
-   *
-   * @param id - Item ID
-   * @throws {AbadgeApiError} ITEM_NOT_FOUND
-   * @deprecated Use `client.items.get(id)` instead. Removal target: v0.6.
-   */
-  async getItem(id: string): Promise<ItemResult> {
-    return call(() => this.client.items.get.query({ itemId: id }), "Failed to fetch item");
-  }
-
-  /**
-   * Update an item with optimistic concurrency. The contentVersion in the data
-   * must match the current version or the update is rejected.
-   *
-   * @param id - Item ID
-   * @param data - Updated item data (includes required contentVersion)
-   * @returns The new content version number
-   * @throws {AbadgeApiError} ITEM_NOT_FOUND, STALE_VERSION
-   * @deprecated Use `client.items.update(id, data)` instead. Removal target: v0.6.
-   */
-  async updateItem(
-    id: string,
-    data: UpdateItemInput,
-  ): Promise<{ ok: boolean; contentVersion: number }> {
-    return call(
-      () => this.client.items.update.mutate({ itemId: id, data }),
-      "Failed to update item",
-    );
-  }
-
-  /**
-   * Decrypt and return the plaintext of a server-managed item owned by the
-   * current user. Zero-knowledge items cannot be revealed server-side.
-   *
-   * @param id - Item ID
-   * @returns The decrypted item payload
-   * @throws {AbadgeApiError} BAD_REQUEST (non-server-managed), ITEM_NOT_FOUND
-   */
-  async ownerReveal(id: string): Promise<RevealAccessResponse> {
-    return call(
-      () => this.client.items.ownerReveal.mutate({ itemId: id }),
-      "Failed to reveal item",
-    );
-  }
-
-  /**
-   * Soft-delete an item. The item is marked as deleted but preserved for audit integrity.
-   *
-   * @param id - Item ID
-   * @throws {AbadgeApiError} ITEM_NOT_FOUND
-   * @deprecated Use `client.items.delete(id)` instead. Removal target: v0.6.
-   */
-  async deleteItem(id: string): Promise<SuccessResult> {
-    return call(() => this.client.items.delete.mutate({ itemId: id }), "Failed to delete item");
-  }
-
-  // -- Agents ---------------------------------------------------------------
-
-  /**
-   * Register a new agent and receive a one-time API key.
-   *
-   * The API key is shown exactly once in the response and is never retrievable again.
-   * Store it securely immediately after creation.
-   *
-   * @param data - Agent kind, name, and optional metadata
-   * @returns The created agent and its one-time API key
-   * @throws {AbadgeApiError} VALIDATION_ERROR
-   * @deprecated Use `client.agents.create(data)` instead. Removal target: v0.6.
-   */
-  async createAgent(data: CreateAgentInput): Promise<AgentWithKey> {
-    return call(() => this.client.agents.create.mutate(data), "Failed to create agent");
-  }
-
-  /**
-   * List all agents for the current user.
-   *
-   * @returns Array of agents (without API keys)
-   * @deprecated Use `client.agents.list()` instead. Removal target: v0.6.
-   */
-  async listAgents(): Promise<AgentListResult> {
-    const agents = await drainPages(async (cursor, limit) => {
-      const page = await this.client.agents.list.query({ cursor, limit });
-      return { rows: page.agents, nextCursor: page.nextCursor };
-    }, "Failed to list agents");
-    return { agents, nextCursor: null };
-  }
-
-  /**
-   * Rotate an agent's API key. The old key is invalidated immediately.
-   * The new key is shown exactly once and is never retrievable again.
-   *
-   * @param id - Agent ID
-   * @returns The new API key and key prefix
-   * @throws {AbadgeApiError} AGENT_NOT_FOUND
-   * @deprecated Use `client.agents.update(id)` instead. Removal target: v0.6.
-   */
-  async rotateAgent(id: string): Promise<AgentRotateResult> {
-    return call(() => this.client.agents.rotate.mutate({ agentId: id }), "Failed to rotate agent");
-  }
-
-  /**
-   * Revoke an agent. The agent can no longer authenticate or access any items.
-   * This action is irreversible.
-   *
-   * @param id - Agent ID
-   * @throws {AbadgeApiError} AGENT_NOT_FOUND
-   * @deprecated Use `client.agents.delete(id)` instead. Removal target: v0.6.
-   */
-  async revokeAgent(id: string): Promise<SuccessResult> {
-    return call(() => this.client.agents.revoke.mutate({ agentId: id }), "Failed to revoke agent");
+  async ownerReveal(itemId: string): Promise<RevealAccessResponse> {
+    return call(() => this.client.items.ownerReveal.mutate({ itemId }), "Failed to reveal item");
   }
 
   /**
@@ -742,167 +679,6 @@ export class AbadgeUserClient {
     return call(
       () => this.client.auth.issueBootstrapToken.mutate({ agentId }),
       "Failed to issue bootstrap token",
-    );
-  }
-
-  // -- Permissions ----------------------------------------------------------
-
-  /**
-   * Grant one or more capabilities to an agent for a specific item.
-   *
-   * Supplying multiple capabilities is atomic: either every row lands or none
-   * does. Duplicates are detected up-front, and the error envelope's `meta`
-   * carries the full list of offending capabilities (`invalidCapabilities` or
-   * `duplicateCapabilities`) so callers can recover precisely.
-   *
-   * @param data - Agent ID, item ID, capabilities (non-empty), and optional batch-wide expiration
-   * @returns The created permission rows (one per capability)
-   * @throws {AbadgeApiError} AGENT_NOT_FOUND, ITEM_NOT_FOUND,
-   *   INVALID_CAPABILITY_LOCALITY, INVALID_CAPABILITY_STORAGE,
-   *   PERMISSION_ALREADY_EXISTS
-   * @deprecated Use `client.permissions.create(data)` instead. Removal target: v0.6.
-   */
-  async createPermission(data: CreatePermissionInput): Promise<PermissionListResult> {
-    return call(() => this.client.permissions.create.mutate(data), "Failed to create permission");
-  }
-
-  /**
-   * List permissions, optionally filtered by agent and/or item.
-   *
-   * @param filters - Optional agentId and/or itemId filters
-   * @returns Array of permissions
-   * @deprecated Use `client.permissions.list(filters)` instead. Removal target: v0.6.
-   */
-  async listPermissions(filters: PermissionFilters = {}): Promise<PermissionListResult> {
-    const permissions = await drainPages(async (cursor, limit) => {
-      const page = await this.client.permissions.list.query({ ...filters, cursor, limit });
-      return { rows: page.permissions, nextCursor: page.nextCursor };
-    }, "Failed to list permissions");
-    return { permissions, nextCursor: null };
-  }
-
-  /**
-   * Revoke a permission. The agent immediately loses the granted capability.
-   *
-   * @param id - Permission ID
-   * @throws {AbadgeApiError} PERMISSION_NOT_FOUND
-   * @deprecated Use `client.permissions.delete(id)` instead. Removal target: v0.6.
-   */
-  async revokePermission(id: string): Promise<SuccessResult> {
-    return call(
-      () => this.client.permissions.revoke.mutate({ permissionId: id }),
-      "Failed to revoke permission",
-    );
-  }
-
-  // -- Audit ----------------------------------------------------------------
-
-  /**
-   * Query the audit log with optional filters and cursor-based pagination.
-   *
-   * @param filters - Optional filters (eventType, result, agentId, itemId, cursor, limit)
-   * @returns Paginated audit entries and a nextCursor for the next page (null if no more pages)
-   * @deprecated Use `client.audit.list(filters)` instead. Removal target: v0.6.
-   */
-  async getAudit(filters: AuditFilters = {}): Promise<AuditListResult> {
-    return call(() => this.client.audit.list.query(filters), "Failed to fetch audit log");
-  }
-
-  // -- Organizations --------------------------------------------------------
-
-  /**
-   * Create a new organization.
-   *
-   * @param data - Organization name and optional slug
-   * @returns The created organization
-   * @deprecated Use `client.orgs.create(data)` instead. Removal target: v0.6.
-   */
-  async createOrganization(data: {
-    name: string;
-    slug?: string;
-  }): Promise<{ id: string; name: string; slug: string; isPersonal: boolean }> {
-    const result = await call(
-      () => this.client.organizations.create.mutate(data),
-      "Failed to create organization",
-    );
-    return result.organization;
-  }
-
-  /**
-   * Create a personal account — a single-user workspace seeded with one
-   * `server_managed` profile. Takes no input; the name/slug are generated from
-   * the user record. Returns the org with `isPersonal: true`.
-   * @deprecated Use `client.orgs.createPersonal()` instead. Removal target: v0.6.
-   */
-  async createPersonalOrganization(): Promise<{
-    id: string;
-    name: string;
-    slug: string;
-    isPersonal: boolean;
-  }> {
-    const result = await call(
-      () => this.client.organizations.createPersonal.mutate(),
-      "Failed to create personal account",
-    );
-    return result.organization;
-  }
-
-  /**
-   * List organizations the current user belongs to.
-   * @deprecated Use `client.orgs.list()` instead. Removal target: v0.6.
-   */
-  async listOrganizations(): Promise<{
-    organizations: Array<{
-      id: string;
-      name: string;
-      slug: string;
-      logo: string | null;
-      createdAt: string;
-      role: string;
-      hasBootstrappedProfile: boolean;
-      isPersonal: boolean;
-    }>;
-  }> {
-    return call(() => this.client.organizations.list.query(), "Failed to list organizations");
-  }
-
-  /**
-   * Get a specific organization by ID.
-   *
-   * @param orgId - Organization ID
-   * @deprecated Use `client.orgs.get(orgId)` instead. Removal target: v0.6.
-   */
-  async getOrganization(orgId: string): Promise<unknown> {
-    return call(
-      () => this.client.organizations.get.query({ orgId }),
-      "Failed to fetch organization",
-    );
-  }
-
-  /**
-   * Update organization metadata.
-   *
-   * @param orgId - Organization ID
-   * @param data - Fields to update
-   * @deprecated Use `client.orgs.update(orgId, data)` instead. Removal target: v0.6.
-   */
-  async updateOrganization(orgId: string, data: { name?: string }): Promise<SuccessResult> {
-    return call(
-      () => this.client.organizations.update.mutate({ orgId, ...data }),
-      "Failed to update organization",
-    );
-  }
-
-  /**
-   * Delete an organization and all its resources.
-   *
-   * @param orgId - Organization ID
-   * @deprecated Use `client.orgs.delete(orgId)` instead. Removal target: v0.6.
-   */
-  async deleteOrganization(orgId: string): Promise<SuccessResult> {
-    return call(
-      () => this.client.organizations.delete.mutate({ orgId }),
-      "Failed to delete organization",
     );
   }
 
@@ -1003,58 +779,6 @@ export class AbadgeUserClient {
     );
   }
 
-  // -- Profiles -------------------------------------------------------------
-
-  /**
-   * Create a new profile in an organization.
-   *
-   * @param data - Profile data including orgId, name, and optional fields
-   * @returns The new profile's ID
-   * @deprecated Use `client.profiles.create(data)` instead. Removal target: v0.6.
-   */
-  async createProfile(data: {
-    orgId: string;
-    name: string;
-    description?: string;
-    storageMode?: string;
-  }): Promise<{ id: string; name: string; storageMode: string }> {
-    const result = await call(
-      () => this.client.profiles.create.mutate(data),
-      "Failed to create profile",
-    );
-    return result.profile;
-  }
-
-  /**
-   * List profiles in an organization.
-   *
-   * @param orgId - Organization ID
-   * @deprecated Use `client.profiles.list(orgId)` instead. Removal target: v0.6.
-   */
-  async listProfiles(orgId: string): Promise<{
-    profiles: Array<{
-      id: string;
-      name: string;
-      storageMode: string;
-      organizationId: string;
-      keyVersion: number;
-      createdAt: string;
-      updatedAt: string;
-    }>;
-  }> {
-    return call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles");
-  }
-
-  /**
-   * Get a specific profile.
-   *
-   * @param profileId - Profile ID
-   * @deprecated Use `client.profiles.get(profileId)` instead. Removal target: v0.6.
-   */
-  async getProfile(profileId: string): Promise<unknown> {
-    return call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile");
-  }
-
   /**
    * Bootstrap a profile vault.
    *
@@ -1112,19 +836,6 @@ export class AbadgeUserClient {
       "Failed to rotate profile key",
     );
   }
-
-  /**
-   * Delete a profile.
-   *
-   * @param profileId - Profile ID
-   * @deprecated Use `client.profiles.delete(profileId)` instead. Removal target: v0.6.
-   */
-  async deleteProfile(profileId: string): Promise<SuccessResult> {
-    return call(
-      () => this.client.profiles.delete.mutate({ profileId }),
-      "Failed to delete profile",
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1149,7 +860,7 @@ export class AbadgeUserClient {
  *   apiKey: "abl_xxxxxxxxxxxx",
  * });
  *
- * const secret = await agent.accessReveal("item_id");
+ * const secret = await agent.access.read("item_id");
  * ```
  *
  * @example Keypair auth
@@ -1160,7 +871,7 @@ export class AbadgeUserClient {
  *   privateKey: ed25519PrivateKey,
  * });
  * await agent.connect();
- * const secret = await agent.accessReveal("item_id");
+ * const secret = await agent.access.read("item_id");
  * ```
  */
 /**
@@ -1554,95 +1265,6 @@ export class AbadgeAgentClient {
         "Failed to redeem mount handle",
       ),
   } as const;
-
-  // -- Access (legacy) ------------------------------------------------------
-
-  /**
-   * Read the encrypted blob of a zero-knowledge item for local decryption.
-   * Requires `read_ciphertext` permission. Local agents only. ZK items only.
-   *
-   * Every access attempt (allowed or denied) is recorded in the audit log.
-   *
-   * @param itemId - Item ID
-   * @returns Encrypted item key, ciphertext, and crypto version
-   * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
-   * @deprecated Use {@link access.read} instead. Removal target: v0.6.
-   */
-  async accessCiphertext(itemId: string): Promise<CiphertextAccessResponse> {
-    return this.authedCall(
-      () => this.client.access.ciphertext.mutate({ itemId }),
-      "Failed to access ciphertext",
-    );
-  }
-
-  /**
-   * Decrypt and return the plaintext of a server-managed item.
-   * Requires `reveal_plaintext` permission. Server-managed items only.
-   *
-   * This is a security-sensitive operation: the server decrypts the item and
-   * returns plaintext. Every access attempt is recorded in the audit log.
-   *
-   * @param itemId - Item ID
-   * @param field - Optional specific field name to return (for multi-field items)
-   * @returns The decrypted item payload
-   * @throws {AbadgeApiError} BAD_REQUEST, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
-   * @deprecated Use {@link access.read} instead. Removal target: v0.6.
-   */
-  async accessReveal(itemId: string, field?: string): Promise<RevealAccessResponse> {
-    return this.authedCall(
-      () => this.client.access.reveal.mutate({ itemId, ...(field ? { field } : {}) }),
-      "Failed to reveal item",
-    );
-  }
-
-  /**
-   * Request item data for local injection (env variable or temp file).
-   * Requires `mount_env` or `mount_file` permission. Local agents only.
-   *
-   * For ZK items, returns the encrypted blob for local decryption.
-   * For server-managed items, returns the decrypted payload.
-   * Every access attempt is recorded in the audit log.
-   *
-   * @param itemId - Item ID
-   * @param mountType - Injection method: "env" for environment variable, "file" for temp file
-   * @param field - Optional specific field name to return (for multi-field items)
-   * @returns Item data discriminated by storageMode
-   * @throws {AbadgeApiError} FORBIDDEN, PERMISSION_DENIED, PERMISSION_EXPIRED, ITEM_NOT_FOUND
-   * @deprecated Use {@link access.use} instead. Removal target: v0.6.
-   */
-  async accessMount(
-    itemId: string,
-    mountType: "env" | "file",
-    field?: string,
-  ): Promise<MountAccessResponse> {
-    return this.authedCall(
-      () => this.client.access.mount.mutate({ itemId, mountType, ...(field ? { field } : {}) }),
-      "Failed to access mount payload",
-    );
-  }
-
-  /**
-   * Bulk-fetch every item in the given profile that the agent has `mount_env`
-   * on, in one round trip. Each item access produces its own audit row
-   * (`access.mount_env`, `meta.viaBulk = true`).
-   *
-   * Profile-scoped by hard server invariant: items in other profiles are NOT
-   * returned even if the agent has grants on them. Cross-org probing yields
-   * `PROFILE_NOT_FOUND` (existence is not leaked).
-   *
-   * Used by `abadge run --all`. Local agents only.
-   *
-   * @param profileId - The profile to scope the bulk mount to
-   * @returns Array of per-item mount responses (ZK envelope or server-managed payload)
-   * @throws {AbadgeApiError} PERMISSION_DENIED (remote agent), PROFILE_NOT_FOUND, BAD_REQUEST (>256 items)
-   * @deprecated Use `access.use({ profileId }, { delivery })` instead. Removal target: v0.6.
-   */
-  async bulkAccessMountEnv(profileId: string): Promise<BulkMountEnvResponse> {
-    return this.authedCall(
-      () => this.client.access.bulkMountEnv.mutate({ profileId }),
-      "Failed to bulk-fetch mount payloads",
-    );
-  }
 }
 
 // Re-export ErrorCode for SDK consumers

@@ -20,7 +20,7 @@ export function createAuditCommand(): Command {
     .action(async (opts: { json?: boolean; limit?: string; cursor?: string }) => {
       try {
         const client = await createUserApiClient();
-        const response = await client.getAudit({
+        const response = await client.audit.list({
           limit: parseLimit(opts.limit),
           cursor: opts.cursor,
         });

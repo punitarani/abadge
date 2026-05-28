@@ -20,7 +20,7 @@ export function createUseCommand(): Command {
     .action(async (idOrSlug: string) => {
       try {
         const client = await createUserApiClient();
-        const { organizations } = await client.listOrganizations();
+        const { organizations } = await client.orgs.list();
         const org = organizations.find((o) => o.id === idOrSlug || o.slug === idOrSlug);
         if (!org) {
           error(`Organization '${idOrSlug}' not found.`);
@@ -43,7 +43,7 @@ export function createUseCommand(): Command {
       try {
         const orgId = requireActiveOrgId();
         const client = await createUserApiClient();
-        const { profiles } = await client.listProfiles(orgId);
+        const { profiles } = await client.profiles.list(orgId);
         const profile = profiles.find((p) => p.id === nameOrId || p.name === nameOrId);
         if (!profile) {
           error(`Profile '${nameOrId}' not found.`);

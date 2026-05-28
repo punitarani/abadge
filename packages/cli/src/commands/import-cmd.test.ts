@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ItemSummary, UpdateItemInput } from "@abadge/core";
-import type { CreateItemInput } from "@abadge/sdk";
+import type { AbadgeUserClient, CreateItemInput } from "@abadge/sdk";
 import { importEntries } from "./import-cmd";
+
+type ImportClient = Pick<AbadgeUserClient, "items">;
 
 function itemSummary(overrides: Partial<ItemSummary>): ItemSummary {
   return {
@@ -17,9 +19,9 @@ function itemSummary(overrides: Partial<ItemSummary>): ItemSummary {
   };
 }
 
-function makeClient(existing: ItemSummary[] = []) {
-  const listItems = mock(async () => ({ items: existing, nextCursor: null }));
-  const createItem = mock(async (_data: CreateItemInput) => ({
+function makeClient(existing: ItemSummary[] = []): ImportClient {
+  const listFn = mock(async () => ({ items: existing, nextCursor: null }));
+  const createFn = mock(async (_data: CreateItemInput) => ({
     id: "item_new",
     label: "x",
     storageMode: "server_managed" as const,
@@ -29,11 +31,17 @@ function makeClient(existing: ItemSummary[] = []) {
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
   }));
-  const updateItem = mock(async (_id: string, _data: UpdateItemInput) => ({
+  const updateFn = mock(async (_id: string, _data: UpdateItemInput) => ({
     ok: true,
     contentVersion: 2,
   }));
-  return { listItems, createItem, updateItem };
+  return {
+    items: {
+      list: listFn,
+      create: createFn,
+      update: updateFn,
+    },
+  } as unknown as ImportClient;
 }
 
 describe("importEntries", () => {
@@ -44,8 +52,8 @@ describe("importEntries", () => {
     });
 
     expect(summary).toEqual({ created: 1, updated: 0, skipped: 0, refused: 0, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(1);
-    expect(client.updateItem).toHaveBeenCalledTimes(0);
+    expect(client.items.create).toHaveBeenCalledTimes(1);
+    expect(client.items.update).toHaveBeenCalledTimes(0);
   });
 
   test("skips existing items when --overwrite is not set", async () => {
@@ -58,11 +66,11 @@ describe("importEntries", () => {
     );
 
     expect(summary).toEqual({ created: 0, updated: 0, skipped: 1, refused: 0, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(0);
-    expect(client.updateItem).toHaveBeenCalledTimes(0);
+    expect(client.items.create).toHaveBeenCalledTimes(0);
+    expect(client.items.update).toHaveBeenCalledTimes(0);
   });
 
-  test("calls updateItem when label exists and --overwrite is set", async () => {
+  test("calls update when label exists and --overwrite is set", async () => {
     const client = makeClient([
       itemSummary({ id: "item_1", label: "DATABASE_URL", contentVersion: 3 }),
     ]);
@@ -74,10 +82,11 @@ describe("importEntries", () => {
     );
 
     expect(summary).toEqual({ created: 0, updated: 1, skipped: 0, refused: 0, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(0);
-    expect(client.updateItem).toHaveBeenCalledTimes(1);
+    expect(client.items.create).toHaveBeenCalledTimes(0);
+    expect(client.items.update).toHaveBeenCalledTimes(1);
 
-    const call = client.updateItem.mock.calls[0];
+    // biome-ignore lint/suspicious/noExplicitAny: test-only mock introspection
+    const call = (client.items.update as any).mock.calls[0];
     expect(call?.[0]).toBe("item_1");
     expect(call?.[1]).toMatchObject({
       storageMode: "server_managed",
@@ -103,8 +112,8 @@ describe("importEntries", () => {
     );
 
     expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 1, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(0);
-    expect(client.updateItem).toHaveBeenCalledTimes(0);
+    expect(client.items.create).toHaveBeenCalledTimes(0);
+    expect(client.items.update).toHaveBeenCalledTimes(0);
   });
 
   test("dry-run does not call mutating methods", async () => {
@@ -120,8 +129,8 @@ describe("importEntries", () => {
     );
 
     expect(summary).toEqual({ created: 1, updated: 1, skipped: 0, refused: 0, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(0);
-    expect(client.updateItem).toHaveBeenCalledTimes(0);
+    expect(client.items.create).toHaveBeenCalledTimes(0);
+    expect(client.items.update).toHaveBeenCalledTimes(0);
   });
 
   test("mixed batch: creates new, updates existing", async () => {
@@ -137,16 +146,13 @@ describe("importEntries", () => {
     );
 
     expect(summary).toEqual({ created: 1, updated: 1, skipped: 0, refused: 0, failed: 0 });
-    expect(client.createItem).toHaveBeenCalledTimes(1);
-    expect(client.updateItem).toHaveBeenCalledTimes(1);
+    expect(client.items.create).toHaveBeenCalledTimes(1);
+    expect(client.items.update).toHaveBeenCalledTimes(1);
   });
 
   test("API errors during create are counted in failed (drives non-zero exit)", async () => {
     const client = makeClient([]);
-    // Override createItem to fail; the runImport caller exits non-zero based on
-    // summary.failed > 0, so the contract being tested here is that the bucket
-    // is populated correctly.
-    client.createItem = mock(async (_data: CreateItemInput) => {
+    client.items.create = mock(async (_data: CreateItemInput) => {
       throw new Error("network blew up");
     });
     const summary = await importEntries(client, [{ key: "WILL_FAIL", value: "v" }], "opaque", {
@@ -154,12 +160,12 @@ describe("importEntries", () => {
     });
 
     expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 0, failed: 1 });
-    expect(client.createItem).toHaveBeenCalledTimes(1);
+    expect(client.items.create).toHaveBeenCalledTimes(1);
   });
 
   test("API errors during update are counted in failed", async () => {
     const client = makeClient([itemSummary({ id: "item_1", label: "DB_URL", contentVersion: 1 })]);
-    client.updateItem = mock(async (_id: string, _data: UpdateItemInput) => {
+    client.items.update = mock(async (_id: string, _data: UpdateItemInput) => {
       throw new Error("conflict");
     });
     const summary = await importEntries(client, [{ key: "DB_URL", value: "v" }], "opaque", {
@@ -167,6 +173,6 @@ describe("importEntries", () => {
     });
 
     expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, refused: 0, failed: 1 });
-    expect(client.updateItem).toHaveBeenCalledTimes(1);
+    expect(client.items.update).toHaveBeenCalledTimes(1);
   });
 });
