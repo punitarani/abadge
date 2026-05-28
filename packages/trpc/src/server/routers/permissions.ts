@@ -14,13 +14,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, desc, eq, inArray, or } from "@abadge/db";
-import {
-  agents as agentRecords,
-  auditLogs,
-  items,
-  permissions as permissionRecords,
-  profiles as profileRecords,
-} from "@abadge/db/schema";
+import { scopedDb } from "../scoped-db";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -57,16 +51,17 @@ const createPermission = (input: CreatePermissionInput) =>
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: createPermission orchestrates target-discriminated validation (item vs profile), agent ownership, capability-matrix legality, atomic batch insert, duplicate detection, and audit row staging — splitting it would obscure the audit-before-mutation invariant.
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
+    const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const isProfileTarget = "profileId" in input;
 
     const [agent] = yield* tryAsync(() =>
-      ctx.db
+      scope.executor
         .select()
-        .from(agentRecords)
+        .from(scope.tables.agents)
         .where(
           and(
-            eq(agentRecords.id, input.agentId),
-            eq(agentRecords.organizationId, ctx.identity.organizationId),
+            eq(scope.tables.agents.id, input.agentId),
+            scope.orgScope("agents"),
           ),
         )
         .limit(1),
@@ -138,13 +133,13 @@ const createPermission = (input: CreatePermissionInput) =>
     // existence in-org, pre-check duplicates, then insert atomically.
     if (isProfileTarget) {
       const [profile] = yield* tryAsync(() =>
-        ctx.db
-          .select({ id: profileRecords.id })
-          .from(profileRecords)
+        scope.executor
+          .select({ id: scope.tables.profiles.id })
+          .from(scope.tables.profiles)
           .where(
             and(
-              eq(profileRecords.id, input.profileId),
-              eq(profileRecords.organizationId, ctx.identity.organizationId),
+              eq(scope.tables.profiles.id, input.profileId),
+              scope.orgScope("profiles"),
             ),
           )
           .limit(1),

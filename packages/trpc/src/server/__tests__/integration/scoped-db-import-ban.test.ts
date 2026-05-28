@@ -4,36 +4,34 @@ import path from "node:path";
 import { Glob } from "bun";
 
 // §AB-0010 — the five org-scoped tenant tables must be reached through `scopedDb`,
-// never imported directly into a server file. This CI ratchet is the enforcement
-// for that acceptance criterion: a named OR namespace import of the schema barrel's
-// tenant tables fails the test unless the file is on the (shrinking) allowlist.
+// never imported directly into a server file. This CI enforcement bans runtime
+// (non-type) imports of the schema barrel's tenant tables outside the permanent
+// exempt set. `import type` statements are excluded because type-only imports
+// cannot execute queries and are safe (e.g. serialize.ts uses them for typing).
 const SERVER_DIR = path.resolve(import.meta.dir, "../..");
 const TENANT_TABLES = ["items", "profiles", "agents", "permissions", "auditLogs"] as const;
 
-// Files that still import a tenant table directly, pending migration onto scopedDb.
-// This is the migration RATCHET: it shrinks as routers move to the scoped layer and
-// must be emptied when AB-0010 is complete. A NEW direct importer fails the test.
-const MIGRATION_ALLOWLIST = new Set<string>([
+// Files that are permanently exempt from the tenant-table import ban.
+// These files either do not execute tenant-table queries themselves or have a
+// documented reason why a direct import is correct (pre-auth, cascade, envelope).
+const PERMANENT_EXEMPT = new Set<string>([
+  // Write-only audit insert helper; org is always caller-stamped; never reads tenant rows.
   "audit.ts",
+  // Pre-auth agent/session lookup; no org context exists at the time these queries run.
   "auth.ts",
+  // Transaction cascade helpers; called by routers that own the tx boundary and orgId.
   "cascades.ts",
+  // RBAC gate helpers; explicit org filter on member + agents lookups.
   "init.ts",
-  "routers/access.ts",
-  "routers/access/pipeline.ts",
-  "routers/audit.ts",
-  "routers/auth.ts",
-  "routers/items.ts",
-  "routers/organizations.ts",
-  "routers/permissions.ts",
-  "routers/profiles.ts",
-  "serialize.ts",
+  // Crypto envelope helper; profile loaded by ID with caller-validated org ownership.
   "server-envelope.ts",
 ]);
 
 function importsTenantTable(source: string): boolean {
-  // Named import: flag when a tenant table is among the bindings.
+  // Named import (runtime only — exclude `import type`): flag when a tenant
+  // table is among the bindings.
   for (const m of source.matchAll(
-    /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*["']@abadge\/db\/schema["']/g,
+    /import\s*\{([^}]*)\}\s*from\s*["']@abadge\/db\/schema["']/g,
   )) {
     if (TENANT_TABLES.some((t) => new RegExp(`\\b${t}\\b`).test(m[1] ?? ""))) return true;
   }
@@ -52,14 +50,14 @@ function serverFilesImportingTenantTables(): string[] {
 }
 
 describe("§AB-0010 — tenant tables are reached only through scopedDb", () => {
-  test("no server file imports a tenant table directly outside the migration allowlist", () => {
-    const offenders = serverFilesImportingTenantTables().filter((f) => !MIGRATION_ALLOWLIST.has(f));
+  test("no server file imports a tenant table directly outside the permanent exempt set", () => {
+    const offenders = serverFilesImportingTenantTables().filter((f) => !PERMANENT_EXEMPT.has(f));
     expect(offenders).toEqual([]);
   });
 
-  test("the migration allowlist has no stale entries", () => {
+  test("the permanent exempt set has no stale entries", () => {
     const importing = new Set(serverFilesImportingTenantTables());
-    const stale = [...MIGRATION_ALLOWLIST].filter((f) => !importing.has(f)).sort();
+    const stale = [...PERMANENT_EXEMPT].filter((f) => !importing.has(f)).sort();
     expect(stale).toEqual([]);
   });
 });
