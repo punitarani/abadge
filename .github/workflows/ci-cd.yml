@@ -164,12 +164,57 @@ jobs:
           name: coverage-integration
           path: coverage/integration
         continue-on-error: true
+      # Restore the latest coverage from `main` (saved by the coverage-baseline
+      # job). Branch caches can read the default-branch cache, so this resolves
+      # to main's tip via the restore-keys prefix. A miss is fine — the comment
+      # script falls back to a "no baseline yet" note.
+      - name: Restore coverage baseline from main
+        id: baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            baseline/unit/lcov.info
+            baseline/integration/lcov.info
+          key: coverage-baseline-${{ github.sha }}
+          restore-keys: |
+            coverage-baseline-
       - name: Build coverage comment
+        env:
+          COVERAGE_BASELINE_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
         run: bun scripts/coverage/comment.ts
       - uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: coverage
           path: coverage-comment.md
+
+  coverage-baseline:
+    name: Coverage baseline (main)
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration]
+    # Push-to-main only: snapshot main's coverage into the Actions cache so PR
+    # runs can diff against it. PRs read this via the default-branch cache.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+          path: baseline/unit
+        continue-on-error: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: baseline/integration
+        continue-on-error: true
+      - name: Save coverage baseline to cache
+        uses: actions/cache/save@v4
+        # Stay green even if both artifact downloads were skipped (no lcov on
+        # the runner): a missing baseline this run just keeps the prior one.
+        continue-on-error: true
+        with:
+          path: |
+            baseline/unit/lcov.info
+            baseline/integration/lcov.info
+          key: coverage-baseline-${{ github.sha }}
 
   e2e:
     name: E2E (API + CLI + MCP)
