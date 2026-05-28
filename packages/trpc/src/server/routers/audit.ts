@@ -21,7 +21,7 @@ import {
   roleRank,
   scopedSessionProcedure,
 } from "../init";
-import { scopedDb, type ScopedDb } from "../scoped-db";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import {
   getAuditEventTypeFilters,
   LEGACY_AUDIT_EVENT_TYPES,
@@ -111,9 +111,7 @@ function buildAuditConditions(
   if (roleRank(ctx.role) < roleRank("admin")) {
     // §AB-0043 — an orphaned agent (userId null) sees the org's ownerless audit rows
     // (its own bucket); `eq(userId, null)` matches nothing under SQL NULL semantics.
-    conditions.push(
-      ctx.userId === null ? isNull(table.userId) : eq(table.userId, ctx.userId),
-    );
+    conditions.push(ctx.userId === null ? isNull(table.userId) : eq(table.userId, ctx.userId));
   }
 
   if (input.eventType) conditions.push(buildEventTypeCondition(table, input.eventType));

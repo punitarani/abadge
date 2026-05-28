@@ -12,12 +12,7 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, inArray, isNotNull, isNull, or } from "@abadge/db";
-import {
-  invitation,
-  member,
-  organization,
-  user,
-} from "@abadge/db/schema";
+import { invitation, member, organization, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
 import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
@@ -423,7 +418,10 @@ const listOrgs = Effect.gen(function* () {
         .where(
           and(
             inArray(profilesTable.organizationId, orgIds),
-            or(eq(profilesTable.storageMode, "server_managed"), isNotNull(profilesTable.wrappedRootKey)),
+            or(
+              eq(profilesTable.storageMode, "server_managed"),
+              isNotNull(profilesTable.wrappedRootKey),
+            ),
           ),
         ),
     );

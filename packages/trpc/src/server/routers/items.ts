@@ -30,7 +30,7 @@ import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../ini
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
 import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
-import { scopedDb, type ScopedDb } from "../scoped-db";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 import { decryptServerEnvelope, encryptServerEnvelope } from "../server-envelope";
 
@@ -192,12 +192,7 @@ const resolveTargetProfile = (
         scope.executor
           .select({ id: scope.tables.profiles.id, storageMode: scope.tables.profiles.storageMode })
           .from(scope.tables.profiles)
-          .where(
-            and(
-              eq(scope.tables.profiles.id, explicitProfileId),
-              scope.orgScope("profiles"),
-            ),
-          )
+          .where(and(eq(scope.tables.profiles.id, explicitProfileId), scope.orgScope("profiles")))
           .limit(1),
       );
       if (!profile) {
@@ -231,12 +226,7 @@ const resolveTargetProfile = (
       scope.executor
         .select({ id: scope.tables.profiles.id })
         .from(scope.tables.profiles)
-        .where(
-          and(
-            scope.orgScope("profiles"),
-            eq(scope.tables.profiles.storageMode, storageMode),
-          ),
-        )
+        .where(and(scope.orgScope("profiles"), eq(scope.tables.profiles.storageMode, storageMode)))
         .orderBy(
           sql`case when ${scope.tables.profiles.externalId} = 'default' then 0 else 1 end`,
           scope.tables.profiles.createdAt,
@@ -423,7 +413,10 @@ const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>
           updatedAt: scope.tables.items.updatedAt,
         })
         .from(scope.tables.items)
-        .innerJoin(scope.tables.permissions, eq(scope.tables.permissions.itemId, scope.tables.items.id))
+        .innerJoin(
+          scope.tables.permissions,
+          eq(scope.tables.permissions.itemId, scope.tables.items.id),
+        )
         .where(
           and(
             scope.orgScope("items"),
@@ -473,7 +466,13 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(scope.tables.items.id, itemId), eq(scope.tables.items.contentVersion, input.contentVersion), scope.orgScope("items")))
+          .where(
+            and(
+              eq(scope.tables.items.id, itemId),
+              eq(scope.tables.items.contentVersion, input.contentVersion),
+              scope.orgScope("items"),
+            ),
+          )
           .returning({ id: scope.tables.items.id }),
       );
 
@@ -512,7 +511,13 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
             contentVersion: item.contentVersion + 1,
             updatedAt: new Date(),
           })
-          .where(and(eq(scope.tables.items.id, itemId), eq(scope.tables.items.contentVersion, input.contentVersion), scope.orgScope("items")))
+          .where(
+            and(
+              eq(scope.tables.items.id, itemId),
+              eq(scope.tables.items.contentVersion, input.contentVersion),
+              scope.orgScope("items"),
+            ),
+          )
           .returning({ id: scope.tables.items.id }),
       );
 
@@ -610,7 +615,10 @@ const deleteItem = (itemId: string) =>
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         const txScope = scopedDb(tx, ctx.identity.organizationId);
-        await tx.update(txScope.tables.items).set({ deletedAt: now }).where(and(eq(txScope.tables.items.id, itemId), txScope.orgScope("items")));
+        await tx
+          .update(txScope.tables.items)
+          .set({ deletedAt: now })
+          .where(and(eq(txScope.tables.items.id, itemId), txScope.orgScope("items")));
 
         await txScope.insert("auditLogs", {
           userId: ctx.identity.userId,

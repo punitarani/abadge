@@ -279,9 +279,7 @@ const listProfiles = (orgId: string) =>
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "member"));
 
-    const rows = yield* tryAsync(() =>
-      scopedDb(ctx.db, orgId).findMany("profiles"),
-    );
+    const rows = yield* tryAsync(() => scopedDb(ctx.db, orgId).findMany("profiles"));
 
     return { profiles: rows.map(serializeProfile) };
   });
@@ -318,7 +316,13 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
           kdfParams: kdfParams as unknown as KdfParams,
           updatedAt: new Date(),
         })
-        .where(and(eq(scope.tables.profiles.id, profileId), isNull(scope.tables.profiles.wrappedRootKey), scope.orgScope("profiles")))
+        .where(
+          and(
+            eq(scope.tables.profiles.id, profileId),
+            isNull(scope.tables.profiles.wrappedRootKey),
+            scope.orgScope("profiles"),
+          ),
+        )
         .returning({ id: scope.tables.profiles.id }),
     );
 
@@ -522,7 +526,13 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
             keyVersion: txNextKeyVersion,
             updatedAt: new Date(),
           })
-          .where(and(eq(txScope.tables.profiles.id, profileId), eq(txScope.tables.profiles.keyVersion, locked.keyVersion), txScope.orgScope("profiles")))
+          .where(
+            and(
+              eq(txScope.tables.profiles.id, profileId),
+              eq(txScope.tables.profiles.keyVersion, locked.keyVersion),
+              txScope.orgScope("profiles"),
+            ),
+          )
           .returning({ id: txScope.tables.profiles.id });
 
         if (updated.length === 0) {
@@ -544,7 +554,13 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
               cryptoVersion: txNextKeyVersion,
               updatedAt: new Date(),
             })
-            .where(and(eq(txScope.tables.items.id, r.itemId), eq(txScope.tables.items.profileId, profileId), txScope.orgScope("items")));
+            .where(
+              and(
+                eq(txScope.tables.items.id, r.itemId),
+                eq(txScope.tables.items.profileId, profileId),
+                txScope.orgScope("items"),
+              ),
+            );
         }
 
         return txNextKeyVersion;
@@ -576,7 +592,11 @@ const deleteProfile = (profileId: string) =>
         .select({ id: scope.tables.items.id })
         .from(scope.tables.items)
         .where(
-          and(scope.orgScope("items"), eq(scope.tables.items.profileId, profileId), isNull(scope.tables.items.deletedAt)),
+          and(
+            scope.orgScope("items"),
+            eq(scope.tables.items.profileId, profileId),
+            isNull(scope.tables.items.deletedAt),
+          ),
         )
         .limit(1),
     );
@@ -608,7 +628,10 @@ const deleteProfile = (profileId: string) =>
           })
           .from(txScope.tables.permissions)
           .where(
-            and(txScope.orgScope("permissions"), eq(txScope.tables.permissions.profileId, profileId)),
+            and(
+              txScope.orgScope("permissions"),
+              eq(txScope.tables.permissions.profileId, profileId),
+            ),
           );
 
         if (grants.length > 0) {

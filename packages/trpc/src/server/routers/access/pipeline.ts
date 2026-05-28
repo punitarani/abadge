@@ -18,7 +18,7 @@ import { Effect } from "effect";
 import { buildAuditRow, logAgentAudit } from "../../audit";
 import { AgentRequestContextTag, tryAsync } from "../../effect";
 import { decodeServerManagedPayload } from "../../item-payload";
-import { scopedDb, type ScopedDb } from "../../scoped-db";
+import { type ScopedDb, scopedDb } from "../../scoped-db";
 import { decryptServerEnvelope } from "../../server-envelope";
 import { checkActionConstraint } from "./constraints";
 
@@ -536,12 +536,7 @@ export const resolveProfileAccess = (
       scope.executor
         .select({ id: scope.tables.profiles.id })
         .from(scope.tables.profiles)
-        .where(
-          and(
-            eq(scope.tables.profiles.id, profileId),
-            scope.orgScope("profiles"),
-          ),
-        )
+        .where(and(eq(scope.tables.profiles.id, profileId), scope.orgScope("profiles")))
         .limit(1),
     );
     if (!profileRow) {
@@ -703,7 +698,9 @@ export const resolveProfileAccess = (
           const txScope = scopedDb(tx, ctx.identity.agentOrganizationId);
           await tx.insert(mountReservations).values(pendingReservations);
           if (pendingAudits.length > 0) {
-            await tx.insert(txScope.tables.auditLogs).values(pendingAudits.map((a) => buildAuditRow(a)));
+            await tx
+              .insert(txScope.tables.auditLogs)
+              .values(pendingAudits.map((a) => buildAuditRow(a)));
           }
         }),
       );

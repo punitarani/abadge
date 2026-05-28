@@ -38,7 +38,7 @@ import { logAgentAudit } from "../audit";
 import { AgentRequestContextTag, runAgentEffect, strictSchema, tryAsync } from "../effect";
 import { agentProcedure, createTrpcRouter } from "../init";
 import { decodeServerManagedPayload } from "../item-payload";
-import { scopedDb, type ScopedDb } from "../scoped-db";
+import { type ScopedDb, scopedDb } from "../scoped-db";
 import {
   decryptServerEnvelope,
   loadProfileContentKey,
@@ -600,12 +600,7 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
       scope.executor
         .select({ id: scope.tables.profiles.id })
         .from(scope.tables.profiles)
-        .where(
-          and(
-            eq(scope.tables.profiles.id, input.profileId),
-            scope.orgScope("profiles"),
-          ),
-        )
+        .where(and(eq(scope.tables.profiles.id, input.profileId), scope.orgScope("profiles")))
         .limit(1),
     );
     if (!profile) {
@@ -643,7 +638,10 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
             scope.orgScope("items"),
             eq(scope.tables.items.profileId, input.profileId),
             isNull(scope.tables.items.deletedAt),
-            or(isNull(scope.tables.permissions.expiresAt), gt(scope.tables.permissions.expiresAt, now)),
+            or(
+              isNull(scope.tables.permissions.expiresAt),
+              gt(scope.tables.permissions.expiresAt, now),
+            ),
           ),
         )
         .limit(BULK_MOUNT_ENV_MAX_ITEMS + 1),

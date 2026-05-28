@@ -26,11 +26,7 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/shared";
 import { and, count, eq, gt, isNull, lt } from "@abadge/db";
-import {
-  agentEnrollmentTokens,
-  agentSessionChallenges,
-  agentSessions,
-} from "@abadge/db/schema";
+import { agentEnrollmentTokens, agentSessionChallenges, agentSessions } from "@abadge/db/schema";
 import { Effect } from "effect";
 import { auditDeniedSession, logBaseAudit, logSessionAudit } from "../audit";
 import {
