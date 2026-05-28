@@ -8,7 +8,7 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 // §AB-0011 — the RLS backstop only enforces for NON-superuser, NON-BYPASSRLS roles
 // (the default test role is superuser and bypasses RLS, which is why the rest of the
 // suite is unaffected by enabling RLS). This test provisions a restricted role like
-// the production `abadge_app` and proves: the org GUC isolates rows, a wrong/unset
+// the production `app_runtime` and proves: the org GUC isolates rows, a wrong/unset
 // context FAILS CLOSED (zero rows, never an unfiltered leak), and the role genuinely
 // cannot bypass RLS.
 const TEST_DB_URL =
@@ -150,6 +150,22 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
       return tx.select({ id: items.id }).from(items).where(eq(items.id, newId));
     });
     expect(committed.map((r) => r.id)).toEqual([newId]);
+
+    await truncateAll();
+  });
+
+  test("a bare non-transactional query fails closed — SET LOCAL never applied (AC3)", async () => {
+    // Seed a live row so we know there is data to leak if RLS failed open.
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId);
+    await seedServerItem(db, { userId: user.userId, orgId: org.orgId, label: "ac3" });
+
+    // SET LOCAL is transaction-scoped. A bare SELECT outside any explicit tx runs
+    // in its own implicit autocommit transaction where the GUC was never set.
+    // current_setting('app.current_org', true) returns NULL → NULL = NULL is never
+    // TRUE → zero rows, never an unfiltered leak.
+    const bare = await rlsDb.select({ id: items.id }).from(items);
+    expect(bare).toEqual([]);
 
     await truncateAll();
   });

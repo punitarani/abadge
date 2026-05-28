@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { and, type Database, eq } from "@abadge/db";
-import { auditLogs, mountReservations } from "@abadge/db/schema";
+import { toBase64 } from "@abadge/crypto/shared";
+import { and, type Database, eq, type Transaction } from "@abadge/db";
+import { auditLogs, items as itemRecords, mountReservations } from "@abadge/db/schema";
 import {
   seedAgent,
   seedAgentSession,
@@ -119,7 +120,7 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       get(target, prop, receiver) {
         if (prop === "transaction") {
           return (cb: (tx: unknown) => Promise<unknown>) =>
-            (target as Database).transaction((tx) => {
+            (target as Database).transaction((tx: Transaction) => {
               const hijackedTx = new Proxy(tx as object, {
                 get(t2, p2, r2) {
                   if (p2 === "insert") {
@@ -156,6 +157,76 @@ describe("access pipeline audit invariants (AB-0022)", () => {
       .from(auditLogs)
       .where(eq(auditLogs.agentId, agent.agentId));
     expect(audits).toHaveLength(0);
+  });
+
+  test("corrupt ciphertext on authorized server_managed read writes denied audit row", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "reveal_plaintext",
+      grantedBy: owner.userId,
+    });
+
+    // Overwrite ciphertext with random bytes so AES-GCM decryption fails at the
+    // crypto layer — the permission is valid, so the audit row must still appear.
+    await db
+      .update(itemRecords)
+      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
+      .where(eq(itemRecords.id, item.itemId));
+
+    await expect(caller.access.read({ itemId: item.itemId })).rejects.toThrow();
+
+    const audits = await db
+      .select({ result: auditLogs.result, eventType: auditLogs.eventType, meta: auditLogs.meta })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.itemId, item.itemId)));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.result).toBe("denied");
+    expect(audits[0]?.eventType).toBe("access.reveal");
+    const meta = audits[0]?.meta as Record<string, unknown> | null;
+    expect(meta?.reason).toBe("decrypt_failed");
+  });
+
+  test("corrupt ciphertext on mount redeem writes a denied audit row (decrypt_failed)", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const item = await seedServerItem(db, { userId: owner.userId, orgId: org.orgId });
+    const { agent, caller } = await seedAgentForAccess(org.orgId, owner.userId);
+    await seedPermission(db, {
+      orgId: org.orgId,
+      agentId: agent.agentId,
+      itemId: item.itemId,
+      capability: "mount_env",
+      grantedBy: owner.userId,
+    });
+
+    // Mint a mount handle while the ciphertext is still valid (writes an "allowed" row).
+    const { mountId } = await caller.access.use({ itemId: item.itemId, delivery: "env" });
+    expect(mountId).toBeTruthy();
+
+    // Corrupt the ciphertext, then redeem. Decryption fails at the crypto layer but
+    // the access was authorized, so §AB-0022 requires a denied audit row on the
+    // redeem path too — not just the access.read pipeline.
+    await db
+      .update(itemRecords)
+      .set({ serverCiphertext: toBase64(new Uint8Array(48)) })
+      .where(eq(itemRecords.id, item.itemId));
+
+    await expect(caller.access.redeemMount({ mountId })).rejects.toThrow();
+
+    const denied = await db
+      .select({ result: auditLogs.result, meta: auditLogs.meta })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.agentId, agent.agentId), eq(auditLogs.result, "denied")));
+    expect(denied).toHaveLength(1);
+    const meta = denied[0]?.meta as Record<string, unknown> | null;
+    expect(meta?.reason).toBe("decrypt_failed");
+    expect(meta?.via).toBe("mount_redeem");
   });
 
   test("an expired permission writes a result='expired' audit row", async () => {
