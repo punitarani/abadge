@@ -109,6 +109,24 @@ describe("server per-profile DEK envelope", () => {
     await expect(unwrapServerDek(MASTER, forged, WRAP_AAD)).rejects.toThrow(/32 bytes/);
   });
 
+  test("master-key (KEK) rotation rewraps the DEK with content untouched (acceptance #4)", async () => {
+    const oldMaster = MASTER;
+    const newMaster = toBase64(new Uint8Array(32).fill(0x5c));
+    const dek = generateServerDek();
+    const payload = new TextEncoder().encode(JSON.stringify(PAYLOAD));
+    const enc = await serverEncrypt(payload, toBase64(dek), 3, CONTENT_AAD);
+
+    // Master rotation rewraps the DEK only; content is never re-encrypted.
+    const wrappedOld = await wrapServerDek(oldMaster, dek, WRAP_AAD);
+    const dekRotated = await unwrapServerDek(oldMaster, wrappedOld, WRAP_AAD);
+    const wrappedNew = await wrapServerDek(newMaster, dekRotated, WRAP_AAD);
+
+    const dekAfter = await unwrapServerDek(newMaster, wrappedNew, WRAP_AAD);
+    const dec = await serverDecrypt(enc, toBase64(dekAfter), CONTENT_AAD);
+    expect(JSON.parse(new TextDecoder().decode(dec))).toEqual(PAYLOAD);
+    await expect(unwrapServerDek(oldMaster, wrappedNew, WRAP_AAD)).rejects.toThrow();
+  });
+
   test("v3 item round-trips: encrypt under the DEK, decrypt under the DEK", async () => {
     const dekKey = toBase64(DEK);
     const payload = new TextEncoder().encode(JSON.stringify(PAYLOAD));
