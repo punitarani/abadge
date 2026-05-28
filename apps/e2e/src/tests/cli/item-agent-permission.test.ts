@@ -36,7 +36,7 @@ describe("cli item + agent + permission flow", () => {
     // SDK-backed setup: org + profile + item + agent. Faster than driving
     // each through the CLI; the CLI is what we actually want to assert on.
     const seedClient = new AbadgeUserClient({ apiUrl, sessionToken: owner.sessionToken });
-    const org = await seedClient.createOrganization({
+    const org = await seedClient.orgs.create({
       name: "CLI Flow",
       slug: `cli-flow-${crypto.randomUUID()}`,
     });
@@ -46,7 +46,7 @@ describe("cli item + agent + permission flow", () => {
       orgId: org.id,
     });
     // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
-    const item = await scoped.createItem({
+    const item = await scoped.items.create({
       storageMode: "server_managed",
       payload: {
         v: 1,
@@ -56,7 +56,7 @@ describe("cli item + agent + permission flow", () => {
         fields: { value: "sk-cli-test" },
       },
     });
-    const agent = await scoped.createAgent({
+    const agent = await scoped.agents.create({
       name: "cli-perm-agent",
       kind: "local_cli",
       authMethod: "legacy_api_key",

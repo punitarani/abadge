@@ -24,7 +24,7 @@ async function buildAgentEnv(apiUrl: string): Promise<{
 }> {
   const owner = await signupAndLogin(apiUrl);
   const userClient = new AbadgeUserClient({ apiUrl, sessionToken: owner.sessionToken });
-  const org = await userClient.createOrganization({
+  const org = await userClient.orgs.create({
     name: "MCP",
     slug: `mcp-${crypto.randomUUID()}`,
   });
@@ -36,7 +36,7 @@ async function buildAgentEnv(apiUrl: string): Promise<{
   // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
 
   // Two items so list_items has to return something non-trivial
-  const itemA = await scoped.createItem({
+  const itemA = await scoped.items.create({
     storageMode: "server_managed",
     payload: {
       v: 1,
@@ -46,7 +46,7 @@ async function buildAgentEnv(apiUrl: string): Promise<{
       fields: { value: "sk-a" },
     },
   });
-  const itemB = await scoped.createItem({
+  const itemB = await scoped.items.create({
     storageMode: "server_managed",
     payload: {
       v: 1,
@@ -64,7 +64,7 @@ async function buildAgentEnv(apiUrl: string): Promise<{
   const publicJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
   const privateJwk = await crypto.subtle.exportKey("jwk", keypair.privateKey);
 
-  const agent = await scoped.createAgent({
+  const agent = await scoped.agents.create({
     name: "mcp-agent",
     kind: "local_mcp",
     authMethod: "public_key_session",
@@ -73,7 +73,7 @@ async function buildAgentEnv(apiUrl: string): Promise<{
 
   // Grant reveal_plaintext on both items so they appear in listForAgent
   for (const itemId of [itemA.id, itemB.id]) {
-    await scoped.createPermission({
+    await scoped.permissions.create({
       agentId: agent.agent.id,
       itemId,
       capabilities: ["reveal_plaintext"],
