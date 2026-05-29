@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { DashboardLoading } from "@/components/dashboard/dashboard-loading";
 import { MobileHeader } from "@/components/dashboard/mobile-header";
-import { DashboardGateSkeleton } from "@/components/dashboard/skeletons/dashboard-gate-skeleton";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
@@ -216,7 +216,7 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
   // visible during this gate — no full blank-screen flash on transient hiccups.
   const orgReady = hydrated && activeOrgId && orgs.some((o) => o.id === activeOrgId);
   if (sessionPending || !session || orgsQuery.isPending || !orgReady) {
-    return <DashboardGateSkeleton />;
+    return <DashboardLoading />;
   }
 
   return <>{children}</>;

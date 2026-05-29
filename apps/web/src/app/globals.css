@@ -47,6 +47,27 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --animate-logo-reveal: logo-reveal 2.4s ease-in-out infinite;
+}
+
+/* Dashboard boot loader: the wordmark unfurls left-to-right out of the logo,
+   holds, then retracts back into it — a branded, looping "workspace loading"
+   cue. clip-path reveals the text in place (the element keeps its full layout
+   width) so the logo + wordmark stay centered as a unit with no reflow. */
+@keyframes logo-reveal {
+  0% {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+    opacity: 0;
+  }
+  30%,
+  70% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    opacity: 1;
+  }
+  100% {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+    opacity: 0;
+  }
 }
 
 :root {
