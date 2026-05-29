@@ -8,7 +8,7 @@ export function Toaster(props: ToasterProps): React.ReactElement {
 
   return (
     <Sonner
-      theme={(resolvedTheme as ToasterProps["theme"]) ?? "dark"}
+      theme={resolvedTheme === "light" ? "light" : "dark"}
       richColors
       position="top-right"
       toastOptions={{

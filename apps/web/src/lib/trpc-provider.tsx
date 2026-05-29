@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 export function AppProviders({ children }: { children: React.ReactNode }): React.ReactElement {
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
       <TrpcReactProvider baseUrl={clientEnv.ABADGE_API_URL}>
         {children}
         <QueryDevtools />
