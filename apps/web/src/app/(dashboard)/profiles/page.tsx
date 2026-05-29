@@ -7,6 +7,7 @@ import Link from "next/link";
 import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { ProfileCreateDrawer } from "@/components/dashboard/profile-create-drawer";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,14 +153,7 @@ export default function ProfilesListPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={TABLE_COL_COUNT}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <TableRowsSkeleton columns={TABLE_COL_COUNT} rows={6} />
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell

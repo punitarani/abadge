@@ -7,6 +7,7 @@ import Link from "next/link";
 import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { CreateItemPanel } from "@/components/dashboard/create-item-panel";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,11 +239,7 @@ function ItemsTable({
         </TableHeader>
         <TableBody>
           {isPending ? (
-            <TableRow>
-              <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                Loading...
-              </TableCell>
-            </TableRow>
+            <TableRowsSkeleton columns={5} rows={6} action />
           ) : items.length === 0 ? (
             <TableRow>
               <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">

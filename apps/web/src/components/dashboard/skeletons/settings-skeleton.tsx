@@ -1,52 +1,5 @@
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TableCell, TableRow } from "@/components/ui/table";
-
-/**
- * Skeleton rows for a settings table body (members, API keys). Rendered inside
- * a real `<TableBody>` in the page (a client component) so the column widths
- * line up exactly with the loaded table — the loading state never shifts the
- * layout when data arrives. The trailing column mimics the right-aligned row
- * action (Remove / Revoke).
- */
-export function SettingsTableRowsSkeleton({
-  rows = 3,
-  columns,
-}: {
-  rows?: number;
-  columns: number;
-}): React.ReactElement {
-  return (
-    <>
-      {Array.from({ length: rows }).map((_, rowIdx) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: order-stable, length-stable skeleton
-        <TableRow key={rowIdx} className="hover:bg-transparent">
-          {Array.from({ length: columns }).map((_, colIdx) => {
-            const isLast = colIdx === columns - 1;
-            return (
-              <TableCell
-                // biome-ignore lint/suspicious/noArrayIndexKey: order-stable, length-stable skeleton
-                key={colIdx}
-                className={isLast ? "text-right" : undefined}
-              >
-                {isLast ? (
-                  <Skeleton className="ml-auto h-8 w-16" />
-                ) : (
-                  <Skeleton
-                    className="h-4"
-                    style={{
-                      width: colIdx === 0 ? "65%" : `${45 + ((rowIdx + colIdx) % 3) * 12}%`,
-                    }}
-                  />
-                )}
-              </TableCell>
-            );
-          })}
-        </TableRow>
-      ))}
-    </>
-  );
-}
 
 /**
  * Div-based table skeleton for the route-level fallback. Mirrors the loaded

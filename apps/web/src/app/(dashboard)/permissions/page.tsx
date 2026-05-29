@@ -14,6 +14,7 @@ import { debounce, useQueryStates } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CreatePermissionPanel } from "@/components/dashboard/create-permission-panel";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -269,11 +270,7 @@ function PermissionsTable({
         </TableHeader>
         <TableBody>
           {isPending ? (
-            <TableRow>
-              <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                Loading...
-              </TableCell>
-            </TableRow>
+            <TableRowsSkeleton columns={5} rows={6} action />
           ) : visibleGroups.length === 0 ? (
             <TableRow>
               <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
