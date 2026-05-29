@@ -74,13 +74,19 @@ A personal account is structurally a normal single-member org: it holds one prof
 
 ## `organizations.delete`
 
-**Tier:** `sessionProcedure`
+**Tier:** `sessionProcedure` (owner only)
 
 <ParamField path="orgId" type="string" required />
+<ParamField path="confirmName" type="string" required>
+  Must equal the org's current `name`. Re-checked server-side; a mismatch fails with `CONFIRMATION_MISMATCH`.
+</ParamField>
+<ParamField path="password" type="string" required>
+  The caller's account password, re-verified against their credential account. A wrong password fails with `REAUTH_FAILED`; an account with no password set (social-login only) fails with `REAUTH_PASSWORD_REQUIRED`.
+</ParamField>
 
 **Returns:** `{ ok: true }`.
 
-Cascades to agents, permissions, profiles, and items. Audit entries persist.
+Permanent and irreversible. Cascades to agents, permissions, profiles, and items — deletion is no longer blocked when items exist. Audit entries persist (allowed and denied attempts are both logged).
 
 ## `organizations.members.list`
 

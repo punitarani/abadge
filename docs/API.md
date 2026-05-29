@@ -108,7 +108,17 @@ The principal is the bearer token (or IP for unauthenticated routes).
 | `GET` | `/v1/orgs` | session | List organizations the caller belongs to. |
 | `GET` | `/v1/orgs/{orgId}` | session | Fetch a single organization. |
 | `PATCH` | `/v1/orgs/{orgId}` | session (admin) | Update name, slug, or logo. |
-| `DELETE` | `/v1/orgs/{orgId}` | session (owner) | Soft-delete the organization. |
+| `DELETE` | `/v1/orgs/{orgId}` | session (owner) | Permanently delete the organization and everything it owns. |
+
+`DELETE /v1/orgs/{orgId}` is irreversible and cascades every item, profile, agent, and permission in the org (audit logs are preserved). It no longer blocks when items exist; instead it requires two gates, both re-checked server-side:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `orgId` | string | yes | Organization to delete (path param). |
+| `confirmName` | string | yes | Must equal the org's current `name`. Mismatch → `CONFIRMATION_MISMATCH` (400). |
+| `password` | string | yes | The caller's account password, re-verified against their credential account. Wrong password → `REAUTH_FAILED` (401); account with no password set (social-login only) → `REAUTH_PASSWORD_REQUIRED` (400). |
+
+Every attempt (allowed or denied) is written to the audit log.
 
 Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs`, `GET /v1/orgs/{orgId}`) carry an `isPersonal` boolean. A personal account is a normal single-member org flagged via `organization.metadata`; it is presented in the dashboard as a personal account, holds one profile by default (more allowed), can hold many agents, and may coexist with team orgs the user creates or joins later.
 

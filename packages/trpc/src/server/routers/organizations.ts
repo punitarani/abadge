@@ -1,5 +1,6 @@
 import { seedOrgWithOwnerProfile } from "@abadge/auth";
 import {
+  BadRequestError,
   ConflictError,
   ForbiddenError,
   INVITE_TOKEN_PREFIX,
@@ -9,6 +10,7 @@ import {
   PERSONAL_ORG_METADATA,
   RateLimitError,
   SuccessResultSchema,
+  UnauthorizedError,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "@abadge/db";
@@ -17,6 +19,7 @@ import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
 import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
 import { onMemberRemoved } from "../cascades";
+import type { SessionRequestContext } from "../context";
 import {
   isUniqueViolation,
   runSessionEffect,
@@ -49,6 +52,17 @@ const UpdateOrganizationSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
   name: Schema.optional(Schema.String.pipe(Schema.minLength(1), Schema.maxLength(255))),
   logo: Schema.optional(Schema.String),
+});
+
+// Account deletion is irreversible and cascades every item, profile, agent, and
+// permission in the org. Two gates guard it: a typed-name confirmation
+// (`confirmName` must equal the org's current name) and re-authentication
+// (`password` is re-verified against the caller's credential account). Both are
+// re-checked server-side so a bypassed client cannot skip them.
+const DeleteOrganizationSchema = Schema.Struct({
+  orgId: Schema.String.pipe(Schema.minLength(1)),
+  confirmName: Schema.String.pipe(Schema.minLength(1)),
+  password: Schema.String.pipe(Schema.minLength(1)),
 });
 
 const CreateInviteSchema = Schema.Struct({
@@ -524,44 +538,70 @@ const updateOrg = (input: Schema.Schema.Type<typeof UpdateOrganizationSchema>) =
     return { ok: true };
   });
 
-const deleteOrg = (orgId: string) =>
+const deleteOrg = (input: { orgId: string; confirmName: string; password: string }) =>
   Effect.gen(function* () {
+    const { orgId, confirmName, password } = input;
     const ctx = yield* SessionRequestContextTag;
+
+    const denied = (reason: string) =>
+      logSessionAudit({
+        organizationId: ctx.identity.organizationId,
+        userId: ctx.identity.userId,
+        eventType: "org.delete",
+        result: "denied",
+        ipAddress: ctx.ipAddress,
+        meta: { reason, targetOrgId: orgId },
+      });
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner")).pipe(
       Effect.tapError((err) =>
-        err instanceof ForbiddenError
-          ? logSessionAudit({
-              organizationId: ctx.identity.organizationId,
-              userId: ctx.identity.userId,
-              eventType: "org.delete",
-              result: "denied",
-              ipAddress: ctx.ipAddress,
-              meta: { reason: "insufficient_role", targetOrgId: orgId },
-            })
-          : Effect.void,
+        err instanceof ForbiddenError ? denied("insufficient_role") : Effect.void,
       ),
     );
 
-    // §AB-0011 — `items` is under FORCE RLS; scopedDb.run() opens a tx and sets the
-    // org GUC so this guard read sees the org's rows under the runtime role (otherwise
-    // it returns zero and a non-empty org would be deletable, bypassing ORG_NOT_EMPTY).
-    const activeItems = yield* tryAsync(() =>
-      scopedDb(ctx.db, orgId).run((scope) =>
-        scope.findMany("items", { where: isNull(scope.tables.items.deletedAt), limit: 1 }),
-      ),
+    // Typed-name confirmation (GitHub-style). Re-checked here so a bypassed
+    // client cannot skip it. Compared against the org's current name.
+    const [orgRow] = yield* tryAsync(() =>
+      ctx.db
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, orgId))
+        .limit(1),
     );
-
-    if (activeItems.length > 0) {
+    if (!orgRow) {
       return yield* Effect.fail(
-        new ConflictError({
-          code: "ORG_NOT_EMPTY",
-          message: "Organization still has active items",
-          hint: "Delete all items in this organization before deleting it.",
+        new NotFoundError({
+          code: "NOT_FOUND",
+          message: "Organization not found",
+          hint: "The organization may have already been deleted.",
+        }),
+      );
+    }
+    if (confirmName !== orgRow.name) {
+      yield* denied("name_mismatch");
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "CONFIRMATION_MISMATCH",
+          message: "Confirmation text does not match the organization name",
+          hint: `Type the exact name "${orgRow.name}" to confirm deletion.`,
         }),
       );
     }
 
+    // Re-authentication: re-verify the caller's password against their
+    // credential account. Owning the org is not enough — a hijacked session
+    // must not be able to wipe the vault without proving the password again.
+    yield* reauthenticatePassword(ctx, password).pipe(
+      Effect.tapError((err) =>
+        err instanceof UnauthorizedError || err instanceof BadRequestError
+          ? denied("reauth_failed")
+          : Effect.void,
+      ),
+    );
+
+    // Deleting the organization row cascades to items, profiles, agents, and
+    // permissions via their `onDelete: "cascade"` FKs. audit_logs have no FK and
+    // are intentionally preserved (append-only). Items no longer block deletion.
     yield* tryAsync(() => ctx.db.delete(organization).where(eq(organization.id, orgId)));
 
     yield* logSessionAudit({
@@ -573,6 +613,55 @@ const deleteOrg = (orgId: string) =>
     });
 
     return { ok: true };
+  });
+
+interface AuthAccount {
+  providerId: string;
+  password?: string | null;
+}
+
+/**
+ * Re-verify the caller's account password via Better Auth. Fails with
+ * UnauthorizedError on a wrong password and BadRequestError when the account
+ * has no password to verify against (social-login-only accounts).
+ */
+const reauthenticatePassword = (
+  ctx: { auth: SessionRequestContext["auth"]; identity: SessionRequestContext["identity"] },
+  password: string,
+) =>
+  Effect.gen(function* () {
+    const authContext = (yield* tryAsync(() => ctx.auth.$context)) as {
+      internalAdapter: { findAccounts: (userId: string) => Promise<Array<AuthAccount>> };
+      password: { verify: (data: { password: string; hash: string }) => Promise<boolean> };
+    };
+
+    const accounts = yield* tryAsync(() =>
+      authContext.internalAdapter.findAccounts(ctx.identity.userId),
+    );
+    const credential = accounts.find((a) => a.providerId === "credential" && a.password);
+
+    if (!credential?.password) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "REAUTH_PASSWORD_REQUIRED",
+          message: "Account has no password set",
+          hint: "Set an account password (via password reset) before deleting, so this action can be re-authenticated.",
+        }),
+      );
+    }
+
+    const valid = yield* tryAsync(() =>
+      authContext.password.verify({ password, hash: credential.password as string }),
+    );
+    if (!valid) {
+      return yield* Effect.fail(
+        new UnauthorizedError({
+          code: "REAUTH_FAILED",
+          message: "Re-authentication failed",
+          hint: "Enter your current account password to confirm this action.",
+        }),
+      );
+    }
   });
 
 const listMembers = (orgId: string) =>
@@ -1150,9 +1239,9 @@ export const organizationsRouter = createTrpcRouter({
     .meta({
       openapi: { method: "DELETE", path: "/orgs/{orgId}", tags: ["organizations"], protect: true },
     })
-    .input(strictSchema(OrgIdSchema))
+    .input(strictSchema(DeleteOrganizationSchema))
     .output(strictSchema(SuccessResultSchema))
-    .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteOrg(input.orgId))),
+    .mutation(({ ctx, input }) => runSessionEffect(ctx, deleteOrg(input))),
 
   members: createTrpcRouter({
     list: sessionProcedure
