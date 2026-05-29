@@ -64,12 +64,27 @@ export function evaluateCaching(config: HyperdriveConfigResponse): {
 }
 
 /**
- * Build the wrangler argv. NOTE: `wrangler hyperdrive get <id>` prints bare JSON
- * unconditionally — there is no `--json` flag (passing one makes wrangler exit
- * non-zero with "Unknown argument"). Kept pure so a test can assert the argv.
+ * Build the wrangler argv. NOTE: `wrangler hyperdrive get <id>` has no `--json`
+ * flag (passing one makes wrangler exit non-zero with "Unknown argument"); it
+ * prints the config as JSON, but PREFIXED with an "⛅️ wrangler <version>" startup
+ * banner on stdout — strip it with extractHyperdriveJson before parsing. Kept
+ * pure so a test can assert the argv.
  */
 export function wranglerGetArgs(id: string): string[] {
   return ["wrangler", "hyperdrive", "get", id];
+}
+
+/**
+ * Extract the JSON object from `wrangler hyperdrive get` stdout. Wrangler prints
+ * an "⛅️ wrangler <version>" startup banner to stdout before the payload for
+ * operational subcommands (even under CI / non-TTY), so parsing the whole stream
+ * would throw on the leading banner and spuriously fail the gate closed. Slice
+ * from the first "{"; a no-op when no banner is present. Pure so a test can
+ * assert the banner is stripped.
+ */
+export function extractHyperdriveJson(stdout: string): string {
+  const start = stdout.indexOf("{");
+  return (start === -1 ? stdout : stdout.slice(start)).trim();
 }
 
 async function main(): Promise<void> {
@@ -92,7 +107,18 @@ async function main(): Promise<void> {
     env.CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
   }
 
-  const result = Bun.spawnSync(wranglerGetArgs(id), { stdout: "pipe", stderr: "pipe", env });
+  // `wrangler` is an apps/api devDependency, not a global. This gate is invoked
+  // directly (`bun .../check-hyperdrive-cache.ts`), NOT via a package script, so
+  // node_modules/.bin is not on PATH and a bare `wrangler` spawn fails with
+  // "Executable not found in $PATH" (the regression that has blocked deploy-api
+  // since this gate was added). `bunx` resolves the locally-installed binary —
+  // present after `bun install`, so it never hits the network — while keeping
+  // wranglerGetArgs a pure, unit-testable argv.
+  const result = Bun.spawnSync(["bunx", ...wranglerGetArgs(id)], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env,
+  });
 
   if (result.exitCode !== 0) {
     // wrangler is a hard dependency of the very next deploy step, so its absence
@@ -102,7 +128,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const raw = result.stdout.toString().trim();
+  const raw = extractHyperdriveJson(result.stdout.toString());
   let hyperdriveConfig: HyperdriveConfigResponse;
   try {
     hyperdriveConfig = JSON.parse(raw) as HyperdriveConfigResponse;
