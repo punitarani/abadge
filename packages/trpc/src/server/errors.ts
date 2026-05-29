@@ -4,6 +4,7 @@ import {
   getDomainErrorStatus,
   isDomainError,
   parseErrorToValidationError,
+  ServiceUnavailableError,
   type ValidationIssueSchema,
 } from "@abadge/core";
 import { type TRPC_ERROR_CODE_KEY, TRPCError } from "@trpc/server";
@@ -30,9 +31,46 @@ export function mapStatusToTrpcCode(status: number): TRPC_ERROR_CODE_KEY {
       return "CONFLICT";
     case 429:
       return "TOO_MANY_REQUESTS";
+    case 503:
+      return "SERVICE_UNAVAILABLE";
     default:
       return "INTERNAL_SERVER_ERROR";
   }
+}
+
+// Postgres SQLSTATEs and driver/socket error codes that signal a transient
+// capacity or connectivity failure — the request did nothing wrong; the
+// database is at its connection limit or briefly unreachable. These map to a
+// retryable 503 instead of an opaque 500. SQLSTATE class `08` (connection
+// exceptions) is matched by prefix; the rest are enumerated.
+const RETRYABLE_DB_ERROR_CODES: ReadonlySet<string> = new Set([
+  "53300", // too_many_connections
+  "53400", // configuration_limit_exceeded
+  "57014", // query_canceled — statement_timeout fired (slot was held too long)
+  "57P01", // admin_shutdown
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now
+  // postgres-js / node socket-level connection failures
+  "CONNECT_TIMEOUT",
+  "CONNECTION_CLOSED",
+  "CONNECTION_ENDED",
+  "CONNECTION_DESTROYED",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+
+function isRetryableDbError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  if (typeof code !== "string") {
+    return false;
+  }
+  // SQLSTATE class 08 = connection_exception (08000, 08003, 08006, ...).
+  return code.startsWith("08") || RETRYABLE_DB_ERROR_CODES.has(code);
 }
 
 const fiberFailureCauseSymbol = Symbol.for("effect/Runtime/FiberFailure/Cause");
@@ -80,6 +118,27 @@ export function toTrpcError(error: unknown): TRPCError {
       code: mapStatusToTrpcCode(getDomainErrorStatus(validation)),
       message: validation.message,
       cause: validation,
+    });
+  }
+
+  // Transient database capacity/connectivity failures become a retryable 503
+  // (with a Retry-After hint) rather than an opaque 500, so clients back off
+  // and the connection pool drains. Routed through a ServiceUnavailableError so
+  // it carries the standard {code,message,hint,meta} envelope. The raw driver
+  // error is intentionally dropped from the wire (its SQLSTATE/socket code is
+  // captured by isRetryableDbError, and capacity blips are an expected
+  // operational outcome, not a 500-class bug worth Sentry noise).
+  if (isRetryableDbError(cause)) {
+    const serviceUnavailable = new ServiceUnavailableError({
+      code: "SERVICE_UNAVAILABLE",
+      message: "Service temporarily unavailable.",
+      hint: "The database is at capacity or briefly unreachable. Retry after a short backoff.",
+      meta: { retryAfterSeconds: 2 },
+    });
+    return new TRPCError({
+      code: mapStatusToTrpcCode(getDomainErrorStatus(serviceUnavailable)),
+      message: serviceUnavailable.message,
+      cause: serviceUnavailable,
     });
   }
 
