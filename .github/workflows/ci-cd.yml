@@ -227,10 +227,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      # Build the CLI binary up-front so cli/*.test.ts spawns the compiled
-      # artifact (faster, and exercises the same binary users run).
-      - name: Build CLI binary
-        run: bun run --cwd packages/cli build
+      # `bun run test:e2e` is `turbo test:e2e`, whose dependsOn builds the CLI
+      # and MCP binaries (@abadge/cli#build, @abadge/mcp#build) first; the e2e
+      # harness auto-detects and spawns those compiled artifacts. No separate
+      # build step needed.
+      # The two compile tasks are cache: false, but their `^build` library
+      # dependencies (e.g. @abadge/sdk) are cacheable — persist .turbo so those
+      # hit the local cache between runs even when the remote cache is unset.
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-e2e-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
       - name: Run e2e tests
         run: bun run test:e2e
 

@@ -1,5 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "packages/config/tsconfig.base.json",
+    "packages/config/tsconfig.nextjs.json",
+    "packages/config/tsconfig.worker.json"
+  ],
   "globalPassThroughEnv": [
     "ABADGE_API_URL",
     "ABADGE_APP_URL",
@@ -25,6 +30,16 @@
         "NEXT_PUBLIC_APP_URL"
       ],
       "outputs": [".next/**", ".open-next/**", "dist/**"]
+    },
+    "@abadge/cli#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "cache": false
+    },
+    "@abadge/mcp#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "cache": false
     },
     "build:workers": {
       "env": [

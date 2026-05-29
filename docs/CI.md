@@ -62,6 +62,27 @@ Configure the repository:
 
 If these are unset, Turbo falls back to local caching only inside each job (no cross-run sharing).
 
+### Platform-specific builds are not remotely cached
+
+Turbo's task hash does **not** include the host OS or architecture. The CLI and
+MCP builds (`@abadge/cli#build`, `@abadge/mcp#build`) run `bun build --compile`,
+which emits a native binary for the current platform. Sharing those across a
+remote cache would let a macOS-built binary be restored onto a Linux runner (or
+vice versa) under the same hash. Both tasks therefore set `"cache": false` in
+`turbo.json` so the binary is always rebuilt for the running platform. Their
+`^build` dependencies (the SDK and other library packages) remain cacheable, so
+only the final compile step repeats. The `e2e` job runs `bun run test:e2e`,
+whose `dependsOn` builds both binaries via Turbo and whose harness auto-detects
+the compiled artifacts — there is no separate binary-build step.
+
+### Shared tsconfig invalidation
+
+The shared TypeScript configs in `packages/config/tsconfig.*.json` are extended
+by packages via relative path, not as a workspace dependency, so Turbo would not
+otherwise track them. They are listed in `globalDependencies` so a change to any
+shared config busts every task's cache (local and remote) and avoids serving a
+stale typecheck or build.
+
 ## Deploy jobs and worker secrets
 
 `deploy-api` / `deploy-web` (push to `main` only) run each app's `deploy` script under
