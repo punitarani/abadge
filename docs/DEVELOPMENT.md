@@ -52,6 +52,25 @@ cd apps/api && doppler run -- bun run deploy
 cd apps/web && doppler run -- bun run deploy
 ```
 
+### Claude Code cloud sessions
+
+[Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web) sessions run in a
+fresh VM with no access to your local Doppler auth, so secrets come from a dedicated Doppler config
+plus a committed SessionStart hook.
+
+* **Doppler config `dev_agents`** — a branch config under the `dev` environment. It inherits all of
+  `dev` except `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY`, which are regenerated so cloud agents never
+  use the real `dev` session/encryption keys.
+* **Cloud environment config** (set in the claude.ai/code environment UI, not the repo):
+  * Network access **Full** — Doppler's API is not in the default allowlist.
+  * Environment variables: a read-only Doppler service token scoped to `dev_agents`, as
+    `DOPPLER_TOKEN`. No secret values live here.
+  * Setup script: installs the Doppler CLI, runs `bun install`, and creates the local `abadge`
+    Postgres role/db.
+* **`.claude/settings.json` + `scripts/cloud/load-doppler-env.sh`** — a SessionStart hook that, in
+  cloud sessions only (`CLAUDE_CODE_REMOTE=true`), downloads the `dev_agents` secrets into
+  `$CLAUDE_ENV_FILE` so they are ambient for every command. It is a no-op in local sessions.
+
 ## Database
 
 ```bash
