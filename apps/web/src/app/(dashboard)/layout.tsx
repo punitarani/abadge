@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
@@ -12,7 +12,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { VaultProvider } from "@/lib/vault-context";
+import { useVault, VaultProvider } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 import { decideLayoutAction, type OrgSummary } from "./layout-triage";
 
@@ -83,11 +83,14 @@ export default function DashboardLayout({
  */
 function DashboardGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { lockAll } = useVault();
   const { data: session, isPending: sessionPending } = authClient.useSession();
   // Store selectors (not destructuring) so the gate only re-renders when
   // these specific fields change, not on every unrelated store update.
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
+  const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
   const [hydrated, setHydrated] = useState(false);
 
   // Wait for Zustand persist rehydration
@@ -180,6 +183,15 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
             <Button
               variant="outline"
               onClick={async () => {
+                // Full parity with nav-user.tsx's handleSignOut so the recovery
+                // path leaves nothing behind for the next user on this browser:
+                // lock in-memory vault secrets, then clear the persisted org
+                // context + query cache before signing out. A stale org header
+                // is what drives most "couldn't load organizations" states, so
+                // it must not survive sign-out either.
+                lockAll();
+                clearActiveOrg();
+                queryClient.clear();
                 await authClient.signOut();
                 router.push("/login");
               }}

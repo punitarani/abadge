@@ -1,4 +1,4 @@
-import { ForbiddenError, UnauthorizedError } from "@abadge/core";
+import { UnauthorizedError } from "@abadge/core";
 import { and, asc, eq } from "@abadge/db";
 import { member } from "@abadge/db/schema";
 import { Effect } from "effect";
@@ -25,14 +25,19 @@ async function resolveOptionalOrgId(
       .from(member)
       .where(and(eq(member.userId, userId), eq(member.organizationId, orgIdHeader)))
       .limit(1);
-    if (!hit) {
-      throw new ForbiddenError({
-        code: "ORG_MEMBERSHIP_REQUIRED",
-        message: "Not a member of the requested organization",
-        hint: "Switch to an organization you belong to.",
-      });
-    }
-    return orgIdHeader;
+    // Honor the header only when the caller actually belongs to that org.
+    if (hit) return orgIdHeader;
+    // A header pointing at an org the caller is NOT a member of is almost always
+    // a STALE `activeOrgId` persisted in the browser from a previous account
+    // (the `abadge-org` store survives sign-out, account deletion, and account
+    // switches). For bootstrap-safe routes this must NOT be fatal: throwing
+    // ORG_MEMBERSHIP_REQUIRED here makes organizations.list/create/createPersonal
+    // fail, which strands a freshly-signed-up user on the dashboard error card
+    // with no recovery — those are the very calls the client uses to discover
+    // and repair its org context. Treat a foreign header as "no org context"
+    // and fall through to membership resolution, exactly as if no header were
+    // sent (extends the §ORG2 best-effort contract). Org-SCOPED routes still
+    // reject a foreign header strictly via resolveUserOrgId in auth.ts.
   }
 
   const memberships = await ctx.db
@@ -41,9 +46,10 @@ async function resolveOptionalOrgId(
     .where(eq(member.userId, userId))
     .orderBy(asc(member.createdAt));
 
-  // Zero → null (fresh signup). One → auto-resolve. Two-or-more + no header →
-  // null; bootstrap-safe routes (userProcedure) must handle organizationId=null.
-  // Deliberately NOT throwing here — that was the multi-org bootstrap trap (§ORG2).
+  // Zero → null (fresh signup). One → auto-resolve. Two-or-more, or a foreign
+  // header that fell through above → null; bootstrap-safe routes (userProcedure)
+  // must handle organizationId=null. Deliberately NOT throwing here — that was
+  // the multi-org bootstrap trap (§ORG2).
   if (memberships.length === 1) {
     const [only] = memberships as [(typeof memberships)[number]];
     return only.organizationId;
