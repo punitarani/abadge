@@ -96,6 +96,10 @@ export const AUDIT_EVENT_TYPES = [
   // personal user API key events (management-surface credentials, prefix `abu_`)
   "user_api_key.create",
   "user_api_key.revoke",
+  // auth.md agentic registration (anonymous → user-claimed OTP)
+  "account.register",
+  "account.claim",
+  "account.claim_complete",
   // Expired-at-auth-time rejection (passive expiry, not admin-initiated revocation).
   // Distinct from user_api_key.revoke so audit queries can distinguish the two.
   "user_api_key.expire",
@@ -201,12 +205,34 @@ export const INVITE_TOKEN_PREFIX = "abi_";
  * reveal or mount secret values.
  */
 export const USER_API_KEY_PREFIX = "abu_";
+/** auth.md anonymous-registration claim token (held by the registering agent, single-use). */
+export const AGENT_CLAIM_PREFIX = "clm_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;
 export const AGENT_SESSION_TTL_MS = 15 * 60 * 1000;
 export const AGENT_SESSION_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 export const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/** auth.md claim token lifetime — the window a human has to claim an agent-created account. */
+export const AGENT_CLAIM_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+/** Lifetime of the 6-digit OTP emailed during the claim ceremony. */
+export const AGENT_CLAIM_OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+/** Max OTP verification attempts before a claim must be restarted. */
+export const AGENT_CLAIM_OTP_MAX_ATTEMPTS = 5;
+/**
+ * Synthetic, non-routable email domain (RFC 6761 `.invalid`) for the
+ * placeholder user an auth.md account holds before a human claims it. The real
+ * address is bound at claim-complete; nothing is ever sent to this domain.
+ */
+export const UNCLAIMED_ACCOUNT_EMAIL_DOMAIN = "unclaimed.abadge.invalid";
+/**
+ * Advertised auth.md scopes (informational on the wire). The `abu_` credential
+ * already authenticates the personal account's own vault; the claim binds a
+ * verified human owner to that account rather than widening authority.
+ */
+export const AGENT_PRECLAIM_SCOPES = ["abadge:account.read"] as const;
+export const AGENT_POSTCLAIM_SCOPES = ["abadge:account.read", "abadge:account.manage"] as const;
 
 /** §AGC1a — Maximum agents per organization. */
 export const MAX_AGENTS_PER_ORG = 500;
@@ -282,6 +308,14 @@ export type ErrorCode =
   | "AGENT_SESSION_NOT_FOUND"
   | "INVALID_BOOTSTRAP_TOKEN"
   | "BOOTSTRAP_TOKEN_EXPIRED"
+  | "INVALID_CLAIM_TOKEN"
+  | "CLAIM_TOKEN_EXPIRED"
+  | "CLAIM_ALREADY_COMPLETED"
+  | "CLAIM_EMAIL_IN_USE"
+  | "OTP_NOT_REQUESTED"
+  | "OTP_INVALID"
+  | "OTP_EXPIRED"
+  | "OTP_ATTEMPTS_EXCEEDED"
   | "PERMISSION_NOT_FOUND"
   | "PERMISSION_ALREADY_EXISTS"
   | "PERMISSION_DENIED"

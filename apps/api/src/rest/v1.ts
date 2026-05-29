@@ -85,7 +85,7 @@ function getRoutes(): CompiledRoute[] {
 }
 
 /** Map a tRPC error code or domain error to an HTTP status. */
-function statusFromError(err: unknown): number {
+export function statusFromError(err: unknown): number {
   if (isDomainError(err)) return getDomainErrorStatus(err);
   if (err instanceof TRPCError) {
     switch (err.code) {
@@ -119,7 +119,7 @@ interface ErrorEnvelope {
   meta: Record<string, unknown> | null;
 }
 
-function errorEnvelope(err: unknown): ErrorEnvelope {
+export function errorEnvelope(err: unknown): ErrorEnvelope {
   // tRPC's TRPCError wraps the original cause; unwrap one level so domain
   // errors thrown inside procedures surface with their full envelope.
   const cause: unknown = err instanceof TRPCError ? (err.cause ?? err) : err;

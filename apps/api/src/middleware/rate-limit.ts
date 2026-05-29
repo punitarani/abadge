@@ -109,6 +109,9 @@ function normalizePath(path: string): string {
   if (path.startsWith("/trpc/")) return "/trpc";
   if (path.startsWith("/api/auth/")) return "/api/auth";
   if (path.startsWith("/api/v1/")) return "/api/v1";
+  // Bucket bare /agent/auth with its sub-paths so the claim ceremony shares one
+  // counter and stays isolated from any future /agent/* surface.
+  if (path === "/agent/auth" || path.startsWith("/agent/auth/")) return "/agent/auth";
   const segments = path.split("/").filter(Boolean);
   return segments.length > 0 ? `/${segments[0]}` : "/";
 }

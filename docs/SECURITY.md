@@ -125,6 +125,33 @@ listed, and revoked from the dashboard org Settings page.
 - A personal API key cannot create or revoke other API keys (that requires a
   real browser session).
 
+### auth.md Agentic Registration (anonymous → user-claimed)
+
+Lets an agent self-register a **personal account** that a human later claims via
+an emailed OTP (WorkOS [auth.md](https://workos.com/auth-md) `anonymous` flow).
+
+```
+1. POST /agent/auth  → unclaimed personal account (placeholder-email owner) + abu_ personal API key + clm_ claim token
+2. POST /agent/auth/claim {claim_token, email}       → 6-digit OTP emailed to the owner
+3. POST /agent/auth/claim/complete {claim_token, otp}→ the owner's email is set + verified in place
+```
+
+Security properties:
+
+- **Credential is a least-privilege `abu_` personal API key** — a management
+  session bound to the account, never an agent identity, so a leak cannot reveal
+  or mount secrets and cannot escape the account's own org.
+- **Unverified until claimed**: the placeholder owner has a non-routable
+  `@unclaimed.abadge.invalid` email and `emailVerified=false`, so it cannot be
+  logged into; the OTP ceremony binds (and verifies) the real human's email.
+- **OTP**: 6 digits, hashed at rest, 10-min TTL, atomically-counted bounded
+  attempts; plaintext lives only in the email. **Claim token** `clm_`, hashed,
+  single-use, 24-h TTL.
+- **No silent merge**: claiming an email already tied to an account is rejected
+  (`CLAIM_EMAIL_IN_USE`); every denied claim is audited.
+- **Abuse control**: `/agent/auth*` is rate-limited (60/min/IP); expired
+  unclaimed accounts (org + placeholder user) are garbage-collected.
+
 ### Bearer Resolution Order
 
 Procedures resolve `Authorization: Bearer <token>` by prefix:

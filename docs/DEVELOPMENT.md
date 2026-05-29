@@ -97,6 +97,29 @@ This starts:
 * API worker on `:8787`
 * web app on `:3000`
 
+### Seeding demo data
+
+With the stack running, `bun run seed` populates a ready-to-use demo tenant by
+driving the real public API (the same path as the e2e golden-path test): it
+creates a verified user, a personal org with its default profile, a
+`server_managed` item, a legacy-API-key CLI agent and an Ed25519 keypair MCP
+agent, and grants both `reveal_plaintext` on the item. It then prints every
+credential needed to exercise the web UI, CLI (`--token-stdin`), API, and MCP
+server.
+
+```bash
+bun run seed                      # defaults: dev@abadge.local / DevPassword123!
+bun run seed -- --email me@x.dev  # override login (also --password, --name)
+```
+
+It reads `ABADGE_API_URL` (default `http://localhost:8787`) and `DATABASE_URL`
+(default local Docker Postgres) from the environment — no Doppler required. The
+only direct DB write flips `user.email_verified`, since local dev has no SMTP
+and Better Auth blocks sign-in until the address is verified. Re-running is
+idempotent: the org, profile, item, and agents are reused (the CLI agent's
+one-time API key is rotated each run); the MCP agent's private key is written to
+`~/.abadge/seed-mcp-agent.key.json` (0600).
+
 In local web development, TanStack Query Devtools are mounted automatically in development mode for
 React Query inspection. They are not rendered in production builds.
 
@@ -120,6 +143,7 @@ bun run api:clean:worker
 | `bun run lint:fix` | Apply Biome fixes |
 | `bun run format` | Format repo files |
 | `bun run db:push` | Push schema to the database |
+| `bun run seed` | Seed a demo tenant (user, org, item, agents, grants) against a running stack |
 | `bun run db:generate` | Generate migrations |
 | `bun run db:migrate` | Run pending migrations |
 | `bun run db:studio` | Open Drizzle Studio |
