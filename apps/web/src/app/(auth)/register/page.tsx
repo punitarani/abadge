@@ -14,7 +14,13 @@ import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 import { normalizeRedirectPath } from "@/lib/redirect";
 
-function CheckInboxView({ email, redirect }: { email: string; redirect: string }): React.ReactElement {
+function CheckInboxView({
+  email,
+  redirect,
+}: {
+  email: string;
+  redirect: string;
+}): React.ReactElement {
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
   async function handleResend() {
@@ -38,7 +44,9 @@ function CheckInboxView({ email, redirect }: { email: string; redirect: string }
   // Preserve any explicit ?redirect so the intended destination survives the
   // sign-in step that follows verification.
   const loginHref = redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/login";
-  const startOverHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : "/register";
+  const startOverHref = redirect
+    ? `/register?redirect=${encodeURIComponent(redirect)}`
+    : "/register";
 
   return (
     <AuthShell>

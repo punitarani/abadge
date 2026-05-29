@@ -47,7 +47,7 @@ export function buildEmailVerificationUrl(rawUrl: string, appUrl: string): strin
  * (no real destination) and `/login*` (would loop back on itself).
  */
 function safeRelativeRedirect(callbackURL: string | null): string | null {
-  if (!callbackURL || !callbackURL.startsWith("/") || callbackURL.startsWith("//")) {
+  if (!callbackURL?.startsWith("/") || callbackURL.startsWith("//")) {
     return null;
   }
   if (callbackURL === "/" || callbackURL.startsWith("/login")) {
