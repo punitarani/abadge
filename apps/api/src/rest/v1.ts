@@ -105,6 +105,8 @@ export function statusFromError(err: unknown): number {
         return 422;
       case "TOO_MANY_REQUESTS":
         return 429;
+      case "SERVICE_UNAVAILABLE":
+        return 503;
       default:
         return 500;
     }
