@@ -11,9 +11,20 @@ import { Effect } from "effect";
 import { getTrpcErrorData, mapStatusToTrpcCode, toTrpcError } from "./errors";
 import { trpcErrorFormatter } from "./init";
 
-/** Build a driver-style error carrying a `.code` (SQLSTATE or socket code). */
+/** A driver error carrying a top-level `.code` (SQLSTATE or socket code). */
 function dbErrorWithCode(code: string, message = "db failure"): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/**
+ * The REAL production shape: Drizzle v0.45+ wraps the postgres-js driver error
+ * (which carries the SQLSTATE/socket `.code`) in a `DrizzleQueryError` whose
+ * `.cause` is the driver error and which has NO top-level `code`. Detection must
+ * read through `.cause` — a top-level-`.code` fixture would pass while prod
+ * 500s. See `isUniqueViolation` (effect.ts) for the same wrapping.
+ */
+function wrappedDbError(code: string, message = "db failure"): Error {
+  return Object.assign(new Error(message), { cause: { code } });
 }
 
 describe("toTrpcError", () => {
@@ -148,8 +159,12 @@ describe("toTrpcError — transient DB failures → 503", () => {
     ["CONNECTION_CLOSED", "driver connection closed"],
     ["ECONNRESET", "socket reset"],
     ["ETIMEDOUT", "socket timeout"],
-  ])("code %s (%s) → SERVICE_UNAVAILABLE", (code) => {
-    const error = toTrpcError(dbErrorWithCode(code));
+    // Use the real Drizzle-wrapped shape (.cause.code) — the shape that
+    // actually reaches toTrpcError in production. A top-level-`.code` fixture
+    // would pass even if detection only read the top level (the bug review #220
+    // caught), so this is the load-bearing assertion.
+  ])("code %s (%s), Drizzle-wrapped → SERVICE_UNAVAILABLE", (code) => {
+    const error = toTrpcError(wrappedDbError(code));
 
     expect(error.code).toBe("SERVICE_UNAVAILABLE");
     expect(getTrpcErrorData(error)).toEqual({
@@ -159,10 +174,15 @@ describe("toTrpcError — transient DB failures → 503", () => {
     });
   });
 
+  test("also detects a transient code carried at the top level (not just .cause)", () => {
+    const error = toTrpcError(dbErrorWithCode("53300"));
+    expect(error.code).toBe("SERVICE_UNAVAILABLE");
+  });
+
   test("unwraps an effect-wrapped transient DB failure to 503", async () => {
-    // tryAsync re-fails with the original Error, so the failure channel carries
-    // the driver error (with .code) — mirror that with Effect.fail.
-    const failure = await Effect.runPromise(Effect.fail(dbErrorWithCode("53300"))).catch((e) => e);
+    // tryAsync re-fails with the original Error (a DrizzleQueryError in prod);
+    // the failure channel carries it with the SQLSTATE on .cause.code.
+    const failure = await Effect.runPromise(Effect.fail(wrappedDbError("53300"))).catch((e) => e);
 
     const error = toTrpcError(failure);
 
@@ -171,10 +191,10 @@ describe("toTrpcError — transient DB failures → 503", () => {
   });
 
   test("does NOT misclassify a real query bug (unique violation) as 503", () => {
-    // 23505 = unique_violation — a genuine application error, must stay 500 and
-    // must not leak the constraint name to the wire.
+    // 23505 = unique_violation — a genuine application error in the same wrapped
+    // shape — must stay 500 and must not leak the constraint name to the wire.
     const error = toTrpcError(
-      dbErrorWithCode("23505", "duplicate key value violates unique constraint 'x_unique'"),
+      wrappedDbError("23505", "duplicate key value violates unique constraint 'x_unique'"),
     );
 
     expect(error.code).toBe("INTERNAL_SERVER_ERROR");

@@ -61,12 +61,23 @@ const RETRYABLE_DB_ERROR_CODES: ReadonlySet<string> = new Set([
   "EPIPE",
 ]);
 
-function isRetryableDbError(error: unknown): boolean {
+// Resolve a driver error code from the error itself OR its `.cause`. Drizzle
+// v0.45+ wraps the original postgres-js error (which carries the SQLSTATE /
+// socket code) in a `DrizzleQueryError` whose `.cause` is the driver error and
+// which has NO top-level `code` — so checking the error alone misses every real
+// query-path failure. Mirrors the `isUniqueViolation` precedent in effect.ts.
+function resolveDbErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== "object") {
-    return false;
+    return undefined;
   }
-  const code = (error as { code?: unknown }).code;
-  if (typeof code !== "string") {
+  const code =
+    (error as { code?: unknown }).code ?? (error as { cause?: { code?: unknown } }).cause?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function isRetryableDbError(error: unknown): boolean {
+  const code = resolveDbErrorCode(error);
+  if (code === undefined) {
     return false;
   }
   // SQLSTATE class 08 = connection_exception (08000, 08003, 08006, ...).
@@ -125,10 +136,17 @@ export function toTrpcError(error: unknown): TRPCError {
   // (with a Retry-After hint) rather than an opaque 500, so clients back off
   // and the connection pool drains. Routed through a ServiceUnavailableError so
   // it carries the standard {code,message,hint,meta} envelope. The raw driver
-  // error is intentionally dropped from the wire (its SQLSTATE/socket code is
-  // captured by isRetryableDbError, and capacity blips are an expected
-  // operational outcome, not a 500-class bug worth Sentry noise).
+  // message is intentionally dropped from the wire (it can carry SQL/constraint
+  // names); capacity blips are an expected operational outcome, not a 500-class
+  // bug worth Sentry noise.
   if (isRetryableDbError(cause)) {
+    // Log the SQLSTATE/socket code (NOT the message — no SQL/constraint leak) so
+    // a *recurring* fault (a persistent connection leak, or a pathological query
+    // tripping statement_timeout → 57014) stays visible in worker logs instead
+    // of looking identical to a one-off blip. This 503 path is otherwise
+    // unlogged: the tRPC fetch handler sets no onError and the /v1 logger only
+    // fires for status >= 500.
+    console.warn(`db_transient_failure code=${resolveDbErrorCode(cause) ?? "unknown"} -> 503`);
     const serviceUnavailable = new ServiceUnavailableError({
       code: "SERVICE_UNAVAILABLE",
       message: "Service temporarily unavailable.",
