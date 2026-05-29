@@ -74,12 +74,19 @@ app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
 // filling a victim's bucket causes at most a transient, self-clearing block on
 // that victim's email/password sign-in — never a lockout, and OAuth sign-in is
 // unaffected.
+//
+// Each path MUST be a live Better Auth route (a wrong path silently never
+// throttles). Verified against better-auth@1.5.6's email/password route table:
+//   /sign-in/email · /sign-up/email · /request-password-reset · /send-verification-email
+// (NB: the reset route is `/request-password-reset`, NOT `/forget-password` —
+// the latter only exists in the unused emailOTP plugin.) Re-verify on a
+// Better Auth upgrade; the e2e auth suite is the regression backstop.
 app.use(
   "/api/auth/sign-in/email",
   rateLimitMiddleware(10, 15 * 60_000, accountEmailKey("signin-email")),
 );
 app.use(
-  "/api/auth/forget-password",
+  "/api/auth/request-password-reset",
   rateLimitMiddleware(5, 15 * 60_000, accountEmailKey("forgot-pw")),
 );
 app.use(
