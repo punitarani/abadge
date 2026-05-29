@@ -11,6 +11,7 @@ const ErrorCodeSchema = Schema.Literal(
   "FORBIDDEN",
   "CONFLICT",
   "RATE_LIMITED",
+  "SERVICE_UNAVAILABLE",
   "VAULT_NOT_FOUND",
   "VAULT_ALREADY_EXISTS",
   "ITEM_NOT_FOUND",
@@ -141,6 +142,22 @@ export class RateLimitError extends Schema.TaggedError<RateLimitError>()("RateLi
   readonly statusCode = 429;
 }
 
+// Capacity / transient-infrastructure failure (database at connection limit or
+// briefly unreachable). Distinct from RATE_LIMITED (429, per-caller throttle):
+// 503 means "the server is overloaded, retry shortly", not "you sent too many
+// requests". Carries `meta.retryAfterSeconds` so clients back off deterministically.
+export class ServiceUnavailableError extends Schema.TaggedError<ServiceUnavailableError>()(
+  "ServiceUnavailableError",
+  {
+    code: Schema.Literal("SERVICE_UNAVAILABLE"),
+    message: Schema.String,
+    hint: NonEmptyString,
+    meta: Schema.optional(DomainErrorMetaSchema),
+  },
+) {
+  readonly statusCode = 503;
+}
+
 export class IntegrityError extends Schema.TaggedError<IntegrityError>()("IntegrityError", {
   code: Schema.Literal("INTEGRITY_ERROR"),
   message: Schema.String,
@@ -211,6 +228,7 @@ export type DomainError =
   | NotFoundError
   | ConflictError
   | RateLimitError
+  | ServiceUnavailableError
   | IntegrityError
   | FieldNotFoundError
   | MultiFieldItemError;
@@ -224,6 +242,7 @@ export function isDomainError(error: unknown): error is DomainError {
     error instanceof NotFoundError ||
     error instanceof ConflictError ||
     error instanceof RateLimitError ||
+    error instanceof ServiceUnavailableError ||
     error instanceof IntegrityError ||
     error instanceof FieldNotFoundError ||
     error instanceof MultiFieldItemError

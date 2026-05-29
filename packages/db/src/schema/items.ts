@@ -1,4 +1,5 @@
 import { ITEM_KINDS, STORAGE_MODES } from "@abadge/core";
+import { sql } from "drizzle-orm";
 import { index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { organization } from "./organization";
@@ -49,5 +50,15 @@ export const items = pgTable(
     index("items_organization_id_idx").on(table.organizationId),
     index("items_profile_id_idx").on(table.profileId),
     index("items_created_by_idx").on(table.createdBy),
+    // §AB-0050/§AB-0052 — serve the keyset list directly: `WHERE organization_id = ?
+    // AND deleted_at IS NULL ORDER BY created_at DESC, id DESC`. Without this the
+    // planner seq-scans the org's items + top-N sorts. Columns are plain ASC on
+    // purpose: the query orders DESC (Postgres default NULLS FIRST), and Postgres
+    // scans an ASC index BACKWARD to produce exactly DESC NULLS FIRST — whereas a
+    // `DESC NULLS LAST` index (drizzle's `.desc()` default) would NOT match the
+    // query's pathkey and the planner would fall back to a sort.
+    index("items_org_created_at_id_active_idx")
+      .on(table.organizationId, table.createdAt, table.id)
+      .where(sql`${table.deletedAt} is null`),
   ],
 );
