@@ -1,0 +1,39 @@
+name: Setup
+description: >-
+  Set up the pinned Bun toolchain, restore the global install cache (keyed on
+  bun.lock), and install workspace dependencies with a frozen lockfile.
+
+# Centralizes the toolchain + install for every job. Adding the Bun install
+# cache here means every job that uses this action gets warm installs without
+# repeating the cache config. The repo must already be checked out (this is a
+# local action) before this runs.
+inputs:
+  install:
+    description: >-
+      Run `bun install`. Set to "false" for jobs that only need the Bun
+      runtime and no workspace dependencies (e.g. running a script that imports
+      nothing from node_modules), to skip the install cost entirely.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: "1.3.0"
+
+    - name: Cache Bun install store
+      if: inputs.install == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-store-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          bun-store-${{ runner.os }}-
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: bun install --frozen-lockfile
