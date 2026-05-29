@@ -384,6 +384,15 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
     expect(res.organization.isPersonal).toBe(true);
     expect(res.defaultProfile.storageMode).toBe("server_managed");
 
+    // Same DB readback as the create test: confirm the seeded profile is readable
+    // under the new org's GUC — proof WITH CHECK accepted the INSERT, not just that
+    // the procedure returned a value.
+    const seen = await rlsDb.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.current_org', ${res.organization.id}, true)`);
+      return tx.select({ id: profiles.id }).from(profiles);
+    });
+    expect(seen.map((r) => r.id)).toEqual([res.defaultProfile.id]);
+
     await truncateAll();
   });
 });
