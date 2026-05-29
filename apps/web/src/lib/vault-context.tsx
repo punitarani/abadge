@@ -30,6 +30,7 @@ interface VaultContextValue {
    */
   requestUnlock: (profileId: string) => Promise<Uint8Array>;
   isProfileUnlocked: (profileId: string) => boolean;
+  hasAnyUnlockedProfile: boolean;
   getProfileKey: (profileId: string) => Uint8Array | null;
   setProfileKey: (profileId: string, key: Uint8Array) => void;
   lockProfile: (profileId: string) => void;
@@ -259,11 +260,20 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       lockAll,
       requestUnlock,
       isProfileUnlocked,
+      hasAnyUnlockedProfile: profileKeys.size > 0,
       getProfileKey,
       setProfileKey,
       lockProfile,
     }),
-    [lockAll, requestUnlock, isProfileUnlocked, getProfileKey, setProfileKey, lockProfile],
+    [
+      lockAll,
+      requestUnlock,
+      isProfileUnlocked,
+      profileKeys,
+      getProfileKey,
+      setProfileKey,
+      lockProfile,
+    ],
   );
 
   return (
