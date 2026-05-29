@@ -453,6 +453,112 @@ describe("profiles CRUD", () => {
 });
 
 // ---------------------------------------------------------------------------
+// profiles.create — personal-account single-profile cap
+// ---------------------------------------------------------------------------
+
+describe("profiles.create — personal account cap", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("personal account rejects a second profile with PROFILE_LIMIT_EXCEEDED", async () => {
+    const user = await seedUser(auth);
+    // A fresh user has no org — createPersonal seeds the personal org + the one
+    // default server_managed profile (no org header needed for this call).
+    const personal = await createOperatorCaller(
+      db,
+      auth,
+      user.headers,
+    ).organizations.createPersonal();
+    const caller = createOperatorCaller(db, auth, user.headers, personal.organization.id);
+
+    try {
+      await caller.profiles.create({
+        orgId: personal.organization.id,
+        name: "second-profile",
+        storageMode: "server_managed",
+      });
+      expect.unreachable("personal account should not create a second profile");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string; cause?: { code?: string } };
+      expect(trpcError.code).toBe("CONFLICT");
+      expect(trpcError.cause?.code).toBe("PROFILE_LIMIT_EXCEEDED");
+    }
+
+    // Still exactly the one seeded default profile — nothing was written.
+    const rows = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.organizationId, personal.organization.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(personal.defaultProfile.id);
+  });
+
+  test("team org is uncapped — multiple profiles allowed", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId); // seeds one default profile
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    await caller.profiles.create({
+      orgId: org.orgId,
+      name: "team-one",
+      storageMode: "server_managed",
+    });
+    await caller.profiles.create({
+      orgId: org.orgId,
+      name: "team-two",
+      storageMode: "server_managed",
+    });
+
+    // 1 seeded default + 2 created.
+    const rows = await db.select().from(profiles).where(eq(profiles.organizationId, org.orgId));
+    expect(rows).toHaveLength(3);
+  });
+
+  test("personal account can recreate after deleting its only profile (cap is ≤ 1, not a hard block)", async () => {
+    const user = await seedUser(auth);
+    const personal = await createOperatorCaller(
+      db,
+      auth,
+      user.headers,
+    ).organizations.createPersonal();
+    const caller = createOperatorCaller(db, auth, user.headers, personal.organization.id);
+
+    // Deleting the seeded default frees the single slot...
+    const del = await caller.profiles.delete({ profileId: personal.defaultProfile.id });
+    expect(del.ok).toBe(true);
+
+    // ...so exactly one create is allowed again (the supported recovery path).
+    const recreated = await caller.profiles.create({
+      orgId: personal.organization.id,
+      name: "replacement",
+      storageMode: "server_managed",
+    });
+    expect(recreated.profile.name).toBe("replacement");
+
+    // But a second profile is still rejected.
+    try {
+      await caller.profiles.create({
+        orgId: personal.organization.id,
+        name: "third",
+        storageMode: "server_managed",
+      });
+      expect.unreachable("personal account should still cap at one profile after recreation");
+    } catch (error: unknown) {
+      const trpcError = error as { cause?: { code?: string } };
+      expect(trpcError.cause?.code).toBe("PROFILE_LIMIT_EXCEEDED");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // profiles.bootstrap — first-time wrappedRootKey set
 // ---------------------------------------------------------------------------
 

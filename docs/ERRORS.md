@@ -66,6 +66,7 @@ Validation errors include an additional `issues` array:
 | `CONFLICT` | 409 | Generic conflict |
 | `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault already exists |
 | `PROFILE_ALREADY_EXISTS` | 409 | Profile with this name already exists in the org |
+| `PROFILE_LIMIT_EXCEEDED` | 409 | Personal accounts are limited to a single profile; `profiles.create` rejects an additional profile on a personal org |
 | `PERMISSION_ALREADY_EXISTS` | 409 | One or more capabilities in a `permissions.create` batch are already granted on this `(agent, item)` pair; `meta.duplicateCapabilities` lists every duplicate. The batch is rejected atomically — the non-duplicate caps were not written |
 | `PROFILE_NOT_EMPTY` | 409 | Profile deletion blocked because it still contains items |
 | `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |

@@ -35,7 +35,7 @@ const TABLE_COL_COUNT = 6;
 
 export default function ProfilesListPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
-  const { isPersonal } = useActiveOrg();
+  const { isPersonal, isLoading: orgLoading } = useActiveOrg();
   const { isProfileUnlocked } = useVault();
 
   const [filters, setFilters] = useQueryStates(profilesFilterParsers, {
@@ -90,10 +90,16 @@ export default function ProfilesListPage(): React.ReactElement {
             {workspacePosture(isPersonal).profilesSubtitle}
           </p>
         </div>
-        <Button size="sm" onClick={() => void setFilters({ create: true })}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          New profile
-        </Button>
+        {/* Personal accounts are capped at one profile (the seeded default), so
+            the create affordance is hidden for them. `orgLoading` guards the
+            transient `isPersonal === false` window before the org query
+            resolves. The server (`profiles.create`) is the real enforcement. */}
+        {!isPersonal && !orgLoading && (
+          <Button size="sm" onClick={() => void setFilters({ create: true })}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New profile
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -186,7 +192,10 @@ export default function ProfilesListPage(): React.ReactElement {
         </Table>
       </div>
 
-      {activeOrgId && (
+      {/* Gated on `!isPersonal` (not just the button) because the drawer's open
+          state is driven by the `?create=true` URL param — a personal-account
+          user could otherwise open it by URL with the button hidden. */}
+      {activeOrgId && !isPersonal && (
         <ProfileCreateDrawer
           open={createOpen}
           onOpenChange={(next) => void setFilters({ create: next })}

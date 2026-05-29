@@ -22,7 +22,7 @@ The `profiles` router manages credential namespaces. Each profile carries its ow
 
 **Returns:** `{ profile }` with the full [profile record](/concepts/profiles).
 
-Errors: `PROFILE_ALREADY_EXISTS` if `(orgId, name)` collides.
+Errors: `PROFILE_ALREADY_EXISTS` if `(orgId, name)` collides; `PROFILE_LIMIT_EXCEEDED` if the org is a personal account that already has a profile (personal accounts are capped at one; team orgs are uncapped).
 
 ## `profiles.list`
 

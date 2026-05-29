@@ -39,6 +39,8 @@ A profile is created with one of two storage modes, fixed for the lifetime of th
 
 The unique constraint `(organizationId, name)` enforces one profile name per organization.
 
+Personal accounts are capped at a single profile: the default profile is seeded at account creation, and `profiles.create` rejects an additional profile on a personal org with `PROFILE_LIMIT_EXCEEDED`. Team organizations are uncapped.
+
 ## Bootstrapping a zero-knowledge profile
 
 A ZK profile starts empty after creation. Before items can be added, the client must generate the encryption material and call `profiles.bootstrap`.
