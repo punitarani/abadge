@@ -927,6 +927,11 @@
         "type": "object",
         "properties": { "role": { "$ref": "#/components/schemas/MemberRole" } }
       },
+      "UpdateMemberRole": {
+        "type": "object",
+        "required": ["role"],
+        "properties": { "role": { "$ref": "#/components/schemas/MemberRole" } }
+      },
       "CreateInviteResult": {
         "type": "object",
         "properties": {

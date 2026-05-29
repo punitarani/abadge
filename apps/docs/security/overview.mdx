@@ -60,8 +60,8 @@ abadge supports two storage modes with distinct trust models.
 |---|---|---|
 | Server sees plaintext | Never | During decrypt |
 | Server breach exposure | Ciphertext only | Plaintext if `ENCRYPTION_KEY` also leaks |
-| Remote agent access | Not supported | `reveal_plaintext` only |
-| Local agent access | `read_ciphertext`, `mount_env`, `mount_file` | `reveal_plaintext`, `mount_env`, `mount_file` |
+| Remote agent access | Not supported | `read` only |
+| Local agent access | `read`, `use` | `read`, `use` |
 | Setup complexity | Master password + profile bootstrap | Just create the item |
 
 ## Authentication
@@ -96,13 +96,13 @@ The full decision flow is in [Permissions and capabilities](/concepts/permission
 
 <Tabs>
   <Tab title="Environment injection">
-    `mount_env`. The CLI or daemon spawns a subprocess with the secret in an env var. The secret lives only in process memory; the parent process drops the value after spawn.
+    `use` with `delivery: env`. The CLI or daemon spawns a subprocess with the secret in an env var. The secret lives only in process memory; the parent process drops the value after spawn.
   </Tab>
   <Tab title="File mounting">
-    `mount_file`. The daemon writes the secret to a temp file with `0600` permissions inside a `0700` temp directory. The MCP server auto-deletes after 5 minutes.
+    `use` with `delivery: file`. The daemon writes the secret to a temp file with `0600` permissions inside a `0700` temp directory. The MCP server auto-deletes after 5 minutes.
   </Tab>
   <Tab title="Direct reveal">
-    `reveal_plaintext`. Returns the value over HTTPS. Used by remote agents that cannot use local injection. Server-managed items only.
+    `read`. Returns the value over HTTPS. Used by remote agents that cannot use local injection. Server-managed items only.
   </Tab>
   <Tab title="MCP tools">
     Secrets are injected into subprocesses, never returned to the model. `mount_secret` returns an opaque `mountId` (never the file path). `use_secret` returns only the exit code, duration, output-line count, and a truncation flag — subprocess stdout/stderr text is never forwarded to the model.

@@ -71,8 +71,8 @@ abadge has four explicit trust tiers, ordered from strongest to weakest.
 
 The trust model determines which capabilities are allowed:
 
-- **Local agents** (CLI, MCP) can `read_ciphertext`, `mount_env`, and `mount_file` on any item.
-- **Remote agents** can only `reveal_plaintext` on server-managed items. They can never access zero-knowledge items.
+- **Local agents** (CLI, MCP) can `read` and `use` on any item.
+- **Remote agents** can only `read` on server-managed items. They can never access zero-knowledge items.
 
 See [Trust boundaries](/security/trust-boundaries) for the full breakdown of what each tier protects against.
 
@@ -88,7 +88,7 @@ Every operation in abadge maps to one of four layers:
     Explicit grants only. Every access requires a row in the `permissions` table linking (agent, item, capability). Permissions can carry an `expiresAt`. Remote-agent access is restricted at creation time.
   </Step>
   <Step title="Deliver">
-    The capability determines the delivery mode. `read_ciphertext` returns the encrypted blob (local + ZK only). `reveal_plaintext` returns plaintext over HTTPS (server-managed only). `mount_env` and `mount_file` return data for local injection.
+    The capability determines the delivery mode. `read` returns the secret's value — the encrypted blob for local + ZK items, or plaintext over HTTPS for server-managed items. `use` reserves a mount handle and returns data for local injection (`delivery: env` or `delivery: file`).
   </Step>
   <Step title="Audit">
     Every attempt — allowed, denied, expired, revoked, cascade — is appended to `audit_logs`. The table has no foreign-key constraints so entries survive entity deletion.
