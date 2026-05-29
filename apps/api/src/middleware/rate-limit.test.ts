@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { RateLimitCheckResult } from "../durable-objects/rate-limit-counter";
+import { accountEmailKey } from "./account-key";
 import { rateLimitMiddleware } from "./rate-limit";
 
 /**
@@ -268,5 +269,116 @@ describe("rate-limit middleware (§RL1-5)", () => {
     expect(res.headers.get("X-RateLimit-Limit")).toBe("10");
     expect(res.headers.get("X-RateLimit-Remaining")).toBe("7");
     expect(res.headers.get("Retry-After")).toBeNull();
+  });
+});
+
+// §K — per-account throttle: bucket by the email in the body, not the IP, so
+// distributed credential-stuffing (rotating IPs against one account) is caught.
+describe("per-account auth throttle (§K)", () => {
+  const env = (namespace: DurableObjectNamespace) => ({
+    RATE_LIMIT: namespace,
+    NODE_ENV: "production",
+  });
+
+  function signInApp(limit = 2) {
+    const app = new Hono();
+    app.use(
+      "/api/auth/sign-in/email",
+      rateLimitMiddleware(limit, 60_000, accountEmailKey("signin-email")),
+    );
+    app.post("/api/auth/sign-in/email", (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  function postEmail(app: Hono, namespace: DurableObjectNamespace, email: unknown, ip = "1.1.1.1") {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "cf-connecting-ip": ip,
+    };
+    const body = email === undefined ? { password: "x" } : { email, password: "x" };
+    return app.request(
+      "/api/auth/sign-in/email",
+      { method: "POST", headers, body: JSON.stringify(body) },
+      env(namespace),
+    );
+  }
+
+  test("same email from different IPs shares ONE bucket (the cross-IP property)", async () => {
+    const recorder = makeRecordingNamespace();
+    const app = signInApp();
+
+    const r1 = await postEmail(app, recorder.namespace, "victim@x.com", "1.1.1.1");
+    const r2 = await postEmail(app, recorder.namespace, "victim@x.com", "2.2.2.2");
+    const r3 = await postEmail(app, recorder.namespace, "victim@x.com", "3.3.3.3");
+
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    // 3rd attempt over the 2/window cap — blocked regardless of the rotating IP.
+    expect(r3.status).toBe(429);
+
+    // All three landed in a single email-scoped bucket; the IP is irrelevant
+    // and the raw email never appears in the (hashed) key.
+    expect(new Set(recorder.seenKeys).size).toBe(1);
+    expect(recorder.seenKeys[0]?.startsWith("signin-email:")).toBe(true);
+    expect(recorder.seenKeys.some((k) => k.includes("victim@x.com"))).toBe(false);
+  });
+
+  test("different emails get independent buckets", async () => {
+    const recorder = makeRecordingNamespace();
+    const app = signInApp();
+
+    await postEmail(app, recorder.namespace, "a@x.com");
+    await postEmail(app, recorder.namespace, "b@x.com");
+
+    expect(new Set(recorder.seenKeys).size).toBe(2);
+  });
+
+  test("email is normalized (case-insensitive) so casing cannot bypass the bucket", async () => {
+    const recorder = makeRecordingNamespace();
+    const app = signInApp();
+
+    await postEmail(app, recorder.namespace, "Victim@X.com");
+    await postEmail(app, recorder.namespace, "victim@x.com");
+
+    // Better Auth matches accounts case-insensitively; both must hit one bucket.
+    expect(new Set(recorder.seenKeys).size).toBe(1);
+  });
+
+  test("reading the body for the key does not consume it for the downstream handler", async () => {
+    const recorder = makeRecordingNamespace();
+    const app = new Hono();
+    app.use(
+      "/api/auth/sign-in/email",
+      rateLimitMiddleware(10, 60_000, accountEmailKey("signin-email")),
+    );
+    // Mirror Better Auth: read the RAW request body downstream.
+    app.post("/api/auth/sign-in/email", async (c) => {
+      const body = (await c.req.raw.json()) as { email?: string };
+      return c.json({ email: body.email });
+    });
+
+    const res = await app.request(
+      "/api/auth/sign-in/email",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "cf-connecting-ip": "1.1.1.1" },
+        body: JSON.stringify({ email: "a@x.com", password: "x" }),
+      },
+      env(recorder.namespace),
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()) as AnyObject).toEqual({ email: "a@x.com" });
+  });
+
+  test("fail-open: a body with no email is not throttled (no DO call)", async () => {
+    const recorder = makeRecordingNamespace();
+    const app = signInApp();
+
+    const res = await postEmail(app, recorder.namespace, undefined);
+
+    expect(res.status).toBe(200);
+    // The throttle was skipped entirely — no bucket was touched.
+    expect(recorder.seenKeys.length).toBe(0);
   });
 });
