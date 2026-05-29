@@ -42,12 +42,19 @@ Click any row to open the item detail panel.
 
 | Action | What it does |
 |---|---|
-| Reveal | Decrypt the payload locally (ZK) or fetch decrypted plaintext (server-managed) |
+| Reveal | Decrypt the payload locally (ZK) or fetch decrypted plaintext (server-managed). Available in **personal accounts** only — see custody mode below. |
 | Edit | Update fields, label, or tags. Optimistic concurrency rejects stale edits with `STALE_VERSION`. |
 | Copy field | Copies a single field to the clipboard with a 30-second auto-clear |
 | View permissions | Lists every permission grant pointing at this item |
 | View audit | Filters the audit view to this item |
 | Delete | Soft-delete. Ciphertext is retained but inaccessible. |
+
+## Custody mode vs. personal vault
+
+Whether the dashboard reveals a secret value depends on the active workspace:
+
+- **Personal account** — your own vault. You own every secret, so the item page shows a **Reveal** control: server-managed values are decrypted by `items.ownerReveal` (recorded in the audit log), and zero-knowledge values are decrypted in your browser after you unlock the profile.
+- **Team organization** — custody mode. The dashboard never displays plaintext; secrets flow only to authorized agents through the firewall. To read a value, use the CLI (`abadge export`, `abadge item --reveal`) or an authorized agent.
 
 ## Storage mode badges
 

@@ -37,11 +37,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import { authClient } from "@/lib/auth-client";
 import { listAllItems } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
+import { workspacePosture } from "@/lib/workspace-posture";
 import { useOrgStore } from "@/stores/org-store";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -75,6 +77,13 @@ export default function SettingsPage(): React.ReactElement {
     enabled: !!activeOrgId,
   });
   const org = orgQuery.data?.organization;
+  // Personal accounts are single-user vaults: present "account" framing and
+  // hide org-collaboration surfaces (members, invites). To collaborate, the
+  // user creates a separate team organization. Read `isPersonal` from the
+  // already-cached org list (via useActiveOrg) so the framing is correct on
+  // first paint rather than flashing the team copy until `organizations.get`
+  // resolves.
+  const { isPersonal } = useActiveOrg();
 
   // ---- Members ----
   const membersQuery = useQuery({
@@ -107,22 +116,26 @@ export default function SettingsPage(): React.ReactElement {
       <div>
         <h1 className="text-lg font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your organization settings, members, and billing.
+          {isPersonal
+            ? "Manage your personal account and security."
+            : "Manage your organization settings, members, and billing."}
         </p>
       </div>
 
-      {/* Organization section */}
+      {/* Organization / account section */}
       {org && activeOrgId && (
         <OrgGeneralSection
           orgId={activeOrgId}
           orgName={org.name}
           orgSlug={org.slug}
+          isPersonal={isPersonal}
           queryClient={queryClient}
         />
       )}
 
-      {/* Members section */}
-      {activeOrgId && (
+      {/* Members section — team organizations only. A personal account is a
+          single-user vault, so inviting members would contradict "personal". */}
+      {activeOrgId && org && !isPersonal && (
         <MembersSection
           orgId={activeOrgId}
           members={members}
@@ -138,6 +151,7 @@ export default function SettingsPage(): React.ReactElement {
           orgId={activeOrgId}
           orgName={org.name}
           itemCount={itemCount}
+          isPersonal={isPersonal}
           queryClient={queryClient}
           router={router}
         />
@@ -152,24 +166,27 @@ function OrgGeneralSection({
   orgId,
   orgName,
   orgSlug,
+  isPersonal,
   queryClient,
 }: {
   orgId: string;
   orgName: string;
   orgSlug: string;
+  isPersonal: boolean;
   queryClient: ReturnType<typeof useQueryClient>;
 }): React.ReactElement {
   const [name, setName] = useState(orgName);
+  const { accountNoun, accountNounLower } = workspacePosture(isPersonal);
 
   const updateMutation = useMutation({
     mutationFn: () => browserTrpcClient.organizations.update.mutate({ orgId, name }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organization(orgId) });
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
-      toast.success("Organization name updated.");
+      toast.success(`${accountNoun} name updated.`);
     },
     onError: (error) => {
-      toast.error(getClientErrorMessage(error, "Failed to update organization"));
+      toast.error(getClientErrorMessage(error, `Failed to update ${accountNounLower}`));
     },
   });
 
@@ -181,11 +198,11 @@ function OrgGeneralSection({
 
   return (
     <section className="space-y-4">
-      <h2 className="text-sm font-semibold">Organization</h2>
+      <h2 className="text-sm font-semibold">{accountNoun}</h2>
       <Card className="p-5 space-y-4">
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="org-name">Organization name</Label>
+            <Label htmlFor="org-name">{accountNoun} name</Label>
             <div className="flex items-center gap-3">
               <Input
                 id="org-name"
@@ -448,24 +465,27 @@ function DangerZoneSection({
   orgId,
   orgName,
   itemCount,
+  isPersonal,
   queryClient,
   router,
 }: {
   orgId: string;
   orgName: string;
   itemCount: number;
+  isPersonal: boolean;
   queryClient: ReturnType<typeof useQueryClient>;
   router: ReturnType<typeof useRouter>;
 }): React.ReactElement {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const hasItems = itemCount > 0;
+  const noun = workspacePosture(isPersonal).accountNounLower;
 
   const deleteMutation = useMutation({
     mutationFn: () => browserTrpcClient.organizations.delete.mutate({ orgId }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
-      toast.success("Organization deleted.");
+      toast.success(isPersonal ? "Personal account deleted." : "Organization deleted.");
       router.push("/onboarding");
     },
     onError: (error) => {
@@ -478,11 +498,11 @@ function DangerZoneSection({
       <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
         <p className="text-sm text-muted-foreground mb-4">
-          Permanently delete this organization and all its data. This action cannot be undone.
+          Permanently delete this {noun} and all its data. This action cannot be undone.
         </p>
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">Delete organization</p>
+            <p className="text-sm font-medium">Delete {noun}</p>
             {hasItems && (
               <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                 <Warning className="h-3.5 w-3.5" />
@@ -513,7 +533,7 @@ function DangerZoneSection({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete organization</AlertDialogTitle>
+            <AlertDialogTitle>Delete {noun}</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete <strong>{orgName}</strong> and all associated data
               including profiles, agents, and permissions. This action cannot be undone.
@@ -539,7 +559,7 @@ function DangerZoneSection({
               disabled={confirmText !== orgName || deleteMutation.isPending}
               onClick={() => deleteMutation.mutate()}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete organization"}
+              {deleteMutation.isPending ? "Deleting..." : `Delete ${noun}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

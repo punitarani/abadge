@@ -1,6 +1,7 @@
 /**
  * Breakdown of profiles by storage mode, surfaced as the subtitle of the
- * "Profiles under custody" Overview card. Replaces the previous
+ * Overview profiles card (labelled "Profiles under custody" for team orgs,
+ * "Profiles" for personal accounts). Replaces the previous
  * `countDefaultProfiles` counter, which was tied to the literal name
  * `internal` — a stable signal only when `organizations.create` still
  * auto-seeded that profile. With the auto-seed gone, "internal" is just

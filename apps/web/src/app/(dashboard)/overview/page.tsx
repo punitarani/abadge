@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import {
   buildAuditAgentNameMap,
   buildAuditItemLabelMap,
@@ -26,6 +27,7 @@ import { listAllAgents, listAllItems, listAllPermissions } from "@/lib/list-quer
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
+import { workspacePosture } from "@/lib/workspace-posture";
 import { useOrgStore } from "@/stores/org-store";
 import { countProfilesByStorage, type ProfilesByStorage } from "./count-profiles-by-storage";
 
@@ -50,6 +52,7 @@ const AUDIT_COLUMN_COUNT = 6;
 
 function SummaryCards({
   isLoading,
+  profilesCardLabel,
   profileCount,
   profilesByStorage,
   itemCount,
@@ -62,6 +65,7 @@ function SummaryCards({
   auditEventCount,
 }: {
   isLoading: boolean;
+  profilesCardLabel: string;
   profileCount: number;
   profilesByStorage: ProfilesByStorage;
   itemCount: number;
@@ -76,7 +80,7 @@ function SummaryCards({
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
       <SummaryCard
-        label="Profiles under custody"
+        label={profilesCardLabel}
         value={isLoading ? "..." : profileCount}
         subtitle={
           isLoading
@@ -234,6 +238,8 @@ function RecentEventRow({
 
 export default function OverviewPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
+  const { isPersonal } = useActiveOrg();
+  const posture = workspacePosture(isPersonal);
 
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
@@ -311,19 +317,16 @@ export default function OverviewPage(): React.ReactElement {
         <p className="text-sm text-muted-foreground">{todayFormatted}</p>
       </div>
 
-      {/* Custody mode banner */}
+      {/* Posture banner — personal vault vs. custody mode */}
       <div className="flex items-start gap-3 rounded-md border-l-4 border-emerald-500 bg-emerald-50 px-4 py-3 dark:bg-emerald-950/30">
         <Lock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        <p className="text-sm text-emerald-800 dark:text-emerald-300">
-          Custody mode active. You manage permissions and audit access on behalf of your users
-          &mdash; you cannot view their secret values. Only authorized agents can access decrypted
-          data.
-        </p>
+        <p className="text-sm text-emerald-800 dark:text-emerald-300">{posture.banner}</p>
       </div>
 
       {/* Summary cards */}
       <SummaryCards
         isLoading={isLoading}
+        profilesCardLabel={posture.profilesCardLabel}
         profileCount={profiles.length}
         profilesByStorage={profilesByStorage}
         itemCount={items.length}
