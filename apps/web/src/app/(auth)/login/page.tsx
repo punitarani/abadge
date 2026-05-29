@@ -18,14 +18,20 @@ function LoginPageContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
   const redirectPath = normalizeRedirectPath(searchParams.get("redirect"));
 
   useEffect(() => {
-    const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));
+    const params = new URLSearchParams(window.location.search);
+    const authError = getAuthErrorMessage(params);
     if (authError) {
+      // Email-verification failures (e.g. expired token) land here with
+      // ?verified=1&error=<code>; show the error, not the success banner.
       setError(authError);
+    } else if (params.get("verified") === "1") {
+      setVerified(true);
     }
   }, []);
 
@@ -87,6 +93,11 @@ function LoginPageContent() {
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
+            </div>
+          )}
+          {verified && !error && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Email verified. Sign in to continue.
             </div>
           )}
           <div className="space-y-1.5">

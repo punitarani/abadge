@@ -17,6 +17,7 @@ import {
   safeAuditInsert,
 } from "./audit-hooks";
 import { type CloudflareEmailBinding, sendEmail } from "./mailer";
+import { buildEmailVerificationUrl } from "./verification-url";
 
 // Custom access-control for the organization plugin.
 // Admin loses member:"update" so the Better Auth HTTP endpoint
@@ -123,11 +124,14 @@ export function createAuth(db: Database, env: AuthEnv): any {
     },
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
+        // Point the post-verification redirect at the web app, not the API
+        // origin Better Auth defaults to (which 404s). See buildEmailVerificationUrl.
+        const verifyUrl = buildEmailVerificationUrl(url, env.ABADGE_APP_URL);
         await sendEmail(env, {
           to: user.email,
           subject: "Verify your abadge email",
-          text: `Confirm your email address:\n\n${url}`,
-          html: `<p>Confirm your email address:</p><p><a href="${url}">${url}</a></p>`,
+          text: `Confirm your email address:\n\n${verifyUrl}`,
+          html: `<p>Confirm your email address:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
         });
       },
     },
