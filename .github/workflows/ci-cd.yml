@@ -227,10 +227,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      # Build the CLI binary up-front so cli/*.test.ts spawns the compiled
-      # artifact (faster, and exercises the same binary users run).
-      - name: Build CLI binary
-        run: bun run --cwd packages/cli build
+      # `bun run test:e2e` is `turbo test:e2e`, whose dependsOn builds the CLI
+      # and MCP binaries (@abadge/cli#build, @abadge/mcp#build) first; the e2e
+      # harness auto-detects and spawns those compiled artifacts. No separate
+      # build step needed.
       - name: Run e2e tests
         run: bun run test:e2e
 
