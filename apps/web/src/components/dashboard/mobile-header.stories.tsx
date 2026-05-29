@@ -1,16 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import {
-  Bot,
-  Building2,
-  ChevronsUpDown,
-  Columns3,
-  KeyRound,
-  LayoutDashboard,
-  type LucideIcon,
-  ScrollText,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
+import { Building2, ChevronsUpDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Sidebar,
@@ -28,22 +17,14 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { MobileHeader } from "./mobile-header";
+import { navGroups, overviewNavItem, settingsNavItem } from "./nav-config";
 
 /**
  * Visual reference for the mobile dashboard navigation. Below the `md`
  * breakpoint the sidebar collapses to an off-canvas Sheet; `MobileHeader`
- * exposes the trigger that opens it. The surrounding sidebar/footer here mirror
- * the production chrome so the drawer screenshots look representative.
+ * exposes the trigger that opens it. The nav here is driven by the shared
+ * `nav-config` so it mirrors the production chrome.
  */
-const NAV: ReadonlyArray<{ label: string; icon: LucideIcon }> = [
-  { label: "Overview", icon: LayoutDashboard },
-  { label: "Profiles", icon: Columns3 },
-  { label: "Items", icon: KeyRound },
-  { label: "Agents", icon: Bot },
-  { label: "Permissions", icon: ShieldCheck },
-  { label: "Audit log", icon: ScrollText },
-];
-
 function MobileShell(): React.ReactElement {
   return (
     <SidebarProvider>
@@ -68,69 +49,39 @@ function MobileShell(): React.ReactElement {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {NAV.slice(0, 1).map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton isActive>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                <SidebarMenuItem>
+                  <SidebarMenuButton isActive>
+                    <overviewNavItem.icon />
+                    <span>{overviewNavItem.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Secrets</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {NAV.slice(1, 3).map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Access</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {NAV.slice(3, 5).map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          <SidebarGroup>
-            <SidebarGroupLabel>Monitor</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {NAV.slice(5).map((item) => (
-                  <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton>
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {navGroups.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
           <SidebarGroup className="mt-auto">
             <SidebarGroupContent>
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton>
-                    <Settings />
-                    <span>Settings</span>
+                    <settingsNavItem.icon />
+                    <span>{settingsNavItem.label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

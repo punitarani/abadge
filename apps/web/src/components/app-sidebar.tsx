@@ -1,21 +1,10 @@
 "use client";
 
-import {
-  BookOpen,
-  Bot,
-  Columns3,
-  KeyRound,
-  LayoutDashboard,
-  LifeBuoy,
-  type LucideIcon,
-  ScrollText,
-  Send,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
+import { BookOpen, LifeBuoy, type LucideIcon, Send } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
+import { navGroups, overviewNavItem, settingsNavItem } from "@/components/dashboard/nav-config";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -34,36 +23,10 @@ import {
 } from "@/components/ui/sidebar";
 import { type PrefetchableRoute, useRoutePrefetcher } from "@/hooks/use-route-prefetcher";
 
-const navGroups = [
-  {
-    label: "Secrets",
-    items: [
-      { path: "profiles", label: "Profiles", icon: Columns3 },
-      { path: "items", label: "Items", icon: KeyRound },
-    ],
-  },
-  {
-    label: "Access",
-    items: [
-      { path: "agents", label: "Agents", icon: Bot },
-      { path: "permissions", label: "Permissions", icon: ShieldCheck },
-    ],
-  },
-  {
-    label: "Monitor",
-    items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
-  },
-] as const satisfies ReadonlyArray<{
-  label: string;
-  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: LucideIcon }>;
-}>;
-
 const secondaryNavItems = [
   { href: "mailto:support@abadge.io", label: "Support", icon: LifeBuoy },
   { href: "https://abadge.userjot.com/", label: "Feedback", icon: Send },
 ] as const;
-
-const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
 
 /**
  * "Settle"-style hover/focus debounce: prefetch fires only if the user stays
@@ -131,10 +94,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
-                  <Link href="/overview" {...overviewHandlers} onClick={closeMobile}>
-                    <LayoutDashboard />
-                    <span>Overview</span>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.startsWith(`/${overviewNavItem.path}`)}
+                >
+                  <Link
+                    href={`/${overviewNavItem.path}`}
+                    {...overviewHandlers}
+                    onClick={closeMobile}
+                  >
+                    <overviewNavItem.icon />
+                    <span>{overviewNavItem.label}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -192,20 +162,21 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                   </SidebarMenuItem>
                 );
               })}
-              {bottomNavItems.map((item) => {
-                const href = `/${item.path}`;
-                const isActive = pathname.startsWith(href);
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href} {...settingsHandlers} onClick={closeMobile}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.startsWith(`/${settingsNavItem.path}`)}
+                >
+                  <Link
+                    href={`/${settingsNavItem.path}`}
+                    {...settingsHandlers}
+                    onClick={closeMobile}
+                  >
+                    <settingsNavItem.icon />
+                    <span>{settingsNavItem.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
