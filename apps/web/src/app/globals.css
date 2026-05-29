@@ -158,3 +158,144 @@ body[data-dashboard-overlay-open="true"] [data-userjot-widget-container] {
   /* biome-ignore lint/complexity/noImportantStyles: required to override third-party inline styles */
   z-index: 40 !important;
 }
+
+/* ── Blog article body ──────────────────────────────────────────────────
+   A clean, generous reading column for long-form posts. Keeps the brutalist
+   brand chrome (header, footer, hard borders) around a comfortable measure.
+   Plain CSS (not @apply) so descendant selectors over compiled markdown HTML
+   are stable and not subject to utility purging. Fonts inherit the IBM Plex
+   family set by `landingRootClassName`. */
+.blog-prose {
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  letter-spacing: -0.005em;
+  color: #3f3f46;
+}
+.blog-prose > :first-child {
+  margin-top: 0;
+}
+.blog-prose > :last-child {
+  margin-bottom: 0;
+}
+.blog-prose p {
+  margin: 1.5em 0;
+}
+.blog-prose a {
+  color: #0047ff;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklab, #0047ff 35%, transparent);
+  transition: text-decoration-color 0.15s ease;
+}
+.blog-prose a:hover {
+  text-decoration-color: #0047ff;
+}
+.blog-prose strong {
+  color: #000;
+  font-weight: 700;
+}
+.blog-prose em {
+  font-style: italic;
+}
+.blog-prose h2 {
+  margin: 2.75rem 0 0.85rem;
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: #000;
+}
+.blog-prose h3 {
+  margin: 2.25rem 0 0.6rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: #000;
+}
+.blog-prose ul,
+.blog-prose ol {
+  margin: 1.5em 0;
+  padding-left: 1.3em;
+}
+.blog-prose ul {
+  list-style: disc;
+}
+.blog-prose ol {
+  list-style: decimal;
+}
+.blog-prose li {
+  margin: 0.55em 0;
+  padding-left: 0.2em;
+}
+.blog-prose ul > li::marker {
+  color: #0047ff;
+}
+.blog-prose ol > li::marker {
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+.blog-prose blockquote {
+  margin: 1.85em 0;
+  padding: 0.2em 0 0.2em 1.25em;
+  border-left: 2px solid #0047ff;
+  color: #52525b;
+}
+.blog-prose blockquote p {
+  margin: 0.4em 0;
+}
+.blog-prose :not(pre) > code {
+  font-family: var(--font-landing-mono), ui-monospace, monospace;
+  font-size: 0.85em;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 3px;
+  padding: 0.12em 0.38em;
+  color: #18181b;
+}
+.blog-prose pre {
+  margin: 2em 0;
+  padding: 1.2rem 1.4rem;
+  background: #0b0b0c;
+  color: #e4e4e7;
+  border: 1px solid #000;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.blog-prose pre code {
+  font-family: var(--font-landing-mono), ui-monospace, monospace;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+.blog-prose hr {
+  margin: 3em 0;
+  border: 0;
+  border-top: 1px solid #000;
+}
+.blog-prose table {
+  width: 100%;
+  margin: 2em 0;
+  border-collapse: collapse;
+  border: 1px solid #000;
+  font-size: 0.9rem;
+}
+.blog-prose th,
+.blog-prose td {
+  border: 1px solid #e4e4e7;
+  padding: 0.6em 0.8em;
+  text-align: left;
+}
+.blog-prose thead th {
+  background: #fafafa;
+  border-bottom: 1px solid #000;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+}

@@ -46,6 +46,9 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@content-collections/core": "^0.15.1",
+    "@content-collections/markdown": "^0.1.4",
+    "@content-collections/next": "^0.2.11",
     "@happy-dom/global-registrator": "^20",
     "@opennextjs/cloudflare": "latest",
     "@storybook/addon-a11y": "^10.3.4",
@@ -56,8 +59,10 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "remark-gfm": "^4.0.1",
     "storybook": "^10.3.4",
     "typescript": "^5.7.0",
-    "wrangler": "latest"
+    "wrangler": "latest",
+    "zod": "^4.4.3"
   }
 }

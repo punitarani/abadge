@@ -1,3 +1,4 @@
+import { withContentCollections } from "@content-collections/next";
 import type { NextConfig } from "next";
 
 // Routes whose URLs may contain sensitive tokens (e.g. `?token=abi_...` on
@@ -39,4 +40,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// withContentCollections must be the outermost plugin. It runs the
+// content build at config-load time, so generated data in
+// `.content-collections/generated` is ready before bundling (works under
+// both `next build` and `next dev --turbopack`).
+export default withContentCollections(nextConfig);

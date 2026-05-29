@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 export function LandingFooter() {
   return (
@@ -15,6 +16,9 @@ export function LandingFooter() {
         </div>
 
         <div className="order-1 flex items-center gap-6 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap md:order-2">
+          <Link href="/blog" className="transition-colors hover:text-[#0047FF]">
+            Blog
+          </Link>
           <a
             href="https://github.com/punitarani/abadge"
             target="_blank"
