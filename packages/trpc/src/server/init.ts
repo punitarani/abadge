@@ -226,7 +226,7 @@ export const agentProcedure = publicProcedure.use(async ({ ctx, next }) => {
   try {
     // Identity resolution reads the `agents` table BEFORE the org is known (the
     // org is derived from the agent row). It runs on the pooled connection,
-    // pre-transaction; `agents` is RLS-exempt (migration 0022_agents_rls_exemption)
+    // pre-transaction; `agents` is RLS-exempt (migration 0025_agents_rls_exemption)
     // precisely so this pre-org read is not fail-closed under the runtime role.
     const identity = await Effect.runPromise(resolveAgentIdentity(ctx));
     // §REVAMP-PR3 Task 5.2 — the agent-side onboarding gate was dropped here.
