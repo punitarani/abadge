@@ -1,0 +1,40 @@
+# abadge CLI example 05 — GitHub Actions workflow for non-interactive CI/CD.
+# See ./README.md (written by example 04) for prerequisites, setup, and security notes.
+#
+# This workflow installs the abadge CLI, then runs 05-ci-cd.sh, which bulk-injects
+# every single-field secret in a profile into ./deploy.sh — without a browser and
+# without writing any secret to disk.
+#
+# Store these as GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
+#   ABADGE_SESSION_TOKEN  an `abs_` AGENT session token (Ed25519 keypair agent).
+#                         NOT a personal `abu_` key / Better Auth session — those
+#                         are management-only and cannot read secret values.
+#                         `abs_` sessions are ~15 min; for production, mint one
+#                         fresh at job start (see the TTL note in 05-ci-cd.sh)
+#                         instead of storing a long-lived value.
+#   ABADGE_ORG            org id or slug.
+#   ABADGE_PROFILE        profile name or id.
+name: deploy
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install abadge CLI
+        run: |
+          ABADGE_INSTALL_PACKAGE=cli \
+            curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+      - name: Bulk-inject secrets and deploy
+        env:
+          ABADGE_SESSION_TOKEN: ${{ secrets.ABADGE_SESSION_TOKEN }}
+          ABADGE_ORG: ${{ secrets.ABADGE_ORG }}
+          ABADGE_PROFILE: ${{ secrets.ABADGE_PROFILE }}
+        run: ./examples/cli/05-ci-cd.sh

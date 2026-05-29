@@ -112,10 +112,17 @@ the right capability before invoking a tool:
 
 ```bash
 abadge permission create \
-  --agent <mcp-agent-id> \
-  --item <item-id> \
+  --agent-id <mcp-agent-id> \
+  --item-id <item-id> \
   --capability use
 ```
 
 `use` is the typical capability for MCP — `use_secret` calls
-`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret` calls it with `mountType: file`.
+`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret` calls it with `delivery: file`.
+
+## Full worked example
+
+For a complete, copy-pasteable setup — config block, a setup script, the five tools, and an
+example prompt that triggers `use_secret` — see the
+[Claude Desktop example](https://github.com/punitarani/abadge/tree/main/examples/mcp/07-claude-desktop)
+in the repo, or the [Examples](/examples) page.

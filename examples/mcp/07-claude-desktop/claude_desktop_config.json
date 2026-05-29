@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "abadge": {
+      "command": "/Users/you/.abadge/bin/abadge-mcp",
+      "env": {
+        "ABADGE_API_URL": "https://api.abadge.dev",
+        "ABADGE_AGENT_ID": "REPLACE_WITH_YOUR_AGENT_ID",
+        "ABADGE_PRIVATE_KEY_PATH": "/Users/you/.abadge/agents/REPLACE_WITH_YOUR_AGENT_ID.ed25519.jwk"
+      }
+    }
+  }
+}

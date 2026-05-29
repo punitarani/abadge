@@ -154,3 +154,4 @@ Access is controlled by specific capabilities on specific items, not by roles li
 | [CLI.md](./CLI.md) | CLI command reference | CLI users, CLI developers |
 | [MCP.md](./MCP.md) | MCP tool reference and security model | AI agent integrators |
 | [SDK.md](./SDK.md) | TypeScript SDK reference | SDK consumers, integration developers |
+| [examples/](../../examples/) | Runnable end-to-end examples for every surface (SDK, CLI, MCP, API) | Anyone integrating abadge |

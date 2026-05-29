@@ -1,0 +1,92 @@
+---
+title: "Examples"
+description: "Runnable, end-to-end examples for every abadge surface — SDK, CLI, MCP, and the raw HTTP API — in TypeScript, bash, and Python."
+---
+
+Every example below lives in the [`examples/`](https://github.com/punitarani/abadge/tree/main/examples) directory of the repo. Each is self-contained with its own README covering prerequisites, setup, and how to run it, and is written to be correct against the current code.
+
+## The boundary they all reinforce
+
+abadge has two trust tiers, and the examples are organized around the line between them:
+
+| Tier | Identity | Can it read a secret **value**? |
+|------|----------|--------------------------------|
+| **Management** | Better Auth session or an `abu_` personal API key (`AbadgeUserClient`) | **No** — creates items/agents/permissions and reads audit only. |
+| **Access** | An Ed25519 **keypair agent** that exchanges a signed challenge for a short-lived `abs_` session (`AbadgeAgentClient`) | **Yes**, but only for an item it holds an explicit `(agent, item, capability)` permission on. |
+
+The credential that *manages* the vault is never the credential that can *read secrets out of it*.
+
+## SDK — `@abadge/sdk` (TypeScript)
+
+<CardGroup cols={3}>
+  <Card title="Store & grant" href="https://github.com/punitarani/abadge/tree/main/examples/sdk/01-store-and-grant">
+    Operator side: store a server-managed secret, register a remote agent, grant `read`, read the audit trail — without ever reading the value.
+  </Card>
+  <Card title="Agent reads a secret" href="https://github.com/punitarani/abadge/tree/main/examples/sdk/02-agent-read-secret">
+    Agent side: connect with a keypair, `access.read` a granted secret (both storage modes), use it, disconnect.
+  </Card>
+  <Card title="Enroll & read" href="https://github.com/punitarani/abadge/tree/main/examples/sdk/03-agent-enroll">
+    Zero-pre-shared-secret onboarding: generate a keypair locally, enroll with a one-time bootstrap token, then connect and read.
+  </Card>
+</CardGroup>
+
+```bash Install
+bun add @abadge/sdk   # or: npm i @abadge/sdk
+```
+
+## CLI — `abadge`
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" href="https://github.com/punitarani/abadge/tree/main/examples/cli/04-quickstart.sh">
+    Login → profile → store a secret via stdin → register an agent → grant → `abadge run` / `mount` → audit.
+  </Card>
+  <Card title="CI/CD injection" href="https://github.com/punitarani/abadge/tree/main/examples/cli/05-ci-cd.sh">
+    Non-interactive `--token-stdin` auth and bulk injection with `abadge run --all`, plus a ready GitHub Actions job.
+  </Card>
+  <Card title="Migrate a .env" href="https://github.com/punitarani/abadge/tree/main/examples/cli/06-dotenv-migration.sh">
+    Import a team `.env` with `abadge import`, run a build with everything injected, then delete the on-disk file.
+  </Card>
+</CardGroup>
+
+## MCP server — `abadge-mcp`
+
+<CardGroup cols={1}>
+  <Card title="Claude Desktop / Claude Code" href="https://github.com/punitarani/abadge/tree/main/examples/mcp/07-claude-desktop">
+    Wire the MCP server into an AI client so an agent can `use_secret` and `mount_secret` **without the secret value ever entering the model's context** (the §RED1 boundary). Includes the config block, setup script, and the full tool walkthrough.
+  </Card>
+</CardGroup>
+
+## HTTP API — REST `/v1` and agentic registration
+
+<CardGroup cols={3}>
+  <Card title="Manage via curl" href="https://github.com/punitarani/abadge/tree/main/examples/api/08-rest-curl">
+    Management from any runtime with an `abu_` key: create item, register agent, grant, read audit. Pure curl, no SDK.
+  </Card>
+  <Card title="Agent access in Python" href="https://github.com/punitarani/abadge/tree/main/examples/api/09-agent-python">
+    Request a challenge, sign it with Ed25519, exchange for an `abs_` token, and `read` a granted secret — no SDK.
+  </Card>
+  <Card title="Agentic registration" href="https://github.com/punitarani/abadge/tree/main/examples/api/10-agentic-registration-python">
+    The auth.md "anonymous" flow: an agent self-registers a personal account a human later claims by email + OTP.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Point any example at your API with `ABADGE_API_URL` — `https://api.abadge.dev` for the hosted service, or `http://localhost:8787` for local dev. No example hardcodes a secret; everything is read from environment variables.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="SDK reference" href="/api/sdk/installation">
+    Both clients, every method, and typed error handling.
+  </Card>
+  <Card title="CLI reference" href="/cli/installation">
+    Every command, flag, and option.
+  </Card>
+  <Card title="MCP overview" href="/mcp/overview">
+    The five tools and the secret-redaction boundary.
+  </Card>
+  <Card title="API overview" href="/api/overview">
+    REST `/v1`, authentication, and the error envelope.
+  </Card>
+</CardGroup>
