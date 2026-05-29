@@ -35,7 +35,7 @@ function getInitials(name: string): string {
 
 export function NavUser(): React.ReactElement {
   const { isMobile } = useSidebar();
-  const { lockAll } = useVault();
+  const { lockAll, hasAnyUnlockedProfile } = useVault();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
@@ -110,10 +110,12 @@ export function NavUser(): React.ReactElement {
               <Switch checked={isDark} tabIndex={-1} aria-hidden="true" />
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => lockAll()}>
-              <Lock />
-              Lock all profiles
-            </DropdownMenuItem>
+            {hasAnyUnlockedProfile && (
+              <DropdownMenuItem onClick={() => lockAll()}>
+                <Lock />
+                Lock all profiles
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut />
               Log out
