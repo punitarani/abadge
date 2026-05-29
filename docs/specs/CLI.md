@@ -2,7 +2,7 @@
 
 The `abadge` CLI now uses two distinct auth personas:
 
-* operator commands use a Better Auth device-login session held only in daemon memory
+* operator commands use a device authorization session held only in daemon memory
 * runtime commands use a local agent keypair plus short-lived `abs_...` agent sessions
 
 ## Configuration
@@ -47,7 +47,7 @@ reprovisions them when either changes.
 
 ### `abadge login`
 
-Starts Better Auth device authorization.
+Starts the device authorization flow.
 
 ```bash
 abadge login

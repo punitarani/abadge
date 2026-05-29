@@ -28,9 +28,9 @@ Required variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `DATABASE_URL` | Postgres connection string | `postgresql://abadge:abadge@localhost:5432/abadge` |
-| `ABADGE_API_URL` | Public API origin and Better Auth base URL | `http://localhost:8787` |
+| `ABADGE_API_URL` | Public API base URL | `http://localhost:8787` |
 | `ABADGE_APP_URL` | Public web origin | `http://localhost:3000` |
-| `BETTER_AUTH_SECRET` | Better Auth secret | random string |
+| `BETTER_AUTH_SECRET` | Authentication secret | random string |
 | `ENCRYPTION_KEY` | AES-256-GCM key for server-managed items | `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client id | from Google OAuth app |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | from Google OAuth app |
@@ -115,7 +115,7 @@ bun run seed -- --email me@x.dev  # override login (also --password, --name)
 It reads `ABADGE_API_URL` (default `http://localhost:8787`) and `DATABASE_URL`
 (default local Docker Postgres) from the environment — no Doppler required. The
 only direct DB write flips `user.email_verified`, since local dev has no SMTP
-and Better Auth blocks sign-in until the address is verified. Re-running is
+and the authentication layer blocks sign-in until the address is verified. Re-running is
 idempotent: the org, profile, item, and agents are reused (the CLI agent's
 one-time API key is rotated each run); the MCP agent's private key is written to
 `~/.abadge/seed-mcp-agent.key.json` (0600).
@@ -164,7 +164,7 @@ bun run api:clean:worker
 packages/core    -> Effect Schema contracts, constants, tagged errors
 packages/crypto  -> encryption and API-key helpers
 packages/db      -> Drizzle schema and DB client
-packages/auth    -> Better Auth setup
+packages/auth    -> Authentication setup
 packages/env     -> environment validation
 packages/trpc    -> app router, clients, context, error mapping
 packages/daemon  -> local vault daemon, JSON-RPC client, and execution helpers
@@ -226,7 +226,7 @@ The repo currently relies on:
 
 * Effect Schema decode/encode tests in `packages/core`
 * crypto tests in `packages/crypto`
-* Better Auth tests in `packages/auth`
+* Auth tests in `packages/auth`
 * tRPC and consumer smoke coverage in the workspace test suite
 
 ### Test buckets and coverage
