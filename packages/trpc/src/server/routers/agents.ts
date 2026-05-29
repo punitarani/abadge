@@ -14,7 +14,11 @@ import {
   NotFoundError,
   SuccessResultSchema,
 } from "@abadge/core";
-import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
+import {
+  generateOpaqueToken,
+  hashApiKey,
+  normalizeEd25519PublicKeyJwk,
+} from "@abadge/crypto/shared";
 import { and, count, desc, eq, getTableColumns } from "@abadge/db";
 import { agentEnrollmentTokens } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
@@ -65,7 +69,19 @@ const createAgent = (input: CreateAgentInput) =>
     let bootstrapTokenHash: string | null = null;
 
     if (input.publicKey) {
-      publicKey = input.publicKey;
+      // Canonicalize the JWK before storing so a non-standard `alg` (Node's
+      // WebCrypto stamps alg:"Ed25519") can't be persisted and later break the
+      // session-exchange importKey(). The input schema already enforces
+      // kty/crv/x, so this is also a defensive 400 for anything that slips through.
+      publicKey = yield* Effect.try({
+        try: () => normalizeEd25519PublicKeyJwk(input.publicKey as string),
+        catch: (e) =>
+          new BadRequestError({
+            code: "BAD_REQUEST",
+            message: e instanceof Error ? e.message : "Invalid public key JWK",
+            hint: 'Provide a canonical Ed25519 public key JWK (kty:"OKP", crv:"Ed25519", base64url x).',
+          }),
+      });
     } else if (input.issueBootstrapToken) {
       bootstrapToken = generateOpaqueToken(AGENT_BOOTSTRAP_PREFIX);
       bootstrapTokenHash = yield* tryAsync(() => hashApiKey(bootstrapToken as string));

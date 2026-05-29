@@ -14,6 +14,41 @@ function parseJwk(serialized: string): unknown {
   return JSON.parse(serialized);
 }
 
+/**
+ * Validate and canonicalize an Ed25519 PUBLIC key JWK, returning the minimal
+ * `{kty, crv, x}` form and dropping every other member.
+ *
+ * Critically this strips a non-standard `alg`: Node's WebCrypto stamps
+ * `alg:"Ed25519"` onto exported Ed25519 JWKs (the JWA value should be "EdDSA";
+ * Bun and Cloudflare Workers omit `alg`). Workers' `importKey()` throws on that
+ * unexpected `alg`, so a key registered by a Node client would store fine but
+ * make every later signature verification throw → an uncaught 500. Canonicalizing
+ * here — at registration AND inside `importPublicKey` — fixes new keys and heals
+ * any bad-`alg` key already in the database.
+ *
+ * Throws on anything that is not a well-formed Ed25519 public JWK.
+ */
+export function normalizeEd25519PublicKeyJwk(serialized: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    throw new Error("public key must be a JSON-encoded JWK");
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("public key JWK must be a JSON object");
+  }
+  const jwk = parsed as Record<string, unknown>;
+  if (jwk.kty !== "OKP") throw new Error('public key JWK must have kty:"OKP"');
+  if (jwk.crv !== "Ed25519") throw new Error('public key JWK must have crv:"Ed25519"');
+  if (typeof jwk.x !== "string" || jwk.x.length === 0) {
+    throw new Error("public key JWK must include a base64url x coordinate");
+  }
+  if ("d" in jwk) throw new Error("public key JWK must not include a private component (d)");
+  // Canonical public JWK only — no alg / key_ops / ext / use.
+  return JSON.stringify({ kty: "OKP", crv: "Ed25519", x: jwk.x });
+}
+
 async function importPrivateKey(serialized: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("jwk", parseJwk(serialized) as never, { name: "Ed25519" }, false, [
     "sign",
@@ -21,7 +56,10 @@ async function importPrivateKey(serialized: string): Promise<CryptoKey> {
 }
 
 async function importPublicKey(serialized: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey("jwk", parseJwk(serialized) as never, { name: "Ed25519" }, false, [
+  // Canonicalize first: drops a non-standard `alg` (and other extras) that would
+  // otherwise make importKey throw on JWKs exported by Node's WebCrypto.
+  const canonical = normalizeEd25519PublicKeyJwk(serialized);
+  return crypto.subtle.importKey("jwk", parseJwk(canonical) as never, { name: "Ed25519" }, false, [
     "verify",
   ]);
 }
@@ -54,13 +92,25 @@ export async function verifyEd25519(
   message: string,
   signature: string,
 ): Promise<boolean> {
-  const key = await importPublicKey(publicKey);
-  return crypto.subtle.verify(
-    "Ed25519",
-    key,
-    toBufferSource(fromBase64(signature)),
-    toBufferSource(textToBytes(message)),
-  );
+  // Never throw: a malformed/unsupported stored key or signature is an
+  // authentication failure (caller maps `false` → 401), not a 500. The previous
+  // shape let importKey() throw straight through the session-exchange handler.
+  let key: CryptoKey;
+  try {
+    key = await importPublicKey(publicKey);
+  } catch {
+    return false;
+  }
+  try {
+    return await crypto.subtle.verify(
+      "Ed25519",
+      key,
+      toBufferSource(fromBase64(signature)),
+      toBufferSource(textToBytes(message)),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function generateOpaqueToken(prefix: string): string {
