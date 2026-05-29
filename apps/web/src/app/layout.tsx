@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={cn(inter.variable, ibmPlexMono.variable)}>
+    <html lang="en" className={cn(inter.variable, ibmPlexMono.variable)} suppressHydrationWarning>
       <body>
         <NuqsAdapter>
           <AppProviders>
