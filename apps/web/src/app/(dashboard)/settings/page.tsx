@@ -794,6 +794,10 @@ function DangerZoneSection({
   const [confirmText, setConfirmText] = useState("");
   const hasItems = itemCount > 0;
   const noun = workspacePosture(isPersonal).accountNounLower;
+  // The name the user must type to confirm. Trimmed so the type-to-confirm
+  // guard stays robust if the server ever returns a name with surrounding
+  // whitespace — and so the label, placeholder, and comparison all agree.
+  const confirmName = orgName.trim();
 
   const deleteMutation = useMutation({
     mutationFn: () => browserTrpcClient.organizations.delete.mutate({ orgId }),
@@ -851,20 +855,20 @@ function DangerZoneSection({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {noun}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>{orgName}</strong> and all associated data
+              This will permanently delete <strong>{confirmName}</strong> and all associated data
               including profiles, agents, and permissions. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="space-y-1.5">
             <Label htmlFor="confirm-org-name">
-              Type <strong>{orgName}</strong> to confirm
+              Type <strong>{confirmName}</strong> to confirm
             </Label>
             <Input
               id="confirm-org-name"
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              placeholder={orgName}
+              placeholder={confirmName}
             />
           </div>
 
@@ -872,7 +876,7 @@ function DangerZoneSection({
             <AlertDialogCancel onClick={() => setConfirmText("")}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={confirmText !== orgName || deleteMutation.isPending}
+              disabled={confirmText !== confirmName || deleteMutation.isPending}
               onClick={() => deleteMutation.mutate()}
             >
               {deleteMutation.isPending ? "Deleting..." : `Delete ${noun}`}
