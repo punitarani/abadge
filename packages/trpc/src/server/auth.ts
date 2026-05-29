@@ -6,7 +6,7 @@ import {
   USER_API_KEY_PREFIX,
 } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
-import { and, asc, eq, isNull } from "@abadge/db";
+import { and, asc, eq, isNull, lt, or } from "@abadge/db";
 import {
   agents as agentRecords,
   agentSessions,
@@ -60,11 +60,25 @@ function getBearerToken(ctx: BaseRequestContext): Effect.Effect<string, Unauthor
   return Effect.fail(unauthorized("Missing Bearer token"));
 }
 
+// Refresh last_used_at only when it is older than this. Turns a write on EVERY
+// authenticated request into an occasional one — removing the per-request
+// row-lock / WAL / single-row contention on the hot auth tables (user_api_keys,
+// agents, agent_sessions). The touch stays fire-and-forget; the staleness check
+// lives in the UPDATE's WHERE, so a recently-touched row matches 0 rows and the
+// statement writes nothing.
+const LAST_USED_THROTTLE_MS = 15 * 60 * 1000;
+
 function touchAgent(ctx: BaseRequestContext, agentId: string): void {
+  const staleBefore = new Date(Date.now() - LAST_USED_THROTTLE_MS);
   void ctx.db
     .update(agentRecords)
     .set({ lastUsedAt: new Date() })
-    .where(eq(agentRecords.id, agentId))
+    .where(
+      and(
+        eq(agentRecords.id, agentId),
+        or(isNull(agentRecords.lastUsedAt), lt(agentRecords.lastUsedAt, staleBefore)),
+      ),
+    )
     .execute()
     .catch(() => {});
 }
@@ -82,10 +96,16 @@ function toAgentIdentity(
 }
 
 function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
+  const staleBefore = new Date(Date.now() - LAST_USED_THROTTLE_MS);
   void ctx.db
     .update(agentSessions)
     .set({ lastUsedAt: new Date() })
-    .where(eq(agentSessions.id, sessionId))
+    .where(
+      and(
+        eq(agentSessions.id, sessionId),
+        or(isNull(agentSessions.lastUsedAt), lt(agentSessions.lastUsedAt, staleBefore)),
+      ),
+    )
     .execute()
     .catch(() => {});
 }
@@ -396,10 +416,16 @@ export const resolveSessionIdentity = (
   });
 
 function touchUserApiKey(ctx: BaseRequestContext, keyId: string): void {
+  const staleBefore = new Date(Date.now() - LAST_USED_THROTTLE_MS);
   void ctx.db
     .update(userApiKeys)
     .set({ lastUsedAt: new Date() })
-    .where(eq(userApiKeys.id, keyId))
+    .where(
+      and(
+        eq(userApiKeys.id, keyId),
+        or(isNull(userApiKeys.lastUsedAt), lt(userApiKeys.lastUsedAt, staleBefore)),
+      ),
+    )
     .execute()
     .catch(() => {});
 }
