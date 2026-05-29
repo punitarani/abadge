@@ -91,7 +91,7 @@ The automated equivalent of these checks runs in
 ## statement_timeout (AB — runaway-query guard)
 
 `app_runtime` carries a `statement_timeout = '15s'` role default, set by
-[`0028_app_runtime_statement_timeout.sql`](../../packages/db/migrations/0028_app_runtime_statement_timeout.sql).
+[`0029_app_runtime_statement_timeout.sql`](../../packages/db/migrations/0029_app_runtime_statement_timeout.sql).
 The connection pool — not query latency — is the throughput wall (PS-10 ~25
 connections, Hyperdrive holds a small active pool), so a single query stuck far
 beyond the sub-second norm would starve every other request sharing the pool.

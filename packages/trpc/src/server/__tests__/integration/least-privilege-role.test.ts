@@ -130,14 +130,14 @@ describe("least-privilege application role (§AB-0012)", () => {
     }
   });
 
-  // §AB — migration 0028 bounds runaway queries on the runtime role so one
+  // §AB — migration 0029 bounds runaway queries on the runtime role so one
   // cannot indefinitely pin a scarce connection-pool slot. It is set as a ROLE
   // DEFAULT (ALTER ROLE … SET) rather than via the postgres-js `connection:{}`
   // param, because Hyperdrive's transaction pooler RESETs driver-set session
   // GUCs on connection return — a role default survives RESET (which restores
   // role defaults). This asserts the migration applied; the through-Hyperdrive
   // behavior is a deploy-gated check documented on the migration.
-  test("§AB — migration 0028 sets app_runtime's statement_timeout role default", async () => {
+  test("§AB — migration 0029 sets app_runtime's statement_timeout role default", async () => {
     // The client runs with `fetch_types: false`, so postgres-js returns the
     // `text[]` rolconfig as its raw PG array literal string (e.g.
     // `{statement_timeout=15s}`) rather than a parsed JS array — assert on the
