@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { OneTimeSecretDisplay } from "@/components/dashboard/one-time-secret-display";
+import { SettingsTableRowsSkeleton } from "@/components/dashboard/skeletons/settings-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,28 +75,35 @@ function memberDisplayName(m: { name?: string; email?: string | null; userId: st
   return m.name?.trim() || m.email?.trim() || `${m.userId.slice(0, 8)}…`;
 }
 
-export default function SettingsPage(): React.ReactElement {
+export default function SettingsPage(): React.ReactElement | null {
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const activeOrgName = useOrgStore((s) => s.activeOrgName);
+  const activeOrgSlug = useOrgStore((s) => s.activeOrgSlug);
   const { data: session } = authClient.useSession();
   const currentUserId = session?.user?.id;
 
   // ---- Org details ----
+  // `organizations.get` is prefetched for this route, so it is usually warm on
+  // arrival. We still seed the name/slug from the persisted store (and the
+  // cached org list) so the account and danger-zone sections paint instantly
+  // with their real values instead of popping in once the query resolves —
+  // the authoritative values overwrite the seed seamlessly when they match.
   const orgQuery = useQuery({
     queryKey: dashboardQueryKeys.organization(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.organizations.get.query({ orgId: activeOrgId ?? "" }),
     enabled: !!activeOrgId,
   });
-  const org = orgQuery.data?.organization;
   // Personal accounts are single-user vaults: present "account" framing and
   // hide org-collaboration surfaces (members, invites). To collaborate, the
   // user creates a separate team organization. Read `isPersonal` from the
   // already-cached org list (via useActiveOrg) so the framing is correct on
   // first paint rather than flashing the team copy until `organizations.get`
   // resolves.
-  const { isPersonal } = useActiveOrg();
+  const { org: activeOrg, isPersonal } = useActiveOrg();
+  const orgName = orgQuery.data?.organization.name ?? activeOrg?.name ?? activeOrgName ?? "";
+  const orgSlug = orgQuery.data?.organization.slug ?? activeOrg?.slug ?? activeOrgSlug ?? "";
 
   // ---- Members ----
   const membersQuery = useQuery({
@@ -113,12 +121,19 @@ export default function SettingsPage(): React.ReactElement {
   });
   const itemCount = itemsQuery.data?.items?.length ?? 0;
 
+  // Gate the whole page on a resolved active org. The dashboard shell already
+  // guarantees this before rendering children, so it is effectively always
+  // present here — the guard just keeps the section props non-null.
+  if (!activeOrgId) {
+    return null;
+  }
+
   return (
-    <div className="space-y-8 max-w-3xl">
+    <div className="max-w-3xl space-y-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
         <Link href="/overview" className="hover:text-foreground">
-          {activeOrgName}
+          {orgName}
         </Link>
         <span>/</span>
         <span className="text-foreground">Settings</span>
@@ -130,24 +145,22 @@ export default function SettingsPage(): React.ReactElement {
         <p className="mt-1 text-sm text-muted-foreground">
           {isPersonal
             ? "Manage your personal account and security."
-            : "Manage your organization settings, members, and billing."}
+            : "Manage your organization settings, members, and API keys."}
         </p>
       </div>
 
       {/* Organization / account section */}
-      {org && activeOrgId && (
-        <OrgGeneralSection
-          orgId={activeOrgId}
-          orgName={org.name}
-          orgSlug={org.slug}
-          isPersonal={isPersonal}
-          queryClient={queryClient}
-        />
-      )}
+      <OrgGeneralSection
+        orgId={activeOrgId}
+        orgName={orgName}
+        orgSlug={orgSlug}
+        isPersonal={isPersonal}
+        queryClient={queryClient}
+      />
 
       {/* Members section — team organizations only. A personal account is a
           single-user vault, so inviting members would contradict "personal". */}
-      {activeOrgId && org && !isPersonal && (
+      {!isPersonal && (
         <MembersSection
           orgId={activeOrgId}
           members={members}
@@ -158,19 +171,18 @@ export default function SettingsPage(): React.ReactElement {
       )}
 
       {/* API keys section */}
-      {activeOrgId && <ApiKeysSection orgId={activeOrgId} queryClient={queryClient} />}
+      <ApiKeysSection orgId={activeOrgId} queryClient={queryClient} />
 
       {/* Danger zone */}
-      {org && activeOrgId && (
-        <DangerZoneSection
-          orgId={activeOrgId}
-          orgName={org.name}
-          itemCount={itemCount}
-          isPersonal={isPersonal}
-          queryClient={queryClient}
-          router={router}
-        />
-      )}
+      <DangerZoneSection
+        orgId={activeOrgId}
+        orgName={orgName}
+        itemCount={itemCount}
+        itemsLoading={itemsQuery.isPending}
+        isPersonal={isPersonal}
+        queryClient={queryClient}
+        router={router}
+      />
     </div>
   );
 }
@@ -192,6 +204,8 @@ function OrgGeneralSection({
 }): React.ReactElement {
   const [name, setName] = useState(orgName);
   const { accountNoun, accountNounLower } = workspacePosture(isPersonal);
+  const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
+  const activeOrgLogo = useOrgStore((s) => s.activeOrgLogo);
 
   // Resync the field to the authoritative server name when it changes (e.g. after
   // switching orgs or a refetch), so the input and the Save-disabled comparison
@@ -201,8 +215,13 @@ function OrgGeneralSection({
   }, [orgName]);
 
   const updateMutation = useMutation({
-    mutationFn: () => browserTrpcClient.organizations.update.mutate({ orgId, name }),
+    mutationFn: () => browserTrpcClient.organizations.update.mutate({ orgId, name: name.trim() }),
     onSuccess: async () => {
+      // Push the new name into the persisted store so the breadcrumb and any
+      // other store-backed chrome update immediately — the org-list refetch
+      // below keeps the sidebar switcher in sync, but it reads the cached list,
+      // not the store.
+      setActiveOrg({ id: orgId, slug: orgSlug, name: name.trim(), logo: activeOrgLogo });
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organization(orgId) });
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
       toast.success(`${accountNoun} name updated.`);
@@ -214,14 +233,14 @@ function OrgGeneralSection({
 
   function handleSave(e: React.FormEvent): void {
     e.preventDefault();
-    if (!name.trim() || name === orgName) return;
+    if (!name.trim() || name.trim() === orgName) return;
     updateMutation.mutate();
   }
 
   return (
     <section className="space-y-4">
       <h2 className="text-sm font-semibold">{accountNoun}</h2>
-      <Card className="p-5 space-y-4">
+      <Card className="p-5">
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="org-name">{accountNoun} name</Label>
@@ -234,8 +253,7 @@ function OrgGeneralSection({
               />
               <Button
                 type="submit"
-                size="sm"
-                disabled={updateMutation.isPending || !name.trim() || name === orgName}
+                disabled={updateMutation.isPending || !name.trim() || name.trim() === orgName}
               >
                 {updateMutation.isPending ? "Saving..." : "Save"}
               </Button>
@@ -307,11 +325,7 @@ function MembersSection({
           </TableHeader>
           <TableBody>
             {isPending ? (
-              <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <SettingsTableRowsSkeleton columns={4} />
             ) : members.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
@@ -462,39 +476,46 @@ function InviteMemberCard({ orgId }: { orgId: string }): React.ReactElement {
 
   return (
     <Card className="p-5">
-      <h3 className="text-sm font-medium mb-1">Invite member</h3>
-      <p className="text-xs text-muted-foreground mb-3">
-        Generate a one-time invite link. The link expires in 7 days.
-      </p>
-      <form onSubmit={handleGenerate} className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1.5">
-            <Label>Role</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="owner">Owner</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <Button type="submit" size="sm" disabled={inviteMutation.isPending}>
-            {inviteMutation.isPending ? "Generating..." : "Generate link"}
-          </Button>
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium">Invite member</h3>
+          <p className="text-xs text-muted-foreground">
+            Generate a one-time invite link. The link expires in 7 days.
+          </p>
         </div>
-
-        {inviteLink && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2">
-            <code className="flex-1 text-xs truncate select-all">{inviteLink}</code>
-            <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
-              {copied ? "Copied" : "Copy"}
+        <form onSubmit={handleGenerate} className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}
+              >
+                <SelectTrigger id="invite-role" className="h-9 w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="owner">Owner</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="submit" disabled={inviteMutation.isPending}>
+              {inviteMutation.isPending ? "Generating..." : "Generate link"}
             </Button>
           </div>
-        )}
-      </form>
+
+          {inviteLink && (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2">
+              <code className="flex-1 text-xs truncate select-all">{inviteLink}</code>
+              <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          )}
+        </form>
+      </div>
     </Card>
   );
 }
@@ -614,11 +635,7 @@ function ApiKeysSection({
           </TableHeader>
           <TableBody>
             {keysQuery.isPending ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <SettingsTableRowsSkeleton columns={6} />
             ) : apiKeys.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
@@ -677,11 +694,13 @@ function ApiKeysSection({
             onDismiss={() => setCreatedKey(null)}
           />
         ) : (
-          <>
-            <h3 className="text-sm font-medium mb-1">Create API key</h3>
-            <p className="text-xs text-muted-foreground mb-3">
-              The key is shown once on creation. Store it somewhere safe.
-            </p>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium">Create API key</h3>
+              <p className="text-xs text-muted-foreground">
+                The key is shown once on creation. Store it somewhere safe.
+              </p>
+            </div>
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="api-key-name">Name</Label>
@@ -695,9 +714,9 @@ function ApiKeysSection({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Expires</Label>
+                <Label htmlFor="api-key-expiry">Expires</Label>
                 <Select value={expiry} onValueChange={(v) => setExpiry(v as ApiKeyExpiry)}>
-                  <SelectTrigger className="w-32">
+                  <SelectTrigger id="api-key-expiry" className="h-9 w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -709,11 +728,11 @@ function ApiKeysSection({
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" size="sm" disabled={createMutation.isPending || !name.trim()}>
+              <Button type="submit" disabled={createMutation.isPending || !name.trim()}>
                 {createMutation.isPending ? "Creating..." : "Create key"}
               </Button>
             </form>
-          </>
+          </div>
         )}
       </Card>
 
@@ -758,6 +777,7 @@ function DangerZoneSection({
   orgId,
   orgName,
   itemCount,
+  itemsLoading,
   isPersonal,
   queryClient,
   router,
@@ -765,6 +785,7 @@ function DangerZoneSection({
   orgId: string;
   orgName: string;
   itemCount: number;
+  itemsLoading: boolean;
   isPersonal: boolean;
   queryClient: ReturnType<typeof useQueryClient>;
   router: ReturnType<typeof useRouter>;
@@ -793,21 +814,23 @@ function DangerZoneSection({
         <p className="text-sm text-muted-foreground mb-4">
           Permanently delete this {noun} and all its data. This action cannot be undone.
         </p>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <p className="text-sm font-medium">Delete {noun}</p>
-            {hasItems && (
+            {itemsLoading ? (
+              <p className="text-xs text-muted-foreground">Checking for items…</p>
+            ) : hasItems ? (
               <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                <Warning className="h-3.5 w-3.5" />
+                <Warning className="h-3.5 w-3.5 shrink-0" />
                 Blocked if items exist ({itemCount} item{itemCount !== 1 ? "s" : ""})
               </p>
-            )}
+            ) : null}
           </div>
           <Button
             variant="outline"
             size="sm"
             className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            disabled={hasItems}
+            disabled={hasItems || itemsLoading}
             onClick={() => setDeleteDialogOpen(true)}
           >
             <Trash className="mr-1 h-3.5 w-3.5" />
