@@ -291,13 +291,14 @@ Does not own:
 * validate with Effect Schema (CreateAgentSchema)
 * authMethod is always `public_key_session`
 * agents must provide `publicKey` or `issueBootstrapToken: true`
+* `publicKey` JWKs are **canonicalized** at registration and enrollment via `normalizeEd25519PublicKeyJwk` (kept to `{kty, crv, x}`; a non-standard `alg` is stripped). Node's WebCrypto stamps `alg:"Ed25519"` (JWA should be "EdDSA"), which Workers' `importKey` rejects — so an un-normalized key would store fine yet make every later session exchange throw. Invalid JWKs are rejected with a `BAD_REQUEST`, never stored-but-unusable.
 * bootstrap tokens (prefix `abe_`) issued for unenrolled public-key agents, 10-minute TTL
 
 ### Agent session exchange (public\_key\_session)
 
 * agent requests challenge (prefix `abc_`, 60s TTL)
 * agent signs challenge with Ed25519 private key
-* API verifies signature against stored public key
+* API verifies signature against stored public key. `verifyEd25519` fails closed (a malformed/unsupported stored key returns `false` → 401), so a bad key can never surface as an uncaught 500.
 * API issues session token (prefix `abs_`, 15-minute TTL)
 * `AbadgeAgentClient` schedules background refresh at T-2 minutes before expiry
 
