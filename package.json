@@ -23,6 +23,7 @@
     "api:dev:worker": "bun run dev:vars && cd apps/api && bunx wrangler dev --local --no-live-reload",
     "api:clean:worker": "rm -rf apps/api/.wrangler",
     "cli": "bun packages/cli/bin/abadge.ts",
+    "seed": "bun scripts/seed.ts",
     "mcp": "doppler run -- bun packages/mcp/src/index.ts",
     "storybook": "bun run --cwd apps/web storybook",
     "storybook:build": "bun run --cwd apps/web storybook:build",
