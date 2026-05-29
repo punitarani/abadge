@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronsUpDown, Lock, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { ChevronsUpDown, Lock, LogOut, Moon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -10,12 +10,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -24,6 +19,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Switch } from "@/components/ui/switch";
 import { authClient } from "@/lib/auth-client";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
@@ -43,7 +39,8 @@ export function NavUser(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const userName = session?.user?.name ?? "User";
   const userEmail = session?.user?.email ?? "";
@@ -99,32 +96,19 @@ export function NavUser(): React.ReactElement {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Sun className="hidden size-4 [html:not(.dark)_&]:block" />
-                <Moon className="hidden size-4 [html.dark_&]:block" />
-                Theme
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup
-                  value={theme ?? "dark"}
-                  onValueChange={(value) => setTheme(value)}
-                >
-                  <DropdownMenuRadioItem value="dark">
-                    <Moon className="size-4" />
-                    Dark
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="light">
-                    <Sun className="size-4" />
-                    Light
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
-                    <Monitor className="size-4" />
-                    System
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setTheme(isDark ? "light" : "dark");
+              }}
+              className="flex items-center justify-between"
+            >
+              <span className="flex items-center gap-2">
+                <Moon className="size-4" />
+                Dark mode
+              </span>
+              <Switch checked={isDark} tabIndex={-1} aria-hidden="true" />
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => lockAll()}>
               <Lock />
