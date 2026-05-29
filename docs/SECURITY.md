@@ -78,10 +78,10 @@ abadge keeps each key well inside that bound by two mechanisms:
 
 | Surface | Method | Session Duration |
 |---|---|---|
-| Dashboard | Better Auth session cookie (email/password or OAuth) | 7 days |
-| CLI | Better Auth device authorization flow | Bearer token in daemon memory |
+| Dashboard | Session cookie (email/password or OAuth) | 7 days |
+| CLI | Device authorization flow | Bearer token in daemon memory |
 
-**Dashboard**: Standard cookie-based sessions with CSRF protection via Better Auth. Supports Google and GitHub OAuth.
+**Dashboard**: Standard cookie-based sessions with built-in CSRF protection. Supports Google and GitHub OAuth.
 
 **CLI**: The CLI initiates a device authorization flow — user approves in the browser, CLI receives a bearer token. The token is held in daemon memory only; the config file never stores a human bearer token.
 
@@ -156,7 +156,7 @@ Security properties:
 
 Procedures resolve `Authorization: Bearer <token>` by prefix:
 
-1. Better Auth session cookie / bearer token → operator session
+1. Session cookie / bearer token → operator session
    (management surface)
 2. `abu_` prefix → personal API key (prefix lookup, hash match) → **session
    identity** scoped to the key's org; management surface only, never
@@ -327,7 +327,7 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 | Rate limiting | In-memory per-IP counters (60/min auth, 100/min API) |
 | CORS | Restricted to trusted origins only |
 | Secure headers | Hono `secureHeaders()` middleware |
-| CSRF | Better Auth built-in protection |
+| CSRF | Built-in CSRF protection |
 | Input validation | Effect Schema on all external input |
 | SQL injection | Drizzle ORM parameterized queries (no raw SQL) |
 | Audit write ordering | Audit entries are awaited before returning responses |

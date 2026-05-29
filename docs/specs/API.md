@@ -4,7 +4,7 @@ The control plane exposes two HTTP surfaces:
 
 | Surface | Path | Purpose |
 |---------|------|---------|
-| Better Auth | `/api/auth/*` | human authentication and device authorization |
+| Authentication | `/api/auth/*` | human authentication and device authorization |
 | tRPC | `/trpc/*` | canonical typed application API |
 
 The tRPC surface is the canonical application transport. REST compatibility routes may delegate to it,
@@ -12,7 +12,7 @@ but the auth redesign is defined against `/api/auth/*` and the tRPC routers.
 
 ## Human authentication
 
-Better Auth remains the source of truth for operator identity.
+The authentication system is the source of truth for operator identity.
 
 Supported routes include:
 
@@ -30,8 +30,8 @@ POST /api/auth/device/deny
 
 Operator-facing tRPC procedures accept:
 
-* Better Auth browser cookies
-* Better Auth bearer access tokens in `Authorization: Bearer ...`
+* Session cookies
+* Bearer access tokens in `Authorization: Bearer ...`
 
 The CLI device-login bearer token is not persisted to disk.
 
