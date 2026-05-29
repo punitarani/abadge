@@ -381,6 +381,28 @@ bun run test:e2e              # E2E (no coverage by design)
 
 Test buckets are defined in `scripts/coverage/buckets.ts` (single source of truth: unit / integration / e2e). When adding a new test, place it where its dependencies fit: pure in-process tests are unit; tests that hit Postgres or spawn in-process servers are integration; tests that run against the compiled binaries via wrangler-dev belong in `apps/e2e`.
 
+## Git & PR workflow
+
+### Branch & rebase safety
+
+* never commit directly to `main`; branch (or worktree) off `origin/main` for every change
+* before any `git rebase` or force-push, capture the branch tip so stripped commits are recoverable (`git rev-parse HEAD` / `git reflog`), and rebase in small increments rather than one long chain
+* prefer `git push --force-with-lease` over `--force`
+* recover dropped commits with `git reflog` + `git cherry-pick`; never redo lost work from memory
+
+### Merge readiness
+
+* a PR is "merge-ready" only when CI is green — verify with `gh pr checks <pr>` before claiming it, not by eyeballing the diff
+* required PR checks live in `.github/workflows/ci-cd.yml`: `lint` (`bun run lint`), `typecheck` (`bun run typecheck`), `audit`, the `test-unit` / `test-integration` / `test-web` buckets, `e2e`, the `build-api` / `build-cli` / `build-web` builds, and `db-validate`
+* resolve conflicts against `origin/main` proactively, then rerun `bun run lint && bun run typecheck` locally before pushing
+* changes to release-surface paths (`scripts/releases/registry.ts` — `cli` / `mcp`) require a changeset in `.changeset/`; the `changeset-check` job blocks the PR otherwise
+* the repo merges with merge commits (see the `cli-release` skill); do not assume squash
+
+### Production safety
+
+* all prod commands run through Doppler (`doppler run -- …`); confirm the required Doppler config and credentials are loaded **up front**, before any prod migration, teardown, or scale-up
+* validate the safety/teardown gate end-to-end before running a destructive prod step (teardown, `db:reset`, scale-down) — never proceed past the gate until the credential check passes
+
 ## Style rules
 
 * TypeScript strict; no `any` unless unavoidable and justified
@@ -412,6 +434,7 @@ Test buckets are defined in `scripts/coverage/buckets.ts` (single source of trut
 * keep flows obvious: items, agents, permissions, audit, settings
 * show the one-time API key clearly and warn that it will not be shown again
 * do not reimplement backend authorization in the client
+* SSR-safe state only: never read a hydration-dependent value (e.g. `useOrgStore.persist.hasHydrated()`) inside a `useState` lazy initializer — it runs during the Next.js static prerender where `persist` isn't wired up and crashes the build. Initialize `useState(false)` and gate hydration in a `useEffect` (canonical pattern: `apps/web/src/app/(dashboard)/layout.tsx`, `apps/web/src/components/landing/auth-redirect.tsx`)
 
 ## What not to introduce casually
 
