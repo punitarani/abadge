@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
@@ -82,11 +82,13 @@ export default function DashboardLayout({
  */
 function DashboardGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session, isPending: sessionPending } = authClient.useSession();
   // Store selectors (not destructuring) so the gate only re-renders when
   // these specific fields change, not on every unrelated store update.
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
+  const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
   const [hydrated, setHydrated] = useState(false);
 
   // Wait for Zustand persist rehydration
@@ -179,6 +181,13 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
             <Button
               variant="outline"
               onClick={async () => {
+                // Clear persisted org context + query cache before signing out
+                // so the next user on this browser does not inherit a stale
+                // activeOrgId (mirrors nav-user.tsx's handleSignOut). A stale
+                // org header is what drives most "couldn't load organizations"
+                // states, so the recovery path must not leave it behind.
+                clearActiveOrg();
+                queryClient.clear();
                 await authClient.signOut();
                 router.push("/login");
               }}

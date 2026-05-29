@@ -84,3 +84,66 @@ describe("onboarding flow: zero-org user can reach bootstrap endpoints", () => {
     expect(slugResult.available).toBe(true);
   });
 });
+
+/**
+ * Regression: a STALE/foreign X-Abadge-Org-Id header (an `activeOrgId` left in
+ * the browser from a previous account — it survives sign-out, account deletion,
+ * and account switches) must not break the bootstrap surface. It previously
+ * threw ORG_MEMBERSHIP_REQUIRED from resolveOptionalOrgId, so organizations.list
+ * errored and the dashboard gate showed "We couldn't load your organizations"
+ * with no recovery, while create/createPersonal failed too — stranding the user.
+ */
+describe("onboarding flow: stale/foreign X-Abadge-Org-Id is tolerated", () => {
+  const db = getTestDb();
+  const auth = createTestAuth(db);
+
+  // An org id the caller is provably not a member of (e.g. a deleted org still
+  // referenced by a persisted activeOrgId).
+  const STALE_ORG_ID = "org_stale_not_a_member";
+
+  beforeAll(async () => {
+    await migrateTestDb();
+  });
+
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  test("zero-org user with a foreign header can still organizations.list (empty, not 403)", async () => {
+    const user = await seedUser(auth);
+    const caller = createOperatorCaller(db, auth, user.headers, STALE_ORG_ID);
+
+    const result = await caller.organizations.list();
+    expect(result.organizations).toEqual([]);
+  });
+
+  test("zero-org user with a foreign header can still organizations.create", async () => {
+    const user = await seedUser(auth);
+    const caller = createOperatorCaller(db, auth, user.headers, STALE_ORG_ID);
+
+    const result = await caller.organizations.create({ name: "Recovered Org", slug: "recovered" });
+    expect(result.organization.slug).toBe("recovered");
+  });
+
+  test("zero-org user with a foreign header can still organizations.createPersonal", async () => {
+    const user = await seedUser(auth);
+    const caller = createOperatorCaller(db, auth, user.headers, STALE_ORG_ID);
+
+    const result = await caller.organizations.createPersonal();
+    expect(result.organization.id).toBeTruthy();
+    expect(result.organization.isPersonal).toBe(true);
+  });
+
+  test("a user's real org is still returned when the header points at a stale org (client self-heals)", async () => {
+    const user = await seedUser(auth);
+    const org = await seedOrg(auth, user.userId, { name: "Real Org", slug: "real-org" });
+
+    // The header names a stale org, but the user belongs to `org`. list must
+    // return the real membership so the dashboard gate can adopt it.
+    const caller = createOperatorCaller(db, auth, user.headers, STALE_ORG_ID);
+
+    const result = await caller.organizations.list();
+    expect(result.organizations).toHaveLength(1);
+    expect(result.organizations[0].id).toBe(org.orgId);
+  });
+});

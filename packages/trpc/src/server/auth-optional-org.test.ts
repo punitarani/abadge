@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ForbiddenError, UnauthorizedError } from "@abadge/core";
+import { UnauthorizedError } from "@abadge/core";
 import { Effect } from "effect";
 import { resolveSessionIdentityOptionalOrg } from "./auth-optional-org";
 import type { BaseRequestContext } from "./context";
@@ -177,9 +177,15 @@ describe("resolveSessionIdentityOptionalOrg", () => {
     });
   });
 
-  test("X-Abadge-Org-Id present but user is not a member → throws ORG_MEMBERSHIP_REQUIRED", async () => {
+  // A foreign/stale X-Abadge-Org-Id (e.g. an `activeOrgId` persisted in the
+  // browser from a previous account) must NOT be fatal on bootstrap-safe
+  // routes. Before the fix this threw ORG_MEMBERSHIP_REQUIRED, which broke
+  // organizations.list/create/createPersonal and stranded fresh/switched users
+  // on the dashboard error card. It now falls through to membership resolution,
+  // exactly as if no header were sent.
+  test("X-Abadge-Org-Id present but user is not a member → falls through (null when no memberships)", async () => {
     const ctx = createOptionalOrgContext(
-      { headerMemberships: [] },
+      { headerMemberships: [], fallbackMemberships: [] },
       { "X-Abadge-Org-Id": "org_not_mine" },
     );
     ctx.auth = {
@@ -194,11 +200,40 @@ describe("resolveSessionIdentityOptionalOrg", () => {
       }),
     } as BaseRequestContext["auth"];
 
-    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentityOptionalOrg(ctx)));
+    const identity = await Effect.runPromise(resolveSessionIdentityOptionalOrg(ctx));
 
-    expect(error).toBeInstanceOf(ForbiddenError);
-    expect(error).toMatchObject({
-      code: "ORG_MEMBERSHIP_REQUIRED",
+    expect(identity).toEqual({
+      kind: "session",
+      userId: "user_foreign",
+      organizationId: null,
+      authMethod: "browser_session",
+    });
+  });
+
+  test("X-Abadge-Org-Id foreign but user has one real membership → resolves to that membership", async () => {
+    const ctx = createOptionalOrgContext(
+      { headerMemberships: [], fallbackMemberships: [{ organizationId: "org_real" }] },
+      { "X-Abadge-Org-Id": "org_stale" },
+    );
+    ctx.auth = {
+      api: {
+        getSession: async () => ({
+          session: { userId: "user_switched" },
+          user: { id: "user_switched" },
+        }),
+      },
+      $context: Promise.resolve({
+        internalAdapter: { findSession: async () => null },
+      }),
+    } as BaseRequestContext["auth"];
+
+    const identity = await Effect.runPromise(resolveSessionIdentityOptionalOrg(ctx));
+
+    expect(identity).toEqual({
+      kind: "session",
+      userId: "user_switched",
+      organizationId: "org_real",
+      authMethod: "browser_session",
     });
   });
 });
