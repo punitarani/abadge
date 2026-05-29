@@ -64,12 +64,27 @@ export function evaluateCaching(config: HyperdriveConfigResponse): {
 }
 
 /**
- * Build the wrangler argv. NOTE: `wrangler hyperdrive get <id>` prints bare JSON
- * unconditionally — there is no `--json` flag (passing one makes wrangler exit
- * non-zero with "Unknown argument"). Kept pure so a test can assert the argv.
+ * Build the wrangler argv. NOTE: `wrangler hyperdrive get <id>` has no `--json`
+ * flag (passing one makes wrangler exit non-zero with "Unknown argument"); it
+ * prints the config as JSON, but PREFIXED with an "⛅️ wrangler <version>" startup
+ * banner on stdout — strip it with extractHyperdriveJson before parsing. Kept
+ * pure so a test can assert the argv.
  */
 export function wranglerGetArgs(id: string): string[] {
   return ["wrangler", "hyperdrive", "get", id];
+}
+
+/**
+ * Extract the JSON object from `wrangler hyperdrive get` stdout. Wrangler prints
+ * an "⛅️ wrangler <version>" startup banner to stdout before the payload for
+ * operational subcommands (even under CI / non-TTY), so parsing the whole stream
+ * would throw on the leading banner and spuriously fail the gate closed. Slice
+ * from the first "{"; a no-op when no banner is present. Pure so a test can
+ * assert the banner is stripped.
+ */
+export function extractHyperdriveJson(stdout: string): string {
+  const start = stdout.indexOf("{");
+  return (start === -1 ? stdout : stdout.slice(start)).trim();
 }
 
 async function main(): Promise<void> {
@@ -113,7 +128,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const raw = result.stdout.toString().trim();
+  const raw = extractHyperdriveJson(result.stdout.toString());
   let hyperdriveConfig: HyperdriveConfigResponse;
   try {
     hyperdriveConfig = JSON.parse(raw) as HyperdriveConfigResponse;

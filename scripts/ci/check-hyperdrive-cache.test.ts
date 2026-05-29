@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   evaluateCaching,
+  extractHyperdriveJson,
   type HyperdriveConfigResponse,
   hyperdriveIdFromWranglerConfig,
   wranglerGetArgs,
@@ -12,6 +13,24 @@ describe("check-hyperdrive-cache (§AB-0052)", () => {
       const args = wranglerGetArgs("abc123");
       expect(args).toEqual(["wrangler", "hyperdrive", "get", "abc123"]);
       expect(args).not.toContain("--json");
+    });
+  });
+
+  describe("extractHyperdriveJson", () => {
+    it("strips the wrangler startup banner before the JSON payload", () => {
+      const stdout = ` ⛅️ wrangler 4.95.0\n───────────────────\n{"id":"hd","caching":{"disabled":true}}`;
+      expect(JSON.parse(extractHyperdriveJson(stdout))).toEqual({
+        id: "hd",
+        caching: { disabled: true },
+      });
+    });
+
+    it("is a no-op when stdout is already bare JSON", () => {
+      expect(extractHyperdriveJson('{"id":"hd"}')).toBe('{"id":"hd"}');
+    });
+
+    it("returns trimmed input when no JSON object is present (so JSON.parse then fails closed)", () => {
+      expect(extractHyperdriveJson("  not json at all  ")).toBe("not json at all");
     });
   });
 
