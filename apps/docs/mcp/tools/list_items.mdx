@@ -3,7 +3,7 @@ title: "list_items"
 description: "Returns item metadata for the items the calling agent can access. Never returns secret values."
 ---
 
-`list_items` is a metadata-only tool. It calls `items.listForAgent` under the hood and returns one summary per item the calling agent has at least one permission row on. Agents with no grants get an empty array.
+`list_items` is a metadata-only tool. It reads the agent items endpoint (`GET /v1/items`) under the hood and returns one summary per item the calling agent has at least one permission row on. Agents with no grants get an empty array.
 
 ## Input
 
@@ -49,6 +49,6 @@ Letting the model see secret values would defeat the entire MCP design. The mode
 
 ## Related
 
-- [API: `items.listForAgent`](/api/procedures/items)
+- [API reference](/api/overview)
 - [`use_secret`](/mcp/tools/use_secret)
 - [`mount_secret`](/mcp/tools/mount_secret)

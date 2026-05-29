@@ -21,7 +21,7 @@ abadge audit --json | jq '.entries[] | select(.result == "denied")'
 | `--cursor <cursor>` | Pagination cursor returned from a previous response |
 | `--json` | Print machine-readable JSON (the raw API response) |
 
-The CLI exposes only pagination flags. All filtering — by event type, agent, item, result, surface, or field — is done either with `jq` on `--json` output or via the API's `audit.list` endpoint directly.
+The CLI exposes only pagination flags. All filtering — by event type, agent, item, result, surface, or field — is done either with `jq` on `--json` output or via the `GET /v1/audit` endpoint directly.
 
 ## Default output
 
@@ -61,7 +61,7 @@ while true; do
 done
 ```
 
-For first-class filters (by event type, agent, item, result, surface, or field), call the API directly: [`audit.list`](/api/procedures/audit) accepts all of them.
+For first-class filters (by event type, agent, item, result, surface, or field), call the API directly: the [`GET /v1/audit`](/api/overview) endpoint accepts all of them.
 
 ## What audit captures
 
@@ -76,5 +76,5 @@ See [Audit log](/concepts/audit-log) for the full event catalog. Categories incl
 ## Related
 
 - [Concepts: audit log](/concepts/audit-log)
-- [API: audit procedures](/api/procedures/audit)
+- [API reference](/api/overview)
 - [Dashboard: audit](/dashboard/audit)

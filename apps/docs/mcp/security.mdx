@@ -60,13 +60,13 @@ Tool errors are returned as JSON text content with the shape:
 }
 ```
 
-`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer error from the control plane). Non-API failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only.
+`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (an error returned by the control-plane API). Non-API failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only.
 
 LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
 
 ## Permissions
 
-The MCP server can only access items where the configured agent has an explicit permission. The `mount_env` and `mount_file` capabilities are the typical grants for MCP. See [Permissions and capabilities](/concepts/permissions-and-capabilities) for the full matrix.
+The MCP server can only access items where the configured agent has an explicit permission. The `use` capability (with `delivery: env` or `delivery: file`) is the typical grant for MCP. See [Permissions and capabilities](/concepts/permissions-and-capabilities) for the full matrix.
 
 ## Trust boundary summary
 

@@ -1,0 +1,178 @@
+---
+title: "Agentic registration (auth.md)"
+description: "Let an AI agent self-register an unclaimed personal account, then have a human claim it with an emailed one-time code."
+---
+
+abadge implements the [WorkOS auth.md](https://workos.com/auth-md) `anonymous`
+→ user-claimed flow. An agent registers an **unclaimed personal account** on a
+person's behalf and receives an `abu_` personal API key immediately. The human
+then **claims** the account with a 6-digit code emailed to them, binding their
+verified email to the account. After the claim, the agent manages that person's
+credentials through the normal [items](/api/sdk/user-client) and
+[profiles](/concepts/profiles) surface.
+
+<Note>
+  These endpoints live at the **root** of the API host (not under `/v1`) and are
+  all unauthenticated. The issued credential is a standard personal API key
+  (`abu_`): a management-surface session bound to the new account. It can never
+  reach the agent-gated [access](/concepts/permissions-and-capabilities) surface
+  — it cannot reveal or mount secret values.
+</Note>
+
+## Base URL
+
+| Environment | Base |
+|---|---|
+| Production | `https://api.abadge.io` |
+| Local development | `http://localhost:8787` |
+
+## Discovery
+
+Discovery is two-hop, per [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728). A
+`401` from any route carries a `WWW-Authenticate` header pointing at the
+protected-resource metadata, so an agent can bootstrap from a single failed
+request:
+
+```http
+WWW-Authenticate: Bearer resource_metadata="https://api.abadge.io/.well-known/oauth-protected-resource"
+```
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/.well-known/oauth-protected-resource` | Protected Resource Metadata (resource, authorization servers, supported scopes). |
+| `GET` | `/.well-known/oauth-authorization-server` | Authorization Server Metadata, including the `agent_auth` block with the register / claim / revocation URIs. |
+| `GET` | `/auth.md` | Markdown skill manifest an agent can read to learn the flow. |
+
+<Accordion title="Example: oauth-authorization-server metadata">
+```json
+{
+  "issuer": "https://api.abadge.io/",
+  "authorization_servers": ["https://api.abadge.io/"],
+  "scopes_supported": ["abadge:account.read", "abadge:account.manage"],
+  "bearer_methods_supported": ["header"],
+  "agent_auth": {
+    "skill": "https://api.abadge.io/auth.md",
+    "register_uri": "https://api.abadge.io/agent/auth",
+    "claim_uri": "https://api.abadge.io/agent/auth/claim",
+    "revocation_uri": "https://api.abadge.io/agent/auth/revoke",
+    "identity_types_supported": ["anonymous"],
+    "anonymous": { "credential_types_supported": ["api_key"] }
+  }
+}
+```
+</Accordion>
+
+## The flow
+
+<Steps>
+  <Step title="Register anonymously">
+    `POST /agent/auth` provisions an unclaimed personal account (a
+    placeholder-email owner, an org, and a default `server_managed` profile) and
+    returns an `abu_` credential plus a `clm_` claim token. The credential
+    authenticates immediately but the account stays inert until it is claimed.
+  </Step>
+  <Step title="Start the claim">
+    `POST /agent/auth/claim` with the human's email. abadge emails them a
+    6-digit code. The agent asks the human for that code.
+  </Step>
+  <Step title="Complete the claim">
+    `POST /agent/auth/claim/complete` with the code. abadge binds the human's
+    verified email to the account in place and upgrades the credential's scopes.
+  </Step>
+  <Step title="Use the credential">
+    Send `Authorization: Bearer abu_...`. The agent can now read and manage the
+    person's vault through the normal management surface.
+  </Step>
+</Steps>
+
+## Register
+
+<ParamField body="type" type="string" default="anonymous">
+  Identity type. Only `anonymous` is supported.
+</ParamField>
+<ParamField body="requested_credential_type" type="string" default="api_key">
+  Credential type. Only `api_key` is supported.
+</ParamField>
+
+```bash
+curl -X POST https://api.abadge.io/agent/auth \
+  -H "Content-Type: application/json" \
+  -d '{ "type": "anonymous", "requested_credential_type": "api_key" }'
+```
+
+<ResponseField name="registration_id" type="string">Opaque registration identifier.</ResponseField>
+<ResponseField name="registration_type" type="string">Always `anonymous`.</ResponseField>
+<ResponseField name="credential_type" type="string">Always `api_key`.</ResponseField>
+<ResponseField name="credential" type="string">The `abu_` personal API key. Shown once — store it now.</ResponseField>
+<ResponseField name="credential_expires" type="null">Personal API keys do not expire on their own; the owner revokes them.</ResponseField>
+<ResponseField name="scopes" type="string[]">Pre-claim scopes (`abadge:account.read`).</ResponseField>
+<ResponseField name="claim_url" type="string">The URL to call for the claim step.</ResponseField>
+<ResponseField name="claim_token" type="string">A `clm_` token. Pass it to both claim calls. Expires after 24 hours.</ResponseField>
+<ResponseField name="claim_token_expires" type="string">ISO 8601 expiry of the claim token.</ResponseField>
+<ResponseField name="post_claim_scopes" type="string[]">Scopes granted after a successful claim (`abadge:account.read`, `abadge:account.manage`).</ResponseField>
+
+## Start the claim
+
+<ParamField body="claim_token" type="string" required>
+  The `clm_` token from registration.
+</ParamField>
+<ParamField body="email" type="string" required>
+  The human owner's email. abadge sends a 6-digit code here.
+</ParamField>
+
+```bash
+curl -X POST https://api.abadge.io/agent/auth/claim \
+  -H "Content-Type: application/json" \
+  -d '{ "claim_token": "clm_...", "email": "owner@example.com" }'
+```
+
+<ResponseField name="registration_id" type="string">The registration being claimed.</ResponseField>
+<ResponseField name="claim_attempt_id" type="string">Identifier for this claim attempt.</ResponseField>
+<ResponseField name="status" type="string">Always `initiated`.</ResponseField>
+<ResponseField name="expires_at" type="string">ISO 8601 expiry of the emailed code (10 minutes).</ResponseField>
+
+## Complete the claim
+
+<ParamField body="claim_token" type="string" required>
+  The same `clm_` token.
+</ParamField>
+<ParamField body="otp" type="string" required>
+  The 6-digit code the human received by email.
+</ParamField>
+
+```bash
+curl -X POST https://api.abadge.io/agent/auth/claim/complete \
+  -H "Content-Type: application/json" \
+  -d '{ "claim_token": "clm_...", "otp": "123456" }'
+```
+
+<ResponseField name="registration_id" type="string">The claimed registration.</ResponseField>
+<ResponseField name="status" type="string">Always `claimed`. The credential's scopes are upgraded in place.</ResponseField>
+
+## Limits and lifetimes
+
+| Constraint | Value |
+|---|---|
+| Rate limit | 60 requests / minute / IP across `/agent/auth*` |
+| Claim token TTL | 24 hours |
+| OTP TTL | 10 minutes |
+| Max OTP attempts | 5 (then restart the claim) |
+| Unclaimed account GC | Removed after 24 hours if never claimed |
+
+## Errors
+
+This surface returns the standard `{ code, message, hint, meta }`
+[error envelope](/api/errors). The auth.md-specific codes are:
+
+| Code | Meaning |
+|---|---|
+| `invalid_claim_token` | The `claim_token` is unknown, already used, or expired. |
+| `otp_not_requested` | `claim/complete` called before `claim`. |
+| `otp_invalid` | The supplied code is wrong. |
+| `otp_expired` | The code passed its 10-minute TTL; start the claim again. |
+| `otp_attempts_exceeded` | Too many wrong codes; restart the claim. |
+
+## Revocation
+
+There is no agent-facing revoke. The account owner revokes the agent's
+credential from the dashboard; a revoked credential then returns `401`.

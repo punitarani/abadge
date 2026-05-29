@@ -1,0 +1,78 @@
+---
+title: "Human authentication"
+description: "Better Auth: email + password sign-in, OAuth, and the device authorization flow."
+---
+
+Human operator authentication is handled by [Better Auth](https://www.better-auth.com),
+mounted at `/api/auth/*`. The dashboard, the CLI, and any custom client use
+these routes to obtain an operator session. This surface is separate from the
+`/v1` REST API and is not rate-limited under the `/v1` bucket.
+
+<Info>
+  Once you hold an operator session token, use it as the `Authorization: Bearer`
+  credential for `/v1` management endpoints. See [Authentication](/api/authentication).
+</Info>
+
+## Email and password
+
+| Method | Path | Body | Description |
+|---|---|---|---|
+| POST | `/api/auth/sign-up/email` | `{ email, password, name? }` | Create a new account |
+| POST | `/api/auth/sign-in/email` | `{ email, password }` | Sign in |
+| POST | `/api/auth/sign-out` | none | Invalidate the current session |
+| GET | `/api/auth/get-session` | none | Return the current session, if any |
+
+All four set or read the standard Better Auth session cookie, and also accept
+the cookie via the `Cookie` header.
+
+## OAuth (Google / GitHub)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/auth/sign-in/social/google` | Begin Google OAuth |
+| GET | `/api/auth/sign-in/social/github` | Begin GitHub OAuth |
+| GET | `/api/auth/callback/google` | OAuth callback (set by Google) |
+| GET | `/api/auth/callback/github` | OAuth callback (set by GitHub) |
+
+OAuth providers are enabled only when the deployment configures the matching
+`*_CLIENT_ID` and `*_CLIENT_SECRET` environment variables.
+
+## Device authorization (CLI)
+
+| Method | Path | Body | Auth | Description |
+|---|---|---|---|---|
+| POST | `/api/auth/device/code` | none | none | Issue `device_code`, `user_code`, `verification_uri` |
+| POST | `/api/auth/device/token` | `{ device_code }` | none | Poll for an access token |
+| GET | `/api/auth/device?user_code=...` | none | session | Render the verification page |
+| POST | `/api/auth/device/approve` | `{ user_code }` | session | Approve a pending device code |
+| POST | `/api/auth/device/deny` | `{ user_code }` | session | Deny a pending device code |
+
+<Steps>
+  <Step title="Start">
+    The CLI calls `device/code` and prints the `user_code` and verification URL.
+  </Step>
+  <Step title="Approve">
+    The user opens the URL in a signed-in browser and approves the code.
+    `device/approve` and `device/deny` require an authenticated session.
+  </Step>
+  <Step title="Poll">
+    The CLI polls `device/token` until the user approves or denies.
+  </Step>
+</Steps>
+
+## Bearer tokens
+
+The Better Auth access token returned by `device/token` (and `sign-in/email`)
+is used in `Authorization: Bearer …` against any `/v1` management endpoint. The
+CLI holds this token in daemon memory only — it is never written to disk.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Token types and the agent keypair session exchange.
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    How agents authenticate and access secrets.
+  </Card>
+</CardGroup>

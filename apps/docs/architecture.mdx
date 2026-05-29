@@ -3,7 +3,7 @@ title: "Architecture"
 description: "System design, surfaces, and trust tiers."
 ---
 
-abadge is a small, explicit system. One Postgres database, one tRPC API, one local daemon for zero-knowledge crypto, and a thin set of clients.
+abadge is a small, explicit system. One Postgres database, one REST API, one local daemon for zero-knowledge crypto, and a thin set of clients.
 
 ## System overview
 
@@ -22,7 +22,7 @@ flowchart TD
   end
 
   subgraph Edge["Cloudflare edge"]
-    API["Hono + tRPC API"]
+    API["Hono REST API (/v1)"]
     Auth["Better Auth"]
     Policy["Permission check"]
     Audit["Audit logger"]
@@ -48,7 +48,7 @@ flowchart TD
 
 | Layer | Owner |
 |---|---|
-| API | Hono + tRPC on Cloudflare Workers (`apps/api`) |
+| API | Hono REST API on Cloudflare Workers, `/v1` (`apps/api`) |
 | Dashboard | Next.js App Router via OpenNext (`apps/web`) |
 | CLI | Compiled Bun binary (`apps/cli`, `packages/cli`) |
 | Local daemon | Long-running Bun process over Unix socket (`packages/daemon`) |
@@ -71,8 +71,8 @@ abadge has four explicit trust tiers, ordered from strongest to weakest.
 
 The trust model determines which capabilities are allowed:
 
-- **Local agents** (CLI, MCP) can `read_ciphertext`, `mount_env`, and `mount_file` on any item.
-- **Remote agents** can only `reveal_plaintext` on server-managed items. They can never access zero-knowledge items.
+- **Local agents** (CLI, MCP) can `read` and `use` on any item.
+- **Remote agents** can only `read` on server-managed items. They can never access zero-knowledge items.
 
 See [Trust boundaries](/security/trust-boundaries) for the full breakdown of what each tier protects against.
 
@@ -88,7 +88,7 @@ Every operation in abadge maps to one of four layers:
     Explicit grants only. Every access requires a row in the `permissions` table linking (agent, item, capability). Permissions can carry an `expiresAt`. Remote-agent access is restricted at creation time.
   </Step>
   <Step title="Deliver">
-    The capability determines the delivery mode. `read_ciphertext` returns the encrypted blob (local + ZK only). `reveal_plaintext` returns plaintext over HTTPS (server-managed only). `mount_env` and `mount_file` return data for local injection.
+    The capability determines the delivery mode. `read` returns the secret's value — the encrypted blob for local + ZK items, or plaintext over HTTPS for server-managed items. `use` reserves a mount handle and returns data for local injection (`delivery: env` or `delivery: file`).
   </Step>
   <Step title="Audit">
     Every attempt — allowed, denied, expired, revoked, cascade — is appended to `audit_logs`. The table has no foreign-key constraints so entries survive entity deletion.
@@ -102,8 +102,8 @@ Every operation in abadge maps to one of four layers:
 | Runtime | Bun |
 | Build | Turborepo |
 | API server | Hono on Cloudflare Workers |
+| API style | JSON REST (`/v1`) |
 | Frontend | Next.js App Router via OpenNext |
-| RPC | tRPC v11 |
 | Database | PostgreSQL via Hyperdrive |
 | ORM | Drizzle |
 | Auth | Better Auth |

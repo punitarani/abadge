@@ -22,7 +22,7 @@ The agents table shows:
     Provide a display name and pick a kind. Auth method defaults to `public_key_session`.
   </Step>
   <Step title="Choose enrollment">
-    - **Bootstrap token** — abadge issues a one-time `abe_...` token (10-minute TTL). The agent runtime redeems it via `auth.enroll`, generates a keypair locally, and uploads the public key.
+    - **Bootstrap token** — abadge issues a one-time `abe_...` token (10-minute TTL). The agent runtime redeems it via `POST /v1/agents/enroll`, generates a keypair locally, and uploads the public key.
     - **Direct enrollment** — paste an Ed25519 JWK public key the agent already has.
   </Step>
   <Step title="Save the secret">
@@ -44,7 +44,7 @@ The agent detail panel shows:
 
 ## Replacing an agent keypair
 
-Agents have no rotatable long-lived secret. To replace a keypair, re-enroll: revoke the agent and create a new one, or issue a fresh bootstrap token (`auth.issueBootstrapToken`) and re-enroll with a new keypair.
+Agents have no rotatable long-lived secret. To replace a keypair, re-enroll: revoke the agent and create a new one, or issue a fresh bootstrap token (`POST /v1/agents/{agentId}/bootstrap`) and re-enroll with a new keypair.
 
 ## Revoking an agent
 
@@ -55,6 +55,6 @@ Audit entries for in-flight requests show `result: cascade` with `agent.revoke_c
 ## Related
 
 - [Concepts: agents](/concepts/agents)
-- [API: agents procedures](/api/procedures/agents)
+- [API reference](/api/overview)
 - [API: authentication](/api/authentication)
 - [CLI: agent commands](/cli/agent)

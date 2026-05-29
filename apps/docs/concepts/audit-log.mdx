@@ -41,8 +41,9 @@ The audit log is the source of truth for what happened in abadge. It's append-on
 | Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
 | Item | `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export` |
 | Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
+| Account | `account.register`, `account.claim`, `account.claim_complete` (auth.md [agentic registration](/api/agentic-registration)) |
 | Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
-| API key | `user_api_key.create`, `user_api_key.revoke` |
+| API key | `user_api_key.create`, `user_api_key.revoke`, `user_api_key.expire` |
 | Permission | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
 | Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
 
@@ -62,13 +63,13 @@ The audit log is the source of truth for what happened in abadge. It's append-on
 |---|---|
 | Dashboard | `/audit` page with filters for event type, agent, item, surface, field |
 | CLI | `abadge audit list` with `--json` for machine-readable output |
-| API | `audit.list` (session) with cursor pagination |
+| API | `GET /v1/audit` (session) with cursor pagination |
 | SDK | `AbadgeUserClient.getAudit()` and `AbadgeAgentClient.getAudit()` |
 | MCP | `get_audit` tool — same data, returned as JSON to the model |
 
 ## Filters
 
-`audit.list` accepts:
+`GET /v1/audit` accepts:
 
 | Filter | Type | Notes |
 |---|---|---|
@@ -85,6 +86,6 @@ The audit log is the source of truth for what happened in abadge. It's append-on
 
 - Secret values
 - Encryption keys, wrapped keys, or KDF parameters
-- The plaintext output of subprocesses spawned by `mount_env`
+- The plaintext output of subprocesses spawned by `use` with `delivery: env`
 
 If you need to detect secret exfiltration, monitor outbound traffic on the agent host. Audit captures the access decision, not the bytes that flowed.

@@ -59,13 +59,13 @@ On startup, the MCP server:
     No bearer set yet.
   </Step>
   <Step title="Request a challenge">
-    `auth.createChallenge` returns `abc_...` (60-second TTL).
+    `POST /v1/agents/{agentId}/sessions/challenge` returns `abc_...` (60-second TTL).
   </Step>
   <Step title="Sign the challenge">
     Ed25519 detached signature with the configured private key.
   </Step>
   <Step title="Exchange for a session">
-    `auth.exchangeSession` returns `abs_...` (15-minute TTL).
+    `POST /v1/agents/{agentId}/sessions/exchange` returns `abs_...` (15-minute TTL).
   </Step>
   <Step title="Schedule refresh">
     A timer re-runs the exchange at T-2 minutes before expiry. If the refresh budget is exhausted, subsequent tool calls return `SESSION_REFRESH_FAILED`.
@@ -75,7 +75,7 @@ On startup, the MCP server:
 ## What gets persisted
 
 - The Ed25519 **private key** lives at `ABADGE_PRIVATE_KEY_PATH` (or wherever you stored it) with `0600` permissions. The CLI's `abadge agent add --kind local_mcp` generates one for you.
-- The Ed25519 **public key** is stored on the server (`agents.publicKey`).
+- The Ed25519 **public key** is stored on the server (public-key enrollment).
 - Session tokens (`abs_...`) live in MCP server process memory only. Restarting the MCP server forces a new exchange.
 - Bootstrap tokens (`abe_...`) are consumed during enrollment and never persisted.
 
@@ -91,6 +91,6 @@ The MCP server emits standard auth audit events:
 ## Related
 
 - [API: authentication](/api/authentication)
-- [API: `auth.*` procedures](/api/procedures/auth)
+- [API reference](/api/overview)
 - [`abadge agent add`](/cli/agent#abadge-agent-add)
 - [Claude Desktop config](/mcp/claude-desktop)

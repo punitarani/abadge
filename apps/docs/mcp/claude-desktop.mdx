@@ -114,8 +114,8 @@ the right capability before invoking a tool:
 abadge permission create \
   --agent <mcp-agent-id> \
   --item <item-id> \
-  --capability mount_env
+  --capability use
 ```
 
-`mount_env` and `mount_file` are the typical capabilities for MCP — `use_secret` calls
-`access.mount` with `mountType: env`, and `mount_secret` calls it with `mountType: file`.
+`use` is the typical capability for MCP — `use_secret` calls
+`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret` calls it with `mountType: file`.

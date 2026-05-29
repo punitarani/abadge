@@ -3,7 +3,7 @@ title: "AbadgeUserClient"
 description: "Session-token authenticated client for operator commands."
 ---
 
-`AbadgeUserClient` is the operator client. It calls every `sessionProcedure` in the API on behalf of a signed-in user.
+`AbadgeUserClient` is the operator client. It calls the management endpoints of the `/v1` API on behalf of a signed-in user.
 
 ## Construction
 
@@ -187,7 +187,7 @@ const { agent, bootstrapToken } = await client.agents.create({
 await client.permissions.create({
   agentId: agent.id,
   itemId,
-  capabilities: ["reveal_plaintext"],
+  capabilities: ["read"],
   expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
 });
 ```

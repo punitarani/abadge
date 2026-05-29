@@ -28,7 +28,7 @@ abadge mount --item <item-id> --path /tmp/my-secret.txt
 
 <Steps>
   <Step title="Resolve the item">
-    Same path as `abadge run`: API call to `access.mount` with `mountType: file`, daemon decryption for ZK items.
+    Same path as `abadge run`: API call to `POST /v1/access/{itemId}/use` with `delivery: file`, daemon decryption for ZK items.
   </Step>
   <Step title="Pick a path">
     The daemon allocates a temp directory and writes the secret to a file inside it. If `--path` is provided, the daemon validates that it falls inside the allowed temp directory and uses it. Paths outside `os.tmpdir()` are rejected.
@@ -61,13 +61,13 @@ rm <path-printed-by-mount>
 
 | Error | Cause |
 |---|---|
-| `PERMISSION_DENIED` | No matching `mount_file` permission |
+| `PERMISSION_DENIED` | No matching `use` permission |
 | `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted |
 | `FIELD_NOT_FOUND` | Specified field doesn't exist |
-| `INVALID_CAPABILITY_LOCALITY` | Trying to use a remote agent for `mount_file` |
+| `INVALID_CAPABILITY_LOCALITY` | Trying to use a remote agent for `use` |
 
 ## Related
 
 - [`abadge run`](/cli/run) — env-var injection instead of file mount
 - [Field delivery](/concepts/fields)
-- [API: `access.mount`](/api/procedures/access)
+- [API reference](/api/overview)
