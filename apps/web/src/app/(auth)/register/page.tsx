@@ -20,8 +20,8 @@ function CheckInboxView({ email }: { email: string }): React.ReactElement {
   async function handleResend() {
     setResendState("sending");
     try {
-      await authClient.sendVerificationEmail({ email });
-      setResendState("sent");
+      const { error } = await authClient.sendVerificationEmail({ email });
+      setResendState(error ? "error" : "sent");
     } catch {
       setResendState("error");
     }
