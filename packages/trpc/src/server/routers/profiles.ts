@@ -2,6 +2,7 @@ import {
   BadRequestError,
   ConflictError,
   ForbiddenError,
+  isPersonalOrg,
   type KdfParams,
   NotFoundError,
   ProfileListResultSchema,
@@ -9,7 +10,8 @@ import {
   RekeyedItemSchema,
   SuccessResultSchema,
 } from "@abadge/core";
-import { and, eq, isNull, sql } from "@abadge/db";
+import { and, eq, isNull, sql, type Transaction } from "@abadge/db";
+import { organization } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -199,6 +201,43 @@ const loadProfileForWrite = (
     return profile;
   });
 
+/**
+ * Personal accounts are capped at a single profile. For a personal org this
+ * takes a per-org advisory lock (serializing concurrent creates across
+ * transactions, the same idiom rotateProfileKey uses) and rejects when a
+ * profile already exists. Must run inside the create transaction so the check
+ * and the subsequent insert are atomic. `organization` is a Better-Auth table
+ * (not RLS-scoped), so reading its metadata inside the org tx is safe. No-op
+ * for team orgs. The cap is "at most one" — an existence check, not a blanket
+ * block — so a personal account whose only profile was deleted can recreate
+ * exactly one.
+ */
+const assertPersonalProfileCap = async (tx: Transaction, orgId: string): Promise<void> => {
+  const [org] = await tx
+    .select({ metadata: organization.metadata })
+    .from(organization)
+    .where(eq(organization.id, orgId))
+    .limit(1);
+  if (!isPersonalOrg(org?.metadata)) return;
+
+  // Serialize concurrent creates for THIS org so the existence check + insert
+  // are atomic across transactions. The two-arg form yields a 64-bit key space
+  // (two int4 hashes of the orgId halves) rather than the single-arg 32-bit
+  // hashtext, so unrelated orgs don't collide onto the same lock and block each
+  // other. Released automatically on transaction commit/rollback.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(left(${orgId}, 16)), hashtext(right(${orgId}, 16)))`,
+  );
+  const existing = await scopedDb(tx, orgId).findFirst("profiles");
+  if (existing) {
+    throw new ConflictError({
+      code: "PROFILE_LIMIT_EXCEEDED",
+      message: "Personal accounts are limited to a single profile",
+      hint: "Delete the existing profile before creating a new one, or create a team organization for multiple profiles.",
+    });
+  }
+};
+
 const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
@@ -210,33 +249,38 @@ const createProfile = (input: Schema.Schema.Type<typeof CreateProfileSchema>) =>
     const id = crypto.randomUUID();
     const now = new Date();
 
-    const scope = scopedDb(ctx.db, orgId);
-    yield* tryAsync(() =>
-      scope.insert("profiles", {
-        id,
-        name,
-        externalId: externalId ?? null,
-        description: description ?? null,
-        storageMode,
-        createdAt: now,
-        updatedAt: now,
-      }),
-    ).pipe(
-      Effect.catchIf(
-        (e: Error) => isUniqueViolation(e),
-        () =>
-          Effect.fail(
-            new ConflictError({
+    // The personal-account cap check and the insert run in one transaction so a
+    // concurrent create cannot slip a second profile past the check (TOCTOU).
+    // Throwing a domain error inside the tx rolls it back; tryAsync preserves
+    // the instance for toTrpcError to map.
+    const created = yield* tryAsync(() =>
+      ctx.db.transaction(async (tx) => {
+        const txScope = scopedDb(tx, orgId);
+        await assertPersonalProfileCap(tx, orgId);
+
+        try {
+          await txScope.insert("profiles", {
+            id,
+            name,
+            externalId: externalId ?? null,
+            description: description ?? null,
+            storageMode,
+            createdAt: now,
+            updatedAt: now,
+          });
+        } catch (e) {
+          if (isUniqueViolation(e as Error)) {
+            throw new ConflictError({
               code: "PROFILE_ALREADY_EXISTS",
               message: `A profile named '${name}' already exists in this organization`,
               hint: "Choose a different name or delete the existing profile.",
-            }),
-          ),
-      ),
-    );
+            });
+          }
+          throw e;
+        }
 
-    const created = yield* tryAsync(() =>
-      scope.findFirst("profiles", { where: eq(scope.tables.profiles.id, id) }),
+        return txScope.findFirst("profiles", { where: eq(txScope.tables.profiles.id, id) });
+      }),
     );
 
     if (!created) {

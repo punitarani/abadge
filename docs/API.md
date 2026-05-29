@@ -120,7 +120,7 @@ The principal is the bearer token (or IP for unauthenticated routes).
 
 Every attempt (allowed or denied) is written to the audit log.
 
-Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs`, `GET /v1/orgs/{orgId}`) carry an `isPersonal` boolean. A personal account is a normal single-member org flagged via `organization.metadata`; it is presented in the dashboard as a personal account, holds one profile by default (more allowed), can hold many agents, and may coexist with team orgs the user creates or joins later.
+Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs`, `GET /v1/orgs/{orgId}`) carry an `isPersonal` boolean. A personal account is a normal single-member org flagged via `organization.metadata`; it is presented in the dashboard as a personal account, holds exactly one profile (additional profiles are rejected with `PROFILE_LIMIT_EXCEEDED` for personal accounts; team orgs are uncapped), can hold many agents, and may coexist with team orgs the user creates or joins later.
 
 ### Members & invites
 
