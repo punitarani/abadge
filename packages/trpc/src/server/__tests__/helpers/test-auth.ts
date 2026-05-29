@@ -41,8 +41,12 @@ interface TestHelpers {
  * social providers, device authorization, and openAPI (not needed for tests).
  * Includes testUtils plugin for factory-based test seeding.
  */
+// `opts.cookieCacheMaxAgeSeconds` is opt-in: production enables session
+// cookieCache, but most integration tests assert immediate session revocation
+// and pass headers without the `session_data` cookie, so the default mirrors a
+// no-cache config and stays zero-blast-radius. The cookieCache lock test opts in.
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
-export function createTestAuth(db: Database): any {
+export function createTestAuth(db: Database, opts?: { cookieCacheMaxAgeSeconds?: number }): any {
   return betterAuth({
     database: drizzleAdapter(db, { provider: "pg" }),
     baseURL: TEST_ENV.ABADGE_API_URL,
@@ -54,6 +58,9 @@ export function createTestAuth(db: Database): any {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
+      ...(opts?.cookieCacheMaxAgeSeconds !== undefined
+        ? { cookieCache: { enabled: true, maxAge: opts.cookieCacheMaxAgeSeconds } }
+        : {}),
     },
     plugins: [
       organization({
