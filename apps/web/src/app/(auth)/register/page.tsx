@@ -1,7 +1,8 @@
 "use client";
 
+import { Mail } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { AuthShell, SocialAuthButtons } from "@/components";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,79 @@ import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 import { normalizeRedirectPath } from "@/lib/redirect";
 
+function CheckInboxView({ email }: { email: string }): React.ReactElement {
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  async function handleResend() {
+    setResendState("sending");
+    try {
+      await authClient.sendVerificationEmail({ email });
+      setResendState("sent");
+    } catch {
+      setResendState("error");
+    }
+  }
+
+  return (
+    <AuthShell>
+      <div className="space-y-6 text-center">
+        <div className="flex justify-center">
+          <div className="rounded-full bg-muted p-4">
+            <Mail className="h-8 w-8 text-muted-foreground" />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Check your inbox</h1>
+          <p className="text-sm text-muted-foreground">
+            We sent a verification link to{" "}
+            <span className="font-medium text-foreground">{email}</span>.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Click the link to verify your account, then sign in.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {resendState === "sent" ? (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              Verification email resent. Check your inbox.
+            </div>
+          ) : resendState === "error" ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              Could not resend. Try again in a moment.
+            </div>
+          ) : null}
+
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleResend}
+            disabled={resendState === "sending" || resendState === "sent"}
+          >
+            {resendState === "sending" ? "Sending..." : "Resend verification email"}
+          </Button>
+
+          <Link
+            href="/login"
+            className="block text-center text-sm font-medium text-foreground hover:underline"
+          >
+            Back to sign in
+          </Link>
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          Wrong email?{" "}
+          <Link href="/register" className="font-medium text-foreground hover:underline">
+            Start over
+          </Link>
+        </p>
+      </div>
+    </AuthShell>
+  );
+}
+
 function RegisterPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = normalizeRedirectPath(searchParams.get("redirect"), "/onboarding");
   const [name, setName] = useState("");
@@ -24,6 +96,7 @@ function RegisterPageContent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const authError = getAuthErrorMessage(new URLSearchParams(window.location.search));
@@ -31,6 +104,10 @@ function RegisterPageContent() {
       setError(authError);
     }
   }, []);
+
+  if (registeredEmail) {
+    return <CheckInboxView email={registeredEmail} />;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +133,7 @@ function RegisterPageContent() {
       if (signUpError) {
         setError(signUpError.message ?? "Registration failed");
       } else {
-        router.push(redirectPath);
+        setRegisteredEmail(email);
       }
     } catch {
       setError("An unexpected error occurred");
