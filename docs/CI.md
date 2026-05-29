@@ -23,6 +23,27 @@ The baseline is supplied by the `coverage-baseline` job, which runs only on push
 
 Coverage is informational on this PR — no thresholds gate CI. The artifacts (`coverage-unit`, `coverage-integration`) on each run hold the full lcov files for local rendering (`bunx genhtml coverage/unit/lcov.info -o coverage/unit/html`) or editor inline-coverage extensions.
 
+## Caching and concurrency
+
+Every job sets up Bun and installs dependencies through the local composite
+action [`.github/actions/setup`](../.github/actions/setup/action.yml), which
+restores the Bun install store (`~/.bun/install/cache`, keyed on `bun.lock`)
+before `bun install --frozen-lockfile`. Repeat runs reuse the store instead of
+fetching every dependency cold in each job.
+
+The `typecheck`, `build-api`, and `build-web` jobs additionally cache Turbo's
+local output dir (`.turbo`, keyed per job on the commit SHA with a rolling
+restore-key) so unchanged packages skip work across runs. This is independent
+of the optional remote cache below.
+
+The workflow sets `concurrency` keyed on the ref with `cancel-in-progress`
+enabled for `pull_request` events only: rapid pushes to a PR cancel the
+superseded run, while pushes to `main` are never cancelled so an in-flight
+deploy or migration always finishes.
+
+There is no separate format job — `bun run lint` (`biome check`) already
+enforces formatting alongside lint rules and import order.
+
 ## Turborepo remote cache (optional)
 
 GitHub Actions runs `turbo` for `typecheck`, `test`, and filtered `build` / `build:workers` tasks so
