@@ -34,7 +34,7 @@ export function EmailLayout({ preview, heading, children, footerNote }: EmailLay
             {footerNote ??
               "If you didn't request this, you can safely ignore this email — no action is taken until the link above is used."}
           </Text>
-          <Text style={styles.footer}>abadge — the credential firewall for AI agents.</Text>
+          <Text style={styles.footer}>abadge — the credential control plane for AI agents.</Text>
         </Container>
       </Body>
     </Html>
