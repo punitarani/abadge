@@ -1,5 +1,5 @@
-import { DetailSkeleton } from "@/components/dashboard/skeletons/detail-skeleton";
+import { SettingsSkeleton } from "@/components/dashboard/skeletons/settings-skeleton";
 
 export default function Loading(): React.ReactElement {
-  return <DetailSkeleton metadataCount={2} sectionCount={2} />;
+  return <SettingsSkeleton />;
 }

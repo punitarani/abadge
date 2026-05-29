@@ -145,7 +145,7 @@ describe("AbadgeUserClient happy paths", () => {
     expect(c3[0]?.path).toBe("organizations.update");
 
     const { user: u4, calls: c4 } = makeUserClient({ ok: true });
-    await u4.orgs.delete("org_x");
+    await u4.orgs.delete("org_x", { confirmName: "My Org", password: "pw" });
     expect(c4[0]?.path).toBe("organizations.delete");
   });
 
@@ -334,8 +334,9 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
   });
   test("orgs.delete -> organizations.delete", async () => {
     const { user, calls } = makeUserClient({ ok: true });
-    await user.orgs.delete("o_x");
+    await user.orgs.delete("o_x", { confirmName: "Org X", password: "pw" });
     expect(calls[0]?.path).toBe("organizations.delete");
+    expect(calls[0]?.input).toEqual({ orgId: "o_x", confirmName: "Org X", password: "pw" });
   });
 
   // profiles

@@ -42,7 +42,10 @@ Validation errors include an additional `issues` array:
 | `INVALID_CAPABILITY_STORAGE` | 400 | One or more capabilities are not compatible with the item's storage mode; `meta.invalidCapabilities` lists every offender |
 | `ORG_HEADER_REQUIRED` | 400 | User belongs to 2+ orgs; set `X-Abadge-Org-Id`. `meta.availableOrgIds` lists the user's orgs |
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile key rotate payload does not rewrap every ZK item in the profile; `meta.missingItemIds` lists the omitted ones |
+| `CONFIRMATION_MISMATCH` | 400 | `organizations.delete` confirmation text does not match the org's current name |
+| `REAUTH_PASSWORD_REQUIRED` | 400 | `organizations.delete` re-authentication requested but the account has no password set (social-login only); set one via password reset first |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
+| `REAUTH_FAILED` | 401 | `organizations.delete` re-authentication failed: the supplied account password is incorrect |
 | `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
 | `ORG_MEMBERSHIP_REQUIRED` | 403 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
 | `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |
