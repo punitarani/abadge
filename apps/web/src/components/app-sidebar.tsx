@@ -30,6 +30,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { type PrefetchableRoute, useRoutePrefetcher } from "@/hooks/use-route-prefetcher";
 
@@ -111,6 +112,10 @@ function usePrefetchHandlers(prefetch: () => void): PrefetchHandlers {
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
   const prefetchers = useRoutePrefetcher();
+  // On mobile the sidebar is an off-canvas Sheet; close it after a navigation
+  // so the destination page isn't left hidden behind the open drawer.
+  const { setOpenMobile } = useSidebar();
+  const closeMobile = useCallback(() => setOpenMobile(false), [setOpenMobile]);
 
   const overviewHandlers = usePrefetchHandlers(prefetchers.overview);
   const settingsHandlers = usePrefetchHandlers(prefetchers.settings);
@@ -127,7 +132,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
-                  <Link href="/overview" {...overviewHandlers}>
+                  <Link href="/overview" {...overviewHandlers} onClick={closeMobile}>
                     <LayoutDashboard />
                     <span>Overview</span>
                   </Link>
@@ -151,6 +156,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                     icon={item.icon}
                     pathname={pathname}
                     prefetch={prefetchers[item.path]}
+                    onNavigate={closeMobile}
                   />
                 ))}
               </SidebarMenu>
@@ -192,7 +198,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href} {...settingsHandlers}>
+                      <Link href={href} {...settingsHandlers} onClick={closeMobile}>
                         <item.icon />
                         <span>{item.label}</span>
                       </Link>
@@ -218,12 +224,14 @@ function NavLink({
   icon: Icon,
   pathname,
   prefetch,
+  onNavigate,
 }: {
   path: PrefetchableRoute;
   label: string;
   icon: LucideIcon;
   pathname: string;
   prefetch: () => void;
+  onNavigate?: () => void;
 }): React.ReactElement {
   const href = `/${path}`;
   const isActive = pathname.startsWith(href);
@@ -231,7 +239,7 @@ function NavLink({
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isActive}>
-        <Link href={href} {...handlers}>
+        <Link href={href} {...handlers} onClick={onNavigate}>
           <Icon />
           <span>{label}</span>
         </Link>
