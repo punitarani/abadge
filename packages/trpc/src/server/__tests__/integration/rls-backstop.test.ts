@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb, type Database, eq, sql } from "@abadge/db";
-import { items, permissions } from "@abadge/db/schema";
+import { items, permissions, profiles } from "@abadge/db/schema";
 import {
   seedAgent,
   seedAgentSession,
@@ -342,6 +342,56 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
     // per-org loop must report both.
     expect(byId.get(orgA.orgId)?.hasBootstrappedProfile).toBe(true);
     expect(byId.get(orgB.orgId)?.hasBootstrappedProfile).toBe(true);
+
+    await truncateAll();
+  });
+
+  // ---------------------------------------------------------------------------
+  // §AB-0011 regression — org + default-profile creation under the restricted role.
+  //
+  // These cover the exact path that 500s in prod when a FORCE-RLS schema runs
+  // against code that has not yet wired the request GUC: the default-profile
+  // INSERT in seedOrgWithOwnerProfile is subject to FORCE-RLS WITH CHECK and only
+  // passes because the seed sets `app.current_org` to the just-minted org id. The
+  // rest of the suite seeds orgs via the RLS-bypassing superuser, so before these
+  // the create procedures were never driven as the NOBYPASSRLS role.
+  // ---------------------------------------------------------------------------
+
+  test("organizations.create seeds org + default profile under the restricted role (WITH CHECK passes)", async () => {
+    const user = await seedUser(auth);
+    // userProcedure caller, no org yet: ctx.db is the restricted role, so every
+    // tenant write the procedure issues is subject to FORCE-RLS.
+    const operator = createOperatorCaller(rlsDb, auth, user.headers);
+    const res = await operator.organizations.create({ name: "Acme Inc" });
+    expect(res.organization.id).toBeTruthy();
+    expect(res.defaultProfile.storageMode).toBe("server_managed");
+
+    // The seeded default profile is readable back under its own org GUC — proof
+    // the WITH CHECK accepted the INSERT rather than failing closed.
+    const seen = await rlsDb.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.current_org', ${res.organization.id}, true)`);
+      return tx.select({ id: profiles.id }).from(profiles);
+    });
+    expect(seen.map((r) => r.id)).toEqual([res.defaultProfile.id]);
+
+    await truncateAll();
+  });
+
+  test("organizations.createPersonal seeds a personal org + default profile under the restricted role", async () => {
+    const user = await seedUser(auth);
+    const operator = createOperatorCaller(rlsDb, auth, user.headers);
+    const res = await operator.organizations.createPersonal();
+    expect(res.organization.isPersonal).toBe(true);
+    expect(res.defaultProfile.storageMode).toBe("server_managed");
+
+    // Same DB readback as the create test: confirm the seeded profile is readable
+    // under the new org's GUC — proof WITH CHECK accepted the INSERT, not just that
+    // the procedure returned a value.
+    const seen = await rlsDb.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('app.current_org', ${res.organization.id}, true)`);
+      return tx.select({ id: profiles.id }).from(profiles);
+    });
+    expect(seen.map((r) => r.id)).toEqual([res.defaultProfile.id]);
 
     await truncateAll();
   });
