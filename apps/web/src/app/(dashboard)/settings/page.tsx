@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { DangerZoneSection } from "@/components/dashboard/danger-zone-section";
 import { OneTimeSecretDisplay } from "@/components/dashboard/one-time-secret-display";
-import { SettingsTableRowsSkeleton } from "@/components/dashboard/skeletons/settings-skeleton";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -325,7 +325,7 @@ function MembersSection({
           </TableHeader>
           <TableBody>
             {isPending ? (
-              <SettingsTableRowsSkeleton columns={4} />
+              <TableRowsSkeleton rows={3} columns={4} action />
             ) : members.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
@@ -635,7 +635,7 @@ function ApiKeysSection({
           </TableHeader>
           <TableBody>
             {keysQuery.isPending ? (
-              <SettingsTableRowsSkeleton columns={6} />
+              <TableRowsSkeleton rows={3} columns={6} action />
             ) : apiKeys.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">

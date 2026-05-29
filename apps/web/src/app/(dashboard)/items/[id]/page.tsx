@@ -8,6 +8,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ItemSecretSection, useItemReveal } from "@/components/dashboard/item-detail-panel";
+import { DetailSkeleton } from "@/components/dashboard/skeletons/detail-skeleton";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,11 +107,7 @@ export default function ItemDetailPage(): React.ReactElement {
   });
 
   if (itemQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        Loading item...
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (!item) {
@@ -193,7 +191,11 @@ export default function ItemDetailPage(): React.ReactElement {
       </div>
 
       {/* Agent permissions */}
-      <AgentPermissionsSection permissions={itemPermissions} agentNameMap={agentNameMap} />
+      <AgentPermissionsSection
+        permissions={itemPermissions}
+        agentNameMap={agentNameMap}
+        isPending={permissionsQuery.isPending}
+      />
 
       {/* Recent access events */}
       <RecentAccessSection
@@ -225,9 +227,11 @@ function MetadataCard({
 function AgentPermissionsSection({
   permissions,
   agentNameMap,
+  isPending,
 }: {
   permissions: Permission[];
   agentNameMap: Map<string, string>;
+  isPending: boolean;
 }): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.activeOrgId);
@@ -267,7 +271,9 @@ function AgentPermissionsSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {permissions.length === 0 ? (
+            {isPending ? (
+              <TableRowsSkeleton columns={5} rows={3} action />
+            ) : permissions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                   No permissions granted for this item.
@@ -381,11 +387,7 @@ function RecentAccessSection({
           </TableHeader>
           <TableBody>
             {isPending ? (
-              <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <TableRowsSkeleton columns={4} rows={3} />
             ) : entries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">

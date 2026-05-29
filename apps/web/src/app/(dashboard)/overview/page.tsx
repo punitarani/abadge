@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import { SummaryCard } from "@/components/dashboard/summary-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,35 +82,32 @@ function SummaryCards({
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
       <SummaryCard
         label={profilesCardLabel}
-        value={isLoading ? "..." : profileCount}
-        subtitle={
-          isLoading
-            ? "Loading..."
-            : `${profilesByStorage.serverManaged} server-managed · ${profilesByStorage.zeroKnowledge} zero-knowledge`
-        }
+        loading={isLoading}
+        value={profileCount}
+        subtitle={`${profilesByStorage.serverManaged} server-managed · ${profilesByStorage.zeroKnowledge} zero-knowledge`}
       />
       <SummaryCard
         label="Items"
-        value={isLoading ? "..." : itemCount}
+        loading={isLoading}
+        value={itemCount}
         subtitle="across all profiles"
       />
       <SummaryCard
         label="Agents"
-        value={isLoading ? "..." : agentCount}
-        subtitle={
-          isLoading
-            ? "Loading..."
-            : `${activeAgentCount} active \u00b7 ${revokedAgentCount} revoked`
-        }
+        loading={isLoading}
+        value={agentCount}
+        subtitle={`${activeAgentCount} active \u00b7 ${revokedAgentCount} revoked`}
       />
       <SummaryCard
         label="Permissions"
-        value={isLoading ? "..." : permissionCount}
-        subtitle={isLoading ? "Loading..." : `${expiringSoonCount} expiring soon`}
+        loading={isLoading}
+        value={permissionCount}
+        subtitle={`${expiringSoonCount} expiring soon`}
       />
       <SummaryCard
         label="Access events"
-        value={isLoading || auditLoading ? "..." : auditEventCount}
+        loading={isLoading || auditLoading}
+        value={auditEventCount}
         subtitle="last 24 hours"
       />
     </div>
@@ -144,14 +142,7 @@ function RecentEventsTable({
         </TableHeader>
         <TableBody>
           {isPending ? (
-            <TableRow>
-              <TableCell
-                colSpan={AUDIT_COLUMN_COUNT}
-                className="py-8 text-center text-muted-foreground"
-              >
-                Loading...
-              </TableCell>
-            </TableRow>
+            <TableRowsSkeleton columns={AUDIT_COLUMN_COUNT} rows={5} />
           ) : entries.length === 0 ? (
             <TableRow>
               <TableCell

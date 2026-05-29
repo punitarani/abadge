@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DetailSkeleton } from "@/components/dashboard/skeletons/detail-skeleton";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -101,11 +103,7 @@ export default function ProfileDetailPage(): React.ReactElement {
   }, [permissions]);
 
   if (profileQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        Loading profile...
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (!profile) {
@@ -152,10 +150,14 @@ export default function ProfileDetailPage(): React.ReactElement {
       {isZK && <ZKVaultCard unlocked={unlocked} keyVersion={profile.keyVersion} />}
 
       {/* Items section */}
-      <ItemsSection items={items} />
+      <ItemsSection items={items} isPending={itemsQuery.isPending} />
 
       {/* Agents section */}
-      <AgentsSection agents={agents} agentPermissionCounts={agentPermissionCounts} />
+      <AgentsSection
+        agents={agents}
+        agentPermissionCounts={agentPermissionCounts}
+        isPending={agentsQuery.isPending}
+      />
 
       {/* Key management */}
       {isZK && <KeyManagementSection />}
@@ -218,7 +220,13 @@ function InfoBox({ label, value }: { label: string; value: string }): React.Reac
   );
 }
 
-function ItemsSection({ items }: { items: ItemSummary[] }): React.ReactElement {
+function ItemsSection({
+  items,
+  isPending,
+}: {
+  items: ItemSummary[];
+  isPending: boolean;
+}): React.ReactElement {
   // Items are scoped to the organization, not individual profiles.
   // The API does not expose a profileId on ItemSummary, so we show all org items here.
   const preview = items.slice(0, 4);
@@ -250,7 +258,9 @@ function ItemsSection({ items }: { items: ItemSummary[] }): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {preview.length === 0 ? (
+            {isPending ? (
+              <TableRowsSkeleton columns={3} rows={3} action />
+            ) : preview.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">
                   No items yet.
@@ -286,9 +296,11 @@ function ItemsSection({ items }: { items: ItemSummary[] }): React.ReactElement {
 function AgentsSection({
   agents,
   agentPermissionCounts,
+  isPending,
 }: {
   agents: Agent[];
   agentPermissionCounts: Map<string, number>;
+  isPending: boolean;
 }): React.ReactElement {
   const preview = agents.slice(0, 4);
 
@@ -322,7 +334,9 @@ function AgentsSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {preview.length === 0 ? (
+            {isPending ? (
+              <TableRowsSkeleton columns={6} rows={3} action />
+            ) : preview.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
                   No agents yet.

@@ -14,6 +14,7 @@ dist
 .open-next
 out
 output
+storybook-static
 *.tsbuildinfo
 
 # testing

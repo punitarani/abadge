@@ -7,6 +7,7 @@ import Link from "next/link";
 import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
 import { CreateAgentPanel } from "@/components/dashboard/create-agent-panel";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -268,11 +269,7 @@ function AgentsTable({
         </TableHeader>
         <TableBody>
           {isPending ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                Loading...
-              </TableCell>
-            </TableRow>
+            <TableRowsSkeleton columns={6} rows={6} action />
           ) : agents.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">

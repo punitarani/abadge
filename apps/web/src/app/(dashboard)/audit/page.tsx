@@ -8,10 +8,16 @@ import {
   type Profile,
 } from "@abadge/core";
 import { ArrowClockwise, MagnifyingGlass } from "@phosphor-icons/react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Link from "next/link";
 import { debounce, useQueryStates } from "nuqs";
 import { useMemo } from "react";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -135,13 +141,7 @@ function AuditTableBody({
   }
 
   if (isPending) {
-    return (
-      <TableRow>
-        <TableCell colSpan={COLUMN_COUNT} className="py-8 text-center text-muted-foreground">
-          Loading...
-        </TableCell>
-      </TableRow>
-    );
+    return <TableRowsSkeleton columns={COLUMN_COUNT} rows={8} />;
   }
 
   if (entries.length === 0) {
@@ -213,6 +213,10 @@ export default function AuditPage(): React.ReactElement {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!activeOrgId,
+    // Keep the current rows on screen while a filter change refetches, instead
+    // of flashing the table back to a skeleton; the wrapper dims to signal the
+    // in-flight update (see `isRefreshing`).
+    placeholderData: keepPreviousData,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
@@ -223,6 +227,12 @@ export default function AuditPage(): React.ReactElement {
     [auditQuery.data?.pages],
   );
   const hasMore = auditQuery.hasNextPage;
+  // A background refetch with rows already on screen (filter change or manual
+  // refresh) — distinct from the first cold load (isPending) and from appending
+  // the next page (isFetchingNextPage). Dim the table to acknowledge the update
+  // without yanking the current rows away.
+  const isRefreshing =
+    auditQuery.isFetching && !auditQuery.isPending && !auditQuery.isFetchingNextPage;
 
   function handleLoadMore(): void {
     void auditQuery.fetchNextPage();
@@ -392,7 +402,13 @@ export default function AuditPage(): React.ReactElement {
       </div>
 
       {/* Table */}
-      <div className="rounded-lg border border-border">
+      <div
+        className={cn(
+          "rounded-lg border border-border transition-opacity",
+          isRefreshing && "opacity-60",
+        )}
+        aria-busy={isRefreshing}
+      >
         <Table>
           <TableHeader>
             <TableRow>

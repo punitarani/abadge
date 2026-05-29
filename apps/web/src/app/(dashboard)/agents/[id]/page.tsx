@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DetailSkeleton } from "@/components/dashboard/skeletons/detail-skeleton";
+import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -108,11 +110,7 @@ export default function AgentDetailPage(): React.ReactElement {
   });
 
   if (agentQuery.isPending) {
-    return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        Loading agent...
-      </div>
-    );
+    return <DetailSkeleton metadataCount={5} />;
   }
 
   if (!agent) {
@@ -128,6 +126,7 @@ export default function AgentDetailPage(): React.ReactElement {
       agent={agent}
       revokeMutation={revokeMutation}
       agentPermissions={agentPermissions}
+      permissionsPending={permissionsQuery.isPending}
       itemLabelMap={itemLabelMap}
       auditEntries={auditEntries}
       auditPending={auditQuery.isPending}
@@ -139,6 +138,7 @@ function AgentDetailContent({
   agent,
   revokeMutation,
   agentPermissions,
+  permissionsPending,
   itemLabelMap,
   auditEntries,
   auditPending,
@@ -146,6 +146,7 @@ function AgentDetailContent({
   agent: Agent;
   revokeMutation: { mutate: () => void; isPending: boolean };
   agentPermissions: Permission[];
+  permissionsPending: boolean;
   itemLabelMap: Map<string, string>;
   auditEntries: AuditEntry[];
   auditPending: boolean;
@@ -179,7 +180,11 @@ function AgentDetailContent({
       </div>
 
       {/* Granted permissions */}
-      <GrantedPermissionsSection permissions={agentPermissions} itemLabelMap={itemLabelMap} />
+      <GrantedPermissionsSection
+        permissions={agentPermissions}
+        itemLabelMap={itemLabelMap}
+        isPending={permissionsPending}
+      />
 
       {/* Recent access events */}
       <RecentAccessSection
@@ -281,9 +286,11 @@ function MetadataCard({
 function GrantedPermissionsSection({
   permissions,
   itemLabelMap,
+  isPending,
 }: {
   permissions: Permission[];
   itemLabelMap: Map<string, string>;
+  isPending: boolean;
 }): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useOrgStore((s) => s.activeOrgId);
@@ -323,7 +330,9 @@ function GrantedPermissionsSection({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {permissions.length === 0 ? (
+            {isPending ? (
+              <TableRowsSkeleton columns={5} rows={3} action />
+            ) : permissions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                   No permissions granted for this agent.
@@ -441,11 +450,7 @@ function RecentAccessSection({
           </TableHeader>
           <TableBody>
             {isPending ? (
-              <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                  Loading...
-                </TableCell>
-              </TableRow>
+              <TableRowsSkeleton columns={4} rows={3} />
             ) : entries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
