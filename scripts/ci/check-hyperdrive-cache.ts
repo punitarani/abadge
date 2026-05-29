@@ -92,7 +92,18 @@ async function main(): Promise<void> {
     env.CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
   }
 
-  const result = Bun.spawnSync(wranglerGetArgs(id), { stdout: "pipe", stderr: "pipe", env });
+  // `wrangler` is an apps/api devDependency, not a global. This gate is invoked
+  // directly (`bun .../check-hyperdrive-cache.ts`), NOT via a package script, so
+  // node_modules/.bin is not on PATH and a bare `wrangler` spawn fails with
+  // "Executable not found in $PATH" (the regression that has blocked deploy-api
+  // since this gate was added). `bunx` resolves the locally-installed binary —
+  // present after `bun install`, so it never hits the network — while keeping
+  // wranglerGetArgs a pure, unit-testable argv.
+  const result = Bun.spawnSync(["bunx", ...wranglerGetArgs(id)], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env,
+  });
 
   if (result.exitCode !== 0) {
     // wrangler is a hard dependency of the very next deploy step, so its absence
