@@ -16,7 +16,8 @@
  * When Next/turbopack ships a fix for the upstream bug, delete this file
  * + the predev script and verify `bun run dev` still renders.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { isChunkLoadError, reloadForChunkError } from "@/lib/chunk-error";
 
 export default function GlobalError({
   error,
@@ -25,9 +26,34 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }): React.ReactElement {
+  // A ChunkLoadError almost always means the user's tab is running an older
+  // build whose chunk hashes were replaced by a deploy (§stale-deploy). One
+  // hard reload pulls the live manifest; `reset()` cannot fix it because it
+  // re-attempts the same dead import.
+  const isChunkError = isChunkLoadError(error);
+  const [reloadSuppressed, setReloadSuppressed] = useState(false);
+
   useEffect(() => {
     console.error("[global-error]", error);
   }, [error]);
+
+  useEffect(() => {
+    // If the reload guard suppresses recovery, the chunk error survived a prior
+    // reload (a real bug, not a stale deploy) — fall through to the error UI.
+    if (isChunkError && !reloadForChunkError()) {
+      setReloadSuppressed(true);
+    }
+  }, [isChunkError]);
+
+  if (isChunkError && !reloadSuppressed) {
+    // Reload is in flight; render nothing user-facing to avoid flashing the
+    // error screen during the brief navigation.
+    return (
+      <html lang="en">
+        <body />
+      </html>
+    );
+  }
 
   return (
     <html lang="en">
