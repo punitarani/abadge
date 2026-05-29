@@ -84,7 +84,7 @@ The keys table lists each key's name, prefix, expiry, last-used time, and enable
   A personal API key authenticates the **management surface only** — organizations, profiles, items metadata, agents, permissions, audit, settings. It resolves to a session identity, **not** an agent, so it can never reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key also cannot create or revoke other API keys — use a browser session for that.
 </Warning>
 
-See the [API keys reference](/api/procedures/api-keys) for the procedures.
+See [Authentication](/api/authentication) for personal API key details.
 
 ## Removing the organization
 
@@ -93,6 +93,6 @@ Deleting an organization cascades to its agents, permissions, profiles, and item
 ## Related
 
 - [Concepts: organizations](/concepts/organizations)
-- [API: organizations procedures](/api/procedures/organizations)
-- [API: API keys procedures](/api/procedures/api-keys)
+- [API reference](/api/overview)
+- [API reference](/api/overview)
 - [CLI: org commands](/cli/org)

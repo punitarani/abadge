@@ -20,7 +20,7 @@ Re-wraps the existing root key under a new KEK derived from a new password. The 
     The browser generates a new 16-byte salt and derives a new KEK via Argon2id (64 MiB memory, 3 iterations).
   </Step>
   <Step title="Wrap and ship">
-    The new wrapped root key, salt, and KDF parameters are sent to `profiles.changePassword`. The profile envelope is replaced atomically.
+    The new wrapped root key, salt, and KDF parameters are sent to the password-change operation. The profile envelope is replaced atomically.
   </Step>
 </Steps>
 
@@ -44,7 +44,7 @@ Without recovery, losing your master password means losing every item in a zero-
     **Store it offline.** Print it, write it down, or save it in a separate password manager. abadge does not retain the value.
   </Step>
   <Step title="Confirm">
-    The browser wraps the root key with the recovery key (XChaCha20-Poly1305) and ships the `recoveryWrappedRootKey` to `profiles.setupRecovery`.
+    The browser wraps the root key with the recovery key (XChaCha20-Poly1305) and ships the `recoveryWrappedRootKey` to the recovery-setup operation.
   </Step>
 </Steps>
 
@@ -70,7 +70,7 @@ Generates a fresh root key and re-wraps every item DEK. Use this if you suspect 
     Once with the current KEK. Once with the recovery key (if recovery is set up).
   </Step>
   <Step title="Ship the batch">
-    Send the new wrapped keys plus the rekeyed items map to `profiles.rotateKey`. The server applies all updates in a single transaction and increments `keyVersion`.
+    Send the new wrapped keys plus the rekeyed items map to `POST /v1/profiles/{profileId}/rotate`. The server applies all updates in a single transaction and increments `keyVersion`.
   </Step>
 </Steps>
 
@@ -88,4 +88,4 @@ Server-managed profiles do not expose vault security operations — there is no 
 
 - [Concepts: profiles](/concepts/profiles)
 - [Security: zero-knowledge](/security/zero-knowledge)
-- [API: profiles procedures](/api/procedures/profiles)
+- [API reference](/api/overview)

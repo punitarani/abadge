@@ -1,0 +1,1453 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "abadge API",
+    "version": "1.0.0",
+    "description": "Public REST API for abadge — the credential control plane for AI agents. Store secrets, scope agent access, control delivery, and audit every attempt. All routes live under the `/v1` prefix and speak JSON. See the Introduction pages for authentication, errors, rate limiting, and pagination.",
+    "contact": { "name": "abadge", "url": "https://abadge.io" }
+  },
+  "servers": [
+    { "url": "https://api.abadge.io/v1", "description": "Production" },
+    { "url": "http://localhost:8787/v1", "description": "Local development" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "Organizations", "description": "Org-scoped isolation boundaries. Creating an org auto-seeds a default server-managed profile." },
+    { "name": "Members & invites", "description": "Org membership and token-based invitations." },
+    { "name": "API keys", "description": "Personal API keys (`abu_`) for the management surface. Never reach `access.*`." },
+    { "name": "Profiles", "description": "Encryption boundaries within an org. Either zero-knowledge or server-managed." },
+    { "name": "Items", "description": "Secrets stored within a profile." },
+    { "name": "Agents", "description": "Service accounts that authenticate via Ed25519 keypair sessions." },
+    { "name": "Agent sessions", "description": "Enrollment, challenge, and session exchange for keypair agents." },
+    { "name": "Permissions", "description": "Explicit (agent, target, capability) grants." },
+    { "name": "Access", "description": "Agent-facing secret access. Requires an `abs_` agent session token." },
+    { "name": "Audit", "description": "Append-only audit trail of every access attempt." },
+    { "name": "System", "description": "Operational endpoints." }
+  ],
+  "paths": {
+    "/orgs": {
+      "post": {
+        "operationId": "createOrganization",
+        "tags": ["Organizations"],
+        "summary": "Create an organization",
+        "description": "Creates an organization, the owner membership, and a default `server_managed` profile (`externalId: \"default\"`) in one transaction, so the org is immediately usable. Authenticated with a Better Auth session or personal API key.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOrganization" } } }
+        },
+        "responses": {
+          "200": { "description": "Organization created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOrgResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      },
+      "get": {
+        "operationId": "listOrganizations",
+        "tags": ["Organizations"],
+        "summary": "List organizations",
+        "description": "Lists every organization the caller belongs to. Not paginated.",
+        "responses": {
+          "200": { "description": "Organizations", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrgListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/orgs/personal": {
+      "post": {
+        "operationId": "createPersonalOrganization",
+        "tags": ["Organizations"],
+        "summary": "Create a personal account",
+        "description": "Creates a personal account — a single-member organization flagged personal via `organization.metadata`. Takes no request body; the name and slug are auto-generated from the user. Seeds the same default `server_managed` profile. The response is identical to `POST /orgs` with `organization.isPersonal: true`.",
+        "responses": {
+          "200": { "description": "Personal account created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOrgResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      }
+    },
+    "/orgs/{orgId}": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdPath" }],
+      "get": {
+        "operationId": "getOrganization",
+        "tags": ["Organizations"],
+        "summary": "Get an organization",
+        "responses": {
+          "200": { "description": "Organization", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrgResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" }
+        }
+      },
+      "patch": {
+        "operationId": "updateOrganization",
+        "tags": ["Organizations"],
+        "summary": "Update an organization",
+        "description": "Update the org name or logo. Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateOrganization" } } }
+        },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOrganization",
+        "tags": ["Organizations"],
+        "summary": "Delete an organization",
+        "description": "Soft-deletes the organization. Requires the `owner` role.",
+        "responses": {
+          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/orgs/{orgId}/members": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdPath" }],
+      "get": {
+        "operationId": "listMembers",
+        "tags": ["Members & invites"],
+        "summary": "List members",
+        "description": "Lists members of the org. Email addresses are returned only to owners and admins; plain members see `email: null`. Not paginated.",
+        "responses": {
+          "200": { "description": "Members", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "operationId": "inviteMember",
+        "tags": ["Members & invites"],
+        "summary": "Invite a member",
+        "description": "Creates a token-based invitation. Returns an `abi_` invite token to share with the invitee. Requires the `admin` role.",
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InviteMember" } } }
+        },
+        "responses": {
+          "200": { "description": "Invite created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateInviteResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/orgs/{orgId}/members/{memberId}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/OrgIdPath" },
+        { "name": "memberId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "patch": {
+        "operationId": "updateMemberRole",
+        "tags": ["Members & invites"],
+        "summary": "Change a member's role",
+        "description": "Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateMemberRole" } } }
+        },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "operationId": "removeMember",
+        "tags": ["Members & invites"],
+        "summary": "Remove a member",
+        "description": "Removes a member and cascade-revokes their agents. Requires the `admin` role.",
+        "responses": {
+          "200": { "description": "Removed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/invites/accept": {
+      "post": {
+        "operationId": "acceptInvite",
+        "tags": ["Members & invites"],
+        "summary": "Accept an invite",
+        "description": "Accepts an invitation using its raw `abi_` token.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AcceptInvite" } } }
+        },
+        "responses": {
+          "200": { "description": "Joined", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AcceptInviteResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api-keys": {
+      "post": {
+        "operationId": "createApiKey",
+        "tags": ["API keys"],
+        "summary": "Create a personal API key",
+        "description": "Creates a personal API key (`abu_`) bound to the caller and active org. The full secret is returned exactly once. A personal API key authenticates the management surface only — it can never reach `access.*` and cannot create or revoke other API keys, so this must be called from a browser-backed Better Auth session.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateApiKey" } } }
+        },
+        "responses": {
+          "200": { "description": "API key created (secret shown once)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserApiKeyWithSecret" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "get": {
+        "operationId": "listApiKeys",
+        "tags": ["API keys"],
+        "summary": "List personal API keys",
+        "description": "Lists the caller's personal API keys in the active org. Secrets are never returned. Not paginated.",
+        "responses": {
+          "200": { "description": "API keys", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserApiKeyListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api-keys/{keyId}": {
+      "delete": {
+        "operationId": "revokeApiKey",
+        "tags": ["API keys"],
+        "summary": "Revoke a personal API key",
+        "description": "Revokes a personal API key. Must be called from a browser-backed Better Auth session.",
+        "parameters": [{ "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/orgs/{orgId}/profiles": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdPath" }],
+      "post": {
+        "operationId": "createProfile",
+        "tags": ["Profiles"],
+        "summary": "Create a profile",
+        "description": "Creates a profile in the org. A `zero_knowledge` profile must be bootstrapped separately before it can hold items. Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateProfile" } } }
+        },
+        "responses": {
+          "200": { "description": "Profile created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "get": {
+        "operationId": "listProfiles",
+        "tags": ["Profiles"],
+        "summary": "List profiles",
+        "description": "Lists profiles in the org. Not paginated.",
+        "responses": {
+          "200": { "description": "Profiles", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/profiles/{profileId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ProfileIdPath" }],
+      "get": {
+        "operationId": "getProfile",
+        "tags": ["Profiles"],
+        "summary": "Get a profile",
+        "responses": {
+          "200": { "description": "Profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProfile",
+        "tags": ["Profiles"],
+        "summary": "Delete a profile",
+        "description": "Deletes a profile. Blocked while the profile still contains items (`PROFILE_NOT_EMPTY`). Requires the `admin` role.",
+        "responses": {
+          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/profiles/{profileId}/bootstrap": {
+      "post": {
+        "operationId": "bootstrapProfile",
+        "tags": ["Profiles"],
+        "summary": "Bootstrap a zero-knowledge profile",
+        "description": "Initializes a `zero_knowledge` profile with a client-derived wrapped root key and KDF parameters. The server never sees the password or root key. Requires the `admin` role.",
+        "parameters": [{ "$ref": "#/components/parameters/ProfileIdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VaultBootstrap" } } }
+        },
+        "responses": {
+          "200": { "description": "Bootstrapped", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/profiles/{profileId}/rotate": {
+      "post": {
+        "operationId": "rotateProfileKey",
+        "tags": ["Profiles"],
+        "summary": "Rotate a profile root key",
+        "description": "Rotates a zero-knowledge profile's root key. The request must rewrap every item key under the new root key; omitting any item fails with `ROTATE_KEY_INCOMPLETE`. Returns the new `keyVersion`. Requires the `admin` role.",
+        "parameters": [{ "$ref": "#/components/parameters/ProfileIdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RotateKey" } } }
+        },
+        "responses": {
+          "200": { "description": "Rotated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KeyVersionResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/items": {
+      "post": {
+        "operationId": "createItem",
+        "tags": ["Items"],
+        "summary": "Create an item",
+        "description": "Creates an item in a profile. For zero-knowledge items supply a client-encrypted `encryptedItemKey` and `ciphertext`; for server-managed items supply a plaintext `payload` that the server encrypts with AES-256-GCM.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateItem" } } }
+        },
+        "responses": {
+          "200": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "get": {
+        "operationId": "listItems",
+        "tags": ["Items"],
+        "summary": "List items",
+        "description": "Lists item metadata in the active org. Cursor-paginated.",
+        "parameters": [
+          { "name": "profileId", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Restrict to a single profile." },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "Items", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/items/{itemId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ItemIdPath" }],
+      "get": {
+        "operationId": "getItem",
+        "tags": ["Items"],
+        "summary": "Get an item",
+        "description": "Returns item metadata. Zero-knowledge items also include the ciphertext envelope.",
+        "responses": {
+          "200": { "description": "Item", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "updateItem",
+        "tags": ["Items"],
+        "summary": "Update an item",
+        "description": "Updates an item using optimistic concurrency. The request must carry the current `contentVersion`; a mismatch fails with `STALE_VERSION`. Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateItem" } } }
+        },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ItemVersionResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteItem",
+        "tags": ["Items"],
+        "summary": "Delete an item",
+        "description": "Soft-deletes an item and cascade-revokes its permissions. Requires the `admin` role.",
+        "responses": {
+          "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/agents": {
+      "post": {
+        "operationId": "createAgent",
+        "tags": ["Agents"],
+        "summary": "Register an agent",
+        "description": "Registers an agent. Agents authenticate with `public_key_session` (Ed25519). Provide a `publicKey` directly, or pass `issueBootstrapToken: true` to receive a one-time `abe_` enrollment token. Exactly one of the two is required. Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAgent" } } }
+        },
+        "responses": {
+          "200": { "description": "Agent registered", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentRegistrationResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "get": {
+        "operationId": "listAgents",
+        "tags": ["Agents"],
+        "summary": "List agents",
+        "description": "Lists agents in the org. Cursor-paginated.",
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "Agents", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/agents/{agentId}": {
+      "parameters": [{ "$ref": "#/components/parameters/AgentIdPath" }],
+      "get": {
+        "operationId": "getAgent",
+        "tags": ["Agents"],
+        "summary": "Get an agent",
+        "responses": {
+          "200": { "description": "Agent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "operationId": "revokeAgent",
+        "tags": ["Agents"],
+        "summary": "Revoke an agent",
+        "description": "Revokes an agent and cascade-revokes its permissions and active sessions. Requires the `admin` role.",
+        "responses": {
+          "200": { "description": "Revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/agents/{agentId}/bootstrap": {
+      "post": {
+        "operationId": "issueBootstrapToken",
+        "tags": ["Agent sessions"],
+        "summary": "Issue a bootstrap token",
+        "description": "Issues a one-time `abe_` enrollment token (10-minute TTL) for an existing keypair agent. Requires the `admin` role.",
+        "parameters": [{ "$ref": "#/components/parameters/AgentIdPath" }],
+        "responses": {
+          "200": { "description": "Bootstrap token", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentBootstrapTokenResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/agents/enroll": {
+      "post": {
+        "operationId": "enrollAgent",
+        "tags": ["Agent sessions"],
+        "summary": "Enroll an agent public key",
+        "description": "Redeems a bootstrap token and uploads the agent's Ed25519 public key (JWK). Unauthenticated — the bootstrap token is the credential.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollAgent" } } }
+        },
+        "responses": {
+          "200": { "description": "Enrolled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentEnrollmentResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/agents/{agentId}/sessions/challenge": {
+      "post": {
+        "operationId": "createChallenge",
+        "tags": ["Agent sessions"],
+        "summary": "Create a signing challenge",
+        "description": "Creates a short-lived `abc_` signing challenge (60-second TTL) for the agent to sign with its Ed25519 private key. Unauthenticated.",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AgentIdPath" }],
+        "responses": {
+          "200": { "description": "Challenge", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentChallengeResult" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/agents/{agentId}/sessions/exchange": {
+      "post": {
+        "operationId": "exchangeSession",
+        "tags": ["Agent sessions"],
+        "summary": "Exchange a signed challenge for a session",
+        "description": "Verifies the Ed25519 signature over the challenge and mints an `abs_` session token (15-minute TTL). Unauthenticated — the signature is the credential.",
+        "security": [],
+        "parameters": [{ "$ref": "#/components/parameters/AgentIdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeSession" } } }
+        },
+        "responses": {
+          "200": { "description": "Session minted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentSessionResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/agents/sessions/{token}": {
+      "delete": {
+        "operationId": "revokeSession",
+        "tags": ["Agent sessions"],
+        "summary": "Revoke an agent session",
+        "description": "Revokes an active `abs_` session for the current operator.",
+        "parameters": [{ "name": "token", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/permissions": {
+      "post": {
+        "operationId": "createPermissions",
+        "tags": ["Permissions"],
+        "summary": "Grant permissions",
+        "description": "Creates one or more grants atomically — either every capability commits or none does. A grant targets exactly one of an item or a profile. Profile-target grants apply to every current and future item in that profile. Capabilities are `read` and `use`; legacy names (`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`) are accepted and normalized. Requires the `admin` role.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePermission" } } }
+        },
+        "responses": {
+          "200": { "description": "Grants created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PermissionListResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "get": {
+        "operationId": "listPermissions",
+        "tags": ["Permissions"],
+        "summary": "List permissions",
+        "description": "Lists grants. Filter by `agentId`, `itemId`, or `profileId`. Cursor-paginated.",
+        "parameters": [
+          { "name": "agentId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "itemId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "profileId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "Permissions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PermissionListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/permissions/{permissionId}": {
+      "delete": {
+        "operationId": "revokePermission",
+        "tags": ["Permissions"],
+        "summary": "Revoke a permission",
+        "parameters": [{ "name": "permissionId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/access/{itemId}/read": {
+      "post": {
+        "operationId": "accessRead",
+        "tags": ["Access"],
+        "summary": "Read a secret",
+        "description": "Reads a single item. Requires an `abs_` agent session and a `read` grant. Server-managed items return the decrypted payload; zero-knowledge items return the ciphertext envelope for the local daemon to decrypt. Every attempt — allowed or denied — is audited.",
+        "parameters": [{ "$ref": "#/components/parameters/ItemIdPath" }],
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadAccess" } } }
+        },
+        "responses": {
+          "200": { "description": "Secret read", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadAccessResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/access/{itemId}/use": {
+      "post": {
+        "operationId": "accessUse",
+        "tags": ["Access"],
+        "summary": "Reserve a mount handle",
+        "description": "Reserves a one-shot mount handle for an item. Requires an `abs_` agent session, a `use` grant, and a local agent (no remote daemon). Returns an opaque `mountId` and `expiresAt` — never the plaintext. The daemon redeems the handle to inject the secret.",
+        "parameters": [{ "$ref": "#/components/parameters/ItemIdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UseAccess" } } }
+        },
+        "responses": {
+          "200": { "description": "Mount handle", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UseAccessResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/profiles/{profileId}/access/use": {
+      "post": {
+        "operationId": "accessUseProfile",
+        "tags": ["Access"],
+        "summary": "Reserve mount handles for a profile",
+        "description": "Reserves a mount handle for every item the agent has a `use` grant on within the profile (bulk env injection). Requires an `abs_` agent session and a local agent. Returns one handle entry per item.",
+        "parameters": [{ "$ref": "#/components/parameters/ProfileIdPath" }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileUseAccess" } } }
+        },
+        "responses": {
+          "200": { "description": "Mount handles", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileUseAccessResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/access/mounts/{mountId}/redeem": {
+      "post": {
+        "operationId": "redeemMount",
+        "tags": ["Access"],
+        "summary": "Redeem a mount handle",
+        "description": "Atomically consumes a mount handle and returns the decrypted payload (server-managed) or ciphertext envelope (zero-knowledge). One-shot: redemption deletes the reservation. Cross-agent or repeat redemption returns `NOT_FOUND` so reservations can't be probed. Used by the local daemon.",
+        "parameters": [{ "name": "mountId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Redeemed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RedeemMountResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/audit": {
+      "get": {
+        "operationId": "listAudit",
+        "tags": ["Audit"],
+        "summary": "List audit events",
+        "description": "Lists audit events for the active org. Filter by `agentId`, `itemId`, `profileId`, `surface`, `field`, `eventType`, and `result`. Cursor-paginated, newest-first.",
+        "parameters": [
+          { "name": "agentId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "itemId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "profileId", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "surface", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "field", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "eventType", "in": "query", "required": false, "schema": { "$ref": "#/components/schemas/AuditEventType" } },
+          { "name": "result", "in": "query", "required": false, "schema": { "$ref": "#/components/schemas/AuditResult" } },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "Audit entries", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuditListResult" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "tags": ["System"],
+        "summary": "Liveness probe",
+        "description": "Returns `{ \"status\": \"ok\" }`. No authentication, excluded from rate limiting, and does not touch the database.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "const": "ok" } }, "required": ["status"] } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bearer token in the `Authorization` header. Management routes accept a Better Auth session token or a personal API key (`abu_`). Agent-facing `access.*` routes require an agent session token (`abs_`)."
+      }
+    },
+    "parameters": {
+      "OrgIdHeader": {
+        "name": "X-Abadge-Org-Id",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Active organization. Required when the caller belongs to more than one org; otherwise resolved automatically."
+      },
+      "OrgIdPath": { "name": "orgId", "in": "path", "required": true, "schema": { "type": "string" } },
+      "ProfileIdPath": { "name": "profileId", "in": "path", "required": true, "schema": { "type": "string" } },
+      "ItemIdPath": { "name": "itemId", "in": "path", "required": true, "schema": { "type": "string" } },
+      "AgentIdPath": { "name": "agentId", "in": "path", "required": true, "schema": { "type": "string" } },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+        "description": "Page size. Clamped to [1, 100]."
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "Opaque keyset cursor. Pass back the previous page's `nextCursor`."
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Validation or request error.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ValidationError" } } } },
+      "Unauthorized": { "description": "Missing or invalid credential.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "Authenticated but not authorized.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Resource not found.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "State conflict.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "TooManyRequests": { "description": "Rate limit exceeded.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "Standard error envelope. Every non-2xx response uses this shape.",
+        "properties": {
+          "code": { "type": "string", "example": "ITEM_NOT_FOUND" },
+          "message": { "type": "string", "example": "Item not found." },
+          "hint": { "type": ["string", "null"], "example": "Verify the item ID and that it belongs to your organization." },
+          "meta": { "type": ["object", "null"], "additionalProperties": true }
+        },
+        "required": ["code", "message"]
+      },
+      "ValidationError": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Error" },
+          {
+            "type": "object",
+            "properties": {
+              "issues": {
+                "type": "array",
+                "description": "Present on `VALIDATION_ERROR`. One entry per failing field.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "array", "items": { "type": "string" } },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "StorageMode": { "type": "string", "enum": ["zero_knowledge", "server_managed"] },
+      "ItemKind": { "type": "string", "enum": ["login", "api_key", "token", "json", "certificate", "ssh_key", "opaque"] },
+      "AgentKind": { "type": "string", "enum": ["local_cli", "local_mcp", "remote"] },
+      "AgentLocality": { "type": "string", "enum": ["local", "remote"] },
+      "AgentAuthMethod": { "type": "string", "enum": ["public_key_session"] },
+      "Capability": {
+        "type": "string",
+        "enum": ["read", "use", "read_ciphertext", "reveal_plaintext", "mount_env", "mount_file"],
+        "description": "Canonical capabilities are `read` and `use`. The remaining values are legacy aliases that normalize to `read`/`use` server-side."
+      },
+      "MemberRole": { "type": "string", "enum": ["owner", "admin", "member"] },
+      "AuditResult": { "type": "string", "enum": ["allowed", "denied", "expired", "revoked", "cascade"] },
+      "AuditEventType": { "type": "string", "description": "Audit event type. See the Audit log concept page for the full catalog." },
+      "KdfParams": {
+        "type": "object",
+        "description": "Argon2id KDF parameters used to derive the profile key-encryption key client-side.",
+        "properties": {
+          "algorithm": { "type": "string", "const": "argon2id" },
+          "memory": { "type": "integer", "minimum": 1 },
+          "iterations": { "type": "integer", "minimum": 1 },
+          "parallelism": { "type": "integer", "minimum": 1 },
+          "hashLength": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["algorithm", "memory", "iterations", "parallelism", "hashLength"]
+      },
+      "ItemPayload": {
+        "type": "object",
+        "description": "Cleartext secret payload for server-managed items. Never used for zero-knowledge items.",
+        "properties": {
+          "v": { "type": "integer" },
+          "label": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ItemKind" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" },
+          "fields": { "type": "object", "additionalProperties": true, "description": "Named secret fields, e.g. `{ \"token\": \"ghp_…\" }`." }
+        },
+        "required": ["fields"]
+      },
+      "CreateOrganization": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "slug": { "type": "string", "minLength": 1, "maxLength": 48, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "description": "Optional URL slug. Auto-generated when omitted." },
+          "logo": { "type": "string" }
+        },
+        "required": ["name"]
+      },
+      "UpdateOrganization": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "logo": { "type": "string" }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "logo": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "isPersonal": { "type": "boolean", "description": "True for a personal (single-user) workspace." }
+        },
+        "required": ["id", "name", "slug", "createdAt", "isPersonal"]
+      },
+      "OrgListItem": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Organization" },
+          {
+            "type": "object",
+            "properties": {
+              "role": { "$ref": "#/components/schemas/MemberRole" },
+              "hasBootstrappedProfile": { "type": "boolean" }
+            }
+          }
+        ]
+      },
+      "DefaultProfile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "externalId": { "type": ["string", "null"] },
+          "storageMode": { "$ref": "#/components/schemas/StorageMode" },
+          "keyVersion": { "type": "integer" }
+        }
+      },
+      "CreateOrgResult": {
+        "type": "object",
+        "properties": {
+          "organization": { "$ref": "#/components/schemas/Organization" },
+          "defaultProfile": { "$ref": "#/components/schemas/DefaultProfile" }
+        },
+        "required": ["organization", "defaultProfile"]
+      },
+      "OrgResult": {
+        "type": "object",
+        "properties": { "organization": { "$ref": "#/components/schemas/Organization" } },
+        "required": ["organization"]
+      },
+      "OrgListResult": {
+        "type": "object",
+        "properties": { "organizations": { "type": "array", "items": { "$ref": "#/components/schemas/OrgListItem" } } },
+        "required": ["organizations"]
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "userId": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": ["string", "null"], "description": "Null for plain members viewing other members." },
+          "role": { "$ref": "#/components/schemas/MemberRole" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MemberListResult": {
+        "type": "object",
+        "properties": { "members": { "type": "array", "items": { "$ref": "#/components/schemas/Member" } } },
+        "required": ["members"]
+      },
+      "InviteMember": {
+        "type": "object",
+        "properties": { "role": { "$ref": "#/components/schemas/MemberRole" } }
+      },
+      "CreateInviteResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "invitationId": { "type": "string" },
+          "token": { "type": "string", "description": "Raw `abi_` invite token. Shown once — share it with the invitee." }
+        },
+        "required": ["ok", "invitationId", "token"]
+      },
+      "AcceptInvite": {
+        "type": "object",
+        "properties": { "token": { "type": "string", "description": "Raw `abi_` invite token." } },
+        "required": ["token"]
+      },
+      "AcceptInviteResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "organizationId": { "type": "string" },
+          "organizationName": { "type": "string" },
+          "organizationSlug": { "type": "string" }
+        },
+        "required": ["ok", "organizationId", "organizationName", "organizationSlug"]
+      },
+      "CreateApiKey": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "expiresAt": { "type": "string", "format": "date-time", "description": "Optional absolute expiry. Non-expiring until revoked when omitted." }
+        },
+        "required": ["name"]
+      },
+      "UserApiKey": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "userId": { "type": "string" },
+          "name": { "type": "string" },
+          "keyPrefix": { "type": "string", "description": "8-character lookup prefix." },
+          "enabled": { "type": "boolean" },
+          "revokedAt": { "type": ["string", "null"], "format": "date-time" },
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserApiKeyWithSecret": {
+        "type": "object",
+        "properties": {
+          "apiKey": { "$ref": "#/components/schemas/UserApiKey" },
+          "key": { "type": "string", "description": "Full `abu_` secret. Returned exactly once at creation." }
+        },
+        "required": ["apiKey", "key"]
+      },
+      "UserApiKeyListResult": {
+        "type": "object",
+        "properties": { "apiKeys": { "type": "array", "items": { "$ref": "#/components/schemas/UserApiKey" } } },
+        "required": ["apiKeys"]
+      },
+      "CreateProfile": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "externalId": { "type": "string", "description": "Optional stable customer-supplied identifier, unique per org." },
+          "storageMode": { "$ref": "#/components/schemas/StorageMode" }
+        },
+        "required": ["name", "storageMode"]
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "name": { "type": "string" },
+          "externalId": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "storageMode": { "$ref": "#/components/schemas/StorageMode" },
+          "wrappedRootKey": { "type": ["string", "null"] },
+          "kdfSalt": { "type": ["string", "null"] },
+          "kdfParams": { "oneOf": [{ "$ref": "#/components/schemas/KdfParams" }, { "type": "null" }] },
+          "recoveryWrappedRootKey": { "type": ["string", "null"] },
+          "keyVersion": { "type": "integer", "minimum": 1 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProfileResult": {
+        "type": "object",
+        "properties": { "profile": { "$ref": "#/components/schemas/Profile" } },
+        "required": ["profile"]
+      },
+      "ProfileListResult": {
+        "type": "object",
+        "properties": { "profiles": { "type": "array", "items": { "$ref": "#/components/schemas/Profile" } } },
+        "required": ["profiles"]
+      },
+      "VaultBootstrap": {
+        "type": "object",
+        "properties": {
+          "wrappedRootKey": { "type": "string", "description": "Root key wrapped client-side under the password-derived KEK." },
+          "kdfSalt": { "type": "string" },
+          "kdfParams": { "$ref": "#/components/schemas/KdfParams" }
+        },
+        "required": ["wrappedRootKey", "kdfSalt", "kdfParams"]
+      },
+      "RekeyedItem": {
+        "type": "object",
+        "properties": {
+          "itemId": { "type": "string" },
+          "encryptedItemKey": { "type": "string", "description": "Item key rewrapped under the new root key." }
+        },
+        "required": ["itemId", "encryptedItemKey"]
+      },
+      "RotateKey": {
+        "type": "object",
+        "properties": {
+          "wrappedRootKey": { "type": "string" },
+          "recoveryWrappedRootKey": { "type": "string" },
+          "rekeyedItems": { "type": "array", "items": { "$ref": "#/components/schemas/RekeyedItem" }, "description": "Must include every item in the profile." }
+        },
+        "required": ["wrappedRootKey", "rekeyedItems"]
+      },
+      "CreateItem": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/CreateZeroKnowledgeItem" },
+          { "$ref": "#/components/schemas/CreateServerManagedItem" }
+        ],
+        "discriminator": { "propertyName": "storageMode" }
+      },
+      "CreateZeroKnowledgeItem": {
+        "type": "object",
+        "properties": {
+          "storageMode": { "type": "string", "const": "zero_knowledge" },
+          "id": { "type": "string", "format": "uuid", "description": "Client-generated UUID. Bound into the encryption AAD, so the server stores it verbatim." },
+          "profileId": { "type": "string", "format": "uuid", "description": "Target zero-knowledge profile. Resolves the org's first ZK profile when omitted." },
+          "label": { "type": "string", "minLength": 1 },
+          "encryptedItemKey": { "type": "string", "description": "DEK wrapped under the profile root key (XChaCha20-Poly1305)." },
+          "ciphertext": { "type": "string", "description": "Payload encrypted with the DEK." },
+          "expectedKeyVersion": { "type": "integer", "minimum": 0, "description": "Optional CAS guard against a concurrent key rotation." }
+        },
+        "required": ["storageMode", "id", "label", "encryptedItemKey", "ciphertext"]
+      },
+      "CreateServerManagedItem": {
+        "type": "object",
+        "properties": {
+          "storageMode": { "type": "string", "const": "server_managed" },
+          "profileId": { "type": "string", "format": "uuid", "description": "Target server-managed profile. Resolves the org's default profile when omitted." },
+          "payload": { "$ref": "#/components/schemas/ItemPayload" }
+        },
+        "required": ["storageMode", "payload"]
+      },
+      "UpdateItem": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/UpdateZeroKnowledgeItem" },
+          { "$ref": "#/components/schemas/UpdateServerManagedItem" }
+        ],
+        "discriminator": { "propertyName": "storageMode" }
+      },
+      "UpdateZeroKnowledgeItem": {
+        "type": "object",
+        "properties": {
+          "storageMode": { "type": "string", "const": "zero_knowledge" },
+          "label": { "type": "string", "minLength": 1 },
+          "encryptedItemKey": { "type": "string" },
+          "ciphertext": { "type": "string" },
+          "contentVersion": { "type": "integer", "minimum": 1, "description": "Current version for optimistic concurrency." }
+        },
+        "required": ["storageMode", "label", "encryptedItemKey", "ciphertext", "contentVersion"]
+      },
+      "UpdateServerManagedItem": {
+        "type": "object",
+        "properties": {
+          "storageMode": { "type": "string", "const": "server_managed" },
+          "payload": { "$ref": "#/components/schemas/ItemPayload" },
+          "contentVersion": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["storageMode", "payload", "contentVersion"]
+      },
+      "ItemSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "storageMode": { "$ref": "#/components/schemas/StorageMode" },
+          "cryptoVersion": { "type": "integer" },
+          "contentVersion": { "type": "integer" },
+          "profileId": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ItemDetail": {
+        "type": "object",
+        "description": "Item metadata. Zero-knowledge items additionally include `encryptedItemKey` and `ciphertext`.",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "storageMode": { "$ref": "#/components/schemas/StorageMode" },
+          "cryptoVersion": { "type": "integer" },
+          "contentVersion": { "type": "integer" },
+          "profileId": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "encryptedItemKey": { "type": "string", "description": "Zero-knowledge items only." },
+          "ciphertext": { "type": "string", "description": "Zero-knowledge items only." }
+        }
+      },
+      "IdResult": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } },
+        "required": ["id"]
+      },
+      "ItemResult": {
+        "type": "object",
+        "properties": { "item": { "$ref": "#/components/schemas/ItemDetail" } },
+        "required": ["item"]
+      },
+      "ItemListResult": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ItemSummary" } },
+          "nextCursor": { "type": ["string", "null"] }
+        },
+        "required": ["items", "nextCursor"]
+      },
+      "ItemVersionResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "contentVersion": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["ok", "contentVersion"]
+      },
+      "CreateAgent": {
+        "type": "object",
+        "properties": {
+          "kind": { "$ref": "#/components/schemas/AgentKind" },
+          "name": { "type": "string", "minLength": 1 },
+          "authMethod": { "$ref": "#/components/schemas/AgentAuthMethod" },
+          "publicKey": { "type": "string", "description": "Ed25519 public key in JWK format. Provide this OR `issueBootstrapToken`, not both." },
+          "issueBootstrapToken": { "type": "boolean", "description": "Issue a one-time `abe_` enrollment token instead of supplying a key now." },
+          "metadata": { "type": "object", "additionalProperties": true, "description": "Free-form metadata (description, owner tags, etc.)." }
+        },
+        "required": ["kind", "name"]
+      },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "createdBy": { "type": ["string", "null"] },
+          "kind": { "$ref": "#/components/schemas/AgentKind" },
+          "locality": { "$ref": "#/components/schemas/AgentLocality" },
+          "authMethod": { "$ref": "#/components/schemas/AgentAuthMethod" },
+          "name": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "publicKeyConfigured": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "revokedAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastUsedAt": { "type": ["string", "null"], "format": "date-time" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AgentRegistrationResult": {
+        "type": "object",
+        "properties": {
+          "agent": { "$ref": "#/components/schemas/Agent" },
+          "bootstrapToken": { "type": ["string", "null"], "description": "Present only when `issueBootstrapToken` was true. Shown once." },
+          "bootstrapExpiresAt": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "required": ["agent"]
+      },
+      "AgentResult": {
+        "type": "object",
+        "properties": { "agent": { "$ref": "#/components/schemas/Agent" } },
+        "required": ["agent"]
+      },
+      "AgentListResult": {
+        "type": "object",
+        "properties": {
+          "agents": { "type": "array", "items": { "$ref": "#/components/schemas/Agent" } },
+          "nextCursor": { "type": ["string", "null"] }
+        },
+        "required": ["agents", "nextCursor"]
+      },
+      "AgentBootstrapTokenResult": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "bootstrapToken": { "type": "string", "description": "One-time `abe_` token. Shown once." },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["agentId", "bootstrapToken", "expiresAt"]
+      },
+      "EnrollAgent": {
+        "type": "object",
+        "properties": {
+          "bootstrapToken": { "type": "string", "description": "The `abe_` token from agent registration." },
+          "publicKey": { "type": "string", "description": "Ed25519 public key in JWK format." }
+        },
+        "required": ["bootstrapToken", "publicKey"]
+      },
+      "AgentEnrollmentResult": {
+        "type": "object",
+        "properties": {
+          "agent": { "$ref": "#/components/schemas/Agent" },
+          "enrolledAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["agent", "enrolledAt"]
+      },
+      "AgentChallengeResult": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "challengeId": { "type": "string" },
+          "challenge": { "type": "string", "description": "`abc_`-prefixed challenge material to sign." },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["agentId", "challengeId", "challenge", "expiresAt"]
+      },
+      "ExchangeSession": {
+        "type": "object",
+        "properties": {
+          "challengeId": { "type": "string" },
+          "challenge": { "type": "string" },
+          "signature": { "type": "string", "description": "base64url Ed25519 signature over the challenge." }
+        },
+        "required": ["challengeId", "challenge", "signature"]
+      },
+      "AgentSessionResult": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "session": {
+            "type": "object",
+            "properties": {
+              "token": { "type": "string", "description": "`abs_` session token (15-minute TTL)." },
+              "expiresAt": { "type": "string", "format": "date-time" }
+            },
+            "required": ["token", "expiresAt"]
+          }
+        },
+        "required": ["agentId", "session"]
+      },
+      "CreatePermission": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/CreateItemPermission" },
+          { "$ref": "#/components/schemas/CreateProfilePermission" }
+        ],
+        "description": "Target exactly one of an item or a profile."
+      },
+      "CreateItemPermission": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "itemId": { "type": "string" },
+          "capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/Capability" } },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["agentId", "itemId", "capabilities"]
+      },
+      "CreateProfilePermission": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string" },
+          "profileId": { "type": "string" },
+          "capabilities": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/Capability" } },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["agentId", "profileId", "capabilities"]
+      },
+      "Permission": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "organizationId": { "type": "string" },
+          "agentId": { "type": "string" },
+          "itemId": { "type": ["string", "null"] },
+          "profileId": { "type": ["string", "null"] },
+          "capability": { "$ref": "#/components/schemas/Capability" },
+          "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+          "grantedBy": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PermissionListResult": {
+        "type": "object",
+        "properties": {
+          "permissions": { "type": "array", "items": { "$ref": "#/components/schemas/Permission" } },
+          "nextCursor": { "type": ["string", "null"] }
+        },
+        "required": ["permissions"]
+      },
+      "ReadAccess": {
+        "type": "object",
+        "properties": {
+          "field": { "type": "string", "description": "Select a single named field from a multi-field item." },
+          "purpose": { "type": "string", "description": "Optional reason recorded in the audit log." }
+        }
+      },
+      "ReadAccessResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "storageMode": { "type": "string", "const": "server_managed" },
+              "payload": { "$ref": "#/components/schemas/ItemPayload" }
+            },
+            "required": ["storageMode", "payload"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "storageMode": { "type": "string", "const": "zero_knowledge" },
+              "encryptedItemKey": { "type": "string" },
+              "ciphertext": { "type": "string" },
+              "cryptoVersion": { "type": "number" },
+              "itemId": { "type": "string" },
+              "profileId": { "type": "string" },
+              "contentVersion": { "type": "number" }
+            },
+            "required": ["storageMode", "encryptedItemKey", "ciphertext", "cryptoVersion", "itemId", "profileId", "contentVersion"]
+          }
+        ],
+        "discriminator": { "propertyName": "storageMode" }
+      },
+      "UseAccess": {
+        "type": "object",
+        "properties": {
+          "delivery": { "type": "string", "enum": ["env", "file"] },
+          "field": { "type": "string" },
+          "envVarName": { "type": "string", "description": "Override the injected environment variable name (env delivery)." },
+          "purpose": { "type": "string" }
+        },
+        "required": ["delivery"]
+      },
+      "UseAccessResponse": {
+        "type": "object",
+        "properties": {
+          "mountId": { "type": "string", "description": "Opaque one-shot handle. Redeem it via the daemon." },
+          "delivery": { "type": "string", "enum": ["env", "file"] },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["mountId", "delivery", "expiresAt"]
+      },
+      "ProfileUseAccess": {
+        "type": "object",
+        "properties": {
+          "delivery": { "type": "string", "enum": ["env", "file"] },
+          "purpose": { "type": "string" }
+        },
+        "required": ["delivery"]
+      },
+      "ProfileUseAccessResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "itemId": { "type": "string" },
+                "mountId": { "type": "string" },
+                "delivery": { "type": "string", "enum": ["env", "file"] },
+                "expiresAt": { "type": "string", "format": "date-time" }
+              },
+              "required": ["itemId", "mountId", "delivery", "expiresAt"]
+            }
+          }
+        },
+        "required": ["items"]
+      },
+      "RedeemMountResponse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "storageMode": { "type": "string", "const": "server_managed" },
+              "delivery": { "type": "string", "enum": ["env", "file"] },
+              "payload": { "$ref": "#/components/schemas/ItemPayload" },
+              "label": { "type": "string" },
+              "itemId": { "type": "string" }
+            },
+            "required": ["storageMode", "delivery", "payload", "label", "itemId"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "storageMode": { "type": "string", "const": "zero_knowledge" },
+              "delivery": { "type": "string", "enum": ["env", "file"] },
+              "encryptedItemKey": { "type": "string" },
+              "ciphertext": { "type": "string" },
+              "cryptoVersion": { "type": "number" },
+              "contentVersion": { "type": "number" },
+              "label": { "type": "string" },
+              "itemId": { "type": "string" },
+              "profileId": { "type": "string" }
+            },
+            "required": ["storageMode", "delivery", "encryptedItemKey", "ciphertext", "cryptoVersion", "contentVersion", "label", "itemId", "profileId"]
+          }
+        ],
+        "discriminator": { "propertyName": "storageMode" }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "organizationId": { "type": "string" },
+          "userId": { "type": ["string", "null"] },
+          "agentId": { "type": ["string", "null"] },
+          "itemId": { "type": ["string", "null"] },
+          "profileId": { "type": ["string", "null"] },
+          "surface": { "type": ["string", "null"] },
+          "eventType": { "$ref": "#/components/schemas/AuditEventType" },
+          "result": { "$ref": "#/components/schemas/AuditResult" },
+          "deliveryMode": { "type": ["string", "null"] },
+          "field": { "type": ["string", "null"] },
+          "purpose": { "type": ["string", "null"] },
+          "meta": { "type": "object", "additionalProperties": true },
+          "ipAddress": { "type": ["string", "null"] },
+          "occurredAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuditListResult": {
+        "type": "object",
+        "properties": {
+          "entries": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEntry" } },
+          "nextCursor": { "type": ["string", "null"] }
+        },
+        "required": ["entries", "nextCursor"]
+      },
+      "SuccessResult": {
+        "type": "object",
+        "properties": { "ok": { "type": "boolean" } },
+        "required": ["ok"]
+      },
+      "KeyVersionResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "keyVersion": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["ok", "keyVersion"]
+      }
+    }
+  }
+}

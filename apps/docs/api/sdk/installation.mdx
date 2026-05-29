@@ -3,7 +3,7 @@ title: "SDK installation"
 description: "Install @abadge/sdk for typed API access from Node, Bun, or the browser."
 ---
 
-`@abadge/sdk` is the official TypeScript client for the abadge API. It wraps the tRPC surface and exposes two clients: `AbadgeUserClient` for operator-scoped procedures and `AbadgeAgentClient` for agent-scoped access.
+`@abadge/sdk` is the official TypeScript client for the abadge API. It wraps the `/v1` REST API and exposes two clients: `AbadgeUserClient` for operator-scoped management and `AbadgeAgentClient` for agent-scoped secret access.
 
 ## Install
 
@@ -62,7 +62,7 @@ import { AbadgeApiError } from "@abadge/sdk";
 
 ## What the SDK does for you
 
-- Builds the request shape tRPC expects
+- Builds each request and sets the right `Authorization` header
 - Adds the right `Authorization` header
 - Surfaces typed responses (no `any`)
 - Wraps every API error in `AbadgeApiError` (with `code`, `message`, `hint`, `meta`)

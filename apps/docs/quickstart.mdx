@@ -104,7 +104,7 @@ abadge run \
 Under the hood, the CLI:
 
 1. Mints a short-lived `abs_...` session for the `local_cli` agent.
-2. Calls `access.mount` with `mountType: env`.
+2. Calls `POST /v1/access/{itemId}/use` with `delivery: env`.
 3. Spawns `node` with `OPENAI_API_KEY=<value>` in its environment.
 
 The secret lives only in the child's process memory. It never touches disk and never appears in shell history.
@@ -159,6 +159,6 @@ then calls `POST /v1/access/{itemId}/read` for the plaintext. See
     Use stored secrets from Claude Desktop or other MCP clients.
   </Card>
   <Card title="API reference" href="/api/overview">
-    tRPC procedures and the TypeScript SDK.
+    The REST API and the TypeScript SDK.
   </Card>
 </CardGroup>

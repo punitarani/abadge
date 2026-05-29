@@ -15,7 +15,7 @@ abadge org add --name "Acme" --slug acme
 | `--name <name>` | yes | Display name |
 | `--slug <slug>` | no | URL-safe identifier. Auto-generated if omitted. |
 
-Calls `organizations.create` and prints the new org name and ID.
+Calls `POST /v1/orgs` and prints the new org name and ID.
 
 ## `abadge org list`
 
@@ -49,10 +49,10 @@ abadge org members
 
 Output columns: `User` (name, email, or user ID — whichever is populated), `Role` (`owner`, `admin`, `member`).
 
-For the full member record (including `memberId`, `email`, `createdAt`), call [`organizations.members.list`](/api/procedures/organizations) via the SDK.
+For the full member record (including `memberId`, `email`, `createdAt`), call the [`GET /v1/orgs/{orgId}/members`](/api/overview) endpoint via the SDK.
 
 ## Related
 
 - [Concepts: organizations](/concepts/organizations)
 - [Dashboard: organizations](/dashboard/organizations)
-- [API: organizations procedures](/api/procedures/organizations)
+- [API reference](/api/overview)

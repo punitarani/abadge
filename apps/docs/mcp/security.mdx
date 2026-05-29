@@ -60,7 +60,7 @@ Tool errors are returned as JSON text content with the shape:
 }
 ```
 
-`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (tRPC layer error from the control plane). Non-API failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only.
+`error` is always present. `code`, `hint`, and `meta` are included when the underlying failure is an `AbadgeApiError` (an error returned by the control-plane API). Non-API failures (daemon unavailable, filesystem errors, unexpected throws) emit `{ "error": "..." }` only.
 
 LLM integrators can parse the `code` field for deterministic branching; `hint` is a human-remediation string.
 

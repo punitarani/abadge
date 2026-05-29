@@ -3,7 +3,7 @@ title: "get_audit"
 description: "Fetch recent audit entries. Optionally filter by item."
 ---
 
-`get_audit` lets the model inspect the audit trail. It calls `audit.list` under the hood and returns the structured entries.
+`get_audit` lets the model inspect the audit trail. It reads the `GET /v1/audit` endpoint under the hood and returns the structured entries.
 
 ## Input
 
@@ -45,7 +45,7 @@ A JSON object with an `entries` array, newest first:
 ## What it's not good for
 
 - Long-range analytics — use the dashboard or CLI for that
-- Listing entries the agent isn't allowed to see — `audit.list` enforces org scoping
+- Listing entries the agent isn't allowed to see — the audit endpoint enforces org scoping
 - Rich filtering by event type, result, agent, or surface — call the API directly for those filters
 
 ## Permission
@@ -58,5 +58,5 @@ The MCP agent must belong to the organization whose audit log is being read. The
 
 ## Related
 
-- [API: `audit.list`](/api/procedures/audit)
+- [API reference](/api/overview)
 - [Concepts: audit log](/concepts/audit-log)

@@ -118,4 +118,4 @@ abadge permission create \
 ```
 
 `mount_env` and `mount_file` are the typical capabilities for MCP — `use_secret` calls
-`access.mount` with `mountType: env`, and `mount_secret` calls it with `mountType: file`.
+`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret` calls it with `mountType: file`.

@@ -5,7 +5,7 @@ description: "Spawn a subprocess with a secret injected as an environment variab
 
 `abadge run` resolves a secret and injects it into a subprocess. The CLI exits with the child process exit code, so it composes naturally with shell scripts and CI pipelines.
 
-The CLI uses the provisioned `local_cli` runtime agent (written to `~/.abadge/config.json` by `abadge agent add --kind local_cli`) to mint or refresh a short-lived `abs_...` agent session, calls `access.mount` with `mountType: env`, and spawns the subprocess with the secret in its environment.
+The CLI uses the provisioned `local_cli` runtime agent (written to `~/.abadge/config.json` by `abadge agent add --kind local_cli`) to mint or refresh a short-lived `abs_...` agent session, calls `POST /v1/access/{itemId}/use` with `delivery: env`, and spawns the subprocess with the secret in its environment.
 
 ## Single-value items
 
@@ -111,4 +111,4 @@ Everything after `--` is the subprocess command and arguments.
 
 - [`abadge mount`](/cli/mount) — write the secret to a temp file instead
 - [Field delivery](/concepts/fields)
-- [API: `access.mount`](/api/procedures/access)
+- [API reference](/api/overview)

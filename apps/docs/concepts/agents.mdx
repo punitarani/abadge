@@ -43,7 +43,7 @@ No long-lived secret is stored on disk. The private key lives in `~/.abadge/agen
 See [Authentication](/api/authentication) for the full lifecycle.
 
 <Note>
-  To act on the **management surface** (organizations, profiles, items metadata, agents, permissions, audit, settings) from a script, use a [personal API key](/api/procedures/api-keys) (`abu_`) instead. A personal API key resolves to a session identity and can never reach the agent `access.*` surface — it cannot read secret values.
+  To act on the **management surface** (organizations, profiles, items metadata, agents, permissions, audit, settings) from a script, use a [personal API key](/api/authentication) (`abu_`) instead. A personal API key resolves to a session identity and can never reach the agent `access.*` surface — it cannot read secret values.
 </Note>
 
 ## Token formats
@@ -59,19 +59,19 @@ See [Authentication](/api/authentication) for the full lifecycle.
 
 <Steps>
   <Step title="Create">
-    `agents.create` registers the agent. `public_key_session` agents either provide `publicKey` directly or set `issueBootstrapToken: true` to receive an `abe_...` token.
+    `POST /v1/agents` registers the agent. `public_key_session` agents either provide `publicKey` directly or set `issueBootstrapToken: true` to receive an `abe_...` token.
   </Step>
   <Step title="Enroll">
-    For bootstrap-flow agents: the runtime generates an Ed25519 keypair and calls `auth.enroll` with the bootstrap token and public key. The token is consumed.
+    For bootstrap-flow agents: the runtime generates an Ed25519 keypair and calls `POST /v1/agents/enroll` with the bootstrap token and public key. The token is consumed.
   </Step>
   <Step title="Exchange sessions">
-    For each working session: `auth.createChallenge` → sign → `auth.exchangeSession` → receive `abs_...`. Repeat as the SDK's background refresher does.
+    For each working session: `POST /v1/agents/{agentId}/sessions/challenge` → sign → `POST /v1/agents/{agentId}/sessions/exchange` → receive `abs_...`. Repeat as the SDK's background refresher does.
   </Step>
   <Step title="Use">
-    Pass `Authorization: Bearer abs_...` to any agent procedure. The CLI and SDK do this automatically.
+    Pass `Authorization: Bearer abs_...` to any agent `access.*` endpoint. The CLI and SDK do this automatically.
   </Step>
   <Step title="Revoke">
-    `agents.revoke` invalidates all active sessions and disables future authentication.
+    `DELETE /v1/agents/{agentId}` invalidates all active sessions and disables future authentication.
   </Step>
 </Steps>
 
@@ -83,7 +83,7 @@ Removing an organization member cascades agent revocation for that member's owne
 
 ## Related
 
-- [API: agents procedures](/api/procedures/agents)
+- [API reference](/api/overview)
 - [API: authentication](/api/authentication)
 - [CLI: agent commands](/cli/agent)
 - [Dashboard: agents](/dashboard/agents)

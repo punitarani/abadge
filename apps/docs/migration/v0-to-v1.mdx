@@ -4,14 +4,14 @@ description: "What changed in the abadge production revamp, and how to update yo
 ---
 
 The production revamp (PR series #124–#128) ships abadge's canonical
-production surface. Existing tRPC callers keep working. New integrations
+production surface. Existing integrations keep working. New integrations
 should target the changes below.
 
 ## TL;DR
 
 | Area | Before | After |
 |------|--------|-------|
-| Transport | tRPC at `/trpc/*` only | REST at `/v1/*` + tRPC at `/trpc/*` (bridge) |
+| Public API | No documented HTTP surface | JSON REST at `/v1/*` with an OpenAPI 3.1 spec |
 | Capabilities | `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file` | `read`, `use` (legacy names still accepted as aliases) |
 | Grant targets | item only | item or profile |
 | Onboarding | Org create + manual profile bootstrap | Org create auto-creates a default `server_managed` profile |
@@ -22,26 +22,23 @@ should target the changes below.
 
 ## REST endpoints
 
-Every tRPC procedure annotated with REST metadata is reachable at
-`/v1/...`. The OpenAPI 3.1 spec is at `/v1/openapi.json`. See the
-[API reference](/api/overview).
+v1 introduces a public JSON REST API under `/v1/...`, with an OpenAPI 3.1
+spec at `/v1/openapi.json`. See the [API reference](/api/overview). A sample
+of the common operations:
 
-| Old tRPC procedure | New REST route |
-|-------------------|----------------|
-| `organizations.create` | `POST /v1/orgs` |
-| `organizations.list` | `GET /v1/orgs` |
-| `profiles.create` | `POST /v1/orgs/{orgId}/profiles` |
-| `profiles.list` | `GET /v1/orgs/{orgId}/profiles` |
-| `items.create` | `POST /v1/items` |
-| `items.list` | `GET /v1/items` |
-| `agents.create` | `POST /v1/agents` |
-| `permissions.create` | `POST /v1/permissions` |
-| `access.reveal` / `access.ciphertext` | `POST /v1/access/{itemId}/read` |
-| `access.mount` | `POST /v1/access/{itemId}/use` |
-| `audit.list` | `GET /v1/audit` |
-
-The tRPC procedures keep working unchanged. The REST surface is a
-parallel front door over the same handlers.
+| Operation | REST route |
+|-----------|------------|
+| Create organization | `POST /v1/orgs` |
+| List organizations | `GET /v1/orgs` |
+| Create profile | `POST /v1/orgs/{orgId}/profiles` |
+| List profiles | `GET /v1/orgs/{orgId}/profiles` |
+| Create item | `POST /v1/items` |
+| List items | `GET /v1/items` |
+| Register agent | `POST /v1/agents` |
+| Grant permissions | `POST /v1/permissions` |
+| Read a secret | `POST /v1/access/{itemId}/read` |
+| Reserve a mount | `POST /v1/access/{itemId}/use` |
+| List audit events | `GET /v1/audit` |
 
 ## Capability collapse: `read` and `use`
 
@@ -186,8 +183,6 @@ is purely stylistic.
 
 ## What still works
 
-* Every tRPC procedure at `/trpc/*` — the web dashboard, CLI, and SDK
-  use it internally.
 * Legacy capability names on the wire (mapped to canonical at write).
 * Existing `permissions` rows with legacy capability names (normalized
   at read).

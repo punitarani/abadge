@@ -110,30 +110,119 @@
             "pages": [
               "api/overview",
               "api/authentication",
+              "api/auth-routes",
               "api/errors",
               "api/rate-limiting",
               "api/pagination"
             ]
           },
           {
-            "group": "REST endpoints",
+            "group": "Organizations",
+            "openapi": "api/openapi.json",
             "pages": [
-              "api/rest/health",
-              "api/rest/auth-routes"
+              "POST /orgs",
+              "POST /orgs/personal",
+              "GET /orgs",
+              "GET /orgs/{orgId}",
+              "PATCH /orgs/{orgId}",
+              "DELETE /orgs/{orgId}"
             ]
           },
           {
-            "group": "tRPC procedures",
+            "group": "Members & invites",
+            "openapi": "api/openapi.json",
             "pages": [
-              "api/procedures/auth",
-              "api/procedures/organizations",
-              "api/procedures/profiles",
-              "api/procedures/items",
-              "api/procedures/agents",
-              "api/procedures/api-keys",
-              "api/procedures/permissions",
-              "api/procedures/access",
-              "api/procedures/audit"
+              "GET /orgs/{orgId}/members",
+              "POST /orgs/{orgId}/members",
+              "PATCH /orgs/{orgId}/members/{memberId}",
+              "DELETE /orgs/{orgId}/members/{memberId}",
+              "POST /invites/accept"
+            ]
+          },
+          {
+            "group": "API keys",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /api-keys",
+              "GET /api-keys",
+              "DELETE /api-keys/{keyId}"
+            ]
+          },
+          {
+            "group": "Profiles",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /orgs/{orgId}/profiles",
+              "GET /orgs/{orgId}/profiles",
+              "GET /profiles/{profileId}",
+              "POST /profiles/{profileId}/bootstrap",
+              "POST /profiles/{profileId}/rotate",
+              "DELETE /profiles/{profileId}"
+            ]
+          },
+          {
+            "group": "Items",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /items",
+              "GET /items",
+              "GET /items/{itemId}",
+              "PATCH /items/{itemId}",
+              "DELETE /items/{itemId}"
+            ]
+          },
+          {
+            "group": "Agents",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /agents",
+              "GET /agents",
+              "GET /agents/{agentId}",
+              "DELETE /agents/{agentId}"
+            ]
+          },
+          {
+            "group": "Agent sessions",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /agents/{agentId}/bootstrap",
+              "POST /agents/enroll",
+              "POST /agents/{agentId}/sessions/challenge",
+              "POST /agents/{agentId}/sessions/exchange",
+              "DELETE /agents/sessions/{token}"
+            ]
+          },
+          {
+            "group": "Permissions",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /permissions",
+              "GET /permissions",
+              "DELETE /permissions/{permissionId}"
+            ]
+          },
+          {
+            "group": "Access",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "POST /access/{itemId}/read",
+              "POST /access/{itemId}/use",
+              "POST /profiles/{profileId}/access/use",
+              "POST /access/mounts/{mountId}/redeem"
+            ]
+          },
+          {
+            "group": "Audit",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "GET /audit"
+            ]
+          },
+          {
+            "group": "System",
+            "openapi": "api/openapi.json",
+            "pages": [
+              "GET /health"
             ]
           },
           {
