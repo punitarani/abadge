@@ -41,6 +41,7 @@ const ITEM_LABEL = "seed-demo-secret";
 const CLI_AGENT_NAME = "seed-cli-agent";
 const MCP_AGENT_NAME = "seed-mcp-agent";
 const KEY_FILE = join(homedir(), ".abadge", `${MCP_AGENT_NAME}.key.json`);
+const CREDS_FILE = join(homedir(), ".abadge", "seed-credentials.env");
 
 function getArg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -101,8 +102,8 @@ async function ensureItem(client: AbadgeUserClient): Promise<string> {
 /** Legacy API-key agent: reuse + rotate for a fresh one-time key, else create. */
 async function ensureCliAgent(
   client: AbadgeUserClient,
-  live: ReadonlyArray<{ id: string; name: string }>,
 ): Promise<{ id: string; apiKey: string | null }> {
+  const live = (await client.agents.list()).agents.filter((a) => a.enabled && !a.revokedAt);
   const existing = live.find((a) => a.name === CLI_AGENT_NAME);
   if (existing) {
     return { id: existing.id, apiKey: (await client.agents.update(existing.id)).apiKey };
@@ -121,10 +122,8 @@ async function ensureCliAgent(
  * when no live agent exists, or when a prior run's key file is missing (the
  * orphaned agent is revoked first so it can be replaced).
  */
-async function ensureMcpAgent(
-  client: AbadgeUserClient,
-  live: ReadonlyArray<{ id: string; name: string }>,
-): Promise<string> {
+async function ensureMcpAgent(client: AbadgeUserClient): Promise<string> {
+  const live = (await client.agents.list()).agents.filter((a) => a.enabled && !a.revokedAt);
   let existing = live.find((a) => a.name === MCP_AGENT_NAME);
   if (existing && !existsSync(KEY_FILE)) {
     await client.agents.delete(existing.id);
@@ -209,12 +208,23 @@ async function main(): Promise<void> {
   const itemId = await ensureItem(client);
   console.log(`→ Item: ${ITEM_LABEL} (${itemId})`);
 
-  const live = (await client.agents.list()).agents.filter((a) => a.enabled && !a.revokedAt);
-  const cli = await ensureCliAgent(client, live);
-  const mcpAgentId = await ensureMcpAgent(client, live);
+  const cli = await ensureCliAgent(client);
+  const mcpAgentId = await ensureMcpAgent(client);
   await ensureGrant(client, cli.id, itemId);
   await ensureGrant(client, mcpAgentId, itemId);
   console.log(`→ Agents + permissions ready`);
+
+  mkdirSync(join(homedir(), ".abadge"), { recursive: true });
+  const credsLines = [
+    `# abadge seed credentials — generated ${new Date().toISOString()}`,
+    `ABADGE_SESSION_TOKEN=${sessionToken}`,
+    `ABADGE_ORG_ID=${org.id}`,
+    `ABADGE_CLI_AGENT_ID=${cli.id}`,
+    `ABADGE_CLI_API_KEY=${cli.apiKey ?? ""}`,
+    `ABADGE_MCP_AGENT_ID=${mcpAgentId}`,
+  ].join("\n");
+  writeFileSync(CREDS_FILE, `${credsLines}\n`);
+  chmodSync(CREDS_FILE, 0o600);
 
   console.log(`
 ╭─ abadge seeded ────────────────────────────────────────────
@@ -225,11 +235,8 @@ async function main(): Promise<void> {
 │ Profile      ${profile.id}
 │ Item         ${itemId}  (${ITEM_LABEL})
 │
-│ Operator bearer token (CLI --token-stdin, X-Abadge-Org-Id header):
-│   ${sessionToken}
-│
-│ CLI agent    ${cli.id}
-│   API key:   ${cli.apiKey ?? "(not returned)"}
+│ Credentials  ${CREDS_FILE}  (0600)
+│   source ${CREDS_FILE}   # exports session token + API key
 │
 │ MCP agent    ${mcpAgentId}  (keypair)
 │   Private key: ${KEY_FILE}
