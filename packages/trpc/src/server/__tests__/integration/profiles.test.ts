@@ -556,6 +556,52 @@ describe("profiles.create — personal account cap", () => {
       expect(trpcError.cause?.code).toBe("PROFILE_LIMIT_EXCEEDED");
     }
   });
+
+  test("concurrent creates after deleting the default: advisory lock allows exactly one", async () => {
+    const user = await seedUser(auth);
+    const personal = await createOperatorCaller(
+      db,
+      auth,
+      user.headers,
+    ).organizations.createPersonal();
+    const caller = createOperatorCaller(db, auth, user.headers, personal.organization.id);
+
+    // Free the single slot, then race two creates. The per-org advisory lock in
+    // assertPersonalProfileCap must serialize them so only one lands — without
+    // it both would pass the existence check and leave two profiles (TOCTOU).
+    await caller.profiles.delete({ profileId: personal.defaultProfile.id });
+
+    const results = await Promise.allSettled([
+      caller.profiles.create({
+        orgId: personal.organization.id,
+        name: "race-a",
+        storageMode: "server_managed",
+      }),
+      caller.profiles.create({
+        orgId: personal.organization.id,
+        name: "race-b",
+        storageMode: "server_managed",
+      }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+
+    const err = (rejected[0] as PromiseRejectedResult).reason as {
+      code?: string;
+      cause?: { code?: string };
+    };
+    expect(err.cause?.code).toBe("PROFILE_LIMIT_EXCEEDED");
+
+    // Exactly one profile persisted — the race did not slip a second past the check.
+    const rows = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.organizationId, personal.organization.id));
+    expect(rows).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

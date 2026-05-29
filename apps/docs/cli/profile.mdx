@@ -20,6 +20,8 @@ abadge profile add --name "staging" --storage-mode zero_knowledge
 
 The CLI calls `profiles.create` and prints the new profile ID. Bootstrapping a zero-knowledge profile (generating the KEK, wrapping the root key) is a dashboard operation in v1 — create it in the CLI and finish the bootstrap at [abadge.io](https://abadge.io) before adding items.
 
+Personal accounts are capped at a single profile: `profile add` returns `PROFILE_LIMIT_EXCEEDED` when the active organization is a personal account that already has a profile. Team organizations are uncapped.
+
 ## `abadge profile list`
 
 Lists profiles in the active organization.
