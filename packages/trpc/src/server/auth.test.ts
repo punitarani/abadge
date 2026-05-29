@@ -164,6 +164,9 @@ interface ApiKeyCandidate {
 function createApiKeyContext(
   candidates: ApiKeyCandidate[],
   headers?: HeadersInit,
+  // Optional sink: rows passed to any `insert().values(row)` (audit writes) are
+  // pushed here so tests can assert the audit side effects.
+  insertSink?: unknown[],
 ): BaseRequestContext {
   const selectBuilder = {
     from() {
@@ -179,7 +182,12 @@ function createApiKeyContext(
   const db = {
     select: () => selectBuilder,
     update: () => ({ set: () => ({ where: () => ({ execute: async () => [] }) }) }),
-    insert: () => ({ values: async () => [] }),
+    insert: () => ({
+      values: (row: unknown) => {
+        insertSink?.push(row);
+        return Promise.resolve([]);
+      },
+    }),
   };
   return {
     req: new Request("http://localhost/trpc/any", { headers }),
@@ -251,6 +259,22 @@ describe("resolveUserApiKeyIdentity (abu_)", () => {
 
     const error = await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
     expect(error).toMatchObject({ code: "UNAUTHORIZED", message: "Expired user API key" });
+  });
+
+  test("an unmatched abu_ token writes an unrecognized-bearer audit row", async () => {
+    // Reset the module-level rate-limiter so the first probe always audits.
+    _resetUnauthBearerAuditCounters();
+    const { key } = await generateApiKey(USER_API_KEY_PREFIX);
+    const other = await generateApiKey(USER_API_KEY_PREFIX);
+    const inserts: Array<{ meta?: { reason?: string } }> = [];
+    const ctx = createApiKeyContext(
+      [{ id: "uak_1", userId: "u", organizationId: "o", secretHash: other.hash, expiresAt: null }],
+      { Authorization: `Bearer ${key}` },
+      inserts,
+    );
+
+    await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
+    expect(inserts.some((r) => r.meta?.reason === "unknown_credential")).toBe(true);
   });
 });
 
