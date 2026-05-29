@@ -14,7 +14,7 @@ import { authClient, SOCIAL_PROVIDERS } from "@/lib/auth-client";
 import { getAuthErrorMessage } from "@/lib/auth-error-message";
 import { normalizeRedirectPath } from "@/lib/redirect";
 
-function CheckInboxView({ email }: { email: string }): React.ReactElement {
+function CheckInboxView({ email, redirect }: { email: string; redirect: string }): React.ReactElement {
   const [resendState, setResendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
   async function handleResend() {
@@ -26,6 +26,19 @@ function CheckInboxView({ email }: { email: string }): React.ReactElement {
       setResendState("error");
     }
   }
+
+  // Re-enable the button and clear the confirmation after a short cooldown so a
+  // user whose first email is delayed or lost can resend without starting over.
+  useEffect(() => {
+    if (resendState !== "sent") return;
+    const timer = setTimeout(() => setResendState("idle"), 6000);
+    return () => clearTimeout(timer);
+  }, [resendState]);
+
+  // Preserve any explicit ?redirect so the intended destination survives the
+  // sign-in step that follows verification.
+  const loginHref = redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : "/login";
+  const startOverHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : "/register";
 
   return (
     <AuthShell>
@@ -68,7 +81,7 @@ function CheckInboxView({ email }: { email: string }): React.ReactElement {
           </Button>
 
           <Link
-            href="/login"
+            href={loginHref}
             className="block text-center text-sm font-medium text-foreground hover:underline"
           >
             Back to sign in
@@ -77,7 +90,7 @@ function CheckInboxView({ email }: { email: string }): React.ReactElement {
 
         <p className="text-sm text-muted-foreground">
           Wrong email?{" "}
-          <Link href="/register" className="font-medium text-foreground hover:underline">
+          <Link href={startOverHref} className="font-medium text-foreground hover:underline">
             Start over
           </Link>
         </p>
@@ -88,7 +101,11 @@ function CheckInboxView({ email }: { email: string }): React.ReactElement {
 
 function RegisterPageContent() {
   const searchParams = useSearchParams();
-  const redirectPath = normalizeRedirectPath(searchParams.get("redirect"), "/onboarding");
+  const rawRedirect = searchParams.get("redirect");
+  const redirectPath = normalizeRedirectPath(rawRedirect, "/onboarding");
+  // Explicit, sanitized redirect to carry through verification and the inbox
+  // links. Empty when absent or unsafe, so default flows are unchanged.
+  const explicitRedirect = rawRedirect ? normalizeRedirectPath(rawRedirect, "") : "";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -106,7 +123,7 @@ function RegisterPageContent() {
   }, []);
 
   if (registeredEmail) {
-    return <CheckInboxView email={registeredEmail} />;
+    return <CheckInboxView email={registeredEmail} redirect={explicitRedirect} />;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -129,6 +146,9 @@ function RegisterPageContent() {
         name,
         email,
         password,
+        // Carry an explicit redirect into the verification email so the user
+        // lands on their intended destination after verifying + signing in.
+        ...(explicitRedirect ? { callbackURL: explicitRedirect } : {}),
       });
       if (signUpError) {
         setError(signUpError.message ?? "Registration failed");
