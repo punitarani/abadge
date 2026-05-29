@@ -88,7 +88,23 @@ See the [API keys reference](/api/procedures/api-keys) for the procedures.
 
 ## Removing the organization
 
-Deleting an organization cascades to its agents, permissions, profiles, and items. Audit entries persist (they have no foreign-key constraints). This is irreversible.
+**Settings → Danger zone** deletes the organization (or personal account). Deletion cascades to its agents, permissions, profiles, and items. Audit entries persist (they have no foreign-key constraints). This is irreversible.
+
+Deletion is **not** blocked when items exist — those items are deleted along with everything else. Because the action is destructive, the confirmation dialog requires three things, two of which are re-checked server-side:
+
+<Steps>
+  <Step title="Type `delete`">
+    A friction step so the action can't be triggered by a stray click.
+  </Step>
+  <Step title="Type the exact organization name">
+    Must match the org's current name (GitHub-style). Re-verified by the server — a mismatch returns `CONFIRMATION_MISMATCH`.
+  </Step>
+  <Step title="Re-enter your account password">
+    Owning the org is not enough; the server re-authenticates the password against your credential account. A wrong password returns `REAUTH_FAILED`; a social-login-only account with no password set returns `REAUTH_PASSWORD_REQUIRED` (set a password via password reset first).
+  </Step>
+</Steps>
+
+Only an **owner** can delete the organization. Both allowed and denied attempts are written to the audit log.
 
 ## Related
 
