@@ -220,7 +220,14 @@ const assertPersonalProfileCap = async (tx: Transaction, orgId: string): Promise
     .limit(1);
   if (!isPersonalOrg(org?.metadata)) return;
 
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${orgId}))`);
+  // Serialize concurrent creates for THIS org so the existence check + insert
+  // are atomic across transactions. The two-arg form yields a 64-bit key space
+  // (two int4 hashes of the orgId halves) rather than the single-arg 32-bit
+  // hashtext, so unrelated orgs don't collide onto the same lock and block each
+  // other. Released automatically on transaction commit/rollback.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(left(${orgId}, 16)), hashtext(right(${orgId}, 16)))`,
+  );
   const existing = await scopedDb(tx, orgId).findFirst("profiles");
   if (existing) {
     throw new ConflictError({

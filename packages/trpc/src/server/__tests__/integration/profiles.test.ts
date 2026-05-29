@@ -566,9 +566,13 @@ describe("profiles.create — personal account cap", () => {
     ).organizations.createPersonal();
     const caller = createOperatorCaller(db, auth, user.headers, personal.organization.id);
 
-    // Free the single slot, then race two creates. The per-org advisory lock in
-    // assertPersonalProfileCap must serialize them so only one lands — without
-    // it both would pass the existence check and leave two profiles (TOCTOU).
+    // Free the single slot, then race two creates. The load-bearing assertion is
+    // the end-to-end invariant — exactly one profile row persists — which the
+    // in-transaction existence check plus the per-org advisory lock guarantee
+    // together. Note: whether the two transactions truly overlap (and thus
+    // contest the lock) depends on the pool handing out parallel connections;
+    // this test does not force that, so it primarily pins the count invariant
+    // rather than proving lock contention in isolation.
     await caller.profiles.delete({ profileId: personal.defaultProfile.id });
 
     const results = await Promise.allSettled([

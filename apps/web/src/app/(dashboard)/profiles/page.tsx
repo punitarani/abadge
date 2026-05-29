@@ -194,8 +194,10 @@ export default function ProfilesListPage(): React.ReactElement {
 
       {/* Gated on `!isPersonal` (not just the button) because the drawer's open
           state is driven by the `?create=true` URL param — a personal-account
-          user could otherwise open it by URL with the button hidden. */}
-      {activeOrgId && !isPersonal && (
+          user could otherwise open it by URL with the button hidden. `!orgLoading`
+          matches the button guard and closes the transient `isPersonal === false`
+          window before the org query resolves. */}
+      {activeOrgId && !isPersonal && !orgLoading && (
         <ProfileCreateDrawer
           open={createOpen}
           onOpenChange={(next) => void setFilters({ create: next })}
