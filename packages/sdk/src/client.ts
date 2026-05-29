@@ -257,7 +257,7 @@ interface SdkTrpcClient {
     }>;
     get: TrpcQuery<{ orgId: string }, unknown>;
     update: TrpcMutation<{ orgId: string; name?: string }, SuccessResult>;
-    delete: TrpcMutation<{ orgId: string }, SuccessResult>;
+    delete: TrpcMutation<{ orgId: string; confirmName: string; password: string }, SuccessResult>;
     members: {
       list: TrpcQuery<
         { orgId: string },
@@ -455,7 +455,16 @@ export class AbadgeUserClient {
     }>;
     get: (orgId: string) => Promise<unknown>;
     update: (orgId: string, data: { name?: string }) => Promise<SuccessResult>;
-    delete: (orgId: string) => Promise<SuccessResult>;
+    /**
+     * Permanently delete an organization and everything it cascades to (items,
+     * profiles, agents, permissions). Requires the typed-name confirmation and
+     * re-authentication: `confirmName` must equal the org's current name and
+     * `password` is re-verified against the caller's account.
+     */
+    delete: (
+      orgId: string,
+      confirm: { confirmName: string; password: string },
+    ) => Promise<SuccessResult>;
   };
 
   readonly profiles: {
@@ -535,9 +544,9 @@ export class AbadgeUserClient {
           () => this.client.organizations.update.mutate({ orgId, ...data }),
           "Failed to update organization",
         ),
-      delete: (orgId) =>
+      delete: (orgId, confirm) =>
         call(
-          () => this.client.organizations.delete.mutate({ orgId }),
+          () => this.client.organizations.delete.mutate({ orgId, ...confirm }),
           "Failed to delete organization",
         ),
     };

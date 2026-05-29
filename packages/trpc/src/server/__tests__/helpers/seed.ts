@@ -70,6 +70,26 @@ export async function seedUser(
   };
 }
 
+/**
+ * Attach a credential (email+password) account to an already-seeded user so
+ * password re-authentication paths (e.g. organizations.delete) can be tested.
+ * `seedUser` creates only the user row; it has no password by default.
+ */
+export async function setUserPassword(
+  auth: TestAuth,
+  userId: string,
+  password: string,
+): Promise<void> {
+  const authContext = await auth.$context;
+  const hash = await authContext.password.hash(password);
+  await authContext.internalAdapter.linkAccount({
+    userId,
+    providerId: "credential",
+    accountId: userId,
+    password: hash,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // seedOrg
 // ---------------------------------------------------------------------------

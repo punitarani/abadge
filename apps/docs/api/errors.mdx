@@ -41,11 +41,14 @@ Validation errors include an extra `issues` array:
 | `INVALID_BOOTSTRAP_TOKEN` | 400 | Bootstrap token is malformed or does not match any agent |
 | `BOOTSTRAP_TOKEN_EXPIRED` | 400 | Bootstrap token has passed its 10-minute TTL |
 | `INVALID_CAPABILITY` | 400 | Requested capability is not a valid enum value |
-| `INVALID_CAPABILITY_LOCALITY` | 400 | Capability is not allowed for this agent locality (e.g. remote agent + `mount_env`) |
+| `INVALID_CAPABILITY_LOCALITY` | 400 | Capability is not allowed for this agent locality (e.g. remote agent + `use`) |
 | `INVALID_CAPABILITY_STORAGE` | 400 | Capability is not compatible with the item's storage mode |
 | `ORG_HEADER_REQUIRED` | 400 | User belongs to 2+ orgs; set `X-Abadge-Org-Id`. `meta.availableOrgIds` lists the user's orgs |
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile rotateKey payload does not rewrap every ZK item; `meta.missingItemIds` lists the omitted ones |
+| `CONFIRMATION_MISMATCH` | 400 | `DELETE /v1/orgs/{orgId}` confirmation text does not match the org's current name |
+| `REAUTH_PASSWORD_REQUIRED` | 400 | `DELETE /v1/orgs/{orgId}` re-authentication requested but the account has no password set (social-login only); set one via password reset first |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
+| `REAUTH_FAILED` | 401 | `DELETE /v1/orgs/{orgId}` re-authentication failed: the supplied account password is incorrect |
 | `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
 | `ORG_MEMBERSHIP_REQUIRED` | 401 | `X-Abadge-Org-Id` refers to an organization the user is not a member of |
 | `AGENT_NOT_ENROLLED` | 401 | Agent credential present but public key not enrolled |

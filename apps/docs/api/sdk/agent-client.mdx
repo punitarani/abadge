@@ -79,7 +79,7 @@ These enforce the capability matrix and audit every attempt.
 
 Read an item. Server-managed items return the decrypted payload; ZK items return the encrypted envelope for local daemon decryption.
 
-**Requires:** `reveal_plaintext` (server-managed) or `read_ciphertext` (ZK, local only).
+**Requires:** the `read` capability (ZK items resolve locally only).
 
 Returns a discriminated union on `storageMode`:
 
@@ -102,7 +102,7 @@ const value = result.payload.fields.password;
 
 Mint a short-lived mount handle for local injection (env var or temp file). The daemon redeems the handle for the actual material.
 
-**Requires:** `mount_env` or `mount_file` permission. Local agent only.
+**Requires:** the `use` capability. Local agent only.
 
 ```ts
 // Single item

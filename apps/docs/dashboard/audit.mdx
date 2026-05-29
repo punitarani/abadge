@@ -39,7 +39,7 @@ Filters compose. Pagination uses cursor tokens (50 entries per page by default; 
 
 Click **Export JSON** to download the current filtered view as JSON for offline analysis. The export honours your filter settings.
 
-For programmatic export, use `audit.list` from the API or `abadge audit list --json` from the CLI.
+For programmatic export, use `GET /v1/audit` from the API or `abadge audit list --json` from the CLI.
 
 ## What every event captures
 
@@ -65,12 +65,12 @@ For programmatic export, use `audit.list` from the API or `abadge audit list --j
 
 - Secret values
 - Encryption keys, wrapped keys, or KDF parameters
-- The plaintext output of subprocesses spawned by `mount_env`
+- The plaintext output of subprocesses spawned by `use` with `delivery: env`
 
 If you need byte-level visibility into what an agent did with a secret, instrument the consumer.
 
 ## Related
 
 - [Concepts: audit log](/concepts/audit-log)
-- [API: audit procedures](/api/procedures/audit)
+- [API reference](/api/overview)
 - [CLI: audit](/cli/audit)

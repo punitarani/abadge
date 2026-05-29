@@ -36,7 +36,7 @@ abadge login --no-open-browser
     The Better Auth bearer token is stored in the daemon's process memory. The config file never holds a human bearer token.
   </Step>
   <Step title="Audit auth.login">
-    `auth.recordLogin` appends an `auth.login` event (best-effort — this step is silent for new signups without org membership).
+    the login-audit operation appends an `auth.login` event (best-effort — this step is silent for new signups without org membership).
   </Step>
 </Steps>
 
@@ -74,7 +74,7 @@ These are for integrations that need to render the verification URL in a custom 
 
 ## Audit
 
-- `auth.login` — recorded by `auth.recordLogin`
+- `auth.login` — recorded by the login-audit operation
 
 ## Related
 

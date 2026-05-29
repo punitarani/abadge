@@ -65,7 +65,7 @@ The binary path defaults to `${ABADGE_INSTALL_DIR:-~/.abadge/bin}/abadge-mcp`.
     The CLI uses WebCrypto to generate an Ed25519 keypair locally.
   </Step>
   <Step title="Upload the public key">
-    `agents.create` is called with `publicKey` (JWK JSON) and metadata.
+    `POST /v1/agents` is called with `publicKey` (JWK JSON) and metadata.
   </Step>
   <Step title="Store the private key">
     Written to `~/.abadge/agents/<agent-id>.ed25519.jwk` with `0600`
@@ -127,5 +127,5 @@ to the canonical verb.
 
 - [Concepts: agents](/concepts/agents)
 - [Dashboard: agents](/dashboard/agents)
-- [API: agents procedures](/api/procedures/agents)
+- [API reference](/api/overview)
 - [API: authentication](/api/authentication)

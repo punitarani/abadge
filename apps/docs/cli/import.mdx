@@ -32,7 +32,7 @@ abadge import .env --dry-run
     The label is the env-var key. Existing items with the same label in the active profile are matched.
   </Step>
   <Step title="Apply">
-    For new labels: `items.create` (server-managed only). For existing labels: skip without `--overwrite`, update with `--overwrite`.
+    For new labels: `POST /v1/items` (server-managed only). For existing labels: skip without `--overwrite`, update with `--overwrite`.
   </Step>
   <Step title="Print a summary">
     Five buckets: `created`, `updated`, `skipped`, `refused`, `failed`.

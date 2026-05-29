@@ -5,7 +5,7 @@ description: "Spawn a subprocess with a secret injected as an environment variab
 
 `abadge run` resolves a secret and injects it into a subprocess. The CLI exits with the child process exit code, so it composes naturally with shell scripts and CI pipelines.
 
-The CLI uses the provisioned `local_cli` runtime agent (written to `~/.abadge/config.json` by `abadge agent add --kind local_cli`) to mint or refresh a short-lived `abs_...` agent session, calls `access.mount` with `mountType: env`, and spawns the subprocess with the secret in its environment.
+The CLI uses the provisioned `local_cli` runtime agent (written to `~/.abadge/config.json` by `abadge agent add --kind local_cli`) to mint or refresh a short-lived `abs_...` agent session, calls `POST /v1/access/{itemId}/use` with `delivery: env`, and spawns the subprocess with the secret in its environment.
 
 ## Single-value items
 
@@ -40,7 +40,7 @@ abadge run --item my-service-env --expand-env -- ./server
 
 ## Bulk mode (`--all`)
 
-`--all` fetches **every item in the active profile** that the runtime agent has `mount_env` on, normalizes each item's `label` into a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`), and spawns the command with all of them.
+`--all` fetches **every item in the active profile** that the runtime agent has `use` on, normalizes each item's `label` into a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`), and spawns the command with all of them.
 
 ```bash
 # Use the active profile from ~/.abadge/config.json::activeProfileId
@@ -67,7 +67,7 @@ Profile is the trust boundary: items in other profiles are NEVER injected, even 
 | Flag | Required | Description |
 |---|---|---|
 | `--item <id>` | yes (single-item mode) | Item ID. Mutually exclusive with `--all`. |
-| `--all` | yes (bulk mode) | Inject every item in the active profile granted `mount_env` |
+| `--all` | yes (bulk mode) | Inject every item in the active profile granted `use` |
 | `--profile <id>` | no | Override the active profile when using `--all` |
 | `--field <name>` | no | Named field to inject (single-item mode) |
 | `--env-var <name>` | no | Environment variable name (single-item mode). Defaults to `ABADGE_SECRET`. |
@@ -102,7 +102,7 @@ Everything after `--` is the subprocess command and arguments.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `PERMISSION_DENIED` | No matching `mount_env` permission for `localAgents.cli` | `abadge permission create --capability mount_env --agent-id <cli-agent> --item-id <item>` |
+| `PERMISSION_DENIED` | No matching `use` permission for `localAgents.cli` | `abadge permission create --capability use --agent-id <cli-agent> --item-id <item>` |
 | `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted | Pass `--field <name>` or `--expand-env` |
 | `FIELD_NOT_FOUND` | Specified field doesn't exist on the item | Inspect `meta.availableFields` in the error output |
 | No local agent | `localAgents.cli` is missing from config | `abadge agent add --kind local_cli --name dev-laptop` |
@@ -111,4 +111,4 @@ Everything after `--` is the subprocess command and arguments.
 
 - [`abadge mount`](/cli/mount) — write the secret to a temp file instead
 - [Field delivery](/concepts/fields)
-- [API: `access.mount`](/api/procedures/access)
+- [API reference](/api/overview)

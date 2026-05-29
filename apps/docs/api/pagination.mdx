@@ -4,39 +4,48 @@ description: "Cursor (keyset) pagination on the list endpoints that support it."
 ---
 
 A fixed set of list endpoints support cursor (keyset) pagination. Each accepts
-optional `limit` and `cursor` and returns its result array alongside a
-`nextCursor`. Every other list endpoint returns its full set in one response.
+optional `limit` and `cursor` query parameters and returns its result array
+alongside a `nextCursor`. Every other list endpoint returns its full set in one
+response.
 
 ## Paginated endpoints
 
-| REST | tRPC procedure | Array key |
-|---|---|---|
-| `GET /v1/items` | `items.list` | `items` |
-| `GET /v1/agents` | `agents.list` | `agents` |
-| `GET /v1/permissions` | `permissions.list` | `permissions` |
-| `GET /v1/audit` | `audit.list` | `entries` |
+| Endpoint | Array key |
+|---|---|
+| `GET /v1/items` | `items` |
+| `GET /v1/agents` | `agents` |
+| `GET /v1/permissions` | `permissions` |
+| `GET /v1/audit` | `entries` |
 
-Organizations, members, and profiles are **not** paginated — they return the
-full set.
+<Note>
+  Organizations, members, profiles, and API keys are **not** paginated — they
+  return the full set.
+</Note>
 
 ## Request
 
-| Field | Type | Default | Notes |
-|---|---|---|---|
-| `limit` | integer | `50` | Clamped to `[1, 100]` server-side. |
-| `cursor` | string | — | Opaque. Pass back the previous page's `nextCursor`. |
+<ParamField query="limit" type="integer" default="50">
+  Page size. Clamped to `[1, 100]` server-side.
+</ParamField>
+<ParamField query="cursor" type="string">
+  Opaque keyset cursor. Pass back the previous page's `nextCursor`.
+</ParamField>
 
 ## Response
 
 The result array sits under the endpoint's key (see the table above) next to
-`nextCursor`. Using `items.list` as the example:
+`nextCursor`. Using `GET /v1/items` as the example:
 
 ```json
 {
   "items": [/* ... */],
-  "nextCursor": "..."
+  "nextCursor": "eyJpZCI6..."
 }
 ```
+
+<ResponseField name="nextCursor" type="string | null">
+  The cursor for the next page, or `null` on the last page.
+</ResponseField>
 
 ## Contract
 
@@ -50,13 +59,25 @@ The result array sits under the endpoint's key (see the table above) next to
 
 ## Iterating
 
-```ts
+<CodeGroup>
+```ts SDK
 let cursor: string | undefined;
 do {
-  const page = await client.items.list.query({ cursor });
+  const page = await client.items.list({ cursor });
   for (const item of page.items) {
     // ...
   }
   cursor = page.nextCursor ?? undefined;
 } while (cursor);
 ```
+
+```bash cURL
+# First page
+curl "https://api.abadge.io/v1/items?limit=50" \
+  -H "Authorization: Bearer abu_..."
+
+# Next page — pass back nextCursor
+curl "https://api.abadge.io/v1/items?limit=50&cursor=eyJpZCI6..." \
+  -H "Authorization: Bearer abu_..."
+```
+</CodeGroup>

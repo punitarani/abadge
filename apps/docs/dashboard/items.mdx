@@ -53,7 +53,7 @@ Click any row to open the item detail panel.
 
 Whether the dashboard reveals a secret value depends on the active workspace:
 
-- **Personal account** — your own vault. You own every secret, so the item page shows a **Reveal** control: server-managed values are decrypted by `items.ownerReveal` (recorded in the audit log), and zero-knowledge values are decrypted in your browser after you unlock the profile.
+- **Personal account** — your own vault. You own every secret, so the item page shows a **Reveal** control: server-managed values are decrypted by owner reveal (recorded in the audit log), and zero-knowledge values are decrypted in your browser after you unlock the profile.
 - **Team organization** — custody mode. The dashboard never displays plaintext; secrets flow only to authorized agents through the firewall. To read a value, use the CLI (`abadge export`, `abadge item --reveal`) or an authorized agent.
 
 ## Storage mode badges
@@ -77,5 +77,5 @@ Deleting an item sets `deletedAt` but preserves the ciphertext. Future access at
 
 - [Concepts: items](/concepts/items)
 - [Concepts: fields](/concepts/fields)
-- [API: items procedures](/api/procedures/items)
+- [API reference](/api/overview)
 - [CLI: item commands](/cli/item)

@@ -18,7 +18,7 @@ abadge profile add --name "staging" --storage-mode zero_knowledge
 | `--description <desc>` | no | Optional description |
 | `--storage-mode <mode>` | no | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
 
-The CLI calls `profiles.create` and prints the new profile ID. Bootstrapping a zero-knowledge profile (generating the KEK, wrapping the root key) is a dashboard operation in v1 — create it in the CLI and finish the bootstrap at [abadge.io](https://abadge.io) before adding items.
+The CLI calls `POST /v1/orgs/{orgId}/profiles` and prints the new profile ID. Bootstrapping a zero-knowledge profile (generating the KEK, wrapping the root key) is a dashboard operation in v1 — create it in the CLI and finish the bootstrap at [abadge.io](https://abadge.io) before adding items.
 
 Personal accounts are capped at a single profile: `profile add` returns `PROFILE_LIMIT_EXCEEDED` when the active organization is a personal account that already has a profile. Team organizations are uncapped.
 
@@ -46,10 +46,10 @@ Accepts either the profile name or ID. If the name isn't unique, use the ID.
 
 ## Vault operations
 
-For `unlock`, `lock`, `status`, and `change-password`, see [Vault commands](/cli/vault). Those commands are also exposed as `abadge profile unlock|lock|status|change-password`.
+For `unlock`, `lock`, `status`, and `change-password`, see [Profile security commands](/cli/profile-security). Those commands are also exposed as `abadge profile unlock|lock|status|change-password`.
 
 ## Related
 
 - [Concepts: profiles](/concepts/profiles)
 - [Dashboard: profiles](/dashboard/profiles)
-- [API: profiles procedures](/api/procedures/profiles)
+- [API reference](/api/overview)

@@ -30,9 +30,9 @@ For zero-knowledge items, the daemon must be unlocked. The CLI:
 1. Generates a 32-byte DEK locally.
 2. Encrypts the payload with the DEK (XChaCha20-Poly1305).
 3. Wraps the DEK with the profile root key (XChaCha20-Poly1305).
-4. Sends `encryptedItemKey` and `ciphertext` to `items.create`.
+4. Sends `encryptedItemKey` and `ciphertext` to `POST /v1/items`.
 
-For server-managed items, the CLI sends the plaintext payload to `items.create` and the API encrypts with AES-256-GCM.
+For server-managed items, the CLI sends the plaintext payload to `POST /v1/items` and the API encrypts with AES-256-GCM.
 
 ## `abadge item list`
 
@@ -92,4 +92,4 @@ The mode is fixed at creation and inherited from the profile.
 - [Concepts: items](/concepts/items)
 - [Concepts: fields](/concepts/fields)
 - [Dashboard: items](/dashboard/items)
-- [API: items procedures](/api/procedures/items)
+- [API reference](/api/overview)

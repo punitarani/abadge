@@ -52,7 +52,7 @@ Single-field items (kind `opaque` or `token` with a `value` field) emit `LABEL=v
 ## Constraints
 
 - Server-managed items only.
-- Permissions are not enforced at the API level for `items.ownerReveal` (the operator owns all items in their orgs), but the audit trail records each read.
+- Permissions are not enforced at the API level for owner reveal (the operator owns all items in their orgs), but the audit trail records each read.
 - Export does **not** include encryption material, IVs, or other internals.
 
 ## Why no ZK export

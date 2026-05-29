@@ -86,14 +86,14 @@ Soft-delete preserves the ciphertext but prevents future access. Permissions cas
 
 Both operators and agents can list items, but the responses differ:
 
-- `items.list` (session) returns metadata for every item the user can see in the active organization.
-- `items.listForAgent` (agent) returns metadata only for items the calling agent has at least one permission row on. Agents without grants get an empty list.
+- `GET /v1/items` (session) returns metadata for every item the user can see in the active organization.
+- `GET /v1/items` (agent) returns metadata only for items the calling agent has at least one permission row on. Agents without grants get an empty list.
 
-Neither endpoint returns secret data. To read a secret, call `access.ciphertext`, `access.reveal`, or `access.mount` with the appropriate capability.
+Neither endpoint returns secret data. To read a secret, call `POST /v1/access/{itemId}/read` (or reserve a mount with `POST /v1/access/{itemId}/use`) with the appropriate capability.
 
 ## Related
 
-- [API: items procedures](/api/procedures/items)
+- [API reference](/api/overview)
 - [CLI: item commands](/cli/item)
 - [Field delivery](/concepts/fields)
 - [Permissions and capabilities](/concepts/permissions-and-capabilities)

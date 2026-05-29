@@ -18,7 +18,7 @@ A profile is created with one of two storage modes, fixed for the lifetime of th
   <Tab title="Server-managed">
     The API encrypts items with AES-256-GCM using the Worker's `ENCRYPTION_KEY`. The server can decrypt on authorized requests.
 
-    Use when: remote agents need access (`reveal_plaintext`), or you want simpler onboarding without master-password management.
+    Use when: remote agents need access (`read`), or you want simpler onboarding without master-password management.
   </Tab>
 </Tabs>
 
@@ -43,7 +43,7 @@ Personal accounts are capped at a single profile: the default profile is seeded 
 
 ## Bootstrapping a zero-knowledge profile
 
-A ZK profile starts empty after creation. Before items can be added, the client must generate the encryption material and call `profiles.bootstrap`.
+A ZK profile starts empty after creation. Before items can be added, the client must generate the encryption material and call `POST /v1/profiles/{profileId}/bootstrap`.
 
 <Steps>
   <Step title="Pick a master password">
@@ -56,10 +56,10 @@ A ZK profile starts empty after creation. Before items can be added, the client 
     32 random bytes. The root key never leaves the client; only its KEK-wrapped form is sent to the server.
   </Step>
   <Step title="Wrap and ship">
-    `profiles.bootstrap` accepts `{ wrappedRootKey, kdfSalt, kdfParams }` and persists the profile envelope.
+    `POST /v1/profiles/{profileId}/bootstrap` accepts `{ wrappedRootKey, kdfSalt, kdfParams }` and persists the profile envelope.
   </Step>
   <Step title="Set up recovery">
-    `profiles.setupRecovery` accepts a `recoveryWrappedRootKey` (root key encrypted by a 256-bit recovery key shown to the user once). Without it, losing the master password is unrecoverable.
+    the recovery-setup operation accepts a `recoveryWrappedRootKey` (root key encrypted by a 256-bit recovery key shown to the user once). Without it, losing the master password is unrecoverable.
   </Step>
 </Steps>
 
@@ -69,12 +69,12 @@ See [Zero-knowledge encryption](/security/zero-knowledge) for the full key hiera
 
 | Operation | Notes |
 |---|---|
-| `profiles.create` | Creates the profile shell. ZK profiles still need bootstrap. |
-| `profiles.bootstrap` | Initializes encryption state for ZK profiles. |
-| `profiles.changePassword` | Re-wraps the root key under a new KEK. The root key itself is unchanged. |
-| `profiles.setupRecovery` | Adds a recovery-key-wrapped copy of the root key. |
-| `profiles.rotateKey` | Generates a new root key and re-wraps every item DEK. Atomic transaction. |
-| `profiles.delete` | Fails with `PROFILE_NOT_EMPTY` if items remain. |
+| `POST /v1/orgs/{orgId}/profiles` | Creates the profile shell. ZK profiles still need bootstrap. |
+| `POST /v1/profiles/{profileId}/bootstrap` | Initializes encryption state for ZK profiles. |
+| Change password | Re-wraps the root key under a new KEK. The root key itself is unchanged. |
+| Set up recovery | Adds a recovery-key-wrapped copy of the root key. |
+| `POST /v1/profiles/{profileId}/rotate` | Generates a new root key and re-wraps every item DEK. Atomic transaction. |
+| `DELETE /v1/profiles/{profileId}` | Fails with `PROFILE_NOT_EMPTY` if items remain. |
 
 ## Cascades
 
@@ -84,7 +84,7 @@ Rotating a profile root key requires the client to rewrap **every** item DEK in 
 
 ## Related
 
-- [API: profiles procedures](/api/procedures/profiles)
+- [API reference](/api/overview)
 - [CLI: profile commands](/cli/profile)
 - [Dashboard: profiles](/dashboard/profiles)
 - [Security: zero-knowledge](/security/zero-knowledge)

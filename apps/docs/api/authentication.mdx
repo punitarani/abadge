@@ -1,132 +1,115 @@
 ---
 title: "Authentication"
-description: "Operator sessions, agent sessions, and the keypair-based exchange."
+description: "Bearer tokens for operators and agents, and the keypair session exchange."
 ---
 
-The API authenticates two kinds of callers: human operators (via Better Auth session, or a personal API key for the management surface) and agents (via short-lived Ed25519 keypair sessions).
+Every `/v1` request carries a bearer token:
+
+```http
+Authorization: Bearer <token>
+```
+
+There are three token types, each for a different caller.
+
+| Prefix | Holder | Reaches `access.*`? | Issued by |
+|---|---|---|---|
+| Better Auth session | Human operator | No | `/api/auth/sign-in/*` |
+| `abu_…` | Personal API key (user + org) | No | `POST /v1/api-keys` |
+| `abs_…` | Agent session | **Yes** | `POST /v1/agents/{agentId}/sessions/exchange` |
+
+<Info>
+  Only an `abs_…` agent session can read or mount secret values via the
+  `/v1/access/*` endpoints. Operator sessions and personal API keys manage the
+  control plane but can never reveal a secret.
+</Info>
 
 ## Human operators
 
-Better Auth handles operator identity at `/api/auth/*`.
-
-Common routes:
-
-```text
-POST /api/auth/sign-up/email
-POST /api/auth/sign-in/email
-POST /api/auth/sign-out
-GET  /api/auth/get-session
-```
-
-Device authorization (used by the CLI):
-
-```text
-POST /api/auth/device/code
-POST /api/auth/device/token
-GET  /api/auth/device?user_code=...
-POST /api/auth/device/approve
-POST /api/auth/device/deny
-```
-
-`/api/auth/device/approve` and `/api/auth/device/deny` require an authenticated browser session.
-
-Session-backed tRPC procedures accept any of:
-
-- Better Auth browser **cookies** (set by `/api/auth/sign-in/*`)
-- Better Auth **bearer tokens** in `Authorization: Bearer ...`
-- A **personal API key** (`abu_...`) in `Authorization: Bearer ...`
-
-The CLI's device-login bearer token is held in daemon memory only — never written to disk.
+[Better Auth](https://www.better-auth.com) handles operator identity at
+`/api/auth/*`. Sign in to obtain a session token (or browser cookie), then use
+it as the bearer for `/v1` management endpoints. See
+[Human authentication](/api/auth-routes) for the route list and the CLI device
+flow.
 
 ### Personal API keys
 
-A personal API key (`abu_...`) lets a user script the management surface without a browser. Each key is bound to a `(user, org)` pair and is created, listed, and revoked from the dashboard org Settings page.
+A personal API key (`abu_…`) lets a user script the management surface without
+a browser. Each key is bound to a `(user, org)` pair and is created, listed,
+and revoked from the dashboard's org Settings page or via the
+`POST /v1/api-keys` endpoint.
 
-It resolves to a **session identity** — the same `sessionProcedure` surface the dashboard uses (organizations, profiles, items metadata, agents, permissions, audit, settings). It is **structurally barred from the agent-gated `access.*` surface**: it can never reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key also cannot create or revoke other API keys — that needs a real browser session.
-
-The secret is shown exactly once at creation; the server stores a SHA-256 hash plus an 8-character lookup prefix. Keys support an optional expiry and can be revoked. See the [API keys reference](/api/procedures/api-keys).
-
-### Device authorization flow
-
-<Steps>
-  <Step title="Request a device code">
-    `POST /api/auth/device/code` returns `device_code`, `user_code`, and `verification_uri`.
-  </Step>
-  <Step title="User approves in the browser">
-    The user opens `verification_uri`, signs in if needed, and approves the matching `user_code`.
-  </Step>
-  <Step title="CLI polls for the token">
-    `POST /api/auth/device/token` returns the access token once approval lands.
-  </Step>
-  <Step title="CLI validates the session">
-    `GET /api/auth/get-session` confirms the session is alive.
-  </Step>
-  <Step title="CLI stores the token in daemon memory">
-    The bearer token is never persisted to disk.
-  </Step>
-</Steps>
+<Warning>
+  A personal API key is **structurally barred** from `/v1/access/*`: it can
+  never reveal or mount secret values, and it cannot create or revoke other API
+  keys. Reading secrets still requires a keypair agent plus an explicit
+  permission. The secret is shown exactly once at creation — the server stores
+  only a SHA-256 hash and an 8-character lookup prefix.
+</Warning>
 
 ## Agents
 
-Agent-facing (`access.*`) procedures require a short-lived `abs_...` agent session token, looked up in `agent_sessions` by hash. It is the only agent auth method, and the only credential that reaches the `access.*` surface.
-
-`abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes.
+Agents authenticate with short-lived Ed25519 keypair sessions. The session
+token (`abs_…`) is opaque, hashed at rest, and expires after 15 minutes. It is
+the only credential that reaches `/v1/access/*`.
 
 ### Session lifecycle
 
-Public-key agents use seven dedicated `auth.*` procedures:
+<Steps>
+  <Step title="Register">
+    An operator registers the agent (`POST /v1/agents`) with a public key, or
+    requests a one-time `abe_…` bootstrap token.
+  </Step>
+  <Step title="Enroll">
+    A bootstrapped agent redeems its token and uploads its public key
+    (`POST /v1/agents/enroll`).
+  </Step>
+  <Step title="Challenge">
+    The agent requests a signing challenge
+    (`POST /v1/agents/{agentId}/sessions/challenge`, `abc_…`, 60-second TTL).
+  </Step>
+  <Step title="Exchange">
+    The agent signs the challenge and exchanges it for an `abs_…` session token
+    (`POST /v1/agents/{agentId}/sessions/exchange`, 15-minute TTL).
+  </Step>
+  <Step title="Refresh">
+    The SDK re-runs the exchange at T-2 minutes before expiry; no long-lived
+    secret is ever stored on disk.
+  </Step>
+</Steps>
 
-| Procedure | Tier | Description |
+### Token defaults
+
+| Token | Prefix | TTL |
 |---|---|---|
-| `auth.issueBootstrapToken` | session | Issue a one-time `abe_...` enrollment token |
-| `auth.enroll` | public | Redeem the bootstrap token and upload the agent's public key |
-| `auth.createChallenge` | public | Create a short-lived `abc_...` signing challenge |
-| `auth.exchangeSession` | public | Verify the Ed25519 signature and mint an `abs_...` session |
-| `auth.revokeSession` | session | Revoke an active `abs_...` session for the current operator |
-| `auth.recordLogin` | session | Audit `auth.login` for the current operator |
-| `auth.logout` | session | Audit `auth.logout` for the current operator |
+| Bootstrap / enrollment | `abe_` | 10 minutes |
+| Signing challenge | `abc_` | 60 seconds |
+| Agent session | `abs_` | 15 minutes |
 
-### Defaults
-
-| Parameter | Value |
-|---|---|
-| New remote agents auth method | `public_key_session` |
-| Bootstrap token TTL | 10 minutes |
-| Challenge TTL | 60 seconds |
-| Session token TTL | 15 minutes |
-| SDK refresh schedule | T-2 minutes before expiry |
-
-### Authorization header examples
+## Authorization header examples
 
 <CodeGroup>
 ```bash Operator session
-curl https://api.abadge.io/trpc/items.list \
-  -H "Authorization: Bearer <better-auth-bearer-token>"
+curl https://api.abadge.io/v1/items \
+  -H "Authorization: Bearer <better-auth-session-token>"
 ```
 
 ```bash Personal API key
-curl https://api.abadge.io/trpc/items.list \
+curl https://api.abadge.io/v1/items \
   -H "Authorization: Bearer abu_..."
 ```
 
 ```bash Agent session
-curl https://api.abadge.io/trpc/access.reveal \
-  -H "Authorization: Bearer abs_..."
+curl https://api.abadge.io/v1/access/itm_.../read \
+  -H "Authorization: Bearer abs_..." \
+  -X POST
 ```
 </CodeGroup>
 
-The `abu_...` key works on the management surface (`items.list`, `agents.*`, etc.) but is rejected by `access.*` — only an `abs_...` agent session can read secret values.
+## Auth audit events
 
-## Audit events for auth
+Every auth lifecycle event is recorded in the audit log:
 
-Every auth lifecycle event is audited:
+`auth.login`, `auth.logout`, `agent.bootstrap_issue`, `agent.enroll`,
+`agent.session_issue`, `agent.session_reject`, `agent.session_revoke`.
 
-- `auth.login`
-- `auth.logout`
-- `agent.bootstrap_issue`
-- `agent.enroll`
-- `agent.session_issue`
-- `agent.session_reject`
-- `agent.session_revoke`
-
-See [Audit log](/concepts/audit-log) for the full event catalog.
+See [Audit log](/concepts/audit-log) for the full catalog.

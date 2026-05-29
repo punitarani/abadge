@@ -66,7 +66,7 @@ What happens:
 1. Daemon unwraps the current root key with the old password's KEK.
 2. Daemon derives a new KEK from the new password and a fresh 16-byte salt.
 3. Daemon wraps the root key with the new KEK.
-4. The CLI calls `profiles.changePassword` with the new wrapped root key, salt, and KDF parameters.
+4. The CLI calls the password-change operation with the new wrapped root key, salt, and KDF parameters.
 
 The root key itself is unchanged — every existing item remains decryptable. Existing recovery keys still work.
 
