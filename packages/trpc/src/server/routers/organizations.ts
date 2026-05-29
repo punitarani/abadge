@@ -12,15 +12,7 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "@abadge/db";
-import {
-  auditLogs,
-  invitation,
-  items,
-  member,
-  organization,
-  profiles,
-  user,
-} from "@abadge/db/schema";
+import { invitation, member, organization, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
 import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
@@ -35,6 +27,7 @@ import {
   UserRequestContextTag,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure, userProcedure } from "../init";
+import { scopedDb } from "../scoped-db";
 
 const OrgIdSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),
@@ -425,17 +418,14 @@ const listOrgs = Effect.gen(function* () {
       ctx.db.transaction(async (tx) => {
         for (const orgId of orgIds) {
           await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
-          const [row] = await tx
-            .select({ organizationId: profiles.organizationId })
-            .from(profiles)
-            .where(
-              and(
-                eq(profiles.organizationId, orgId),
-                or(eq(profiles.storageMode, "server_managed"), isNotNull(profiles.wrappedRootKey)),
-              ),
-            )
-            .limit(1);
-          if (row) bootstrappedOrgIds.add(row.organizationId);
+          const scope = scopedDb(tx, orgId);
+          const row = await scope.findFirst("profiles", {
+            where: or(
+              eq(scope.tables.profiles.storageMode, "server_managed"),
+              isNotNull(scope.tables.profiles.wrappedRootKey),
+            ),
+          });
+          if (row) bootstrappedOrgIds.add(orgId);
         }
       }),
     );
@@ -553,18 +543,13 @@ const deleteOrg = (orgId: string) =>
       ),
     );
 
-    // §AB-0011 — `items` is under FORCE RLS; set the org GUC so this guard read
-    // sees the org's rows under the runtime role (otherwise it returns zero and a
-    // non-empty org would be deletable, bypassing the ORG_NOT_EMPTY safety check).
+    // §AB-0011 — `items` is under FORCE RLS; scopedDb.run() opens a tx and sets the
+    // org GUC so this guard read sees the org's rows under the runtime role (otherwise
+    // it returns zero and a non-empty org would be deletable, bypassing ORG_NOT_EMPTY).
     const activeItems = yield* tryAsync(() =>
-      ctx.db.transaction(async (tx) => {
-        await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
-        return tx
-          .select({ id: items.id })
-          .from(items)
-          .where(and(eq(items.organizationId, orgId), isNull(items.deletedAt)))
-          .limit(1);
-      }),
+      scopedDb(ctx.db, orgId).run((scope) =>
+        scope.findMany("items", { where: isNull(scope.tables.items.deletedAt), limit: 1 }),
+      ),
     );
 
     if (activeItems.length > 0) {
@@ -1048,8 +1033,7 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
 
         await tx.delete(member).where(eq(member.id, memberId));
 
-        await tx.insert(auditLogs).values({
-          organizationId: orgId,
+        await scopedDb(tx, orgId).insert("auditLogs", {
           userId: ctx.identity.userId,
           surface: "api",
           eventType: "org.member_remove",
