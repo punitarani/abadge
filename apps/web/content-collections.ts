@@ -8,11 +8,20 @@ const WORDS_PER_MINUTE = 220;
 const posts = defineCollection({
   name: "posts",
   directory: "content/blog",
-  include: "**/*.md",
+  // Flat structure only: one `.md` per post, filename = slug. `*` (not `**`)
+  // keeps slugs to a single URL segment so they always match the `[slug]`
+  // route; a nested path would 404 while still listing in the index.
+  include: "*.md",
   schema: z.object({
     title: z.string(),
     summary: z.string(),
-    date: z.string(),
+    // `YYYY-MM-DD`, and a real calendar date. Validated at parse time so a
+    // malformed value fails the build rather than throwing a RangeError in
+    // `formatPostDate` (which does `new Date(`${date}T00:00:00Z`)`) at render.
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD")
+      .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00Z`)), "date must be a real date"),
     author: z.string().default("Punit Arani"),
     category: z.string().default("Announcement"),
     seoDescription: z.string().optional(),
