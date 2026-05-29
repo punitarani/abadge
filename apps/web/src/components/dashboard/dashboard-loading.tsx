@@ -16,7 +16,9 @@ import Image from "next/image";
 export function DashboardLoading(): React.ReactElement {
   return (
     <div className="flex min-h-[70vh] items-center justify-center" role="status" aria-busy="true">
-      <div className="flex items-center gap-2">
+      {/* Decorative lockup — hidden from the a11y tree so the status announces
+          only the sr-only string, not the visible "abadge" wordmark. */}
+      <div className="flex items-center gap-2" aria-hidden="true">
         <Image
           src="/abadge-logo-black.svg"
           alt=""
