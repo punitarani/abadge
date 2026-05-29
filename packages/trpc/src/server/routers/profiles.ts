@@ -468,7 +468,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
             recoveryWrappedRootKey: txScope.tables.profiles.recoveryWrappedRootKey,
           })
           .from(txScope.tables.profiles)
-          .where(eq(txScope.tables.profiles.id, profileId));
+          .where(and(eq(txScope.tables.profiles.id, profileId), txScope.orgScope("profiles")));
 
         if (!locked?.wrappedRootKey) {
           throw new NotFoundError({
