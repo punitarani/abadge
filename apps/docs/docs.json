@@ -111,6 +111,7 @@
               "api/overview",
               "api/authentication",
               "api/auth-routes",
+              "api/agentic-registration",
               "api/errors",
               "api/rate-limiting",
               "api/pagination"

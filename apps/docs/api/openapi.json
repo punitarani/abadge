@@ -102,9 +102,14 @@
         "operationId": "deleteOrganization",
         "tags": ["Organizations"],
         "summary": "Delete an organization",
-        "description": "Soft-deletes the organization. Requires the `owner` role.",
+        "description": "Permanently deletes the organization and cascades every item, profile, agent, and permission it owns (audit logs are preserved). Irreversible. Requires the `owner` role and two server-re-checked gates: a `confirmName` that must equal the org's current name, and the caller's account `password` for re-authentication. Every attempt — allowed or denied — is audit-logged.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeleteOrganization" } } }
+        },
         "responses": {
           "200": { "description": "Deleted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
@@ -840,6 +845,14 @@
         "properties": {
           "name": { "type": "string", "minLength": 1, "maxLength": 255 },
           "logo": { "type": "string" }
+        }
+      },
+      "DeleteOrganization": {
+        "type": "object",
+        "required": ["confirmName", "password"],
+        "properties": {
+          "confirmName": { "type": "string", "description": "Must equal the organization's current `name`. A mismatch fails with `CONFIRMATION_MISMATCH` (400)." },
+          "password": { "type": "string", "description": "The caller's account password, re-verified against their credential account. A wrong password fails with `REAUTH_FAILED` (401); an account with no password set (social-login only) fails with `REAUTH_PASSWORD_REQUIRED` (400)." }
         }
       },
       "Organization": {
