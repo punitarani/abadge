@@ -33,7 +33,7 @@ exchange). The bearer token may be:
 
 | Prefix | Holder | Issuer |
 |--------|--------|--------|
-| Better Auth session token | Human operator | `/api/auth/sign-in/*` |
+| Session token | Human operator | `/api/auth/sign-in/*` |
 | `abu_...` | Personal API key (user + org) | `POST /v1/api-keys` |
 | `abs_...` | Agent session | `POST /v1/agents/{agentId}/sessions/exchange` |
 
@@ -92,7 +92,7 @@ SDK surfaces the envelope as `AbadgeApiError` with `statusCode`, `code`,
 
 | Bucket | Limit | Headers |
 |--------|-------|---------|
-| Better Auth (`/api/auth/*`) | 60 / minute / IP | `Retry-After` on 429 |
+| Authentication (`/api/auth/*`) | 60 / minute / IP | `Retry-After` on 429 |
 | Application (`/v1/*` and `/trpc/*`) | 100 / minute / principal | `Retry-After` on 429 |
 
 The principal is the bearer token (or IP for unauthenticated routes).
@@ -323,7 +323,7 @@ The transport differs (POST with `input` in body for mutations; GET with
 identical. New integrations should prefer REST; the tRPC bridge exists for
 internal callers (web dashboard, CLI, SDK) that already speak tRPC.
 
-The Better Auth surface remains at `/api/auth/*` and is not part of `/v1`.
+The authentication surface remains at `/api/auth/*` and is not part of `/v1`.
 
 ## SDKs
 

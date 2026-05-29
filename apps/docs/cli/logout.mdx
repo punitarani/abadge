@@ -28,7 +28,7 @@ abadge logout
 ## What it does **not** do
 
 - Does **not** delete `~/.abadge/config.json` — `apiUrl` and the runtime agent references remain so your next login is fast.
-- Does **not** invalidate the underlying Better Auth session globally — call `/api/auth/sign-out` (or sign out from the dashboard) for that.
+- Does **not** invalidate the server-side session globally — call `/api/auth/sign-out` (or sign out from the dashboard) for that.
 - Does **not** stop the daemon. Use `abadge daemon stop` for that.
 
 ## Audit

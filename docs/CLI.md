@@ -53,7 +53,7 @@ Config lives at `~/.abadge/config.json`:
 }
 ```
 
-No API keys are stored in config. The Better Auth session token is held in
+No API keys are stored in config. The operator session token is held in
 daemon memory only. Agent private keys live in `0600` files under
 `~/.abadge/agents/`. The daemon socket is `~/.abadge/vaultd.sock`.
 
@@ -77,7 +77,7 @@ daemon memory only. Agent private keys live in `0600` files under
 #### `abadge login`
 
 Device-code login. Opens the approval URL in the browser, stores `apiUrl`
-in config, holds the Better Auth bearer token in daemon memory. Does NOT
+in config, holds the operator bearer token in daemon memory. Does NOT
 auto-register an agent.
 
 ```bash

@@ -13,7 +13,7 @@ There are three token types, each for a different caller.
 
 | Prefix | Holder | Reaches `access.*`? | Issued by |
 |---|---|---|---|
-| Better Auth session | Human operator | No | `/api/auth/sign-in/*` |
+| Session token | Human operator | No | `/api/auth/sign-in/*` |
 | `abu_…` | Personal API key (user + org) | No | `POST /v1/api-keys` |
 | `abs_…` | Agent session | **Yes** | `POST /v1/agents/{agentId}/sessions/exchange` |
 
@@ -25,7 +25,7 @@ There are three token types, each for a different caller.
 
 ## Human operators
 
-[Better Auth](https://www.better-auth.com) handles operator identity at
+The authentication system handles operator identity at
 `/api/auth/*`. Sign in to obtain a session token (or browser cookie), then use
 it as the bearer for `/v1` management endpoints. See
 [Human authentication](/api/auth-routes) for the route list and the CLI device
@@ -90,7 +90,7 @@ the only credential that reaches `/v1/access/*`.
 <CodeGroup>
 ```bash Operator session
 curl https://api.abadge.io/v1/items \
-  -H "Authorization: Bearer <better-auth-session-token>"
+  -H "Authorization: Bearer <session-token>"
 ```
 
 ```bash Personal API key
