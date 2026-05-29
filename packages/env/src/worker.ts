@@ -43,6 +43,11 @@ const workerEnvSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GITHUB_CLIENT_ID: z.string().min(1),
   GITHUB_CLIENT_SECRET: z.string().min(1),
+  // Optional transactional-email sender overrides. Default sender is
+  // `no-reply@notifications.abadge.io` (see packages/auth mailer). Override only
+  // with an address on a Cloudflare Email Routing-verified sending domain.
+  ABADGE_EMAIL_FROM: z.string().min(1).optional(),
+  ABADGE_EMAIL_FROM_NAME: z.string().min(1).optional(),
 });
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;

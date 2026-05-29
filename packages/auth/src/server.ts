@@ -16,6 +16,8 @@ import {
   buildOrgUpdateAuditRow,
   safeAuditInsert,
 } from "./audit-hooks";
+import { renderResetPasswordEmail } from "./emails/reset-password";
+import { renderVerifyEmail } from "./emails/verify-email";
 import { type CloudflareEmailBinding, sendEmail } from "./mailer";
 import { buildEmailVerificationUrl } from "./verification-url";
 
@@ -114,11 +116,13 @@ export function createAuth(db: Database, env: AuthEnv): any {
       // to silently absorb incoming OAuth logins.
       requireEmailVerification: true,
       sendResetPassword: async ({ user, token }) => {
+        const resetUrl = `${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}`;
+        const { html, text } = await renderResetPasswordEmail(resetUrl);
         await sendEmail(env, {
           to: user.email,
           subject: "Reset your abadge password",
-          text: `Reset your password:\n\n${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}\n\nThis link expires in 1 hour.`,
-          html: `<p>Reset your password:</p><p><a href="${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}">${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}</a></p><p>This link expires in 1 hour.</p>`,
+          text,
+          html,
         });
       },
     },
@@ -127,11 +131,12 @@ export function createAuth(db: Database, env: AuthEnv): any {
         // Point the post-verification redirect at the web app, not the API
         // origin Better Auth defaults to (which 404s). See buildEmailVerificationUrl.
         const verifyUrl = buildEmailVerificationUrl(url, env.ABADGE_APP_URL);
+        const { html, text } = await renderVerifyEmail(verifyUrl);
         await sendEmail(env, {
           to: user.email,
           subject: "Verify your abadge email",
-          text: `Confirm your email address:\n\n${verifyUrl}`,
-          html: `<p>Confirm your email address:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+          text,
+          html,
         });
       },
     },

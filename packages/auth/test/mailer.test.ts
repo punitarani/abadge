@@ -28,8 +28,24 @@ describe("sendEmail", () => {
     expect(call.to).toBe("alice@example.com");
     expect(call.subject).toBe("Test");
     expect(call.text).toBe("Hello");
-    // Default from address
-    expect(call.from).toEqual({ name: "abadge", email: "notifications@notifications.abadge.io" });
+    // Default from address — dedicated transactional sender, no longer notifications@.
+    expect(call.from).toEqual({ name: "abadge", email: "no-reply@notifications.abadge.io" });
+  });
+
+  it("honours ABADGE_EMAIL_FROM / ABADGE_EMAIL_FROM_NAME env overrides", async () => {
+    const { binding, calls } = makeSendEmailStub();
+    await sendEmail(
+      {
+        SEND_EMAIL: binding,
+        ABADGE_EMAIL_FROM: "security@notifications.abadge.io",
+        ABADGE_EMAIL_FROM_NAME: "abadge security",
+      },
+      { to: "alice@example.com", subject: "Test", text: "Hello" },
+    );
+    expect(calls[0]!.from).toEqual({
+      name: "abadge security",
+      email: "security@notifications.abadge.io",
+    });
   });
 
   it("includes html when provided", async () => {
