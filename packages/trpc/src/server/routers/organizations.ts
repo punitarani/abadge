@@ -592,11 +592,12 @@ const deleteOrg = (input: { orgId: string; confirmName: string; password: string
     // credential account. Owning the org is not enough — a hijacked session
     // must not be able to wipe the vault without proving the password again.
     yield* reauthenticatePassword(ctx, password).pipe(
-      Effect.tapError((err) =>
-        err instanceof UnauthorizedError || err instanceof BadRequestError
-          ? denied("reauth_failed")
-          : Effect.void,
-      ),
+      Effect.tapError((err) => {
+        if (err instanceof BadRequestError && err.code === "REAUTH_PASSWORD_REQUIRED") {
+          return denied("no_password_set");
+        }
+        return err instanceof UnauthorizedError ? denied("reauth_failed") : Effect.void;
+      }),
     );
 
     // Deleting the organization row cascades to items, profiles, agents, and

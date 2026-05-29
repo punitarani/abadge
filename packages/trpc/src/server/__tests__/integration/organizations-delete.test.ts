@@ -66,80 +66,108 @@ describe("organizations.delete (confirm + reauth)", () => {
     expect(audit.some((a) => a.result === "allowed")).toBe(true);
   });
 
-  test("rejects when the typed name does not match, and logs a denied attempt", async () => {
+  test("rejects (CONFIRMATION_MISMATCH) when the typed name does not match", async () => {
     const { org, caller } = await seedOwnerWithOrg();
 
-    await expect(
-      caller.organizations.delete({
+    try {
+      await caller.organizations.delete({
         orgId: org.orgId,
         confirmName: "Wrong Name",
         password: PASSWORD,
-      }),
-    ).rejects.toThrow();
+      });
+      expect.unreachable("name mismatch should have thrown");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string; cause?: { code?: string } };
+      expect(trpcError.code).toBe("BAD_REQUEST");
+      expect(trpcError.cause?.code).toBe("CONFIRMATION_MISMATCH");
+    }
 
-    // Org still present.
+    // Org still present; a denied attempt was logged.
     const orgRows = await db.select().from(organization).where(eq(organization.id, org.orgId));
     expect(orgRows).toHaveLength(1);
-
     const denied = await db
       .select()
       .from(auditLogs)
       .where(and(eq(auditLogs.organizationId, org.orgId), eq(auditLogs.eventType, "org.delete")));
-    expect(denied.some((a) => a.result === "denied")).toBe(true);
+    expect(denied.some((a) => a.result === "denied" && a.meta?.reason === "name_mismatch")).toBe(
+      true,
+    );
   });
 
-  test("rejects when the password is wrong, and logs a denied attempt", async () => {
+  test("rejects (REAUTH_FAILED) when the password is wrong", async () => {
     const { org, caller } = await seedOwnerWithOrg();
 
-    await expect(
-      caller.organizations.delete({
+    try {
+      await caller.organizations.delete({
         orgId: org.orgId,
         confirmName: "Acme Inc",
         password: "not-my-password",
-      }),
-    ).rejects.toThrow();
+      });
+      expect.unreachable("wrong password should have thrown");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string; cause?: { code?: string } };
+      expect(trpcError.code).toBe("UNAUTHORIZED");
+      expect(trpcError.cause?.code).toBe("REAUTH_FAILED");
+    }
 
     const orgRows = await db.select().from(organization).where(eq(organization.id, org.orgId));
     expect(orgRows).toHaveLength(1);
-
     const denied = await db
       .select()
       .from(auditLogs)
       .where(and(eq(auditLogs.organizationId, org.orgId), eq(auditLogs.eventType, "org.delete")));
-    expect(denied.some((a) => a.result === "denied")).toBe(true);
+    expect(denied.some((a) => a.result === "denied" && a.meta?.reason === "reauth_failed")).toBe(
+      true,
+    );
   });
 
-  test("rejects when the caller's account has no password (social-only)", async () => {
+  test("rejects (REAUTH_PASSWORD_REQUIRED) when the account has no password (social-only)", async () => {
     const owner = await seedUser(auth); // no setUserPassword
     const org = await seedOrg(auth, owner.userId, { name: "No Password Org" });
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
-    await expect(
-      caller.organizations.delete({
+    try {
+      await caller.organizations.delete({
         orgId: org.orgId,
         confirmName: "No Password Org",
         password: "anything",
-      }),
-    ).rejects.toThrow();
+      });
+      expect.unreachable("no-password account should have thrown");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string; cause?: { code?: string } };
+      expect(trpcError.code).toBe("BAD_REQUEST");
+      expect(trpcError.cause?.code).toBe("REAUTH_PASSWORD_REQUIRED");
+    }
 
     const orgRows = await db.select().from(organization).where(eq(organization.id, org.orgId));
     expect(orgRows).toHaveLength(1);
+    const denied = await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.organizationId, org.orgId), eq(auditLogs.eventType, "org.delete")));
+    expect(denied.some((a) => a.result === "denied" && a.meta?.reason === "no_password_set")).toBe(
+      true,
+    );
   });
 
-  test("rejects a non-owner member even with the right name + password", async () => {
+  test("rejects (FORBIDDEN) a non-owner member even with the right name + password", async () => {
     const { org } = await seedOwnerWithOrg();
     const member = await seedUser(auth);
     await setUserPassword(auth, member.userId, PASSWORD);
     await seedMember(auth, org.orgId, member.userId, "member");
     const memberCaller = createOperatorCaller(db, auth, member.headers, org.orgId);
 
-    await expect(
-      memberCaller.organizations.delete({
+    try {
+      await memberCaller.organizations.delete({
         orgId: org.orgId,
         confirmName: "Acme Inc",
         password: PASSWORD,
-      }),
-    ).rejects.toThrow();
+      });
+      expect.unreachable("non-owner should have thrown");
+    } catch (error: unknown) {
+      const trpcError = error as { code?: string };
+      expect(trpcError.code).toBe("FORBIDDEN");
+    }
 
     const orgRows = await db.select().from(organization).where(eq(organization.id, org.orgId));
     expect(orgRows).toHaveLength(1);
