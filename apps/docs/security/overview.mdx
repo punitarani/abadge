@@ -70,8 +70,8 @@ abadge supports two storage modes with distinct trust models.
 
 | Surface | Method | Session duration |
 |---|---|---|
-| Dashboard | Better Auth session cookie (email/password or OAuth) | 7 days |
-| CLI | Better Auth device authorization flow | Bearer token in daemon memory |
+| Dashboard | Session cookie (email/password or OAuth) | 7 days |
+| CLI | Device authorization flow | Bearer token in daemon memory |
 
 The CLI never persists a human bearer token to disk.
 
@@ -82,7 +82,7 @@ Agents authenticate with **Ed25519 public-key sessions** — the only agent auth
 **Personal API keys (management surface).** Users can mint personal API keys (`abu_`) from the dashboard org Settings page to script the management surface without a browser. An `abu_` key resolves to a **session identity**, not an agent: it reaches only the management surface (organizations, profiles, items metadata, agents, permissions, audit, settings) and is **structurally barred from `access.*`** — it can never reveal or mount secret values. The server stores a SHA-256 hash + 8-char prefix; the secret is shown once. Keys support an optional expiry and can be revoked.
 
 Bearer resolution order on every request:
-1. Better Auth session cookie / bearer token → operator session (management surface)
+1. Session cookie / bearer token → operator session (management surface)
 2. `abu_` prefix → personal API key (prefix lookup, hash match) → session identity, management surface only
 3. `abs_` prefix → agent session token (hash lookup, TTL check) → agent identity (the only path to `access.*`)
 
@@ -116,9 +116,9 @@ The full decision flow is in [Permissions and capabilities](/concepts/permission
 | Transport | HTTPS via Cloudflare edge TLS |
 | Local IPC | Unix domain socket with `0600` permissions |
 | Rate limiting | Per-principal counters: 60/min on `/api/auth/*`, 100/min on `/v1/*` |
-| CORS | Restricted to trusted origins via Better Auth |
-| Secure headers | Hono `secureHeaders()` middleware |
-| CSRF | Better Auth built-in protection |
+| CORS | Restricted to trusted origins |
+| Secure headers | `secureHeaders()` middleware |
+| CSRF | Built-in CSRF protection |
 | Input validation | Effect Schema on all external input |
 | SQL safety | Drizzle ORM parameterized queries (no raw SQL) |
 | Audit ordering | Audit writes are awaited before responses return |
