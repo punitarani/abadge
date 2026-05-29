@@ -190,6 +190,7 @@
       }
     },
     "/api-keys": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "post": {
         "operationId": "createApiKey",
         "tags": ["API keys"],
@@ -217,6 +218,7 @@
       }
     },
     "/api-keys/{keyId}": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "delete": {
         "operationId": "revokeApiKey",
         "tags": ["API keys"],
@@ -324,6 +326,7 @@
       }
     },
     "/items": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "post": {
         "operationId": "createItem",
         "tags": ["Items"],
@@ -358,7 +361,10 @@
       }
     },
     "/items/{itemId}": {
-      "parameters": [{ "$ref": "#/components/parameters/ItemIdPath" }],
+      "parameters": [
+        { "$ref": "#/components/parameters/OrgIdHeader" },
+        { "$ref": "#/components/parameters/ItemIdPath" }
+      ],
       "get": {
         "operationId": "getItem",
         "tags": ["Items"],
@@ -401,6 +407,7 @@
       }
     },
     "/agents": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "post": {
         "operationId": "createAgent",
         "tags": ["Agents"],
@@ -433,7 +440,10 @@
       }
     },
     "/agents/{agentId}": {
-      "parameters": [{ "$ref": "#/components/parameters/AgentIdPath" }],
+      "parameters": [
+        { "$ref": "#/components/parameters/OrgIdHeader" },
+        { "$ref": "#/components/parameters/AgentIdPath" }
+      ],
       "get": {
         "operationId": "getAgent",
         "tags": ["Agents"],
@@ -537,6 +547,7 @@
       }
     },
     "/permissions": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "post": {
         "operationId": "createPermissions",
         "tags": ["Permissions"],
@@ -573,6 +584,7 @@
       }
     },
     "/permissions/{permissionId}": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "delete": {
         "operationId": "revokePermission",
         "tags": ["Permissions"],
@@ -661,6 +673,7 @@
       }
     },
     "/audit": {
+      "parameters": [{ "$ref": "#/components/parameters/OrgIdHeader" }],
       "get": {
         "operationId": "listAudit",
         "tags": ["Audit"],

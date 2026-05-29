@@ -183,6 +183,10 @@ is purely stylistic.
 
 ## What still works
 
+* Existing integrations keep working. The official SDK (`@abadge/sdk`) and
+  the `abadge` CLI are unchanged on the wire, and the request/response
+  shapes of every `/v1` endpoint are stable — code written against the API
+  does not need to change.
 * Legacy capability names on the wire (mapped to canonical at write).
 * Existing `permissions` rows with legacy capability names (normalized
   at read).

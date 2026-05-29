@@ -62,7 +62,7 @@ import { AbadgeApiError } from "@abadge/sdk";
 
 ## What the SDK does for you
 
-- Builds each request and sets the right `Authorization` header
+- Builds each `/v1` request with the correct shape
 - Adds the right `Authorization` header
 - Surfaces typed responses (no `any`)
 - Wraps every API error in `AbadgeApiError` (with `code`, `message`, `hint`, `meta`)
