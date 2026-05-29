@@ -103,7 +103,7 @@ export default function OnboardingPage(): React.ReactElement | null {
 
   return (
     <div className="min-h-screen bg-muted/40">
-      <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-6 sm:px-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 sm:px-8">
         {/* Header */}
         <header className="flex h-20 items-center">
           <Link href="/" className="inline-flex items-center gap-1.5">
@@ -112,9 +112,10 @@ export default function OnboardingPage(): React.ReactElement | null {
           </Link>
         </header>
 
-        {/* Main */}
-        <main className="flex flex-1 flex-col items-center py-12 sm:py-16">
-          <div className="w-full max-w-lg space-y-8">
+        {/* Main — vertically centered like the auth screens. The choose screen
+            needs room for three cards; the create/join forms read better narrow. */}
+        <main className="flex flex-1 items-center justify-center py-12 sm:py-16">
+          <div className={`w-full space-y-8 ${mode === "choose" ? "max-w-3xl" : "max-w-md"}`}>
             {/* Choose-mode landing: two large options for fresh signups. */}
             {mode === "choose" && (
               <div className="space-y-6">
@@ -123,12 +124,12 @@ export default function OnboardingPage(): React.ReactElement | null {
                   <p className="text-sm text-muted-foreground">How do you want to get started?</p>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <button
                     type="button"
                     onClick={handleCreatePersonal}
                     disabled={creatingPersonal}
-                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    className="group flex flex-col items-start gap-3 h-full rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:p-6"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <UserRound className="h-5 w-5" />
@@ -148,7 +149,7 @@ export default function OnboardingPage(): React.ReactElement | null {
                     type="button"
                     onClick={() => setMode("create")}
                     disabled={creatingPersonal}
-                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    className="group flex flex-col items-start gap-3 h-full rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:p-6"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <Building2 className="h-5 w-5" />
@@ -166,7 +167,7 @@ export default function OnboardingPage(): React.ReactElement | null {
                     type="button"
                     onClick={() => setMode("join")}
                     disabled={creatingPersonal}
-                    className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-6 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    className="group flex flex-col items-start gap-3 h-full rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-colors hover:border-foreground/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:p-6"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                       <TicketCheck className="h-5 w-5" />
