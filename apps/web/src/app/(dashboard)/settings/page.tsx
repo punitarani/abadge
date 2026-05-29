@@ -1,11 +1,11 @@
 "use client";
 
-import { Trash, Warning } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { DangerZoneSection } from "@/components/dashboard/danger-zone-section";
 import { OneTimeSecretDisplay } from "@/components/dashboard/one-time-secret-display";
 import { SettingsTableRowsSkeleton } from "@/components/dashboard/skeletons/settings-skeleton";
 import {
@@ -763,176 +763,6 @@ function ApiKeysSection({
               }}
             >
               Revoke key
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </section>
-  );
-}
-
-/* ---- Danger Zone ---- */
-
-function DangerZoneSection({
-  orgId,
-  orgName,
-  itemCount,
-  itemsLoading,
-  isPersonal,
-  queryClient,
-  router,
-}: {
-  orgId: string;
-  orgName: string;
-  itemCount: number;
-  itemsLoading: boolean;
-  isPersonal: boolean;
-  queryClient: ReturnType<typeof useQueryClient>;
-  router: ReturnType<typeof useRouter>;
-}): React.ReactElement {
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [deleteWord, setDeleteWord] = useState("");
-  const [password, setPassword] = useState("");
-  const hasItems = itemCount > 0;
-  const noun = workspacePosture(isPersonal).accountNounLower;
-  // The name the user must type to confirm. Trimmed so the type-to-confirm
-  // guard stays robust if the server ever returns a name with surrounding
-  // whitespace — and so the label, placeholder, and comparison all agree.
-  const confirmName = orgName.trim();
-
-  function resetForm(): void {
-    setConfirmText("");
-    setDeleteWord("");
-    setPassword("");
-  }
-
-  const deleteMutation = useMutation({
-    mutationFn: () =>
-      browserTrpcClient.organizations.delete.mutate({ orgId, confirmName: confirmText, password }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
-      toast.success(isPersonal ? "Personal account deleted." : "Organization deleted.");
-      router.push("/onboarding");
-    },
-    onError: (error) => {
-      toast.error(getClientErrorMessage(error, "Failed to delete organization"));
-    },
-  });
-
-  // All three gates must pass before the destructive action is enabled. The
-  // server re-checks the name and password; the "delete" word is a client-side
-  // friction step so the action can't be triggered by a stray click.
-  const canDelete =
-    deleteWord.trim().toLowerCase() === "delete" &&
-    confirmText === confirmName &&
-    password.length > 0 &&
-    !deleteMutation.isPending;
-
-  return (
-    <section className="space-y-4">
-      <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-5">
-        <p className="text-sm text-muted-foreground mb-4">
-          Permanently delete this {noun} and all its data. This action cannot be undone.
-        </p>
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <p className="text-sm font-medium">Delete {noun}</p>
-            {itemsLoading ? (
-              <p className="text-xs text-muted-foreground">Checking for items…</p>
-            ) : hasItems ? (
-              <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                <Warning className="h-3.5 w-3.5 shrink-0" />
-                {itemCount} item{itemCount !== 1 ? "s" : ""} will be permanently deleted
-              </p>
-            ) : null}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            disabled={itemsLoading}
-            onClick={() => setDeleteDialogOpen(true)}
-          >
-            <Trash className="mr-1 h-3.5 w-3.5" />
-            Delete
-          </Button>
-        </div>
-      </div>
-
-      <AlertDialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => {
-          setDeleteDialogOpen(open);
-          if (!open) resetForm();
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {noun}</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <strong>{confirmName}</strong> and all associated data
-              including{" "}
-              {hasItems ? (
-                <strong>
-                  {itemCount} item{itemCount !== 1 ? "s" : ""}
-                </strong>
-              ) : (
-                "all items"
-              )}
-              , profiles, agents, and permissions. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-delete-word">
-                Type <strong>delete</strong> to confirm
-              </Label>
-              <Input
-                id="confirm-delete-word"
-                value={deleteWord}
-                onChange={(e) => setDeleteWord(e.target.value)}
-                placeholder="delete"
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-org-name">
-                Type the {noun} name <strong>{confirmName}</strong> to confirm
-              </Label>
-              <Input
-                id="confirm-org-name"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder={confirmName}
-                autoComplete="off"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Re-enter your account password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Your account password"
-                autoComplete="current-password"
-              />
-            </div>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={resetForm}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={!canDelete}
-              onClick={() => deleteMutation.mutate()}
-            >
-              {deleteMutation.isPending ? "Deleting..." : `Delete ${noun}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
