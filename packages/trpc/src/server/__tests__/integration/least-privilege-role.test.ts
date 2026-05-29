@@ -129,4 +129,23 @@ describe("least-privilege application role (§AB-0012)", () => {
       await restricted.$client.end({ timeout: 5 });
     }
   });
+
+  // §AB — migration 0028 bounds runaway queries on the runtime role so one
+  // cannot indefinitely pin a scarce connection-pool slot. It is set as a ROLE
+  // DEFAULT (ALTER ROLE … SET) rather than via the postgres-js `connection:{}`
+  // param, because Hyperdrive's transaction pooler RESETs driver-set session
+  // GUCs on connection return — a role default survives RESET (which restores
+  // role defaults). This asserts the migration applied; the through-Hyperdrive
+  // behavior is a deploy-gated check documented on the migration.
+  test("§AB — migration 0028 sets app_runtime's statement_timeout role default", async () => {
+    // The client runs with `fetch_types: false`, so postgres-js returns the
+    // `text[]` rolconfig as its raw PG array literal string (e.g.
+    // `{statement_timeout=15s}`) rather than a parsed JS array — assert on the
+    // string form, which is robust to either representation.
+    const rows = (await owner.execute(
+      sql`SELECT rolconfig FROM pg_roles WHERE rolname = 'app_runtime'`,
+    )) as unknown as Array<{ rolconfig: unknown }>;
+    const rolconfig = String(rows[0]?.rolconfig ?? "");
+    expect(rolconfig).toContain("statement_timeout=15s");
+  });
 });

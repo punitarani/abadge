@@ -88,6 +88,42 @@ The automated equivalent of these checks runs in
 `packages/trpc/src/server/__tests__/integration/least-privilege-role.test.ts`
 (against an ephemeral role with the same policy).
 
+## statement_timeout (AB — runaway-query guard)
+
+`app_runtime` carries a `statement_timeout = '15s'` role default, set by
+[`0028_app_runtime_statement_timeout.sql`](../../packages/db/migrations/0028_app_runtime_statement_timeout.sql).
+The connection pool — not query latency — is the throughput wall (PS-10 ~25
+connections, Hyperdrive holds a small active pool), so a single query stuck far
+beyond the sub-second norm would starve every other request sharing the pool.
+15s is ~100x the slowest observed legit statement and only cancels a genuinely
+runaway query (canceled queries raise SQLSTATE `57014`, which the API maps to a
+retryable `503`).
+
+It is set as a **role default** — not the postgres-js `connection: { … }` param
+— because Hyperdrive's transaction pooler `RESET`s driver-set session GUCs when
+a connection returns to the pool. A role default survives `RESET` (which
+restores the role's configured defaults). See `hyperdrive-resets-session-state`.
+
+> [!IMPORTANT]
+> This bounds queries **only for connections made as `app_runtime`**. Until the
+> cutover above happens (app still connecting as the owner), it is a harmless
+> no-op for the live runtime — and it is deliberately NOT set on the owner,
+> whose migrations + roadmap backfill can legitimately run longer than 15s.
+
+**Verify (post-cutover, through Hyperdrive — a direct psql/`:5433` check is
+insufficient because Hyperdrive could drop a driver GUC and the role default
+would still show locally):**
+
+```sql
+-- Role default is set (any connection, incl. owner):
+SELECT rolconfig FROM pg_roles WHERE rolname = 'app_runtime';
+-- expected to contain: statement_timeout=15s
+
+-- Effective on a real app_runtime connection THROUGH HYPERDRIVE (run via the
+-- deployed worker, not a direct psql session):
+SHOW statement_timeout;  -- expected: 15s
+```
+
 ## Rollback
 
 Repoint the application connection back at the owner role and redeploy. The
