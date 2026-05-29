@@ -137,7 +137,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      # comment.ts imports only node: builtins and a type-only sibling, so this
+      # job needs the Bun runtime but no workspace deps — skip the install.
       - uses: ./.github/actions/setup
+        with:
+          install: "false"
       - uses: actions/download-artifact@v4
         with:
           name: coverage-unit

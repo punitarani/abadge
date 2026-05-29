@@ -29,7 +29,10 @@ Every job sets up Bun and installs dependencies through the local composite
 action [`.github/actions/setup`](../.github/actions/setup/action.yml), which
 restores the Bun install store (`~/.bun/install/cache`, keyed on `bun.lock`)
 before `bun install --frozen-lockfile`. Repeat runs reuse the store instead of
-fetching every dependency cold in each job.
+fetching every dependency cold in each job. A job that only needs the Bun
+runtime and no workspace dependencies (e.g. `coverage-comment`, whose script
+imports nothing from `node_modules`) passes `install: "false"` to skip the
+install and its cache step entirely.
 
 The `typecheck`, `build-api`, and `build-web` jobs additionally cache Turbo's
 local output dir (`.turbo`, keyed per job on the commit SHA with a rolling
