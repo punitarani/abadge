@@ -16,6 +16,32 @@ const RELOAD_GUARD_KEY = "abadge:chunk-reload-at";
 // rather than a fresh stale-deploy, so we never trap the user in a reload loop.
 const RELOAD_GUARD_MS = 10_000;
 
+// Fallback guard for environments where `sessionStorage` access throws
+// (sandboxed iframes with third-party storage blocked, some strict CSP setups).
+// Module-scoped, so it survives within a single page lifecycle but resets on a
+// real navigation — enough to stop repeated reloads triggered before the
+// in-flight reload unloads the document.
+let inMemoryReloadAt = 0;
+
+function readGuardTimestamp(): number {
+  try {
+    return Number(window.sessionStorage.getItem(RELOAD_GUARD_KEY)) || inMemoryReloadAt;
+  } catch {
+    return inMemoryReloadAt;
+  }
+}
+
+function writeGuardTimestamp(at: number): void {
+  // Always record in memory first so loop protection holds even when the
+  // sessionStorage write below throws.
+  inMemoryReloadAt = at;
+  try {
+    window.sessionStorage.setItem(RELOAD_GUARD_KEY, String(at));
+  } catch {
+    // Persisted only in memory for this page lifecycle.
+  }
+}
+
 /**
  * True when `error` is a failed chunk/dynamic-import load. Covers the webpack
  * `ChunkLoadError` (JS and CSS chunks) and the native dynamic-import failures
@@ -50,29 +76,32 @@ export function isChunkLoadError(error: unknown): boolean {
 
 /**
  * Reload the page once to recover from a stale-deploy chunk error. Guarded by a
- * sessionStorage timestamp so a chunk error that survives the reload (a genuine
- * bug, not a stale deploy) falls through to the error UI instead of looping.
+ * recorded timestamp (sessionStorage, falling back to an in-memory flag) so a
+ * chunk error that survives the reload (a genuine bug, not a stale deploy) falls
+ * through to the error UI instead of looping.
+ *
+ * `reload` is injectable for testing; production callers use the default hard
+ * reload.
  *
  * Returns `true` when a reload was triggered, `false` when suppressed by the
  * guard (caller should then render the normal error state).
  */
-export function reloadForChunkError(): boolean {
+export function reloadForChunkError(reload: () => void = defaultReload): boolean {
   if (typeof window === "undefined") {
     return false;
   }
 
-  try {
-    const last = Number(window.sessionStorage.getItem(RELOAD_GUARD_KEY));
-    if (last && Date.now() - last < RELOAD_GUARD_MS) {
-      return false;
-    }
-    window.sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
-  } catch {
-    // sessionStorage can throw (private mode, disabled storage). Fall through to
-    // an unguarded reload — recovering the user matters more than loop safety in
-    // that rare case.
+  const now = Date.now();
+  const last = readGuardTimestamp();
+  if (last && now - last < RELOAD_GUARD_MS) {
+    return false;
   }
 
-  window.location.reload();
+  writeGuardTimestamp(now);
+  reload();
   return true;
+}
+
+function defaultReload(): void {
+  window.location.reload();
 }
