@@ -188,6 +188,28 @@ support either storage mode and may carry a customer-supplied `externalId`.
 | `POST` | `/v1/agents/{agentId}/sessions/exchange` | none | Exchange a signed challenge for an `abs_...` session token. |
 | `DELETE` | `/v1/agents/sessions/{token}` | agent | Revoke the current session. |
 
+### auth.md agentic registration (public)
+
+Implements the WorkOS [auth.md](https://workos.com/auth-md) `anonymous` → user-claimed (OTP)
+flow: an agent self-registers a personal account on a person's behalf, then the
+human claims it with an emailed 6-digit code. Discovery is two-hop (RFC 9728); a
+401 from any route carries `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`.
+
+| Method | Path | Auth | Summary |
+|--------|------|------|---------|
+| `GET` | `/.well-known/oauth-protected-resource` | none | Protected Resource Metadata. |
+| `GET` | `/.well-known/oauth-authorization-server` | none | Auth Server Metadata incl. the `agent_auth` block. |
+| `GET` | `/auth.md` | none | Markdown skill manifest for agents. |
+| `POST` | `/agent/auth` | none | Register anonymously. Provisions an unclaimed personal account (placeholder-email owner + org + default profile) and returns an `abu_` personal API key + a `clm_` claim token. |
+| `POST` | `/agent/auth/claim` | none | `{ claim_token, email }` → emails the owner a 6-digit code. |
+| `POST` | `/agent/auth/claim/complete` | none | `{ claim_token, otp }` → binds the human's verified email to the account in place. |
+
+The issued credential is a standard `abu_` personal API key (see *Personal API keys*):
+a management-surface session bound to the new account, so the agent manages the
+person's credentials through the normal `items` / `profiles` surface (including
+personal-account owner-reveal). It never reaches the agent-gated `access.*` surface.
+Rate limit: 60/min/IP; unclaimed accounts are garbage-collected after 24 h.
+
 ### Permissions (grants)
 
 The canonical capabilities are `read` and `use`. Legacy capability names

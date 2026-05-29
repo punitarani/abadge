@@ -557,6 +557,61 @@ export const AgentSessionResultSchema = Schema.Struct({
   session: AgentSessionSchema,
 });
 
+// ---------------------------------------------------------------------------
+// auth.md agentic registration (anonymous → user-claimed OTP flow)
+// ---------------------------------------------------------------------------
+
+const EmailString = Schema.String.pipe(
+  Schema.pattern(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, { message: () => "Must be a valid email address." }),
+  Schema.maxLength(320),
+);
+
+/** `POST /agent/auth` — only the anonymous credential type is supported. */
+export const AgentRegisterAnonymousSchema = Schema.Struct({
+  type: Schema.optional(Schema.Literal("anonymous")),
+  requested_credential_type: Schema.optional(Schema.Literal("api_key")),
+});
+export type AgentRegisterAnonymousInput = Schema.Schema.Type<typeof AgentRegisterAnonymousSchema>;
+
+export const AgentRegisterAnonymousResultSchema = Schema.Struct({
+  registration_id: NonEmptyString,
+  registration_type: Schema.Literal("anonymous"),
+  credential_type: Schema.Literal("api_key"),
+  credential: NonEmptyString,
+  credential_expires: Schema.Null,
+  scopes: Schema.Array(Schema.String),
+  claim_url: NonEmptyString,
+  claim_token: NonEmptyString,
+  claim_token_expires: IsoDateString,
+  post_claim_scopes: Schema.Array(Schema.String),
+});
+
+/** `POST /agent/auth/claim` — agent supplies the human's email to trigger an OTP. */
+export const AgentClaimSchema = Schema.Struct({
+  claim_token: NonEmptyString,
+  email: EmailString,
+});
+export type AgentClaimInput = Schema.Schema.Type<typeof AgentClaimSchema>;
+
+export const AgentClaimResultSchema = Schema.Struct({
+  registration_id: NonEmptyString,
+  claim_attempt_id: NonEmptyString,
+  status: Schema.Literal("initiated"),
+  expires_at: IsoDateString,
+});
+
+/** `POST /agent/auth/claim/complete` — agent relays the human's OTP. */
+export const AgentClaimCompleteSchema = Schema.Struct({
+  claim_token: NonEmptyString,
+  otp: Schema.String.pipe(Schema.pattern(/^\d{6}$/, { message: () => "OTP must be 6 digits." })),
+});
+export type AgentClaimCompleteInput = Schema.Schema.Type<typeof AgentClaimCompleteSchema>;
+
+export const AgentClaimCompleteResultSchema = Schema.Struct({
+  registration_id: NonEmptyString,
+  status: Schema.Literal("claimed"),
+});
+
 /**
  * Personal user API key (`abu_`). Bound to a (user, org) pair; authenticates the
  * management surface only. The secret is returned exactly once at creation and

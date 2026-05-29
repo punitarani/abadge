@@ -1,4 +1,5 @@
 // Roadmap v0 foundation tables.
+export * from "./account-claims";
 export * from "./agent-enrollment-tokens";
 export * from "./agent-session-challenges";
 export * from "./agent-sessions";
