@@ -76,6 +76,12 @@
             ]
           },
           {
+            "group": "Examples",
+            "pages": [
+              "examples"
+            ]
+          },
+          {
             "group": "Migration",
             "pages": [
               "migration/v0-to-v1"

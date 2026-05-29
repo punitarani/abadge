@@ -113,6 +113,7 @@ flowchart TD
 | [Crypto Spec](./docs/ENVELOPE_SPEC.md) | Cryptographic envelope and key hierarchy |
 | [Threat Model](./docs/THREAT_MODEL.md) | Trust boundaries and breach analysis |
 | [Development](./docs/DEVELOPMENT.md) | Setup, commands, and contributing |
+| [Examples](./examples/) | Runnable end-to-end examples for the SDK, CLI, MCP, and HTTP API |
 
 ## Tech stack
 

@@ -1,0 +1,47 @@
+# abadge CLI example 05 — GitHub Actions workflow for non-interactive CI/CD.
+# See ./README.md for prerequisites, setup, and security notes.
+#
+# This workflow installs the abadge CLI, then runs 05-ci-cd.sh, which bulk-injects
+# every single-field secret in a profile into ./deploy.sh — without a browser and
+# without writing any secret to disk.
+#
+# Store these as GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
+#   ABADGE_PRIVATE_KEY  the agent's Ed25519 private key as a JWK string. This is
+#                       the DURABLE credential: `abadge run` uses it to mint a
+#                       fresh ~15-min `abs_` session on every job, so nothing
+#                       expires between runs. Generate it once with
+#                       `abadge agent add --kind local_cli --json` (or the SDK)
+#                       and grant the agent `use` on the items.
+#   ABADGE_AGENT_ID     the agent's id (printed alongside the key).
+#   ABADGE_PROFILE      the profile id holding the secrets to inject.
+#   ABADGE_API_KEY      (optional) an `abu_` personal API key for the audit
+#                       summary step — a management-only credential, distinct
+#                       from the agent key above. Omit to skip the summary.
+# Store the API URL as a non-secret variable (or inline it):
+#   ABADGE_API_URL      e.g. https://api.abadge.dev
+name: deploy
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install abadge CLI
+        run: |
+          ABADGE_INSTALL_PACKAGE=cli \
+            curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh | bash
+
+      - name: Bulk-inject secrets and deploy
+        env:
+          ABADGE_API_URL: ${{ vars.ABADGE_API_URL }}
+          ABADGE_AGENT_ID: ${{ secrets.ABADGE_AGENT_ID }}
+          ABADGE_PRIVATE_KEY: ${{ secrets.ABADGE_PRIVATE_KEY }}
+          ABADGE_PROFILE: ${{ secrets.ABADGE_PROFILE }}
+          ABADGE_API_KEY: ${{ secrets.ABADGE_API_KEY }}
+        run: ./examples/cli/05-ci-cd.sh
