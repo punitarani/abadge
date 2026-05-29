@@ -48,6 +48,7 @@ export {
   generateSalt,
   hashApiKey,
   NO_PROFILE_AAD_SENTINEL,
+  normalizeEd25519PublicKeyJwk,
   profileIdForServerAad,
   randomBytes,
   SERVER_AAD_MIN_VERSION,

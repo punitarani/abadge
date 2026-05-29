@@ -9,6 +9,7 @@ import {
   AgentChallengeResultSchema,
   AgentEnrollmentResultSchema,
   AgentSessionResultSchema,
+  BadRequestError,
   type CreateAgentChallengeInput,
   CreateAgentChallengeSchema,
   type EnrollAgentInput,
@@ -24,7 +25,12 @@ import {
   RevokeAgentSessionSchema,
   SuccessResultSchema,
 } from "@abadge/core";
-import { generateOpaqueToken, hashApiKey, verifyEd25519 } from "@abadge/crypto/shared";
+import {
+  generateOpaqueToken,
+  hashApiKey,
+  normalizeEd25519PublicKeyJwk,
+  verifyEd25519,
+} from "@abadge/crypto/shared";
 import { and, count, eq, gt, isNull, lt } from "@abadge/db";
 import { agentEnrollmentTokens, agentSessionChallenges, agentSessions } from "@abadge/db/schema";
 import { Effect } from "effect";
@@ -373,6 +379,17 @@ const issueBootstrapToken = (input: IssueAgentBootstrapTokenInput) =>
 const enrollAgent = (input: EnrollAgentInput) =>
   Effect.gen(function* () {
     const ctx = yield* BaseRequestContextTag;
+    // Canonicalize the enrolling public key (strip a non-standard `alg`, etc.) so
+    // the stored key is always usable by the session-exchange importKey().
+    const publicKey = yield* Effect.try({
+      try: () => normalizeEd25519PublicKeyJwk(input.publicKey),
+      catch: (e) =>
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: e instanceof Error ? e.message : "Invalid public key JWK",
+          hint: 'Provide a canonical Ed25519 public key JWK (kty:"OKP", crv:"Ed25519", base64url x).',
+        }),
+    });
     const tokenHash = yield* tryAsync(() => hashApiKey(input.bootstrapToken));
 
     const [bootstrap] = (yield* tryAsync(() =>
@@ -449,7 +466,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         const [updatedAgent] = (await tx
           .update(agentRecords)
           .set({
-            publicKey: input.publicKey,
+            publicKey,
           })
           .where(
             and(
@@ -499,7 +516,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
     return {
       agent: serializeAgent({
         ...agent,
-        publicKey: input.publicKey,
+        publicKey,
       }),
       enrolledAt: enrolledAt.toISOString(),
     };
