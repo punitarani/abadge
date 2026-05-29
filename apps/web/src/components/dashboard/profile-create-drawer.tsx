@@ -265,7 +265,7 @@ export function ProfileCreateDrawer({
         }
       }}
       title="New profile"
-      description="Create a credential namespace within your organization."
+      description="Create a credential namespace to group related items."
       footer={footer}
     >
       {content}

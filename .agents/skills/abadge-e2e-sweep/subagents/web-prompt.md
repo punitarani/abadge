@@ -54,7 +54,7 @@ browser_network_requests   # after the click
 
 - The `localStorage` bleed (§W4) only manifests across user logins in the **same browser context**. Use Playwright's storage-state sharing or two browser tabs to reproduce.
 - `/onboarding` step 2 always logs a 409 to console (§UX1) — do NOT flag this as a new finding unless the cell is explicitly about it; it's known and benign.
-- The dashboard's item-detail page intentionally doesn't render plaintext (custody mode) — don't expect to see secrets here.
+- The dashboard's item-detail page renders plaintext ONLY for personal accounts (the owner's own vault, via a Reveal control). In team organizations it stays in custody mode and never shows secret values — don't expect to see secrets there.
 - Server-managed item creation goes through the SAME §I2 envelope decoder as API access — flag any plaintext JSON-stringified envelope leaking into reveal as `regression-§I2-via-web`.
 
 ## Closing

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SecretValueCard, useItemReveal } from "@/components/dashboard/item-detail-panel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import { buildAuditAgentNameMap } from "@/lib/audit-display";
 import { listAllAgents, listAllPermissions } from "@/lib/list-queries";
 import { dashboardQueryKeys } from "@/lib/query-keys";
@@ -43,6 +45,7 @@ export default function ItemDetailPage(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
+  const { isPersonal } = useActiveOrg();
 
   const itemQuery = useQuery({
     queryKey: dashboardQueryKeys.item(itemId),
@@ -80,6 +83,12 @@ export default function ItemDetailPage(): React.ReactElement {
   );
 
   const agentNameMap = useMemo(() => buildAuditAgentNameMap(agents), [agents]);
+
+  // Owner-reveal is enabled only for personal accounts (the user owns every
+  // secret). Team orgs stay in custody mode and never reveal plaintext here.
+  // Called unconditionally before the early returns to keep hook order stable;
+  // tolerates a null item.
+  const itemReveal = useItemReveal(item);
 
   const deleteItem = useMutation({
     mutationFn: () => browserTrpcClient.items.delete.mutate({ itemId }),
@@ -170,15 +179,26 @@ export default function ItemDetailPage(): React.ReactElement {
         </div>
       </div>
 
-      {/* ZK custody callout */}
-      {isZK && (
-        <div className="flex items-start gap-3 rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:bg-amber-950/30">
-          <Warning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-sm text-amber-800 dark:text-amber-300">
-            This is a zero-knowledge item. The server never sees the plaintext. Only authorized
-            local agents with the vault password can decrypt this item.
-          </p>
-        </div>
+      {/* Personal accounts own their secrets and can reveal them. Team orgs
+          stay in custody mode: no plaintext in the dashboard, with a ZK note. */}
+      {isPersonal ? (
+        <SecretValueCard
+          item={item}
+          revealedValue={itemReveal.revealedValue}
+          revealing={itemReveal.revealing}
+          onReveal={itemReveal.reveal}
+          onHide={itemReveal.hide}
+        />
+      ) : (
+        isZK && (
+          <div className="flex items-start gap-3 rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:bg-amber-950/30">
+            <Warning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              This is a zero-knowledge item. The server never sees the plaintext. Only authorized
+              local agents with the vault password can decrypt this item.
+            </p>
+          </div>
+        )
       )}
 
       {/* Metadata cards */}

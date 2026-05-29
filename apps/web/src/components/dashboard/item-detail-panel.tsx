@@ -17,99 +17,26 @@ function storageModeLabel(storageMode: ItemDetail["storageMode"]): string {
   return storageMode === "zero_knowledge" ? "Zero-knowledge" : "Server-managed";
 }
 
-interface ItemDetailPanelViewProps {
-  item: ItemDetail;
+export interface ItemReveal {
   revealedValue: string | null;
   revealing: boolean;
-  onReveal: () => void;
-  onHide: () => void;
+  reveal: () => void;
+  hide: () => void;
 }
 
-export function ItemDetailPanelView({
-  item,
-  revealedValue,
-  revealing,
-  onReveal,
-  onHide,
-}: ItemDetailPanelViewProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-3 rounded-lg border border-border p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="rounded bg-muted px-2 py-1 font-mono text-xs">{item.id}</code>
-          <Badge variant={item.storageMode === "zero_knowledge" ? "default" : "secondary"}>
-            {storageModeLabel(item.storageMode)}
-          </Badge>
-        </div>
-        <div className="grid gap-4 text-sm sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <div className="text-muted-foreground">Created</div>
-            <div className="font-medium">{formatRelativeTime(item.createdAt)}</div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <div className="text-muted-foreground">Last updated</div>
-            <div className="font-medium">{formatRelativeTime(item.updatedAt)}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 rounded-lg border border-border p-5">
-        <div className="flex flex-col gap-1">
-          <div className="text-sm font-semibold">Secret value</div>
-          <p className="text-sm text-muted-foreground">
-            {item.storageMode === "zero_knowledge"
-              ? "Decrypt the item in your browser when you need to inspect it."
-              : "Server-managed items are encrypted server-side. You can reveal the value below."}
-          </p>
-        </div>
-
-        {revealedValue !== null ? (
-          <div className="flex flex-col gap-3">
-            <pre className="rounded-md border border-border bg-muted p-3 text-sm whitespace-pre-wrap break-all">
-              {revealedValue}
-            </pre>
-            <div>
-              <Button variant="outline" size="sm" onClick={onHide}>
-                Hide
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <Button size="sm" onClick={onReveal} disabled={revealing}>
-              {revealing
-                ? item.storageMode === "zero_knowledge"
-                  ? "Decrypting..."
-                  : "Loading..."
-                : "Reveal"}
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ItemDetailPanelProps {
-  itemId: string;
-  open: boolean;
-  onClose: () => void;
-}
-
-export function ItemDetailPanel({
-  itemId,
-  onClose,
-  open,
-}: ItemDetailPanelProps): React.ReactElement {
+/**
+ * Owner-reveal state machine for a single item, shared by the item detail
+ * route page (personal accounts) and the {@link ItemDetailPanel} overlay.
+ *
+ * Zero-knowledge items decrypt in the browser after unlocking the profile
+ * vault; server-managed items round-trip through `items.ownerReveal`, which
+ * decrypts server-side and audits the read. The server never sees plaintext or
+ * the root key for zero-knowledge items.
+ */
+export function useItemReveal(item: ItemDetail | null): ItemReveal {
   const { requestUnlock } = useVault();
   const [revealedValue, setRevealedValue] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
-  const itemQuery = useQuery({
-    queryKey: dashboardQueryKeys.item(itemId),
-    queryFn: () => browserTrpcClient.items.get.query({ itemId }),
-    enabled: Boolean(itemId),
-  });
-  const item = itemQuery.data?.item ?? null;
 
   async function revealZeroKnowledge(): Promise<string | null> {
     if (!item || item.storageMode !== "zero_knowledge") {
@@ -171,6 +98,137 @@ export function ItemDetailPanel({
     if (value !== null) setRevealedValue(value);
   }
 
+  return {
+    revealedValue,
+    revealing,
+    reveal: () => void handleReveal(),
+    hide: () => setRevealedValue(null),
+  };
+}
+
+interface SecretValueCardProps {
+  item: ItemDetail;
+  revealedValue: string | null;
+  revealing: boolean;
+  onReveal: () => void;
+  onHide: () => void;
+}
+
+/**
+ * The "Secret value" reveal card. Presentational only — reveal state is owned
+ * by {@link useItemReveal}. Rendered in personal accounts (the owner's own
+ * vault); team organizations stay in custody mode and never mount this.
+ */
+export function SecretValueCard({
+  item,
+  revealedValue,
+  revealing,
+  onReveal,
+  onHide,
+}: SecretValueCardProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border p-5">
+      <div className="flex flex-col gap-1">
+        <div className="text-sm font-semibold">Secret value</div>
+        <p className="text-sm text-muted-foreground">
+          {item.storageMode === "zero_knowledge"
+            ? "Decrypt the item in your browser when you need to inspect it. The server never sees the plaintext."
+            : "Server-managed items are encrypted server-side. Reveal the value below — the read is recorded in the audit log."}
+        </p>
+      </div>
+
+      {revealedValue !== null ? (
+        <div className="flex flex-col gap-3">
+          <pre className="rounded-md border border-border bg-muted p-3 text-sm whitespace-pre-wrap break-all">
+            {revealedValue}
+          </pre>
+          <div>
+            <Button variant="outline" size="sm" onClick={onHide}>
+              Hide
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <Button size="sm" onClick={onReveal} disabled={revealing}>
+            {revealing
+              ? item.storageMode === "zero_knowledge"
+                ? "Decrypting..."
+                : "Loading..."
+              : "Reveal"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ItemDetailPanelViewProps {
+  item: ItemDetail;
+  revealedValue: string | null;
+  revealing: boolean;
+  onReveal: () => void;
+  onHide: () => void;
+}
+
+export function ItemDetailPanelView({
+  item,
+  revealedValue,
+  revealing,
+  onReveal,
+  onHide,
+}: ItemDetailPanelViewProps): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3 rounded-lg border border-border p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="rounded bg-muted px-2 py-1 font-mono text-xs">{item.id}</code>
+          <Badge variant={item.storageMode === "zero_knowledge" ? "default" : "secondary"}>
+            {storageModeLabel(item.storageMode)}
+          </Badge>
+        </div>
+        <div className="grid gap-4 text-sm sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <div className="text-muted-foreground">Created</div>
+            <div className="font-medium">{formatRelativeTime(item.createdAt)}</div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="text-muted-foreground">Last updated</div>
+            <div className="font-medium">{formatRelativeTime(item.updatedAt)}</div>
+          </div>
+        </div>
+      </div>
+
+      <SecretValueCard
+        item={item}
+        revealedValue={revealedValue}
+        revealing={revealing}
+        onReveal={onReveal}
+        onHide={onHide}
+      />
+    </div>
+  );
+}
+
+interface ItemDetailPanelProps {
+  itemId: string;
+  open: boolean;
+  onClose: () => void;
+}
+
+export function ItemDetailPanel({
+  itemId,
+  onClose,
+  open,
+}: ItemDetailPanelProps): React.ReactElement {
+  const itemQuery = useQuery({
+    queryKey: dashboardQueryKeys.item(itemId),
+    queryFn: () => browserTrpcClient.items.get.query({ itemId }),
+    enabled: Boolean(itemId),
+  });
+  const item = itemQuery.data?.item ?? null;
+  const { revealedValue, revealing, reveal, hide } = useItemReveal(item);
+
   const title = item ? `${item.id.slice(0, 8)}…` : "Item details";
   const description = item
     ? `Created ${formatRelativeTime(item.createdAt)}`
@@ -201,10 +259,8 @@ export function ItemDetailPanel({
         item={item}
         revealedValue={revealedValue}
         revealing={revealing}
-        onReveal={() => void handleReveal()}
-        onHide={() => {
-          setRevealedValue(null);
-        }}
+        onReveal={reveal}
+        onHide={hide}
       />
     );
   }

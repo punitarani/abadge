@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import {
   profilesFilterParsers,
@@ -27,12 +28,14 @@ import {
 import { browserTrpcClient } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
+import { workspacePosture } from "@/lib/workspace-posture";
 import { useOrgStore } from "@/stores/org-store";
 
 const TABLE_COL_COUNT = 6;
 
 export default function ProfilesListPage(): React.ReactElement {
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
+  const { isPersonal } = useActiveOrg();
   const { isProfileUnlocked } = useVault();
 
   const [filters, setFilters] = useQueryStates(profilesFilterParsers, {
@@ -84,7 +87,7 @@ export default function ProfilesListPage(): React.ReactElement {
         <div>
           <h1 className="text-lg font-semibold">Profiles</h1>
           <p className="text-sm text-muted-foreground">
-            Credential namespaces under your custody — one per user or entity.
+            {workspacePosture(isPersonal).profilesSubtitle}
           </p>
         </div>
         <Button size="sm" onClick={() => void setFilters({ create: true })}>
