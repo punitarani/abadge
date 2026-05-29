@@ -74,8 +74,11 @@ export function DangerZoneSection({
     setFormError(null);
   }
 
-  function finishDeleted(): void {
-    void queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
+  async function finishDeleted(): Promise<void> {
+    // Mark the org list stale before navigating, so if anything renders the
+    // dashboard before the route change completes it doesn't show the
+    // just-deleted workspace. Mirrors the pre-refactor onSuccess ordering.
+    await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.organizations() });
     toast.success(isPersonal ? "Personal account deleted." : "Organization deleted.");
     router.push("/onboarding");
   }
@@ -103,7 +106,7 @@ export function DangerZoneSection({
         // Already gone (e.g. deleted from another tab) — treat as done.
         setOpen(false);
         resetForm();
-        finishDeleted();
+        void finishDeleted();
         return;
       }
       setPasswordError(null);
