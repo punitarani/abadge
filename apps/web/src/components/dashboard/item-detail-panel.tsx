@@ -1,12 +1,14 @@
 "use client";
 
 import type { ItemDetail } from "@abadge/core";
+import { Warning } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useActiveOrg } from "@/hooks/use-active-org";
 import { decryptItemFromProfile } from "@/lib/crypto-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
@@ -116,8 +118,9 @@ interface SecretValueCardProps {
 
 /**
  * The "Secret value" reveal card. Presentational only — reveal state is owned
- * by {@link useItemReveal}. Rendered in personal accounts (the owner's own
- * vault); team organizations stay in custody mode and never mount this.
+ * by {@link useItemReveal}. Mounting is gated by {@link ItemSecretSection},
+ * which only renders this for personal accounts (the owner's own vault); team
+ * organizations stay in custody mode and never see a reveal affordance.
  */
 export function SecretValueCard({
   item,
@@ -163,20 +166,64 @@ export function SecretValueCard({
   );
 }
 
+interface ItemSecretSectionProps {
+  item: ItemDetail;
+  isPersonal: boolean;
+  reveal: ItemReveal;
+}
+
+/**
+ * Secret-value region of an item view, gated by workspace posture. Personal
+ * accounts (the owner's own vault) get the {@link SecretValueCard} Reveal
+ * control; team organizations stay in custody mode and never get a reveal
+ * affordance — zero-knowledge items show an informational note, server-managed
+ * items show nothing. Centralizing the gate here enforces the custody boundary
+ * at the component, so no call site (route page, overlay, or a future one) can
+ * mount the Reveal UI for a team org.
+ */
+export function ItemSecretSection({
+  item,
+  isPersonal,
+  reveal,
+}: ItemSecretSectionProps): React.ReactElement | null {
+  if (isPersonal) {
+    return (
+      <SecretValueCard
+        item={item}
+        revealedValue={reveal.revealedValue}
+        revealing={reveal.revealing}
+        onReveal={reveal.reveal}
+        onHide={reveal.hide}
+      />
+    );
+  }
+
+  // Custody mode: the dashboard never reveals plaintext for team organizations.
+  if (item.storageMode === "zero_knowledge") {
+    return (
+      <div className="flex items-start gap-3 rounded-md border-l-4 border-amber-400 bg-amber-50 px-4 py-3 dark:bg-amber-950/30">
+        <Warning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="text-sm text-amber-800 dark:text-amber-300">
+          This is a zero-knowledge item. The server never sees the plaintext. Only authorized local
+          agents with the vault password can decrypt this item.
+        </p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 interface ItemDetailPanelViewProps {
   item: ItemDetail;
-  revealedValue: string | null;
-  revealing: boolean;
-  onReveal: () => void;
-  onHide: () => void;
+  isPersonal: boolean;
+  reveal: ItemReveal;
 }
 
 export function ItemDetailPanelView({
   item,
-  revealedValue,
-  revealing,
-  onReveal,
-  onHide,
+  isPersonal,
+  reveal,
 }: ItemDetailPanelViewProps): React.ReactElement {
   return (
     <div className="flex flex-col gap-5">
@@ -199,13 +246,7 @@ export function ItemDetailPanelView({
         </div>
       </div>
 
-      <SecretValueCard
-        item={item}
-        revealedValue={revealedValue}
-        revealing={revealing}
-        onReveal={onReveal}
-        onHide={onHide}
-      />
+      <ItemSecretSection item={item} isPersonal={isPersonal} reveal={reveal} />
     </div>
   );
 }
@@ -221,13 +262,14 @@ export function ItemDetailPanel({
   onClose,
   open,
 }: ItemDetailPanelProps): React.ReactElement {
+  const { isPersonal } = useActiveOrg();
   const itemQuery = useQuery({
     queryKey: dashboardQueryKeys.item(itemId),
     queryFn: () => browserTrpcClient.items.get.query({ itemId }),
     enabled: Boolean(itemId),
   });
   const item = itemQuery.data?.item ?? null;
-  const { revealedValue, revealing, reveal, hide } = useItemReveal(item);
+  const reveal = useItemReveal(item);
 
   const title = item ? `${item.id.slice(0, 8)}…` : "Item details";
   const description = item
@@ -254,15 +296,7 @@ export function ItemDetailPanel({
   } else if (!item) {
     content = <div className="text-sm text-muted-foreground">Item not found.</div>;
   } else {
-    content = (
-      <ItemDetailPanelView
-        item={item}
-        revealedValue={revealedValue}
-        revealing={revealing}
-        onReveal={reveal}
-        onHide={hide}
-      />
-    );
+    content = <ItemDetailPanelView item={item} isPersonal={isPersonal} reveal={reveal} />;
   }
 
   return (
