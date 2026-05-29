@@ -75,6 +75,7 @@ Validation errors include an additional `issues` array:
 | `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |
 | `RATE_LIMITED` | 429 | Too many requests; back off and retry |
 | `INTEGRITY_ERROR` | 500 | Server-side data integrity failure |
+| `SERVICE_UNAVAILABLE` | 503 | Database at capacity or briefly unreachable; retry after `meta.retryAfterSeconds` |
 
 ## SDK Error Handling
 

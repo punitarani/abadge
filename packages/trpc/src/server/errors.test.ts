@@ -8,8 +8,24 @@ import {
 } from "@abadge/core";
 import { TRPCError } from "@trpc/server";
 import { Effect } from "effect";
-import { getTrpcErrorData, toTrpcError } from "./errors";
+import { getTrpcErrorData, mapStatusToTrpcCode, toTrpcError } from "./errors";
 import { trpcErrorFormatter } from "./init";
+
+/** A driver error carrying a top-level `.code` (SQLSTATE or socket code). */
+function dbErrorWithCode(code: string, message = "db failure"): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+/**
+ * The REAL production shape: Drizzle v0.45+ wraps the postgres-js driver error
+ * (which carries the SQLSTATE/socket `.code`) in a `DrizzleQueryError` whose
+ * `.cause` is the driver error and which has NO top-level `code`. Detection must
+ * read through `.cause` — a top-level-`.code` fixture would pass while prod
+ * 500s. See `isUniqueViolation` (effect.ts) for the same wrapping.
+ */
+function wrappedDbError(code: string, message = "db failure"): Error {
+  return Object.assign(new Error(message), { cause: { code } });
+}
 
 describe("toTrpcError", () => {
   test("unwraps effect failures into domain-specific trpc codes", async () => {
@@ -126,6 +142,85 @@ describe("toTrpcError", () => {
     expect(data.code).toBe("MEMBER_INSUFFICIENT_ROLE");
     expect(data.hint).toBe("This action requires the 'admin' role or higher.");
     expect(data.meta).toEqual({ required: "admin", actual: "member" });
+  });
+});
+
+// §F — transient DB capacity/connectivity failures map to a retryable 503,
+// not an opaque 500, so clients back off and the connection pool drains.
+describe("toTrpcError — transient DB failures → 503", () => {
+  test.each([
+    ["53300", "too_many_connections"],
+    ["53400", "configuration_limit_exceeded"],
+    ["57014", "query_canceled (statement_timeout)"],
+    ["57P03", "cannot_connect_now"],
+    ["08006", "connection_failure (class 08)"],
+    ["08000", "connection_exception (class 08)"],
+    ["CONNECT_TIMEOUT", "driver connect timeout"],
+    ["CONNECTION_CLOSED", "driver connection closed"],
+    ["ECONNRESET", "socket reset"],
+    ["ETIMEDOUT", "socket timeout"],
+    // Use the real Drizzle-wrapped shape (.cause.code) — the shape that
+    // actually reaches toTrpcError in production. A top-level-`.code` fixture
+    // would pass even if detection only read the top level (the bug review #220
+    // caught), so this is the load-bearing assertion.
+  ])("code %s (%s), Drizzle-wrapped → SERVICE_UNAVAILABLE", (code) => {
+    const error = toTrpcError(wrappedDbError(code));
+
+    expect(error.code).toBe("SERVICE_UNAVAILABLE");
+    expect(getTrpcErrorData(error)).toEqual({
+      code: "SERVICE_UNAVAILABLE",
+      hint: "The database is at capacity or briefly unreachable. Retry after a short backoff.",
+      meta: { retryAfterSeconds: 2 },
+    });
+  });
+
+  test("also detects a transient code carried at the top level (not just .cause)", () => {
+    const error = toTrpcError(dbErrorWithCode("53300"));
+    expect(error.code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  test("unwraps an effect-wrapped transient DB failure to 503", async () => {
+    // tryAsync re-fails with the original Error (a DrizzleQueryError in prod);
+    // the failure channel carries it with the SQLSTATE on .cause.code.
+    const failure = await Effect.runPromise(Effect.fail(wrappedDbError("53300"))).catch((e) => e);
+
+    const error = toTrpcError(failure);
+
+    expect(error.code).toBe("SERVICE_UNAVAILABLE");
+    expect(getTrpcErrorData(error).meta).toEqual({ retryAfterSeconds: 2 });
+  });
+
+  test("does NOT misclassify a real query bug (unique violation) as 503", () => {
+    // 23505 = unique_violation — a genuine application error in the same wrapped
+    // shape — must stay 500 and must not leak the constraint name to the wire.
+    const error = toTrpcError(
+      wrappedDbError("23505", "duplicate key value violates unique constraint 'x_unique'"),
+    );
+
+    expect(error.code).toBe("INTERNAL_SERVER_ERROR");
+    expect(error.message).toBe("Internal server error");
+    expect(error.message).not.toContain("x_unique");
+  });
+
+  test("a plain Error with no code stays 500", () => {
+    const error = toTrpcError(new Error("boom"));
+    expect(error.code).toBe("INTERNAL_SERVER_ERROR");
+  });
+});
+
+describe("mapStatusToTrpcCode", () => {
+  test.each([
+    [400, "BAD_REQUEST"],
+    [401, "UNAUTHORIZED"],
+    [403, "FORBIDDEN"],
+    [404, "NOT_FOUND"],
+    [409, "CONFLICT"],
+    [429, "TOO_MANY_REQUESTS"],
+    [503, "SERVICE_UNAVAILABLE"],
+    [500, "INTERNAL_SERVER_ERROR"],
+    [418, "INTERNAL_SERVER_ERROR"],
+  ])("status %i → %s", (status, expected) => {
+    expect(mapStatusToTrpcCode(status) as string).toBe(expected);
   });
 });
 

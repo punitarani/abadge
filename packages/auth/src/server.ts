@@ -154,6 +154,26 @@ export function createAuth(db: Database, env: AuthEnv): any {
     session: {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
+      // Cache the validated session in a short-lived signed cookie so the
+      // browser dashboard's per-request session validation reads from the
+      // cookie instead of hitting the DB — the connection pool, not query
+      // latency, is the throughput wall (PS-10 + Hyperdrive). Better Auth
+      // returns the cached session before any DB read when this cookie is
+      // present (and our DB-backed config takes the zero-write path).
+      //
+      // Scope of the cache: ONLY session identity ({session, user}). It does
+      // NOT cache org membership — `resolveUserOrgId`'s `member` lookup stays a
+      // live per-request query, so org add/remove (the security-critical
+      // authorization check on this credential firewall) takes effect
+      // immediately. Agent `abs_` / personal `abu_` auth never read this
+      // cookie and are unaffected. The only thing that goes stale is
+      // session-validity (logout / session expiry / revocation), bounded to
+      // `maxAge` (60s). Sensitive Better Auth endpoints already bypass the
+      // cache via `disableCookieCache`.
+      cookieCache: {
+        enabled: true,
+        maxAge: 60,
+      },
     },
     socialProviders: {
       google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },

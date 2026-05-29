@@ -14,7 +14,13 @@ export {
   type ZkRootWrapAadMeta,
 } from "./aad";
 export { generateApiKey, generateNumericOtp, hashApiKey, verifyApiKey } from "./api-keys";
-export { generateEd25519KeyPair, generateOpaqueToken, signEd25519, verifyEd25519 } from "./ed25519";
+export {
+  generateEd25519KeyPair,
+  generateOpaqueToken,
+  normalizeEd25519PublicKeyJwk,
+  signEd25519,
+  verifyEd25519,
+} from "./ed25519";
 export {
   formatRecoveryKey,
   fromBase32,
