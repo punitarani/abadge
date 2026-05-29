@@ -485,13 +485,13 @@ function InviteMemberCard({ orgId }: { orgId: string }): React.ReactElement {
         </div>
         <form onSubmit={handleGenerate} className="space-y-3">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="invite-role">Role</Label>
               <Select
                 value={role}
                 onValueChange={(v) => setRole(v as "member" | "admin" | "owner")}
               >
-                <SelectTrigger id="invite-role" className="h-9 w-32">
+                <SelectTrigger id="invite-role" className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -702,7 +702,7 @@ function ApiKeysSection({
               </p>
             </div>
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="api-key-name">Name</Label>
                 <Input
                   id="api-key-name"
@@ -713,10 +713,10 @@ function ApiKeysSection({
                   className="w-56"
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="api-key-expiry">Expires</Label>
                 <Select value={expiry} onValueChange={(v) => setExpiry(v as ApiKeyExpiry)}>
-                  <SelectTrigger id="api-key-expiry" className="h-9 w-32">
+                  <SelectTrigger id="api-key-expiry" className="w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
