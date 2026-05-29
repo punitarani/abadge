@@ -231,6 +231,16 @@ jobs:
       # and MCP binaries (@abadge/cli#build, @abadge/mcp#build) first; the e2e
       # harness auto-detects and spawns those compiled artifacts. No separate
       # build step needed.
+      # The two compile tasks are cache: false, but their `^build` library
+      # dependencies (e.g. @abadge/sdk) are cacheable — persist .turbo so those
+      # hit the local cache between runs even when the remote cache is unset.
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-e2e-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
       - name: Run e2e tests
         run: bun run test:e2e
 
