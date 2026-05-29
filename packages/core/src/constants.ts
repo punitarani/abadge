@@ -96,6 +96,9 @@ export const AUDIT_EVENT_TYPES = [
   // personal user API key events (management-surface credentials, prefix `abu_`)
   "user_api_key.create",
   "user_api_key.revoke",
+  // Expired-at-auth-time rejection (passive expiry, not admin-initiated revocation).
+  // Distinct from user_api_key.revoke so audit queries can distinguish the two.
+  "user_api_key.expire",
   // org events
   "org.create",
   "org.read",
@@ -113,6 +116,8 @@ export const AUDIT_EVENT_TYPES = [
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
+  // Retained for querying historical audit rows only; the rotate procedure was
+  // removed when legacy_api_key was dropped. New code must not write this event.
   "agent.rotate",
   "agent.revoke",
   "agent.revoke_cascade",

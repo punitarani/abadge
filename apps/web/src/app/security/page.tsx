@@ -143,7 +143,7 @@ const authMechanisms = [
   {
     label: "Remote agents",
     method: "Bootstrap enrollment + sessions",
-    flow: "One-time abe_ bootstrap token (10-minute TTL) for enrollment. After enrollment, same Ed25519 challenge-response flow. Legacy abl_/abg_ API keys supported for migration.",
+    flow: "One-time abe_ bootstrap token (10-minute TTL) for enrollment. After enrollment, same Ed25519 challenge-response flow.",
   },
 ];
 

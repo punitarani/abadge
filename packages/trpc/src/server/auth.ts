@@ -6,7 +6,7 @@ import {
   USER_API_KEY_PREFIX,
 } from "@abadge/core";
 import { hashApiKey, verifyApiKey } from "@abadge/crypto/shared";
-import { and, asc, eq, isNull, or } from "@abadge/db";
+import { and, asc, eq, isNull } from "@abadge/db";
 import {
   agents as agentRecords,
   agentSessions,
@@ -17,16 +17,6 @@ import {
 import { Effect } from "effect";
 import type { AgentIdentity, BaseRequestContext, SessionIdentity } from "./context";
 import { tryAsync } from "./effect";
-
-function getCandidatePrefixes(token: string): string[] {
-  return [
-    ...new Set(
-      [token.slice(0, 8), token.slice(0, 6), token.slice(0, 4)].filter(
-        (value): value is string => value.length > 0,
-      ),
-    ),
-  ];
-}
 
 export interface AuthSessionResult {
   session?: {
@@ -57,7 +47,7 @@ function unauthorized(message: string): UnauthorizedError {
   return new UnauthorizedError({
     code: "UNAUTHORIZED",
     message,
-    hint: "Authenticate with a valid session token, agent API key, or short-lived agent session token.",
+    hint: "Authenticate with a Better Auth session, a personal API key (abu_), or an agent session token (abs_).",
   });
 }
 
@@ -419,6 +409,9 @@ function touchUserApiKey(ctx: BaseRequestContext, keyId: string): void {
  * key, but it was expired). A wrong-secret miss returns null and falls through
  * like any unrecognized bearer; only a real-key rejection writes a row here, to
  * mirror `auditAgentSessionReject`'s "expired" handling.
+ *
+ * Uses event type `user_api_key.expire` — distinct from `user_api_key.revoke`
+ * (admin-initiated) so audit queries can distinguish passive expiry.
  */
 function auditUserApiKeyReject(
   ctx: BaseRequestContext,
@@ -431,7 +424,7 @@ function auditUserApiKeyReject(
         organizationId: input.organizationId,
         userId: input.userId,
         agentId: null,
-        eventType: "user_api_key.revoke",
+        eventType: "user_api_key.expire",
         result: input.result,
         meta: { reason: input.reason },
         ipAddress: ctx.ipAddress ?? null,
@@ -461,7 +454,8 @@ const resolveUserApiKeyIdentity = (
   token: string,
 ): Effect.Effect<SessionIdentity | null, Error | UnauthorizedError> =>
   Effect.gen(function* () {
-    const prefixes = getCandidatePrefixes(token);
+    // `generateApiKey` always stores an 8-character prefix; a direct equality
+    // lookup hits the btree index with no dead OR-clauses.
     const candidates = yield* tryAsync(() =>
       ctx.db
         .select({
@@ -474,7 +468,7 @@ const resolveUserApiKeyIdentity = (
         .from(userApiKeys)
         .where(
           and(
-            or(...prefixes.map((prefix) => eq(userApiKeys.secretPrefix, prefix))),
+            eq(userApiKeys.secretPrefix, token.slice(0, 8)),
             eq(userApiKeys.enabled, true),
             isNull(userApiKeys.revokedAt),
           ),

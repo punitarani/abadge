@@ -1,4 +1,5 @@
 import {
+  BadRequestError,
   type CreateUserApiKeyInput,
   CreateUserApiKeySchema,
   ForbiddenError,
@@ -14,6 +15,7 @@ import { and, desc, eq, isNull } from "@abadge/db";
 import { userApiKeys } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
+import type { SessionAuthMethod } from "../context";
 import { runSessionEffect, SessionRequestContextTag, strictSchema, tryAsync } from "../effect";
 import { createTrpcRouter, scopedSessionProcedure } from "../init";
 
@@ -39,7 +41,9 @@ function serializeUserApiKey(row: UserApiKeyRow): UserApiKey {
  * let a single leaked `abu_` token perpetuate account access with no human in
  * the loop. Key management requires a real browser/bearer session.
  */
-function requireInteractiveSession(authMethod: string): Effect.Effect<void, ForbiddenError> {
+function requireInteractiveSession(
+  authMethod: SessionAuthMethod,
+): Effect.Effect<void, ForbiddenError> {
   if (authMethod === "user_api_key") {
     return Effect.fail(
       new ForbiddenError({
@@ -60,6 +64,15 @@ const createUserApiKey = (input: CreateUserApiKeyInput) =>
     const id = crypto.randomUUID();
     const { key, hash, prefix } = yield* tryAsync(() => generateApiKey(USER_API_KEY_PREFIX));
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+    if (expiresAt && (isNaN(expiresAt.getTime()) || expiresAt <= new Date())) {
+      return yield* Effect.fail(
+        new BadRequestError({
+          code: "BAD_REQUEST",
+          message: "expiresAt must be a valid date in the future",
+          hint: "Provide a future ISO 8601 datetime for expiresAt, or omit it for a non-expiring key.",
+        }),
+      );
+    }
 
     yield* tryAsync(() =>
       ctx.db.insert(userApiKeys).values({
@@ -105,6 +118,8 @@ const createUserApiKey = (input: CreateUserApiKeyInput) =>
 const listUserApiKeys = Effect.gen(function* () {
   const ctx = yield* SessionRequestContextTag;
   // Scope to (org, user): a caller only ever sees their own keys in this org.
+  // Intentionally includes revoked and expired keys — the UI shows history for
+  // audit; consumers can filter client-side on enabled/revokedAt.
   const rows = yield* tryAsync(() =>
     ctx.db
       .select()

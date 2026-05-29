@@ -172,6 +172,30 @@ describe("apiKeys router", () => {
     });
   });
 
+  // ---- Auth-time expiry enforcement ----
+
+  test("an expired key is rejected with UNAUTHORIZED at authentication time", async () => {
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+
+    const created = await caller.apiKeys.create({ name: "expiry-test" });
+    // Backdate expiresAt directly in the DB to simulate a past-expiry key.
+    await db
+      .update(userApiKeys)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(userApiKeys.id, created.apiKey.id));
+
+    const keyCaller = createApiKeyCaller(db, auth, created.key);
+    try {
+      await keyCaller.apiKeys.list();
+      expect.unreachable("expired key must be rejected");
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      expect(err.code).toBe("UNAUTHORIZED");
+    }
+  });
+
   // ---- Audit ----
 
   test("create and revoke write append-only audit rows", async () => {

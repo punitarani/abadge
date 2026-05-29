@@ -13,6 +13,10 @@ CREATE TABLE "user_api_keys" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+-- Disable legacy_api_key agents: they lose their auth path when secret_hash/
+-- secret_prefix are dropped, and their auth_method value would fail the
+-- AgentSchema Literal("public_key_session") validation on any list/get call.
+UPDATE "agents" SET auth_method = 'public_key_session', enabled = false, revoked_at = NOW() WHERE auth_method = 'legacy_api_key';--> statement-breakpoint
 DROP INDEX "agents_secret_prefix_idx";--> statement-breakpoint
 ALTER TABLE "user_api_keys" ADD CONSTRAINT "user_api_keys_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_api_keys" ADD CONSTRAINT "user_api_keys_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
