@@ -47,26 +47,39 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --animate-logo-reveal: logo-reveal 2.4s ease-in-out infinite;
+  --animate-loader-logo: loader-logo 3s ease-in-out infinite;
+  --animate-loader-text: loader-text 3s ease-in-out infinite;
 }
 
-/* Dashboard boot loader: the wordmark unfurls left-to-right out of the logo,
-   holds, then retracts back into it — a branded, looping "workspace loading"
-   cue. clip-path reveals the text in place (the element keeps its full layout
-   width) so the logo + wordmark stay centered as a unit with no reflow. */
-@keyframes logo-reveal {
-  0% {
-    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-    opacity: 0;
-  }
-  30%,
-  70% {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-    opacity: 1;
-  }
+/* Dashboard boot loader: logo starts centered alone, then slides left while
+   the wordmark rolls out from behind it to the right — a curtain-open effect.
+   Both elements return in reverse at the end of each cycle.
+   3rem ≈ half the wordmark width, chosen so the logo's center sits at the
+   combined lockup's center at t=0 (logo appears centered alone).
+   motion-reduce users see the static lockup with no transforms. */
+@keyframes loader-logo {
+  0%,
   100% {
-    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+    transform: translateX(3rem);
+  }
+  35%,
+  65% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes loader-text {
+  0%,
+  100% {
+    transform: translateX(-3rem);
+    clip-path: polygon(0% 0%, 0% 0%, 0% 100%, 0% 100%);
     opacity: 0;
+  }
+  35%,
+  65% {
+    transform: translateX(0);
+    clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
+    opacity: 1;
   }
 }
 
