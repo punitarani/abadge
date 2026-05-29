@@ -5,6 +5,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "esModuleInterop": true,
+    // react-jsx so packages that transitively compile @abadge/auth's source
+    // (which now imports .tsx React Email templates) can parse it. jsx mode only
+    // affects .tsx and is emit-only, so it's inert for non-React packages and
+    // for typecheck-only (tsc --noEmit) runs, including the Next.js web app.
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
