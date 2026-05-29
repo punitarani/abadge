@@ -28,6 +28,12 @@ export const member = pgTable(
   (t) => [
     index("idx_member_organization_id").on(t.organizationId),
     index("idx_member_user_id").on(t.userId),
+    // Looked up on essentially every authenticated request (org-role resolution):
+    // `WHERE organization_id = ? AND user_id = ?`. The composite makes it an exact
+    // probe instead of scan-by-user-then-filter-org. Left non-unique to avoid any
+    // migration risk; the one-membership-per-(org,user) invariant can be enforced
+    // separately after a duplicate check.
+    index("idx_member_org_user").on(t.organizationId, t.userId),
   ],
 );
 
