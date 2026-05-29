@@ -16,5 +16,8 @@ export const agentSessionChallenges = pgTable(
   (table) => [
     uniqueIndex("agent_session_challenges_hash_idx").on(table.challengeHash),
     index("agent_session_challenges_agent_id_idx").on(table.agentId),
+    // The opportunistic GC (createChallenge) runs `DELETE … WHERE expires_at < ?`
+    // on every challenge creation; without this index it seq-scans the table.
+    index("agent_session_challenges_expires_at_idx").on(table.expiresAt),
   ],
 );

@@ -121,6 +121,45 @@ describe("agent lifecycle", () => {
     expect(selfResult.agent.name).toBe("lifecycle-bot");
   });
 
+  test("agent registered with a non-standard alg JWK (Node WebCrypto) still exchanges a session", async () => {
+    // Regression: Node's crypto.subtle.exportKey stamps alg:"Ed25519" on Ed25519
+    // JWKs (the JWA value should be "EdDSA"). Pre-fix the key stored fine at
+    // registration but made the session-exchange importKey() throw → uncaught 500.
+    const owner = await seedUser(auth);
+    const org = await seedOrg(auth, owner.userId);
+    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
+    const publicCaller = createPublicCaller(db, auth);
+
+    const keyPair = await generateEd25519KeyPair();
+    const pub = JSON.parse(keyPair.publicKey) as { x: string };
+    const algPublicKey = JSON.stringify({ ...pub, alg: "Ed25519" });
+
+    const created = await operatorCaller.agents.create({
+      name: "node-keypair-bot",
+      kind: "remote",
+      authMethod: "public_key_session",
+      publicKey: algPublicKey,
+    });
+    const agentId = created.agent.id;
+
+    // Registration canonicalizes: the stored key drops the non-standard alg.
+    const [row] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+    const stored = JSON.parse(row?.publicKey ?? "{}") as Record<string, unknown>;
+    expect(stored.alg).toBeUndefined();
+    expect(stored.x).toBe(pub.x);
+
+    // The full exchange must now SUCCEED instead of 500ing.
+    const challenge = await publicCaller.auth.createChallenge({ agentId });
+    const signature = await signEd25519(keyPair.privateKey, challenge.challenge);
+    const session = await publicCaller.auth.exchangeSession({
+      agentId,
+      challengeId: challenge.challengeId,
+      challenge: challenge.challenge,
+      signature,
+    });
+    expect(session.session.token.startsWith("abs_")).toBe(true);
+  });
+
   test("expired bootstrap token is rejected", async () => {
     // Setup
     const owner = await seedUser(auth);
