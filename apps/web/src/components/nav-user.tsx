@@ -109,12 +109,14 @@ export function NavUser(): React.ReactElement {
               </span>
               <Switch checked={isDark} tabIndex={-1} aria-hidden="true" />
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
             {hasAnyUnlockedProfile && (
-              <DropdownMenuItem onClick={() => lockAll()}>
-                <Lock />
-                Lock all profiles
-              </DropdownMenuItem>
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => lockAll()}>
+                  <Lock />
+                  Lock all profiles
+                </DropdownMenuItem>
+              </>
             )}
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut />
