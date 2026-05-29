@@ -29,7 +29,13 @@ import {
 import { agentProcedure, createTrpcRouter, scopedSessionProcedure } from "../init";
 import { resolveStoredLabel } from "../item-labels";
 import { decodeServerManagedPayload } from "../item-payload";
-import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import {
+  cursorCondition,
+  decodeCursor,
+  epochMicros,
+  nextCursorFrom,
+  resolveLimit,
+} from "../pagination";
 import { type ScopedDb, scopedDb } from "../scoped-db";
 import { serializeItemDetail, serializeItemSummary } from "../serialize";
 import { decryptServerEnvelope, encryptServerEnvelope } from "../server-envelope";
@@ -376,6 +382,7 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
           profileId: scope.tables.items.profileId,
           createdAt: scope.tables.items.createdAt,
           updatedAt: scope.tables.items.updatedAt,
+          createdAtUs: epochMicros(scope.tables.items.createdAt),
         })
         .from(scope.tables.items)
         .where(
@@ -411,6 +418,7 @@ const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>
           profileId: scope.tables.items.profileId,
           createdAt: scope.tables.items.createdAt,
           updatedAt: scope.tables.items.updatedAt,
+          createdAtUs: epochMicros(scope.tables.items.createdAt),
         })
         .from(scope.tables.items)
         .innerJoin(

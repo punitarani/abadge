@@ -13,7 +13,7 @@ import {
   type StorageMode,
   SuccessResultSchema,
 } from "@abadge/core";
-import { and, desc, eq, inArray, or } from "@abadge/db";
+import { and, desc, eq, getTableColumns, inArray, or } from "@abadge/db";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -29,7 +29,13 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
-import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import {
+  cursorCondition,
+  decodeCursor,
+  epochMicros,
+  nextCursorFrom,
+  resolveLimit,
+} from "../pagination";
 import { scopedDb } from "../scoped-db";
 import { serializePermission } from "../serialize";
 
@@ -539,7 +545,10 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
 
     const result = yield* tryAsync(() =>
       scope.executor
-        .select()
+        .select({
+          ...getTableColumns(perms),
+          createdAtUs: epochMicros(perms.createdAt),
+        })
         .from(perms)
         .where(and(...filters))
         .orderBy(desc(perms.createdAt), desc(perms.id))

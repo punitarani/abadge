@@ -15,7 +15,7 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
-import { and, count, desc, eq } from "@abadge/db";
+import { and, count, desc, eq, getTableColumns } from "@abadge/db";
 import { agentEnrollmentTokens } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
@@ -35,7 +35,13 @@ import {
   requireOrgRole,
   scopedSessionProcedure,
 } from "../init";
-import { cursorCondition, decodeCursor, nextCursorFrom, resolveLimit } from "../pagination";
+import {
+  cursorCondition,
+  decodeCursor,
+  epochMicros,
+  nextCursorFrom,
+  resolveLimit,
+} from "../pagination";
 import { scopedDb } from "../scoped-db";
 import { serializeAgent } from "../serialize";
 
@@ -165,11 +171,20 @@ const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
-      scope.findMany("agents", {
-        where: cursorCondition(agentRecords.createdAt, agentRecords.id, cursor),
-        orderBy: [desc(agentRecords.createdAt), desc(agentRecords.id)],
-        limit,
-      }),
+      scope.executor
+        .select({
+          ...getTableColumns(agentRecords),
+          createdAtUs: epochMicros(agentRecords.createdAt),
+        })
+        .from(agentRecords)
+        .where(
+          and(
+            scope.orgScope("agents"),
+            cursorCondition(agentRecords.createdAt, agentRecords.id, cursor),
+          ),
+        )
+        .orderBy(desc(agentRecords.createdAt), desc(agentRecords.id))
+        .limit(limit),
     );
 
     return { agents: result.map(serializeAgent), nextCursor: nextCursorFrom(result, limit) };
