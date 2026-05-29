@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient } from "@/lib/trpc-browser";
@@ -128,10 +129,11 @@ export function OrgSwitcher(): React.ReactElement {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" className="pointer-events-none">
-            <div className="flex aspect-square size-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
-              ...
+            <Skeleton className="size-6 shrink-0 rounded-full" />
+            <div className="grid flex-1 gap-1.5">
+              <Skeleton className="h-3.5 w-24" />
+              <Skeleton className="h-3 w-16" />
             </div>
-            <span className="truncate text-sm text-muted-foreground">Loading...</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
