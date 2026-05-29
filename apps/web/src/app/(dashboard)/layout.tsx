@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useEffect, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { MobileHeader } from "@/components/dashboard/mobile-header";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
@@ -46,7 +47,8 @@ export default function DashboardLayout({
         <SidebarProvider>
           <AppSidebar />
           <SidebarInset>
-            <div className="px-8 py-6">
+            <MobileHeader />
+            <div className="px-4 py-6 sm:px-6 md:px-8">
               <DashboardGate>{children}</DashboardGate>
             </div>
           </SidebarInset>

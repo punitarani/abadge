@@ -1,21 +1,10 @@
 "use client";
 
-import {
-  BookOpen,
-  Bot,
-  Columns3,
-  KeyRound,
-  LayoutDashboard,
-  LifeBuoy,
-  type LucideIcon,
-  ScrollText,
-  Send,
-  Settings,
-  ShieldCheck,
-} from "lucide-react";
+import { BookOpen, LifeBuoy, type LucideIcon, Send } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
+import { navGroups, overviewNavItem, settingsNavItem } from "@/components/dashboard/nav-config";
 import { OrgSwitcher } from "@/components/dashboard/org-switcher";
 import { NavUser } from "@/components/nav-user";
 import {
@@ -30,39 +19,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { type PrefetchableRoute, useRoutePrefetcher } from "@/hooks/use-route-prefetcher";
-
-const navGroups = [
-  {
-    label: "Secrets",
-    items: [
-      { path: "profiles", label: "Profiles", icon: Columns3 },
-      { path: "items", label: "Items", icon: KeyRound },
-    ],
-  },
-  {
-    label: "Access",
-    items: [
-      { path: "agents", label: "Agents", icon: Bot },
-      { path: "permissions", label: "Permissions", icon: ShieldCheck },
-    ],
-  },
-  {
-    label: "Monitor",
-    items: [{ path: "audit", label: "Audit log", icon: ScrollText }],
-  },
-] as const satisfies ReadonlyArray<{
-  label: string;
-  items: ReadonlyArray<{ path: PrefetchableRoute; label: string; icon: LucideIcon }>;
-}>;
 
 const secondaryNavItems = [
   { href: "mailto:support@abadge.io", label: "Support", icon: LifeBuoy },
   { href: "https://abadge.userjot.com/", label: "Feedback", icon: Send },
 ] as const;
-
-const bottomNavItems = [{ path: "settings", label: "Settings", icon: Settings }] as const;
 
 /**
  * "Settle"-style hover/focus debounce: prefetch fires only if the user stays
@@ -111,6 +75,10 @@ function usePrefetchHandlers(prefetch: () => void): PrefetchHandlers {
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.ReactElement {
   const pathname = usePathname();
   const prefetchers = useRoutePrefetcher();
+  // On mobile the sidebar is an off-canvas Sheet; close it after a navigation
+  // so the destination page isn't left hidden behind the open drawer.
+  const { setOpenMobile } = useSidebar();
+  const closeMobile = useCallback(() => setOpenMobile(false), [setOpenMobile]);
 
   const overviewHandlers = usePrefetchHandlers(prefetchers.overview);
   const settingsHandlers = usePrefetchHandlers(prefetchers.settings);
@@ -126,10 +94,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname.startsWith("/overview")}>
-                  <Link href="/overview" {...overviewHandlers}>
-                    <LayoutDashboard />
-                    <span>Overview</span>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.startsWith(`/${overviewNavItem.path}`)}
+                >
+                  <Link
+                    href={`/${overviewNavItem.path}`}
+                    {...overviewHandlers}
+                    onClick={closeMobile}
+                  >
+                    <overviewNavItem.icon />
+                    <span>{overviewNavItem.label}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -151,6 +126,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                     icon={item.icon}
                     pathname={pathname}
                     prefetch={prefetchers[item.path]}
+                    onNavigate={closeMobile}
                   />
                 ))}
               </SidebarMenu>
@@ -186,20 +162,21 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>): React.R
                   </SidebarMenuItem>
                 );
               })}
-              {bottomNavItems.map((item) => {
-                const href = `/${item.path}`;
-                const isActive = pathname.startsWith(href);
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={href} {...settingsHandlers}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.startsWith(`/${settingsNavItem.path}`)}
+                >
+                  <Link
+                    href={`/${settingsNavItem.path}`}
+                    {...settingsHandlers}
+                    onClick={closeMobile}
+                  >
+                    <settingsNavItem.icon />
+                    <span>{settingsNavItem.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -218,12 +195,14 @@ function NavLink({
   icon: Icon,
   pathname,
   prefetch,
+  onNavigate,
 }: {
   path: PrefetchableRoute;
   label: string;
   icon: LucideIcon;
   pathname: string;
   prefetch: () => void;
+  onNavigate?: () => void;
 }): React.ReactElement {
   const href = `/${path}`;
   const isActive = pathname.startsWith(href);
@@ -231,7 +210,7 @@ function NavLink({
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isActive}>
-        <Link href={href} {...handlers}>
+        <Link href={href} {...handlers} onClick={onNavigate}>
           <Icon />
           <span>{label}</span>
         </Link>
