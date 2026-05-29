@@ -12,8 +12,8 @@ value — and every attempt, allowed or denied, is audited.
 | File | What it shows |
 |------|---------------|
 | `04-quickstart.sh` | End-to-end loop: login → org/profile → store a secret (piped from stdin) → register a `local_cli` agent → grant `use` → inject the secret into a child process → mount it as a 0600 file → read the audit trail. |
-| `05-*.sh` | Scripted / non-interactive auth and bulk secret import (`abadge login start` / `login poll`, `abadge import <file.env>`). |
-| `06-*.sh` | MCP agent setup from the CLI (`abadge agent add --kind local_mcp --mcp-config`) for wiring a keypair agent into an MCP client. |
+| `05-ci-cd.sh` + `05-github-actions.yml` | Non-interactive CI/CD: the agent's Ed25519 **private key** is the durable CI secret, and `abadge run --all` mints a fresh `abs_` session each run while bulk-injecting every single-field secret in a profile into a deploy command. Includes a ready GitHub Actions job. |
+| `06-dotenv-migration.sh` | Migrate a team `.env` into a profile with `abadge import`, run a build with every secret injected via `abadge run --all`, then round-trip with `abadge export`. |
 
 Each example reads IDs and config from the CLI's own state
 (`~/.abadge/config.json`) and from environment variables — no real secrets are
@@ -61,14 +61,20 @@ Per-file run notes:
   `laptop-cli` agent (re-running is safe; the profile-add is tolerant of an
   existing profile). Honors `ABADGE_API_URL`, `ITEM_LABEL`, and `AGENT_NAME`.
   No daemon required.
-- **`05-*.sh`** — Designed for CI / headless use: pair `abadge login start
-  --json` with `abadge login poll` (or `--token-stdin` to pass a bearer
-  non-interactively), then `abadge import secrets.env` to bulk-load
-  server_managed items. Never echo the token; pipe it.
-- **`06-*.sh`** — Run once to produce an MCP server config block: `abadge agent
-  add --name claude --kind local_mcp --mcp-config` writes a keypair under
-  `~/.abadge/agents/*.ed25519.jwk` (0600) and prints a ready-to-paste client
-  config. `--mcp-config` cannot be combined with `--json`.
+- **`05-ci-cd.sh`** — Headless CI/CD. `abadge run` acts as an **agent**, so the
+  durable CI secret is the agent's Ed25519 private key (`ABADGE_PRIVATE_KEY` +
+  `ABADGE_AGENT_ID`), not a session token — `run` performs the challenge/exchange
+  itself on every invocation and mints a fresh ~15-min `abs_` session, so there
+  is nothing to rotate. It bulk-injects every single-field secret in
+  `--profile <id>` into `./deploy.sh` via `abadge run --all`. The optional audit
+  summary uses the *management* surface, so it takes a separate `abu_` key
+  (`ABADGE_API_KEY`) via `--token-stdin`. `05-github-actions.yml` shows the same
+  flow as a GitHub Actions job.
+- **`06-dotenv-migration.sh`** — Migrate a team `.env` into the active profile:
+  `abadge import .env --dry-run` previews, `abadge import .env` creates
+  server_managed items, `abadge run --all -- <build>` runs with everything
+  injected, and `abadge export --format env` round-trips. Then delete the
+  on-disk `.env`.
 
 ## How it works / security notes
 

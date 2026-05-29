@@ -1,19 +1,24 @@
 # abadge CLI example 05 — GitHub Actions workflow for non-interactive CI/CD.
-# See ./README.md (written by example 04) for prerequisites, setup, and security notes.
+# See ./README.md for prerequisites, setup, and security notes.
 #
 # This workflow installs the abadge CLI, then runs 05-ci-cd.sh, which bulk-injects
 # every single-field secret in a profile into ./deploy.sh — without a browser and
 # without writing any secret to disk.
 #
 # Store these as GitHub Actions secrets (Settings -> Secrets and variables -> Actions):
-#   ABADGE_SESSION_TOKEN  an `abs_` AGENT session token (Ed25519 keypair agent).
-#                         NOT a personal `abu_` key / Better Auth session — those
-#                         are management-only and cannot read secret values.
-#                         `abs_` sessions are ~15 min; for production, mint one
-#                         fresh at job start (see the TTL note in 05-ci-cd.sh)
-#                         instead of storing a long-lived value.
-#   ABADGE_ORG            org id or slug.
-#   ABADGE_PROFILE        profile name or id.
+#   ABADGE_PRIVATE_KEY  the agent's Ed25519 private key as a JWK string. This is
+#                       the DURABLE credential: `abadge run` uses it to mint a
+#                       fresh ~15-min `abs_` session on every job, so nothing
+#                       expires between runs. Generate it once with
+#                       `abadge agent add --kind local_cli --json` (or the SDK)
+#                       and grant the agent `use` on the items.
+#   ABADGE_AGENT_ID     the agent's id (printed alongside the key).
+#   ABADGE_PROFILE      the profile id holding the secrets to inject.
+#   ABADGE_API_KEY      (optional) an `abu_` personal API key for the audit
+#                       summary step — a management-only credential, distinct
+#                       from the agent key above. Omit to skip the summary.
+# Store the API URL as a non-secret variable (or inline it):
+#   ABADGE_API_URL      e.g. https://api.abadge.dev
 name: deploy
 
 on:
@@ -34,7 +39,9 @@ jobs:
 
       - name: Bulk-inject secrets and deploy
         env:
-          ABADGE_SESSION_TOKEN: ${{ secrets.ABADGE_SESSION_TOKEN }}
-          ABADGE_ORG: ${{ secrets.ABADGE_ORG }}
+          ABADGE_API_URL: ${{ vars.ABADGE_API_URL }}
+          ABADGE_AGENT_ID: ${{ secrets.ABADGE_AGENT_ID }}
+          ABADGE_PRIVATE_KEY: ${{ secrets.ABADGE_PRIVATE_KEY }}
           ABADGE_PROFILE: ${{ secrets.ABADGE_PROFILE }}
+          ABADGE_API_KEY: ${{ secrets.ABADGE_API_KEY }}
         run: ./examples/cli/05-ci-cd.sh

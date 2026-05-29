@@ -28,26 +28,37 @@ pip install -r requirements.txt
 ```
 
 Create the agent and grant it `read` once, using the CLI (or the dashboard /
-management API). `abadge agent add --mcp-config` writes a local Ed25519 JWK to
-`~/.abadge/agents/*.ed25519.jwk` — that file is your `ABADGE_PRIVATE_KEY_PATH`:
+management API). Register it as a `local_cli` agent: that kind generates an
+Ed25519 keypair, uploads the public key (so the agent is enrolled and can sign
+challenges immediately), and writes the **private key** to
+`~/.abadge/agents/<agent-id>.ed25519.jwk` at mode `0600`. The locality is just
+metadata — the keypair works fine for a remote Python HTTP client; the access
+boundary is the permission, not where the agent runs.
 
 ```bash
-# Register an agent and capture its keypair JWK (0600).
-abadge agent add --name "py-reader" --kind remote --mcp-config
+# Register a keypair agent. --json prints the agent id AND the private-key path.
+abadge agent add --name "py-reader" --kind local_cli --json
+# → { "agent": { "id": "<AGENT_ID>", ... }, "privateKeyPath": "/Users/you/.abadge/agents/<AGENT_ID>.ed25519.jwk" }
 
 # Grant it read on the target item.
 abadge permission create --agent-id <AGENT_ID> --item-id <ITEM_ID> --capability read
 ```
 
-Then export the runtime config:
+Then export the runtime config (take `ABADGE_PRIVATE_KEY_PATH` from the
+`privateKeyPath` field above, or from `localAgents.cli.privateKeyPath` in
+`~/.abadge/config.json`):
 
 ```bash
 export ABADGE_API_URL="https://api.abadge.dev"
 export ABADGE_AGENT_ID="<AGENT_ID>"
 export ABADGE_ORG_ID="<ORG_ID>"
 export ABADGE_ITEM_ID="<ITEM_ID>"
-export ABADGE_PRIVATE_KEY_PATH="$HOME/.abadge/agents/py-reader.ed25519.jwk"
+export ABADGE_PRIVATE_KEY_PATH="$HOME/.abadge/agents/<AGENT_ID>.ed25519.jwk"
 ```
+
+(Alternatively, generate the keypair yourself and enroll a `remote` agent with a
+one-time bootstrap token — see [`sdk/03-agent-enroll`](../../sdk/03-agent-enroll) —
+then point `ABADGE_PRIVATE_KEY_PATH` at the JWK you saved.)
 
 The JWK file must contain an Ed25519 key in WebCrypto export form:
 
