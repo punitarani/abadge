@@ -1,15 +1,21 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronsUpDown, Lock, LogOut } from "lucide-react";
+import { ChevronsUpDown, Lock, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -37,6 +43,7 @@ export function NavUser(): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
+  const { theme, setTheme } = useTheme();
 
   const userName = session?.user?.name ?? "User";
   const userEmail = session?.user?.email ?? "";
@@ -91,6 +98,33 @@ export function NavUser(): React.ReactElement {
                 </div>
               </div>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Sun className="hidden size-4 [html:not(.dark)_&]:block" />
+                <Moon className="hidden size-4 [html.dark_&]:block" />
+                Theme
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup
+                  value={theme ?? "dark"}
+                  onValueChange={(value) => setTheme(value)}
+                >
+                  <DropdownMenuRadioItem value="dark">
+                    <Moon className="size-4" />
+                    Dark
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="light">
+                    <Sun className="size-4" />
+                    Light
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system">
+                    <Monitor className="size-4" />
+                    System
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => lockAll()}>
               <Lock />
