@@ -2,7 +2,7 @@
 title: "abadge: a credential control plane for AI agents"
 summary: "Why I built a vault that hands secrets to agents without the value ever entering the model's context — and an honest accounting of what's shipped and what isn't."
 seoDescription: "abadge is a credential control plane for AI agents: store secrets zero-knowledge, grant scoped per-secret access, and deliver them to a command or MCP tool without the value ever entering the model's context. An honest beta launch."
-date: "2026-05-29"
+date: "2026-06-01"
 author: "Punit Arani"
 category: "Launch Announcement"
 published: true
@@ -40,12 +40,15 @@ That's the cleanest answer I know to the obvious objection: *an LLM with your AP
 The same property holds at the CLI:
 
 ```bash
-# store a secret (the --value flag is rejected on a TTY; you'll be prompted
-# for the value, so it never lands in your shell history)
+# store a secret (the --value flag is rejected on a TTY; you'll be
+# prompted for the value, so it never lands in your shell history)
 abadge item add --label STRIPE_KEY
 
 # grant one agent one capability on one item, by id
-abadge permission create --agent-id <agent-id> --item-id <item-id> --capability use
+abadge permission create \
+  --agent-id <agent-id> \
+  --item-id <item-id> \
+  --capability use
 
 # inject it into any subprocess — the command sees it, you don't
 abadge run --item <item-id> -- ./deploy.sh
