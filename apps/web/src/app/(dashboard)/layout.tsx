@@ -11,7 +11,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { VaultProvider } from "@/lib/vault-context";
+import { useVault, VaultProvider } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 import { decideLayoutAction, type OrgSummary } from "./layout-triage";
 
@@ -83,6 +83,7 @@ export default function DashboardLayout({
 function DashboardGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { lockAll } = useVault();
   const { data: session, isPending: sessionPending } = authClient.useSession();
   // Store selectors (not destructuring) so the gate only re-renders when
   // these specific fields change, not on every unrelated store update.
@@ -181,11 +182,13 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
             <Button
               variant="outline"
               onClick={async () => {
-                // Clear persisted org context + query cache before signing out
-                // so the next user on this browser does not inherit a stale
-                // activeOrgId (mirrors nav-user.tsx's handleSignOut). A stale
-                // org header is what drives most "couldn't load organizations"
-                // states, so the recovery path must not leave it behind.
+                // Full parity with nav-user.tsx's handleSignOut so the recovery
+                // path leaves nothing behind for the next user on this browser:
+                // lock in-memory vault secrets, then clear the persisted org
+                // context + query cache before signing out. A stale org header
+                // is what drives most "couldn't load organizations" states, so
+                // it must not survive sign-out either.
+                lockAll();
                 clearActiveOrg();
                 queryClient.clear();
                 await authClient.signOut();
