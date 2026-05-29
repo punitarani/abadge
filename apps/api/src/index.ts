@@ -8,11 +8,20 @@ import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { trimTrailingSlash } from "hono/trailing-slash";
+import {
+  authMdDocument,
+  authorizationServerMetadata,
+  handleAgentClaim,
+  handleAgentClaimComplete,
+  handleAgentRegister,
+  protectedResourceMetadata,
+} from "./auth-md";
 import { getConnectionString, getDb } from "./lib/db";
 import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 import { noStore } from "./middleware/no-store";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { requestId } from "./middleware/request-id";
+import { wwwAuthenticate } from "./middleware/www-authenticate";
 import { getOpenApiDocument } from "./rest/openapi";
 import { handleV1Request } from "./rest/v1";
 import type { Bindings } from "./types";
@@ -44,6 +53,8 @@ app.use(trimTrailingSlash());
 // CORS/auth so every response — including 4xx/5xx — carries the header.
 app.use("*", requestId);
 app.use("*", secureHeaders());
+// Advertise auth.md discovery on any 401 (RFC 9728 bootstrap).
+app.use("*", wwwAuthenticate);
 app.use("*", async (c, next) =>
   cors({
     origin: getTrustedOrigins(c.env),
@@ -59,12 +70,17 @@ app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 // `/v1/*` rate limit matches `/trpc/*` — both surfaces hit the same
 // procedures via the same caller factory.
 app.use("/v1/*", rateLimitMiddleware(100, 60_000));
+// auth.md registration is unauthenticated and creates rows — limit like /api/auth.
+app.use("/agent/auth", rateLimitMiddleware(60, 60_000));
+app.use("/agent/auth/*", rateLimitMiddleware(60, 60_000));
 
 // These prefixes carry plaintext, ciphertext, or session tokens; mark their
 // responses uncacheable so no browser, proxy, or service worker can persist one.
 app.use("/api/auth/*", noStore);
 app.use("/trpc/*", noStore);
 app.use("/v1/*", noStore);
+app.use("/agent/auth", noStore);
+app.use("/agent/auth/*", noStore);
 
 // Wrap bare Better Auth 4xx responses into the canonical {code, message, hint, meta} envelope.
 app.use("/api/auth/*", authEnvelopeMiddleware);
@@ -80,6 +96,18 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
   });
   return auth.handler(c.req.raw);
 });
+
+// auth.md agentic registration (WorkOS protocol). Discovery docs + the
+// unauthenticated registration/claim endpoints. Registered before the
+// catch-alls so they take precedence.
+app.get("/.well-known/oauth-protected-resource", (c) => c.json(protectedResourceMetadata(c.env)));
+app.get("/.well-known/oauth-authorization-server", (c) =>
+  c.json(authorizationServerMetadata(c.env)),
+);
+app.get("/auth.md", (c) => c.text(authMdDocument(c.env), 200, { "Content-Type": "text/markdown" }));
+app.post("/agent/auth", handleAgentRegister);
+app.post("/agent/auth/claim", handleAgentClaim);
+app.post("/agent/auth/claim/complete", handleAgentClaimComplete);
 
 app.all("/trpc/*", (c) => handleTrpcRequest(c.req.raw, c.env));
 

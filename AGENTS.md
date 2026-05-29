@@ -249,6 +249,7 @@ Does not own:
 * `permissions` — explicit capability grants. Fields: agentId, itemId, capability (read\_ciphertext, reveal\_plaintext, mount\_env, mount\_file), expiresAt, grantedBy (nullable; `ON DELETE SET NULL` so a grant outlives its granter, §AB-0043). Composite unique index on (agentId, itemId, capability).
 * `audit_logs` — append-only. Fields: userId (nullable — an orphaned agent's actions log with a null actor-user, §AB-0043), agentId, itemId, eventType, result (allowed/denied/expired/revoked/cascade), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
 * `agentEnrollmentTokens` — one-time bootstrap tokens for public-key agents. Hashed token, expiresAt (10 min), usedAt.
+* `account_claims` — auth.md anonymous-registration claim records. Fields: organizationId + userId (the unclaimed personal account being claimed, both `ON DELETE cascade`), hashed `clm_` claim token (unique), nullable email/otpHash/otpExpiresAt/otpAttempts, status, expiresAt (24 h), usedAt. RLS-exempt like `user_api_keys` (looked up by hashed token pre-org-context). Unclaimed-expired rows are GC'd opportunistically (which drops the placeholder account).
 * `agentSessionChallenges` — short-lived signed challenge material for session exchange. Hashed challenge, expiresAt (60s), usedAt.
 * `agentSessions` — short-lived access tokens (prefix `abs_`). Hashed token, expiresAt (15 min default), revokedAt, lastUsedAt.
 * `member`, `invitation` — org membership (Better Auth).
@@ -299,6 +300,17 @@ Does not own:
 * API verifies signature against stored public key
 * API issues session token (prefix `abs_`, 15-minute TTL)
 * `AbadgeAgentClient` schedules background refresh at T-2 minutes before expiry
+
+### auth.md agentic registration (anonymous → user-claimed)
+
+Implements the WorkOS auth.md `anonymous` flow so an agent can self-register a **personal account** a human later claims. Lives in `packages/trpc/.../routers/agent-registration.ts` (public procedures) and `apps/api/src/auth-md.ts` (discovery docs + REST routes).
+
+* **Discovery**: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (carries the `agent_auth` block: `register_uri`, `claim_uri`, `revocation_uri`, `identity_types_supported: ["anonymous"]`, `credential_types_supported: ["api_key"]`), `/auth.md`; any 401 carries `WWW-Authenticate: Bearer resource_metadata=…`.
+* **Register** (`POST /agent/auth`): one transaction seeds a placeholder **unclaimed** user (non-routable `@unclaimed.abadge.invalid` email, `emailVerified=false`) + a **personal org** (`PERSONAL_ORG_METADATA`) + default `server_managed` profile + an **`abu_` personal API key** bound to that (user, org) + a hashed `clm_` claim record. Returns the `abu_` credential + claim token. The credential is a least-privilege management session — never an agent identity, so it cannot reach `access.*`.
+* **Claim** (`POST /agent/auth/claim`): sets the email, mints a 6-digit OTP (hashed at rest, TTL 10 min, atomically-counted bounded attempts), emails it to the owner.
+* **Claim complete** (`POST /agent/auth/claim/complete`): verifies the OTP, then **binds the real, verified email** to the placeholder user in place (the `abu_` credential is already bound to it — "upgraded in place"). Rejects when the email already maps to a user (`CLAIM_EMAIL_IN_USE`); never silently merges. A "set your password" email points the human at the dashboard.
+* **Managing credentials**: the `abu_` session manages the personal account's vault through the normal `items`/`profiles` surface, including personal-account owner-reveal (§AB owner-reveal). No bespoke agent or item endpoint.
+* **Abuse controls**: `/agent/auth*` rate-limited 60/min/IP; expired **unclaimed** accounts (org + placeholder user) are GC'd opportunistically. Every step is audited (`account.register`, `account.claim`, `account.claim_complete`, including denied claims).
 
 ### Agent item access
 
