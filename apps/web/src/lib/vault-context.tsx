@@ -265,7 +265,15 @@ export function VaultProvider({ children }: { children: React.ReactNode }): Reac
       setProfileKey,
       lockProfile,
     }),
-    [lockAll, requestUnlock, isProfileUnlocked, profileKeys, getProfileKey, setProfileKey, lockProfile],
+    [
+      lockAll,
+      requestUnlock,
+      isProfileUnlocked,
+      profileKeys,
+      getProfileKey,
+      setProfileKey,
+      lockProfile,
+    ],
   );
 
   return (
