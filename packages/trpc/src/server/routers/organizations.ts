@@ -12,15 +12,7 @@ import {
 } from "@abadge/core";
 import { generateOpaqueToken, hashApiKey } from "@abadge/crypto/shared";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "@abadge/db";
-import {
-  auditLogs,
-  invitation,
-  items,
-  member,
-  organization,
-  profiles,
-  user,
-} from "@abadge/db/schema";
+import { invitation, member, organization, user } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { logSessionAudit, logUserAudit } from "../audit";
 import { assertCanAssignRole, assertOwnersRemainAfterChange } from "../auth/owner-guards";
@@ -35,6 +27,14 @@ import {
   UserRequestContextTag,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, sessionProcedure, userProcedure } from "../init";
+import { tenantTables } from "../scoped-db";
+
+// §AB-0010 — tenant tables come through the `scopedDb` choke-point's `tenantTables`
+// escape hatch, never the schema barrel. This router is `userProcedure`/multi-org
+// (the per-org bootstrap probe in `list`, the items guard in `delete`), so it can't
+// bind a single org scope; every tenant query below carries an explicit
+// `organization_id` filter and sets the per-org GUC where it writes.
+const { auditLogs, items, profiles } = tenantTables;
 
 const OrgIdSchema = Schema.Struct({
   orgId: Schema.String.pipe(Schema.minLength(1)),

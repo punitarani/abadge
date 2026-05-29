@@ -55,6 +55,20 @@ psql "$OWNER_DATABASE_URL" -f scripts/least-privilege.sql
    `app_runtime` credentials. Leave the **migration** job pointed at the owner.
 3. Redeploy the worker. The migration pipeline keeps using the owner role.
 
+> [!CAUTION]
+> **Confirm the deploy actually landed before cutting over.** CI runs `db-migrate`
+> **before** `deploy-api`, and both are gated behind a green `main`. If `main` is
+> red (e.g. a failing integration test), neither the migration nor the worker
+> deploy runs, so the DB and the worker silently drift. The GUC-wiring code
+> (`init.ts` request middleware + `seedOrgWithOwnerProfile`) must be **live in the
+> deployed worker** before the connection points at the `NOBYPASSRLS` role —
+> otherwise FORCE-RLS rejects every tenant-table write (`WITH CHECK`) and surfaces
+> as `INTERNAL_SERVER_ERROR` (e.g. `organizations.create` / `createPersonal`),
+> while auth keeps working because Better Auth tables are not under RLS. Order:
+> (1) merge + **verify the deploy completed**, (2) only then cut over. Coverage for
+> the org/profile-creation write path under the restricted role lives in
+> `rls-backstop.test.ts` ("under the restricted role" cases).
+
 ## Verify
 
 ```sql

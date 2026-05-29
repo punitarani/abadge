@@ -10,7 +10,6 @@ import {
   SuccessResultSchema,
 } from "@abadge/core";
 import { and, eq, isNull, sql } from "@abadge/db";
-import { auditLogs, items, permissions as permissionRecords, profiles } from "@abadge/db/schema";
 import { Effect, Schema } from "effect";
 import { auditDeniedSession, logSessionAudit } from "../audit";
 import {
@@ -21,7 +20,16 @@ import {
   tryAsync,
 } from "../effect";
 import { createTrpcRouter, requireOrgRole, scopedSessionProcedure } from "../init";
+import { scopedDb, tenantTables } from "../scoped-db";
 import { serializeProfile } from "../serialize";
+
+// §AB-0010 — tenant tables are reached through the `scopedDb` choke-point, never
+// imported from the schema barrel directly (enforced by scoped-db-import-ban.test).
+// `loadProfile`/`loadProfileForWrite` look the profile up with `scopedDb.findFirst`,
+// which ANDs in the org filter, so a cross-org `profileId` is indistinguishable from
+// a missing one (no existence oracle). The remaining queries key off a `profileId`
+// that has already been org-validated by those loaders.
+const { profiles, items, permissions: permissionRecords, auditLogs } = tenantTables;
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
 const BoundedNameString = Schema.String.pipe(Schema.minLength(1), Schema.maxLength(255));
@@ -98,8 +106,10 @@ const loadProfile = (
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    const [profile] = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1),
+    const profile = yield* tryAsync(() =>
+      scopedDb(ctx.db, ctx.identity.organizationId).findFirst("profiles", {
+        where: eq(profiles.id, profileId),
+      }),
     );
 
     if (!profile) {
@@ -153,8 +163,10 @@ const loadProfileForWrite = (
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
 
-    const [profile] = yield* tryAsync(() =>
-      ctx.db.select().from(profiles).where(eq(profiles.id, profileId)).limit(1),
+    const profile = yield* tryAsync(() =>
+      scopedDb(ctx.db, ctx.identity.organizationId).findFirst("profiles", {
+        where: eq(profiles.id, profileId),
+      }),
     );
 
     if (!profile) {
