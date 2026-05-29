@@ -197,6 +197,13 @@
       "when": 1780028015696,
       "tag": "0027_clammy_may_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1780080751155,
+      "tag": "0028_vengeful_franklin_richards",
+      "breakpoints": true
     }
   ]
 }
