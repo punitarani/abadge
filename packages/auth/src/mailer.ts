@@ -20,9 +20,18 @@ export interface CloudflareEmailBinding {
 
 export interface MailerEnv {
   SEND_EMAIL: CloudflareEmailBinding;
+  /**
+   * Optional sender overrides. Default `no-reply@notifications.abadge.io` — a
+   * dedicated transactional address on the SPF/DKIM/DMARC-verified
+   * `notifications.abadge.io` sending domain. Override only with an address on a
+   * domain Cloudflare Email Routing is verified to send from.
+   */
+  ABADGE_EMAIL_FROM?: string;
+  ABADGE_EMAIL_FROM_NAME?: string;
 }
 
-const DEFAULT_FROM = { name: "abadge", email: "notifications@notifications.abadge.io" };
+const DEFAULT_FROM_EMAIL = "no-reply@notifications.abadge.io";
+const DEFAULT_FROM_NAME = "abadge";
 
 export interface MailerEmail {
   to: string;
@@ -34,10 +43,11 @@ export interface MailerEmail {
 }
 
 export async function sendEmail(env: MailerEnv, email: MailerEmail): Promise<void> {
-  const from =
-    email.from !== undefined
-      ? { name: email.fromName ?? DEFAULT_FROM.name, email: email.from }
-      : DEFAULT_FROM;
+  // Precedence per field: per-message override → env override → default.
+  const from = {
+    name: email.fromName ?? env.ABADGE_EMAIL_FROM_NAME ?? DEFAULT_FROM_NAME,
+    email: email.from ?? env.ABADGE_EMAIL_FROM ?? DEFAULT_FROM_EMAIL,
+  };
 
   try {
     await env.SEND_EMAIL.send({

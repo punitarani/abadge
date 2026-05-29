@@ -46,7 +46,9 @@
     "@better-auth/core": "1.5.6",
     "kysely": "^0.28.17",
     "fast-uri": "^3.1.2",
-    "fast-xml-builder": "^1.1.7"
+    "fast-xml-builder": "^1.1.7",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
