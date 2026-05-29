@@ -74,17 +74,25 @@ const createUserApiKey = (input: CreateUserApiKeyInput) =>
       );
     }
 
-    yield* tryAsync(() =>
-      ctx.db.insert(userApiKeys).values({
-        id,
-        userId: ctx.identity.userId,
-        organizationId: ctx.identity.organizationId,
-        name: input.name,
-        secretHash: hash,
-        secretPrefix: prefix,
-        expiresAt,
-      }),
+    // RETURNING so the response carries the DB's createdAt (NOW()), matching
+    // what a later list() returns — not an in-memory new Date() at return time.
+    const [inserted] = yield* tryAsync(() =>
+      ctx.db
+        .insert(userApiKeys)
+        .values({
+          id,
+          userId: ctx.identity.userId,
+          organizationId: ctx.identity.organizationId,
+          name: input.name,
+          secretHash: hash,
+          secretPrefix: prefix,
+          expiresAt,
+        })
+        .returning(),
     );
+    if (!inserted) {
+      return yield* Effect.fail(new Error("user_api_keys insert returned no rows"));
+    }
 
     yield* logSessionAudit({
       organizationId: ctx.identity.organizationId,
@@ -96,23 +104,7 @@ const createUserApiKey = (input: CreateUserApiKeyInput) =>
       meta: { keyId: id, keyPrefix: prefix },
     });
 
-    return {
-      apiKey: serializeUserApiKey({
-        id,
-        userId: ctx.identity.userId,
-        organizationId: ctx.identity.organizationId,
-        name: input.name,
-        secretHash: hash,
-        secretPrefix: prefix,
-        enabled: true,
-        revokedAt: null,
-        expiresAt,
-        lastUsedAt: null,
-        metadata: {},
-        createdAt: new Date(),
-      }),
-      key,
-    };
+    return { apiKey: serializeUserApiKey(inserted), key };
   });
 
 const listUserApiKeys = Effect.gen(function* () {

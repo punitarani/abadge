@@ -501,6 +501,10 @@ const resolveUserApiKeyIdentity = (
       };
     }
 
+    // No stored key matched this abu_ token (wrong secret or guessed prefix).
+    // Audit the unrecognized-bearer probe — same signal and rate-limiting as the
+    // agent path — then fall through to the generic unauthorized rejection.
+    yield* auditUnrecognizedBearer(ctx, token);
     return null;
   });
 
