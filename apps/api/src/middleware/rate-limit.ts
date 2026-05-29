@@ -1,3 +1,4 @@
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { RateLimitCheckResult } from "../durable-objects/rate-limit-counter";
 
@@ -5,6 +6,16 @@ type RateLimitBindings = {
   RATE_LIMIT: DurableObjectNamespace;
   NODE_ENV?: string;
 };
+
+/**
+ * Optional bucket-key strategy. Returning `null` skips the throttle for this
+ * request (fail-open) — e.g. the per-account key fn returns `null` when the
+ * body carries no email. When omitted, the key is the default `path:ip`
+ * (§RL5) and behavior is identical to the IP-only limiter.
+ */
+export type RateLimitKeyFn = (
+  c: Context<{ Bindings: RateLimitBindings }>,
+) => Promise<string | null> | string | null;
 
 /**
  * Hono middleware backed by the `RateLimitCounter` Durable Object.
@@ -27,11 +38,18 @@ type RateLimitBindings = {
  *           (e.g. /trpc/items.list and /trpc/items.create) sharing one
  *           bucket.
  */
-export function rateLimitMiddleware(limit: number, windowMs: number) {
+export function rateLimitMiddleware(limit: number, windowMs: number, keyFn?: RateLimitKeyFn) {
   return createMiddleware<{ Bindings: RateLimitBindings }>(async (c, next) => {
-    const clientIp = resolveClientIp(c.req.raw, c.env);
-    const pathPrefix = normalizePath(c.req.path);
-    const key = `${pathPrefix}:${clientIp}`;
+    const key = keyFn
+      ? await keyFn(c)
+      : `${normalizePath(c.req.path)}:${resolveClientIp(c.req.raw, c.env)}`;
+    // Fail-open: a `null` key means this throttle does not apply to this
+    // request (e.g. the per-account key fn found no email in the body) — fall
+    // through so other middleware (the per-IP limiter) still runs.
+    if (key === null) {
+      await next();
+      return;
+    }
 
     const id = c.env.RATE_LIMIT.idFromName(key);
     const stub = c.env.RATE_LIMIT.get(id);

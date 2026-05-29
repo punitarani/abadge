@@ -17,6 +17,7 @@ import {
   protectedResourceMetadata,
 } from "./auth-md";
 import { getConnectionString, getDb } from "./lib/db";
+import { accountEmailKey } from "./middleware/account-key";
 import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 import { noStore } from "./middleware/no-store";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
@@ -64,8 +65,38 @@ app.use("*", async (c, next) =>
   })(c, next),
 );
 
-// Rate limiting
+// Rate limiting (per-IP, per surface).
 app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
+// Per-ACCOUNT throttle layered on top: keyed by the email in the body, these
+// catch distributed credential-stuffing (rotating IPs against one account)
+// that slips under the per-IP cap above. Narrow per-endpoint; fail-open when
+// no email is present. Counts all attempts (see accountEmailKey); an attacker
+// filling a victim's bucket causes at most a transient, self-clearing block on
+// that victim's email/password sign-in — never a lockout, and OAuth sign-in is
+// unaffected.
+//
+// Each path MUST be a live Better Auth route (a wrong path silently never
+// throttles). Verified against better-auth@1.5.6's email/password route table:
+//   /sign-in/email · /sign-up/email · /request-password-reset · /send-verification-email
+// (NB: the reset route is `/request-password-reset`, NOT `/forget-password` —
+// the latter only exists in the unused emailOTP plugin.) Re-verify on a
+// Better Auth upgrade; the e2e auth suite is the regression backstop.
+app.use(
+  "/api/auth/sign-in/email",
+  rateLimitMiddleware(10, 15 * 60_000, accountEmailKey("signin-email")),
+);
+app.use(
+  "/api/auth/request-password-reset",
+  rateLimitMiddleware(5, 15 * 60_000, accountEmailKey("forgot-pw")),
+);
+app.use(
+  "/api/auth/send-verification-email",
+  rateLimitMiddleware(5, 15 * 60_000, accountEmailKey("send-verify")),
+);
+app.use(
+  "/api/auth/sign-up/email",
+  rateLimitMiddleware(5, 60 * 60_000, accountEmailKey("signup-email")),
+);
 app.use("/trpc/*", rateLimitMiddleware(100, 60_000));
 // `/v1/*` rate limit matches `/trpc/*` — both surfaces hit the same
 // procedures via the same caller factory.
