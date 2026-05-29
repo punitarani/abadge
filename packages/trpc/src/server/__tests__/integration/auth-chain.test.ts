@@ -98,7 +98,7 @@ describe("auth chain integration", () => {
     await callerOrg1.agents.create({
       name: "org1-agent",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
 
     // List agents scoped to org2 — should be empty

@@ -1,6 +1,7 @@
 import { createTrpcRouter } from "./init";
 import { accessRouter } from "./routers/access";
 import { agentsRouter } from "./routers/agents";
+import { apiKeysRouter } from "./routers/api-keys";
 import { auditRouter } from "./routers/audit";
 import { authRouter } from "./routers/auth";
 import { itemsRouter } from "./routers/items";
@@ -16,6 +17,7 @@ export const appRouter = createTrpcRouter({
   onboarding: onboardingRouter,
   items: itemsRouter,
   agents: agentsRouter,
+  apiKeys: apiKeysRouter,
   permissions: permissionsRouter,
   access: accessRouter,
   audit: auditRouter,

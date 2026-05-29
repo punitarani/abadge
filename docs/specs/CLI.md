@@ -179,13 +179,11 @@ Registers an agent.
 
 Defaults:
 
-* `authMethod` defaults to `public_key_session`
+* `authMethod` is always `public_key_session`
 * remote agents receive a one-time `abe_...` bootstrap token unless disabled
-* legacy API keys are opt-in only
 
 ```bash
 abadge agent register --name "ci bot" --kind remote
-abadge agent register --name "legacy bot" --kind remote --legacy-api-key
 abadge agent register --name "dev laptop" --kind local_cli --json
 ```
 
@@ -196,7 +194,6 @@ Flags:
 | `--name, -n` | Agent display name |
 | `--kind, -k` | Agent kind |
 | `--description, -d` | Optional metadata description |
-| `--legacy-api-key` | Create a deprecated `abl_...` or `abg_...` agent |
 | `--no-bootstrap-token` | Skip one-time bootstrap token issuance |
 | `--json` | Print raw JSON |
 
@@ -217,14 +214,6 @@ Lists agents, including auth method.
 ```bash
 abadge agent list
 abadge agent list --json
-```
-
-### `abadge agent rotate <agent-id>`
-
-Rotates a legacy API key only.
-
-```bash
-abadge agent rotate <agent-id>
 ```
 
 ### `abadge agent revoke <agent-id>`

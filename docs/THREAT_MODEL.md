@@ -19,7 +19,7 @@ flowchart TB
   end
 
   subgraph T4["Tier 4: Remote Agents"]
-    Agent["Remote Agent<br/>API key auth<br/>server_managed only"]
+    Agent["Remote Agent<br/>keypair session auth<br/>server_managed only"]
   end
 
   Daemon -->|IPC: decrypt requests| T3
@@ -89,7 +89,7 @@ The server stores only ciphertext, wrapped keys, salts, and KDF parameters for Z
 
 ### Tier 4: Remote Agents
 
-Remote agents (hosted agents, cloud workers) authenticate with API keys and can only access `server_managed` items with `reveal_plaintext` permissions.
+Remote agents (hosted agents, cloud workers) authenticate with short-lived Ed25519 keypair sessions (`abs_`) and can only access `server_managed` items with `reveal_plaintext` permissions.
 
 **What a compromised remote agent exposes:**
 - Only the `server_managed` items it has permissions for

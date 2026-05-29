@@ -74,7 +74,13 @@ function makeAgentClient(returns: unknown): {
   calls: RecordedCall[];
 } {
   const { client, calls } = makeRecorder(returns);
-  const agent = new AbadgeAgentClient({ apiUrl: "http://x", apiKey: "abl_test_key" });
+  // Keypair config; the recorder client below replaces the internal tRPC proxy,
+  // so connect() is never needed and no real session exchange happens.
+  const agent = new AbadgeAgentClient({
+    apiUrl: "http://x",
+    agentId: "agent_x",
+    privateKey: '{"kty":"OKP"}',
+  });
   (agent as unknown as { client: unknown }).client = client;
   return { agent, calls };
 }
@@ -370,11 +376,6 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
     await user.agents.list();
     expect(calls[0]?.path).toBe("agents.list");
   });
-  test("agents.update -> agents.rotate", async () => {
-    const { user, calls } = makeUserClient({ apiKey: "abl_xxx" });
-    await user.agents.update("a_x");
-    expect(calls[0]?.path).toBe("agents.rotate");
-  });
   test("agents.delete -> agents.revoke", async () => {
     const { user, calls } = makeUserClient({ ok: true });
     await user.agents.delete("a_x");
@@ -484,7 +485,11 @@ describe("AbadgeAgentClient.listItems drains the paginated agent item view", () 
         });
       },
     };
-    const agent = new AbadgeAgentClient({ apiUrl: "http://x", apiKey: "abl_test_key" });
+    const agent = new AbadgeAgentClient({
+      apiUrl: "http://x",
+      agentId: "agent_x",
+      privateKey: '{"kty":"OKP"}',
+    });
     (agent as unknown as { client: unknown }).client = { items: { listForAgent } };
 
     const { items, nextCursor } = await agent.listItems();
@@ -533,7 +538,8 @@ describe("AbadgeUserClient error paths", () => {
 });
 
 // -----------------------------------------------------------------------------
-// AbadgeAgentClient — happy paths (apiKey constructor — no connect needed)
+// AbadgeAgentClient — happy paths (recorder client replaces the proxy; no
+// connect() / real session exchange needed)
 // -----------------------------------------------------------------------------
 
 describe("AbadgeAgentClient happy paths", () => {
@@ -614,28 +620,13 @@ describe("AbadgeAgentClient happy paths", () => {
 
 describe("AbadgeAgentClient sessionExpired short-circuit", () => {
   test("after session is flipped expired, methods reject with SESSION_REFRESH_FAILED before hitting the wire", async () => {
-    // Construct with apiKey to avoid the connect() path; toggle the internal
-    // sessionExpired flag to verify the short-circuit guard.
+    // makeAgentClient builds a keypair-config client with a recorder proxy and
+    // never connects. Toggle the internal sessionExpired flag to verify the
+    // short-circuit guard rejects before any wire call.
     const { agent, calls } = makeAgentClient({ ok: true });
+    (agent as unknown as { sessionExpired: boolean }).sessionExpired = true;
 
-    // The flag is referenced by `authedCall` only when constructed with an
-    // `agentId` (keypair config). Build a keypair-config client and short
-    // circuit it without connecting.
-    const keypairAgent = new AbadgeAgentClient({
-      apiUrl: "http://x",
-      agentId: "agent_x",
-      privateKey: '{"kty":"OKP"}',
-      schedulerFn: ((cb: () => void) => {
-        // never schedules; ignore
-        return setTimeout(cb, 1_000_000);
-      }) as never,
-    });
-    (keypairAgent as unknown as { client: unknown }).client = (
-      agent as unknown as { client: unknown }
-    ).client;
-    (keypairAgent as unknown as { sessionExpired: boolean }).sessionExpired = true;
-
-    await expect(keypairAgent.listItems()).rejects.toMatchObject({
+    await expect(agent.listItems()).rejects.toMatchObject({
       code: "SESSION_REFRESH_FAILED",
     });
     expect(calls).toHaveLength(0);
@@ -647,7 +638,7 @@ describe("AbadgeAgentClient sessionExpired short-circuit", () => {
 // -----------------------------------------------------------------------------
 
 describe("AbadgeAgentClient.disconnect", () => {
-  test("disconnect on api-key client is a no-op", () => {
+  test("disconnect without connect is a safe no-op", () => {
     const { agent } = makeAgentClient({ ok: true });
     agent.disconnect();
     agent.disconnect();

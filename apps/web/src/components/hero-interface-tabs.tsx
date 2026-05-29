@@ -406,7 +406,7 @@ const views: SurfaceView[] = [
           <>
             <CopyCommandLine
               command={`curl -sS https://api.abadge.io/v1/access/mount \\
-  -H "Authorization: Bearer abl_*******" \\
+  -H "Authorization: Bearer abs_*******" \\
   -H "Content-Type: application/json" \\
   -d '{"itemId":"3f02c7c4-...","mountType":"env"}'`}
             >
@@ -415,7 +415,7 @@ const views: SurfaceView[] = [
             </CopyCommandLine>
             <ShellLine indent={1}>
               <span>-H "Authorization: </span>
-              <span className="text-[#4f7df7]">Bearer abl_*******</span>
+              <span className="text-[#4f7df7]">Bearer abs_*******</span>
               <span>" \</span>
             </ShellLine>
             <ShellLine indent={1}>{`-H "Content-Type: application/json" \\`}</ShellLine>

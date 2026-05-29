@@ -14,19 +14,13 @@ Its default security model is unchanged: the model should not receive raw secret
 
 ## Authentication model
 
-Preferred runtime auth is keypair-backed:
+Runtime auth is keypair-backed and is the only method:
 
 1. load `agentId` and `privateKeyPath`
 2. call `auth.createChallenge`
 3. sign the challenge locally with the Ed25519 private key
 4. call `auth.exchangeSession`
 5. reuse the returned `abs_...` token until it is near expiry
-
-Legacy fallback remains available during migration:
-
-* `ABADGE_AUTH_TOKEN=abl_...`
-
-The server prints a deprecation warning when the legacy token path is used.
 
 ## Configuration
 

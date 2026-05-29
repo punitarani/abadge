@@ -56,10 +56,16 @@ describe("cli item + agent + permission flow", () => {
         fields: { value: "sk-cli-test" },
       },
     });
+    const keypair = (await crypto.subtle.generateKey("Ed25519", true, [
+      "sign",
+      "verify",
+    ])) as CryptoKeyPair;
+    const publicJwk = await crypto.subtle.exportKey("jwk", keypair.publicKey);
     const agent = await scoped.agents.create({
       name: "cli-perm-agent",
       kind: "local_cli",
-      authMethod: "legacy_api_key",
+      authMethod: "public_key_session",
+      publicKey: JSON.stringify(publicJwk),
     });
 
     const homeWithOrg = freshHome();

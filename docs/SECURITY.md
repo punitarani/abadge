@@ -87,11 +87,11 @@ abadge keeps each key well inside that bound by two mechanisms:
 
 ### Agent Authentication
 
-Agents authenticate using one of two methods.
+Agents authenticate with Ed25519 public-key sessions.
 
-#### Public Key Sessions (Preferred)
+#### Public Key Sessions
 
-The default for all new agents.
+The only agent auth method.
 
 ```
 1. User registers agent with issueBootstrapToken: true (or provides publicKey directly)
@@ -107,24 +107,38 @@ The default for all new agents.
 
 **Storage**: Private key stored locally with `0600` permissions. Public key stored on server. Session tokens stored as SHA-256 hashes. No long-lived secrets are stored on disk for keypair agents.
 
-#### Legacy API Keys (Migration Only)
+### Personal API Keys (Management Surface)
 
-For backward compatibility with existing integrations.
+Personal API keys (prefix `abu_`) let a user script the management surface
+without a browser. Each key is bound to a `(user, org)` pair and is created,
+listed, and revoked from the dashboard org Settings page.
 
-- Prefixes: `abl_` (local), `abg_` (remote)
 - Full key shown once at creation, never retrievable
-- Server stores SHA-256 hash + prefix (first 4-8 chars) for fast lookup
-- Authentication: prefix-based DB lookup, then constant-time hash comparison
+- Server stores SHA-256 hash + prefix (first 8 chars) for fast lookup
+- Optional `expiresAt`; can be revoked
+- **Resolves to a session identity (`kind: "session"`), not an agent.** It
+  reaches only the `sessionProcedure` management surface (organizations,
+  profiles, items metadata, agents, permissions, audit, settings). It is
+  **structurally barred from the agent-gated `access.*` surface** and can
+  never reveal or mount secret values — reading secrets still requires a
+  keypair agent plus an explicit permission.
+- A personal API key cannot create or revoke other API keys (that requires a
+  real browser session).
 
-### Auth Resolution Order
+### Bearer Resolution Order
 
-Agent procedures try these methods in order:
+Procedures resolve `Authorization: Bearer <token>` by prefix:
 
-1. `abs_` prefix → session token (hash lookup, TTL check)
-2. `abl_`/`abg_` prefix → API key (prefix lookup, hash match)
-3. Fallback → legacy Better Auth API key verification
+1. Better Auth session cookie / bearer token → operator session
+   (management surface)
+2. `abu_` prefix → personal API key (prefix lookup, hash match) → **session
+   identity** scoped to the key's org; management surface only, never
+   `access.*`
+3. `abs_` prefix → agent session token (hash lookup, TTL check) → agent
+   identity (the only credential that reaches `access.*`)
 
-Successful authentication updates `lastUsedAt` on the agent record.
+Successful agent authentication updates `lastUsedAt` on the agent record;
+successful personal-API-key authentication updates `lastUsedAt` on the key.
 
 ---
 
@@ -258,8 +272,9 @@ The MCP server adds additional protections for AI model contexts:
 | Profile | Create, rotate, delete, delete cascade |
 | Items | Create, export, update, delete, delete cascade |
 | Auth | Login, logout, token issue, token revoke |
-| Agents | Create, bootstrap issue, enroll, rotate, revoke, revoke cascade, session issue/reject/revoke |
+| Agents | Create, bootstrap issue, enroll, revoke, revoke cascade, session issue/reject/revoke |
 | Permissions | Create, revoke, revoke cascade |
+| API keys | Create, revoke (`user_api_key.create`, `user_api_key.revoke`) |
 | Access | Ciphertext read, reveal, env mount, file mount |
 
 ### Audit Entry Fields
@@ -365,7 +380,7 @@ block-beta
 | Recovery key | Shown once, wraps root key | Never stored in plaintext |
 | ZK item value | XChaCha20-Poly1305 ciphertext | Only by profile owner |
 | Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
-| Agent API key | SHA-256 hash + prefix | Shown once at creation |
+| Personal API key (`abu_`) | SHA-256 hash + prefix | Shown once at creation |
 | Agent session token | SHA-256 hash | Shown once at exchange |
 | Bootstrap token | SHA-256 hash | Shown once at issuance |
 | Challenge token | SHA-256 hash | Used once, 60-second TTL |

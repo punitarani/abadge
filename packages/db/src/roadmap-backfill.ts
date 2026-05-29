@@ -37,9 +37,7 @@ export interface LegacyPrincipalSeed {
   kind: "device" | "local_cli" | "local_mcp" | "remote" | "remote_agent";
   name: string;
   description?: string | null;
-  authMethod: "legacy_api_key" | "public_key_session";
-  secretHash?: string | null;
-  secretPrefix?: string | null;
+  authMethod: "public_key_session";
   publicKey?: string | null;
   enabled: boolean;
   revokedAt?: Date | null;
@@ -238,9 +236,7 @@ export function buildRoadmapAgent(principal: LegacyPrincipalSeed): {
   description: string | null;
   kind: "local_cli" | "local_mcp" | "remote";
   locality: "local" | "remote";
-  authMethod: "legacy_api_key" | "public_key_session";
-  secretHash: string | null;
-  secretPrefix: string | null;
+  authMethod: "public_key_session";
   publicKey: string | null;
   enabled: boolean;
   revokedAt: Date | null;
@@ -257,8 +253,6 @@ export function buildRoadmapAgent(principal: LegacyPrincipalSeed): {
     kind: roadmapAgentKind(principal.kind),
     locality: roadmapAgentLocality(principal.kind),
     authMethod: principal.authMethod,
-    secretHash: principal.secretHash ?? null,
-    secretPrefix: principal.secretPrefix ?? null,
     publicKey: principal.publicKey ?? null,
     enabled: principal.enabled,
     revokedAt: principal.revokedAt ?? null,

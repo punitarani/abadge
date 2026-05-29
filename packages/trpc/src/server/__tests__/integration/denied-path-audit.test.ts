@@ -7,10 +7,8 @@
  *
  * Scenarios:
  *   1. Member creates permission (insufficient_role) → permission.create denied
- *   2. Member rotates another member's agent (agent_not_owned) → agent.rotate denied
- *   3. Agent.rotate on non-existent agent → agent.rotate denied, reason: not_found
- *   4. Non-owner tries to change a member's role → org.member_role_change denied
- *   5. Item not found in org (cross-org probe) → item.update denied, reason: not_found
+ *   2. Non-owner tries to change a member's role → org.member_role_change denied
+ *   3. Item not found in org (cross-org probe) → item.update denied, reason: not_found
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { and, desc, eq } from "@abadge/db";
@@ -83,67 +81,7 @@ describe("denied-path audit (W2T12-003)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Scenario 2: Member tries to rotate another member's agent
-  // ---------------------------------------------------------------------------
-  test("member cannot rotate another member's agent → denied audit row: agent.rotate", async () => {
-    const owner = await seedUser(auth);
-    const bob = await seedUser(auth);
-    const { orgId } = await seedOrg(auth, owner.userId);
-    await seedMember(auth, orgId, bob.userId, "member");
-
-    // Agent created by owner with legacy_api_key so rotation is possible in principle
-    const { agentId } = await seedAgent(db, {
-      userId: owner.userId,
-      orgId,
-      authMethod: "legacy_api_key",
-    });
-
-    const bobCaller = createOperatorCaller(db, auth, bob.headers, orgId);
-
-    await expect(bobCaller.agents.rotate({ agentId })).rejects.toThrow();
-
-    const [audit] = await db
-      .select()
-      .from(auditLogs)
-      .where(and(eq(auditLogs.eventType, "agent.rotate"), eq(auditLogs.result, "denied")))
-      .orderBy(desc(auditLogs.occurredAt))
-      .limit(1);
-
-    expect(audit).toBeDefined();
-    expect(audit?.userId).toBe(bob.userId);
-    expect(audit?.organizationId).toBe(orgId);
-    const meta = audit?.meta as Record<string, unknown> | null;
-    expect(meta?.reason).toBe("agent_not_owned");
-  });
-
-  // ---------------------------------------------------------------------------
-  // Scenario 3: Rotate on a non-existent agent (cross-org probe or stale ID)
-  // ---------------------------------------------------------------------------
-  test("rotate on non-existent agent → denied audit row: agent.rotate, reason: not_found", async () => {
-    const owner = await seedUser(auth);
-    const { orgId } = await seedOrg(auth, owner.userId);
-
-    const ownerCaller = createOperatorCaller(db, auth, owner.headers, orgId);
-    const fakeAgentId = crypto.randomUUID();
-
-    await expect(ownerCaller.agents.rotate({ agentId: fakeAgentId })).rejects.toThrow();
-
-    const [audit] = await db
-      .select()
-      .from(auditLogs)
-      .where(and(eq(auditLogs.eventType, "agent.rotate"), eq(auditLogs.result, "denied")))
-      .orderBy(desc(auditLogs.occurredAt))
-      .limit(1);
-
-    expect(audit).toBeDefined();
-    expect(audit?.userId).toBe(owner.userId);
-    expect(audit?.organizationId).toBe(orgId);
-    const meta = audit?.meta as Record<string, unknown> | null;
-    expect(meta?.reason).toBe("not_found");
-  });
-
-  // ---------------------------------------------------------------------------
-  // Scenario 4: Non-owner tries to change a member's role
+  // Scenario 2: Non-owner tries to change a member's role
   // ---------------------------------------------------------------------------
   test("admin cannot update member role → denied audit row: org.member_role_change", async () => {
     const owner = await seedUser(auth);
@@ -188,7 +126,7 @@ describe("denied-path audit (W2T12-003)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Scenario 5: Item update on a non-existent item (cross-org probe)
+  // Scenario 3: Item update on a non-existent item (cross-org probe)
   // ---------------------------------------------------------------------------
   test("update on non-existent item → denied audit row: item.update, reason: not_found", async () => {
     const owner = await seedUser(auth);

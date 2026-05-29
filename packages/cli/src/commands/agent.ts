@@ -379,30 +379,6 @@ export function createAgentCommand(): Command {
     });
 
   cmd
-    .command("rotate")
-    .description("Rotate an agent API key")
-    .argument("<id>", "Agent ID")
-    .option("--json", "Output as JSON")
-    .action(async (id: string, opts: { json?: boolean }) => {
-      try {
-        const client = await createUserApiClient();
-        const result = await client.agents.update(id);
-
-        if (opts.json) {
-          json({ apiKey: result.apiKey, keyPrefix: result.keyPrefix });
-        } else {
-          success(`Agent ${id} key rotated.`);
-          console.log("");
-          warn("Save this API key — it will NOT be shown again:");
-          console.log(`  ${result.apiKey}`);
-        }
-      } catch (err) {
-        error(errorMessage(err, "Failed to rotate agent key."));
-        process.exit(1);
-      }
-    });
-
-  cmd
     .command("rm")
     .description("Revoke an agent")
     .argument("<id>", "Agent ID")

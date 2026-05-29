@@ -6,7 +6,6 @@ import type {
   AgentListResultSchema,
   AgentRegistrationResultSchema,
   AgentResultSchema,
-  AgentRotateResultSchema,
   AgentSchema,
   AgentSessionResultSchema,
   AgentSessionSchema,
@@ -26,6 +25,7 @@ import type {
   CreateAgentSchema,
   CreateItemSchema,
   CreatePermissionSchema,
+  CreateUserApiKeySchema,
   DaemonOperatorSessionSchema,
   EnrollAgentSchema,
   ExchangeAgentSessionSchema,
@@ -60,6 +60,9 @@ import type {
   UpdateItemSchema,
   UseAccessResponseSchema,
   UseAccessSchema,
+  UserApiKeyListResultSchema,
+  UserApiKeySchema,
+  UserApiKeyWithSecretSchema,
   VaultBootstrapSchema,
 } from "./schemas";
 
@@ -84,7 +87,6 @@ export type CreateAgentInput = TypeOf<typeof CreateAgentSchema>;
 export type Agent = TypeOf<typeof AgentSchema>;
 export type AgentWithKey = TypeOf<typeof AgentWithKeySchema>;
 export type AgentRegistrationResult = TypeOf<typeof AgentRegistrationResultSchema>;
-export type AgentRotateResult = TypeOf<typeof AgentRotateResultSchema>;
 export type IssueAgentBootstrapTokenInput = TypeOf<typeof IssueAgentBootstrapTokenSchema>;
 export type AgentBootstrapTokenResult = TypeOf<typeof AgentBootstrapTokenResultSchema>;
 export type EnrollAgentInput = TypeOf<typeof EnrollAgentSchema>;
@@ -98,6 +100,11 @@ export type RevokeAgentSessionInput = TypeOf<typeof RevokeAgentSessionSchema>;
 export type CliLocalAgentReference = TypeOf<typeof CliLocalAgentReferenceSchema>;
 export type CliProfileConfig = TypeOf<typeof CliProfileConfigSchema>;
 export type DaemonOperatorSession = TypeOf<typeof DaemonOperatorSessionSchema>;
+
+export type CreateUserApiKeyInput = TypeOf<typeof CreateUserApiKeySchema>;
+export type UserApiKey = TypeOf<typeof UserApiKeySchema>;
+export type UserApiKeyWithSecret = TypeOf<typeof UserApiKeyWithSecretSchema>;
+export type UserApiKeyListResult = TypeOf<typeof UserApiKeyListResultSchema>;
 
 export type CreatePermissionInput = TypeOf<typeof CreatePermissionSchema>;
 export type Permission = TypeOf<typeof PermissionSchema>;

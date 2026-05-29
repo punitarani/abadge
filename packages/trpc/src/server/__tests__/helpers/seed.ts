@@ -1,8 +1,7 @@
-import type { AgentAuthMethod, AgentKind, Capability } from "@abadge/core";
-import { AGENT_SESSION_PREFIX, API_KEY_PREFIX } from "@abadge/core";
+import type { AgentKind, Capability } from "@abadge/core";
+import { AGENT_SESSION_PREFIX } from "@abadge/core";
 import { serverEncrypt } from "@abadge/crypto/server";
 import {
-  generateApiKey,
   generateEd25519KeyPair,
   generateOpaqueToken,
   hashApiKey,
@@ -25,10 +24,6 @@ function uuid(): string {
 
 function localityFromKind(kind: AgentKind): "local" | "remote" {
   return kind === "remote" ? "remote" : "local";
-}
-
-function apiKeyPrefixFromKind(kind: AgentKind): string {
-  return kind === "remote" ? API_KEY_PREFIX.remote : API_KEY_PREFIX.local;
 }
 
 /** Fake base64 blob of `n` random bytes — used for ZK item fields the server never decrypts. */
@@ -276,10 +271,12 @@ export async function seedZkItem(
 export interface SeedAgentResult {
   agentId: string;
   name: string;
-  apiKey?: string;
-  keyPair?: { publicKey: string; privateKey: string };
+  keyPair: { publicKey: string; privateKey: string };
 }
 
+// All agents use public_key_session (Ed25519 keypair → `abs_` session tokens).
+// To authenticate a seeded agent in a test, mint a session with
+// `seedAgentSession` and pass its `rawToken` to `createAgentCaller`.
 export async function seedAgent(
   db: Database,
   opts: {
@@ -287,32 +284,13 @@ export async function seedAgent(
     orgId: string;
     name?: string;
     kind?: AgentKind;
-    authMethod?: AgentAuthMethod;
   },
 ): Promise<SeedAgentResult> {
   const agentId = uuid();
   const name = opts.name ?? `agent-${uuid()}`;
   const kind: AgentKind = opts.kind ?? "local_cli";
   const locality = localityFromKind(kind);
-  const authMethod: AgentAuthMethod = opts.authMethod ?? "legacy_api_key";
-
-  let secretHash: string | null = null;
-  let secretPrefix: string | null = null;
-  let publicKey: string | null = null;
-  let apiKey: string | undefined;
-  let keyPair: { publicKey: string; privateKey: string } | undefined;
-
-  if (authMethod === "legacy_api_key") {
-    const prefix = apiKeyPrefixFromKind(kind);
-    const generated = await generateApiKey(prefix);
-    secretHash = generated.hash;
-    secretPrefix = generated.prefix;
-    apiKey = generated.key;
-  } else {
-    const kp = await generateEd25519KeyPair();
-    publicKey = kp.publicKey;
-    keyPair = kp;
-  }
+  const keyPair = await generateEd25519KeyPair();
 
   // agents: FK target for agentSessions/agentEnrollmentTokens/agentSessionChallenges and queried by tRPC routers
   await db.insert(agents).values({
@@ -322,13 +300,11 @@ export async function seedAgent(
     name,
     kind,
     locality,
-    authMethod,
-    secretHash,
-    secretPrefix,
-    publicKey,
+    authMethod: "public_key_session",
+    publicKey: keyPair.publicKey,
   });
 
-  return { agentId, name, apiKey, keyPair };
+  return { agentId, name, keyPair };
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +342,34 @@ export async function seedAgentSession(
   });
 
   return { sessionId, rawToken };
+}
+
+export interface SeedAuthenticatedAgentResult extends SeedAgentResult {
+  /** An `abs_` session token ready to pass to `createAgentCaller`. */
+  rawToken: string;
+}
+
+/**
+ * Seed a keypair agent AND a live `abs_` session for it in one step — the
+ * standard way to get an authenticated agent caller in integration tests.
+ */
+export async function seedAuthenticatedAgent(
+  db: Database,
+  opts: {
+    userId: string;
+    orgId: string;
+    name?: string;
+    kind?: AgentKind;
+    expiresInMs?: number;
+  },
+): Promise<SeedAuthenticatedAgentResult> {
+  const agent = await seedAgent(db, opts);
+  const { rawToken } = await seedAgentSession(db, {
+    agentId: agent.agentId,
+    userId: opts.userId,
+    expiresInMs: opts.expiresInMs,
+  });
+  return { ...agent, rawToken };
 }
 
 // ---------------------------------------------------------------------------

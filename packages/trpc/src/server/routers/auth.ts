@@ -67,7 +67,6 @@ type OwnedAgentRow = Pick<
   | "locality"
   | "authMethod"
   | "publicKey"
-  | "secretPrefix"
   | "enabled"
   | "revokedAt"
   | "lastUsedAt"
@@ -451,8 +450,6 @@ const enrollAgent = (input: EnrollAgentInput) =>
           .update(agentRecords)
           .set({
             publicKey: input.publicKey,
-            secretHash: null,
-            secretPrefix: null,
           })
           .where(
             and(
@@ -503,8 +500,6 @@ const enrollAgent = (input: EnrollAgentInput) =>
       agent: serializeAgent({
         ...agent,
         publicKey: input.publicKey,
-        secretHash: null,
-        secretPrefix: null,
       }),
       enrolledAt: enrolledAt.toISOString(),
     };

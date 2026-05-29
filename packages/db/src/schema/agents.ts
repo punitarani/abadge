@@ -20,8 +20,6 @@ export const agents = pgTable(
     kind: text("kind", { enum: AGENT_KINDS }).notNull(),
     locality: text("locality", { enum: AGENT_LOCALITIES }).notNull(),
     authMethod: text("auth_method", { enum: AGENT_AUTH_METHODS }).notNull(),
-    secretHash: text("secret_hash"),
-    secretPrefix: text("secret_prefix"),
     publicKey: text("public_key"),
     enabled: boolean("enabled").notNull().default(true),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -32,6 +30,5 @@ export const agents = pgTable(
   (table) => [
     index("agents_organization_id_idx").on(table.organizationId),
     index("agents_created_by_idx").on(table.createdBy),
-    index("agents_secret_prefix_idx").on(table.secretPrefix),
   ],
 );

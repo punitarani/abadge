@@ -311,27 +311,11 @@ describe("createAgentApiClient", () => {
     }
   });
 
-  test("creates a client from ABADGE_AUTH_TOKEN legacy env var", async () => {
-    process.env.ABADGE_API_URL = "https://api.abadge.io";
-    process.env.ABADGE_AUTH_TOKEN = "abl_legacy_test_token";
-
-    // Mock loadConfig to return null so we test path 4 (env var), not path 3 (config file)
-    const spy = spyOn(configModule, "loadConfig").mockReturnValue(null);
-
-    try {
-      const client = await createAgentApiClient();
-      expect(client).toBeDefined();
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
   test("throws a helpful error when no agent credentials are found", async () => {
     // Clear all relevant env vars
     delete process.env.ABADGE_PRIVATE_KEY;
     delete process.env.ABADGE_PRIVATE_KEY_PATH;
     delete process.env.ABADGE_AGENT_ID;
-    delete process.env.ABADGE_AUTH_TOKEN;
     delete process.env.ABADGE_API_URL;
 
     // Mock loadConfig to return null (no config file)

@@ -40,11 +40,11 @@ describe("e2e golden path", () => {
     expect(itemResult.id).toBeDefined();
     const itemId = itemResult.id;
 
-    // 5. Create an agent via tRPC (legacy_api_key, remote)
+    // 5. Create an agent via tRPC (public_key_session, remote)
     const agentResult = await caller.agents.create({
       name: "deploy-bot",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
     expect(agentResult.agent).toBeDefined();
     expect(agentResult.agent.id).toBeDefined();

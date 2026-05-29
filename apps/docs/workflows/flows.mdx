@@ -120,12 +120,12 @@ sequenceDiagram
   participant DB as PostgreSQL
 
   User->>API: Create agent (name, kind)
-  API->>API: Generate Ed25519 keypair or API key
-  API->>DB: Store agent (public key or hashed secret)
+  API->>API: Accept Ed25519 public key, or issue a bootstrap token
+  API->>DB: Store agent (public key; token hashed if issued)
   API->>DB: Audit: agent.create
-  API-->>User: Agent ID + one-time secret/bootstrap token
+  API-->>User: Agent ID + one-time bootstrap token (if requested)
 
-  Note over User: API key or bootstrap token shown ONCE
+  Note over User: Bootstrap token shown ONCE
   Note over User: Never retrievable again
 ```
 
@@ -245,14 +245,10 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-  Start["Agent sends request<br/>(Bearer token)"] --> AuthCheck{"Authenticate<br/>token"}
-  AuthCheck -->|"abs_ prefix"| SessionAuth["Verify session<br/>(hash lookup, TTL check)"]
-  AuthCheck -->|"abl_/abg_ prefix"| KeyAuth["Verify API key<br/>(prefix lookup, hash match)"]
-  AuthCheck -->|"other"| LegacyAuth["Legacy Better Auth<br/>API key fallback"]
+  Start["Agent sends request<br/>(Bearer abs_ token)"] --> AuthCheck{"Authenticate<br/>token"}
+  AuthCheck -->|"abs_ prefix"| SessionAuth["Verify agent session<br/>(hash lookup, TTL check)"]
 
   SessionAuth --> Resolved{"Agent<br/>resolved?"}
-  KeyAuth --> Resolved
-  LegacyAuth --> Resolved
 
   Resolved -->|No| Deny1["DENY<br/>(401 Unauthorized)"]
   Resolved -->|Yes| LoadItem["Load target item<br/>(same org check)"]

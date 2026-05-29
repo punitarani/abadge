@@ -1,6 +1,5 @@
 export { resolveFieldValue } from "@abadge/core";
 export type {
-  AbadgeAgentApiKeyConfig,
   AbadgeAgentClientConfig,
   AbadgeAgentKeypairConfig,
   AbadgeUserClientConfig,
@@ -40,7 +39,6 @@ export type {
   AgentLocality,
   AgentRegistrationResult,
   AgentResult,
-  AgentRotateResult,
   AgentSession,
   AgentSessionResult,
   AgentWithKey,

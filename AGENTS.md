@@ -8,7 +8,7 @@ This repo builds abadge: an agent credential firewall. Users belong to organizat
 
 1. Preserve the product model: users belong to organizations, store secrets in profiles, register agents, grant per-item capabilities, and inspect a full audit trail.
 2. Preserve the system model: single Postgres source of truth, synchronous request/response flows, no background infrastructure for MVP.
-3. Preserve the security model: zero-knowledge profile encryption (client-side), server-managed encryption (AES-256-GCM), hashed legacy agent API keys, short-lived agent session tokens (prefix `abs_`), explicit permission checks, capability enforcement, immutable audit logging.
+3. Preserve the security model: zero-knowledge profile encryption (client-side), server-managed encryption (AES-256-GCM), short-lived agent session tokens (prefix `abs_`) as the sole agent auth method, hashed personal user API keys (prefix `abu_`) for the management surface only, explicit permission checks, capability enforcement, immutable audit logging.
 4. Prefer deletion over abstraction and abstraction over duplication.
 5. When docs and code disagree, code wins. Then fix the docs.
 
@@ -77,7 +77,7 @@ Owns:
 * device code approval flow
 * item create/edit forms
 * agent registration forms
-* rendering one-time agent API keys
+* rendering one-time secrets (agent bootstrap tokens; personal API keys in org Settings → "API keys")
 * vault security page (password change, recovery key, key rotation)
 
 Does not own:
@@ -130,7 +130,7 @@ Does not own:
 
 Owns:
 
-* schema (profiles, items, agents, permissions, audit\_logs, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
+* schema (profiles, items, agents, permissions, audit\_logs, userApiKeys, agentSessions, agentSessionChallenges, agentEnrollmentTokens, auth tables, organization tables)
 * indexes (profiles: unique orgId+name; items: orgId, profileId; permissions: unique agentId+itemId+capability; audit\_logs: userId, agentId, itemId, occurredAt; agentSessions: tokenHash, agentId, userId, expiresAt)
 * database client factory
 * migrations config
@@ -190,7 +190,7 @@ Owns:
 
 * MCP server setup and tool registration (stdio transport)
 * tools: `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`
-* auth: keypair-backed (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`) or legacy API key (`ABADGE_AUTH_TOKEN`)
+* auth: keypair-backed only (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`)
 * `run_with_secret`: spawns subprocess with secret in env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
 * `mount_secret`: returns opaque `mountId` (file path never returned to model); auto-cleanup after 5 min
 * orphan cleanup on startup (removes `abadge-*` temp dirs older than 10 minutes)
@@ -207,7 +207,7 @@ Owns:
 
 * TypeScript API client (@abadge/sdk): `AbadgeUserClient` (session auth), `AbadgeAgentClient` (agent auth)
 * `AbadgeAgentClient`: keypair-backed Ed25519 session exchange with background T-2min refresh; `connect()` / `disconnect()` lifecycle; `field` parameter on `accessReveal` and `accessMount`
-* `AbadgeUserClient`: org management (`createOrganization`, `listOrganizations`, etc.), profile management (`createProfile`, `listProfiles`, etc.)
+* `AbadgeUserClient`: management-surface client whose bearer is a Better Auth session token or a personal API key (`abu_`); org management (`createOrganization`, `listOrganizations`, etc.), profile management (`createProfile`, `listProfiles`, etc.). An `abu_` bearer cannot reach `access.*`.
 * tRPC client wrapper for Node.js
 * typed error class (`AbadgeApiError` with `statusCode`, `code`, `hint`, `meta`, `issues`)
 * public API surface covering organizations, profiles, items, agents, permissions, access, audit
@@ -222,6 +222,7 @@ Does not own:
 * No plaintext secret storage. ZK items use client-side XChaCha20-Poly1305; server\_managed items use AES-256-GCM.
 * No plaintext API key storage. Keys are SHA-256 hashed; only the prefix is stored for lookup.
 * No plaintext session token storage. Agent session tokens are hashed before storage.
+* Personal user API keys (`abu_`) authenticate the management surface only. They resolve to a session identity (`kind: "session"`), never an agent identity, and can never reach the agent-gated `access.*` surface — they cannot reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key cannot create or revoke other API keys.
 * No item access without an explicit permission (agent + item + capability).
 * No cross-org item access. Items and agents are scoped to their owning organization.
 * Every allowed and denied agent access attempt must be logged in audit\_log.
@@ -243,7 +244,8 @@ Does not own:
 * `organization` — org-scoped isolation boundary (Better Auth table). Users create a personal account, create an organization, or join one through the onboarding flow (`/onboarding`, `/join`, or org-switcher); signup does not auto-create an org. A personal account is a normal org flagged `metadata = {"type":"personal"}` (no dedicated column); the only differences are presentation (labelled "Personal") and one-click creation. Agents and permissions are scoped to an org.
 * `profiles` — encryption boundaries within an org. Fields: orgId, name, storageMode (zero\_knowledge or server\_managed), wrappedRootKey, kdfSalt, kdfParams, recoveryWrappedRootKey, keyVersion. One profile can hold many items.
 * `items` — secrets stored within a profile. Two storage modes: `zero_knowledge` (encryptedItemKey, ciphertext, contentNonce) and `server_managed` (serverCiphertext, serverIv, serverKeyVersion). Supports optimistic concurrency via contentVersion. Soft-delete via deletedAt. Note: `encryptedItemKey` carries the XChaCha20-Poly1305 key-wrap nonce prepended in its first 24 bytes; there is no separate `keyNonce` column.
-* `agents` — service accounts scoped to an org. Fields: orgId, createdBy (nullable; `ON DELETE SET NULL` — deleting the creating user orphans the agent rather than deleting it, §AB-0043), kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (public\_key\_session, legacy\_api\_key), secretHash, secretPrefix, publicKey, enabled, revokedAt, metadata.
+* `agents` — service accounts scoped to an org. Fields: orgId, createdBy (nullable; `ON DELETE SET NULL` — deleting the creating user orphans the agent rather than deleting it, §AB-0043), kind (local\_cli, local\_mcp, remote), locality (local, remote), authMethod (effectively single-valued: `public_key_session`), publicKey, enabled, revokedAt, metadata. Agents authenticate only via Ed25519 keypair → `abs_` session tokens.
+* `user_api_keys` — personal API keys (prefix `abu_`) for the management surface, bound to a (user, org) pair. Fields: id, userId (FK user, `ON DELETE cascade`), organizationId (FK organization, `ON DELETE cascade`), name, secretHash, secretPrefix, enabled, revokedAt, expiresAt, lastUsedAt, metadata, createdAt. RLS-exempt like `agents`. Resolves to a session identity; never reaches `access.*`.
 * `permissions` — explicit capability grants. Fields: agentId, itemId, capability (read\_ciphertext, reveal\_plaintext, mount\_env, mount\_file), expiresAt, grantedBy (nullable; `ON DELETE SET NULL` so a grant outlives its granter, §AB-0043). Composite unique index on (agentId, itemId, capability).
 * `audit_logs` — append-only. Fields: userId (nullable — an orphaned agent's actions log with a null actor-user, §AB-0043), agentId, itemId, eventType, result (allowed/denied/expired/revoked/cascade), deliveryMode, meta (JSONB), ipAddress, occurredAt. No FK constraints.
 * `agentEnrollmentTokens` — one-time bootstrap tokens for public-key agents. Hashed token, expiresAt (10 min), usedAt.
@@ -286,9 +288,8 @@ Does not own:
 ### Agent registration
 
 * validate with Effect Schema (CreateAgentSchema)
-* default authMethod: `public_key_session`
-* `public_key_session` agents must provide `publicKey` or `issueBootstrapToken: true`
-* `legacy_api_key` agents receive a one-time API key (shown once, SHA-256 hash stored)
+* authMethod is always `public_key_session`
+* agents must provide `publicKey` or `issueBootstrapToken: true`
 * bootstrap tokens (prefix `abe_`) issued for unenrolled public-key agents, 10-minute TTL
 
 ### Agent session exchange (public\_key\_session)
@@ -301,7 +302,7 @@ Does not own:
 
 ### Agent item access
 
-* authenticate bearer token: try agent session (by `abs_` prefix) first, then legacy API key hash lookup
+* authenticate bearer token: resolve the agent session by `abs_` prefix (hash lookup, TTL check)
 * resolve agent, verify enabled and not revoked
 * resolve item for same org, verify not deleted
 * check for matching permission (agentId + itemId + requested capability)

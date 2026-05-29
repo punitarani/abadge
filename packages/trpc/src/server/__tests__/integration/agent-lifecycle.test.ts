@@ -296,35 +296,6 @@ describe("auth router edge cases", () => {
     await truncateAll();
   });
 
-  test("issueBootstrapToken rejects an agent whose authMethod is legacy_api_key", async () => {
-    const owner = await seedUser(auth);
-    const org = await seedOrg(auth, owner.userId);
-    const operatorCaller = createOperatorCaller(db, auth, owner.headers, org.orgId);
-
-    // Insert a legacy_api_key agent — bootstrap tokens are only valid for
-    // public_key_session agents.
-    const agentId = crypto.randomUUID();
-    await db.insert(agents).values({
-      id: agentId,
-      organizationId: org.orgId,
-      createdBy: owner.userId,
-      kind: "remote",
-      locality: "remote",
-      authMethod: "legacy_api_key",
-      name: "legacy-bot",
-    });
-
-    try {
-      await operatorCaller.auth.issueBootstrapToken({ agentId });
-      expect.unreachable("issueBootstrapToken should reject legacy_api_key agent");
-    } catch (error: unknown) {
-      const trpcError = error as { code?: string };
-      // Server emits BAD_REQUEST/FORBIDDEN depending on the path; both indicate
-      // we hit the guard rather than silently issuing a token.
-      expect(["BAD_REQUEST", "FORBIDDEN"]).toContain(trpcError.code ?? "");
-    }
-  });
-
   test("issueBootstrapToken rejects an already-enrolled (publicKey-set) agent", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);

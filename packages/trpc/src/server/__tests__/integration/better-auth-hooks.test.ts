@@ -187,7 +187,7 @@ describe("Better Auth organizationHooks coverage (W1S8-001)", () => {
       name: "bob-agent",
       kind: "local_cli",
       locality: "local",
-      authMethod: "legacy_api_key",
+      authMethod: "public_key_session",
     });
 
     const [bobRow] = await db

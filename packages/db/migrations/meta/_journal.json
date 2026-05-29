@@ -183,6 +183,13 @@
       "when": 1779945780000,
       "tag": "0025_agents_rls_exemption",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1780006453005,
+      "tag": "0026_user_api_keys_remove_legacy_keys",
+      "breakpoints": true
     }
   ]
 }

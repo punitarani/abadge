@@ -21,7 +21,8 @@ See [docs/release/mcp.md](release/mcp.md) for the underlying release flow.
 
 ### Authentication
 
-**Keypair auth (preferred)**:
+The MCP server authenticates with an Ed25519 keypair session — the only
+method:
 
 ```bash
 export ABADGE_API_URL=http://localhost:8787
@@ -32,14 +33,9 @@ export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/mcp.ed25519.jwk
 The server performs an Ed25519 session exchange on startup and refreshes
 the session at T-2 minutes before expiry.
 
-**Legacy API key** (migration fallback):
-
-```bash
-export ABADGE_AUTH_TOKEN=abl_legacy_agent_key
-```
-
-Prints a deprecation warning when used. `~/.abadge/config.json` is also
-read; environment variables take precedence.
+`~/.abadge/config.json` is also read for these values; environment
+variables take precedence. The MCP server has no other auth method —
+agents authenticate only via Ed25519 keypair sessions.
 
 ### Running
 

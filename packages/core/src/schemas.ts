@@ -218,20 +218,11 @@ const CreateAgentSchemaBase = Schema.Struct({
 
 export const CreateAgentSchema = CreateAgentSchemaBase.pipe(
   Schema.filter((input) => {
-    if (input.authMethod === "legacy_api_key" && input.publicKey) {
-      return "Legacy API-key agents cannot set a public key.";
-    }
-
-    if (input.authMethod === "legacy_api_key" && input.issueBootstrapToken === true) {
-      return "Legacy API-key agents cannot issue bootstrap tokens.";
-    }
-
-    // §AGC1c — reject ambiguous combo: public_key_session with BOTH publicKey
-    // and issueBootstrapToken set. Callers must specify exactly one.
-    const isPublicKeySession =
-      input.authMethod === "public_key_session" || input.authMethod === undefined;
-    if (isPublicKeySession && input.publicKey && input.issueBootstrapToken === true) {
-      return "public_key_session agents: specify either publicKey OR issueBootstrapToken, not both.";
+    // §AGC1c — reject ambiguous combo: an agent created with BOTH publicKey and
+    // issueBootstrapToken set. Callers must specify exactly one. (All agents are
+    // public_key_session; authMethod is accepted for forward-compat but optional.)
+    if (input.publicKey && input.issueBootstrapToken === true) {
+      return "Specify either publicKey OR issueBootstrapToken, not both.";
     }
 
     // §AGC1b — metadata size (UTF-16 code units; TextEncoder is unavailable in
@@ -523,7 +514,6 @@ export const AgentSchema = Schema.Struct({
   name: NonEmptyString,
   description: Schema.optional(Schema.NullOr(Schema.String)),
   publicKeyConfigured: Schema.Boolean,
-  keyPrefix: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
   revokedAt: Schema.NullOr(IsoDateString),
   lastUsedAt: Schema.NullOr(IsoDateString),
@@ -533,17 +523,11 @@ export const AgentSchema = Schema.Struct({
 
 export const AgentRegistrationResultSchema = Schema.Struct({
   agent: AgentSchema,
-  apiKey: Schema.NullOr(Schema.String),
   bootstrapToken: Schema.NullOr(Schema.String),
   bootstrapExpiresAt: Schema.NullOr(IsoDateString),
 });
 
 export const AgentWithKeySchema = AgentRegistrationResultSchema;
-
-export const AgentRotateResultSchema = Schema.Struct({
-  apiKey: NonEmptyString,
-  keyPrefix: NonEmptyString,
-});
 
 export const AgentBootstrapTokenResultSchema = Schema.Struct({
   agentId: NonEmptyString,
@@ -571,6 +555,42 @@ export const AgentSessionSchema = Schema.Struct({
 export const AgentSessionResultSchema = Schema.Struct({
   agentId: NonEmptyString,
   session: AgentSessionSchema,
+});
+
+/**
+ * Personal user API key (`abu_`). Bound to a (user, org) pair; authenticates the
+ * management surface only. The secret is returned exactly once at creation and
+ * never persisted in plaintext — only its SHA-256 hash and 8-char prefix are
+ * stored. The wire shapes below never include the secret except in
+ * `UserApiKeyWithSecretSchema.key` (the one-time reveal).
+ */
+export const CreateUserApiKeySchema = Schema.Struct({
+  name: BoundedNameString,
+  // Optional absolute expiry (ISO 8601). Omitted = non-expiring until revoked.
+  expiresAt: Schema.optional(IsoDateString),
+});
+
+export const UserApiKeySchema = Schema.Struct({
+  id: NonEmptyString,
+  organizationId: NonEmptyString,
+  userId: NonEmptyString,
+  name: NonEmptyString,
+  keyPrefix: NonEmptyString,
+  enabled: Schema.Boolean,
+  revokedAt: NullableIsoDateString,
+  expiresAt: NullableIsoDateString,
+  lastUsedAt: NullableIsoDateString,
+  createdAt: IsoDateString,
+});
+
+export const UserApiKeyWithSecretSchema = Schema.Struct({
+  apiKey: UserApiKeySchema,
+  // The full `abu_…` token, shown once at creation.
+  key: NonEmptyString,
+});
+
+export const UserApiKeyListResultSchema = Schema.Struct({
+  apiKeys: Schema.Array(UserApiKeySchema),
 });
 
 export const CliLocalAgentReferenceSchema = Schema.Struct({

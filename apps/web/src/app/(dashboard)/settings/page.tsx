@@ -4,8 +4,9 @@ import { Trash, Warning } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { OneTimeSecretDisplay } from "@/components/dashboard/one-time-secret-display";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,8 +59,19 @@ const ROLE_BADGE_STYLES: Record<string, string> = {
   member: "bg-zinc-50 text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300",
 };
 
-function getInitials(userId: string): string {
-  return userId.slice(0, 2).toUpperCase();
+function getInitials(label: string): string {
+  const parts = label.trim().split(/\s+/).filter(Boolean);
+  const first = (parts[0] ?? "").charAt(0);
+  const second = (parts[1] ?? "").charAt(0);
+  if (first && second) {
+    return (first + second).toUpperCase();
+  }
+  return label.slice(0, 2).toUpperCase();
+}
+
+/** Best display name for a member: real name, else email, else a short id. */
+function memberDisplayName(m: { name?: string; email?: string | null; userId: string }): string {
+  return m.name?.trim() || m.email?.trim() || `${m.userId.slice(0, 8)}…`;
 }
 
 export default function SettingsPage(): React.ReactElement {
@@ -145,6 +157,9 @@ export default function SettingsPage(): React.ReactElement {
         />
       )}
 
+      {/* API keys section */}
+      {activeOrgId && <ApiKeysSection orgId={activeOrgId} queryClient={queryClient} />}
+
       {/* Danger zone */}
       {org && activeOrgId && (
         <DangerZoneSection
@@ -177,6 +192,13 @@ function OrgGeneralSection({
 }): React.ReactElement {
   const [name, setName] = useState(orgName);
   const { accountNoun, accountNounLower } = workspacePosture(isPersonal);
+
+  // Resync the field to the authoritative server name when it changes (e.g. after
+  // switching orgs or a refetch), so the input and the Save-disabled comparison
+  // never wedge against a stale value.
+  useEffect(() => {
+    setName(orgName);
+  }, [orgName]);
 
   const updateMutation = useMutation({
     mutationFn: () => browserTrpcClient.organizations.update.mutate({ orgId, name }),
@@ -243,7 +265,14 @@ function MembersSection({
   queryClient,
 }: {
   orgId: string;
-  members: Array<{ id: string; userId: string; role: string; createdAt: string }>;
+  members: Array<{
+    id: string;
+    userId: string;
+    name: string;
+    email: string | null;
+    role: string;
+    createdAt: string;
+  }>;
   isPending: boolean;
   currentUserId: string | undefined;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -292,20 +321,31 @@ function MembersSection({
             ) : (
               members.map((m) => {
                 const isCurrentUser = m.userId === currentUserId;
+                const displayName = memberDisplayName(m);
+                // Only show the email as a secondary line when it adds info
+                // beyond the primary label (admins/owners see member emails).
+                const secondary = m.email && m.email.trim() !== displayName ? m.email : null;
 
                 return (
                   <TableRow key={m.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar size="sm">
-                          <AvatarFallback>{getInitials(m.userId)}</AvatarFallback>
+                          <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
                         </Avatar>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{m.userId.slice(0, 8)}...</span>
-                          {isCurrentUser && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              You
-                            </Badge>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{displayName}</span>
+                            {isCurrentUser && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                You
+                              </Badge>
+                            )}
+                          </div>
+                          {secondary && (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {secondary}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -331,7 +371,7 @@ function MembersSection({
                           onClick={() =>
                             setMemberToRemove({
                               id: m.id,
-                              label: `${m.userId.slice(0, 8)}...`,
+                              label: displayName,
                             })
                           }
                         >
@@ -456,6 +496,259 @@ function InviteMemberCard({ orgId }: { orgId: string }): React.ReactElement {
         )}
       </form>
     </Card>
+  );
+}
+
+/* ---- API keys ---- */
+
+const API_KEY_EXPIRY_OPTIONS = [
+  { value: "never", label: "Never" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "365", label: "1 year" },
+] as const;
+
+type ApiKeyExpiry = (typeof API_KEY_EXPIRY_OPTIONS)[number]["value"];
+
+interface ApiKeyRow {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  enabled: boolean;
+  revokedAt: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+function apiKeyStatus(k: ApiKeyRow): {
+  label: string;
+  variant: "success" | "warning" | "destructive";
+} {
+  if (k.revokedAt) return { label: "Revoked", variant: "destructive" };
+  if (k.expiresAt && new Date(k.expiresAt).getTime() <= Date.now()) {
+    return { label: "Expired", variant: "warning" };
+  }
+  return { label: "Active", variant: "success" };
+}
+
+function ApiKeysSection({
+  orgId,
+  queryClient,
+}: {
+  orgId: string;
+  queryClient: ReturnType<typeof useQueryClient>;
+}): React.ReactElement {
+  const [name, setName] = useState("");
+  const [expiry, setExpiry] = useState<ApiKeyExpiry>("never");
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [keyToRevoke, setKeyToRevoke] = useState<{ id: string; label: string } | null>(null);
+
+  const keysQuery = useQuery({
+    queryKey: dashboardQueryKeys.orgApiKeys(orgId),
+    queryFn: () => browserTrpcClient.apiKeys.list.query(),
+    enabled: !!orgId,
+  });
+  const apiKeys = keysQuery.data?.apiKeys ?? [];
+
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const days = expiry === "never" ? null : Number(expiry);
+      const expiresAt =
+        days === null ? undefined : new Date(Date.now() + days * 86_400_000).toISOString();
+      return browserTrpcClient.apiKeys.create.mutate({
+        name: name.trim(),
+        ...(expiresAt ? { expiresAt } : {}),
+      });
+    },
+    onSuccess: async (result) => {
+      setCreatedKey(result.key);
+      setName("");
+      setExpiry("never");
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgApiKeys(orgId) });
+      toast.success("API key created.");
+    },
+    onError: (error) => {
+      toast.error(getClientErrorMessage(error, "Failed to create API key"));
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (keyId: string) => browserTrpcClient.apiKeys.revoke.mutate({ keyId }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.orgApiKeys(orgId) });
+      toast.success("API key revoked.");
+    },
+    onError: (error) => {
+      toast.error(getClientErrorMessage(error, "Failed to revoke API key"));
+    },
+  });
+
+  function handleCreate(e: React.FormEvent): void {
+    e.preventDefault();
+    if (!name.trim()) return;
+    createMutation.mutate();
+  }
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold">API keys</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Personal keys for the abadge API, sent as <code className="font-mono">Bearer</code>{" "}
+          tokens. They act as you for management operations and cannot read or mount secret values.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Key</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {keysQuery.isPending ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  Loading...
+                </TableCell>
+              </TableRow>
+            ) : apiKeys.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  No API keys yet.
+                </TableCell>
+              </TableRow>
+            ) : (
+              apiKeys.map((k: ApiKeyRow) => {
+                const status = apiKeyStatus(k);
+                const revocable = !k.revokedAt;
+                return (
+                  <TableRow key={k.id}>
+                    <TableCell className="font-medium">{k.name}</TableCell>
+                    <TableCell>
+                      <code className="font-mono text-xs text-muted-foreground">
+                        {k.keyPrefix}…
+                      </code>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {formatRelativeTime(k.createdAt)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                      {k.lastUsedAt ? formatRelativeTime(k.lastUsedAt) : "Never"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={status.variant} className="text-[11px]">
+                        {status.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {revocable && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          disabled={revokeMutation.isPending}
+                          onClick={() => setKeyToRevoke({ id: k.id, label: k.name })}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <Card className="p-5">
+        {createdKey ? (
+          <OneTimeSecretDisplay
+            value={createdKey}
+            type="api_key"
+            onDismiss={() => setCreatedKey(null)}
+          />
+        ) : (
+          <>
+            <h3 className="text-sm font-medium mb-1">Create API key</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              The key is shown once on creation. Store it somewhere safe.
+            </p>
+            <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="api-key-name">Name</Label>
+                <Input
+                  id="api-key-name"
+                  placeholder="CI deploy bot"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={255}
+                  className="w-56"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Expires</Label>
+                <Select value={expiry} onValueChange={(v) => setExpiry(v as ApiKeyExpiry)}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {API_KEY_EXPIRY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" size="sm" disabled={createMutation.isPending || !name.trim()}>
+                {createMutation.isPending ? "Creating..." : "Create key"}
+              </Button>
+            </form>
+          </>
+        )}
+      </Card>
+
+      <AlertDialog
+        open={keyToRevoke !== null}
+        onOpenChange={(open) => {
+          if (!open) setKeyToRevoke(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke {keyToRevoke?.label ?? "API key"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This immediately disables the key. Any script or integration using it will stop
+              working. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={revokeMutation.isPending}
+              onClick={() => {
+                if (keyToRevoke) {
+                  revokeMutation.mutate(keyToRevoke.id);
+                  setKeyToRevoke(null);
+                }
+              }}
+            >
+              Revoke key
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
   );
 }
 

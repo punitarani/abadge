@@ -219,13 +219,13 @@ function requireApiUrl(apiUrl: string | undefined): string {
 }
 
 /**
- * Create an agent API client using env vars, config file, or legacy credentials.
+ * Create an agent API client using env vars or the local config file. Agents
+ * authenticate via Ed25519 keypair session exchange.
  *
  * Resolution order:
  * 1. ABADGE_PRIVATE_KEY (inline JWK string) + ABADGE_AGENT_ID + ABADGE_API_URL
  * 2. ABADGE_PRIVATE_KEY_PATH (file path) + ABADGE_AGENT_ID + ABADGE_API_URL
  * 3. Config file localAgents.cli
- * 4. ABADGE_AUTH_TOKEN (legacy API key, deprecated)
  */
 export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
   const env = process.env;
@@ -248,11 +248,6 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
   if (agentConfig) {
     const jwk = await readPrivateKeyFromFile(agentConfig.privateKeyPath);
     return connectKeypairClient(apiUrl ?? config.apiUrl, agentConfig.agentId, jwk);
-  }
-
-  // 4. Legacy API key from env
-  if (env.ABADGE_AUTH_TOKEN) {
-    return new AbadgeAgentClient({ apiUrl: requireApiUrl(apiUrl), apiKey: env.ABADGE_AUTH_TOKEN });
   }
 
   throw new Error(

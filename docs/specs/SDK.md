@@ -8,8 +8,8 @@ The SDK provides two typed TypeScript clients for interacting with the abadge AP
 
 | Client | Auth | Purpose |
 |--------|------|---------|
-| `AbadgeUserClient` | Session token | Manage organizations, profiles, items, agents, permissions, audit |
-| `AbadgeAgentClient` | Ed25519 keypair session (preferred) or legacy API key | Access secrets via `access.*` methods |
+| `AbadgeUserClient` | Better Auth session token or personal API key (`abu_`) | Manage organizations, profiles, items, agents, permissions, audit |
+| `AbadgeAgentClient` | Ed25519 keypair session (`abs_`) | Access secrets via `access.*` methods |
 
 ---
 
@@ -105,14 +105,13 @@ client.agents.create({
   name: string;
   kind: AgentKind;
   description?: string;
-  authMethod?: "public_key_session" | "legacy_api_key";  // default: public_key_session
+  authMethod?: "public_key_session";  // only value; default
   publicKey?: string;
   issueBootstrapToken?: boolean;
 })
 
 client.agents.list()
 client.agents.get(agentId)
-client.agents.update(agentId)   // rotate legacy API key
 client.agents.delete(agentId)  // revoke agent
 
 // Issue a bootstrap token for an existing agent
@@ -150,24 +149,24 @@ client.audit.list({
 
 ## `AbadgeAgentClient`
 
-Agent-authenticated client for accessing secrets. Supports Ed25519 keypair sessions (preferred) or legacy API keys.
+Agent-authenticated client for accessing secrets. Uses Ed25519 keypair sessions.
 
 ### Construction
 
 ```typescript
 import { AbadgeAgentClient } from "@abadge/sdk";
 
-// Keypair auth (preferred)
+// Keypair auth
 const agent = new AbadgeAgentClient({
   apiUrl: "https://api.abadge.dev",
   agentId: "agent_...",
   privateKey: ed25519PrivateKey,
 });
 
-// Legacy API key auth
+// Pre-exchanged session token
 const agent = new AbadgeAgentClient({
   apiUrl: "https://api.abadge.dev",
-  apiKey: "abl_...",
+  apiKey: "abs_...",   // a session token minted elsewhere
 });
 ```
 
@@ -183,7 +182,7 @@ await agent.connect();
 agent.disconnect();
 ```
 
-`connect()` performs the Ed25519 challenge/exchange and starts a background refresh that re-exchanges the session when less than 2 minutes of TTL remain. Legacy API key clients do not need `connect()`.
+`connect()` performs the Ed25519 challenge/exchange and starts a background refresh that re-exchanges the session when less than 2 minutes of TTL remain. A client constructed with a pre-exchanged `abs_...` token does not need `connect()`.
 
 ### Enrollment
 

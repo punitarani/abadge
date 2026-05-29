@@ -65,7 +65,7 @@ daemon memory only. Agent private keys live in `0600` files under
 | `context` (`use`) | Switch active org or profile |
 | `org`, `profile` | Manage orgs, profiles, and the profile vault key |
 | `item` | Create, read, update, delete credential items |
-| `agent` | Register, list, rotate, revoke agents |
+| `agent` | Register, list, revoke agents |
 | `permission` | Create, list, revoke grants |
 | `run`, `mount` | Use a secret — inject into a subprocess or mount a temp file |
 | `import`, `export` | Bulk `.env` import/export |
@@ -149,12 +149,12 @@ abadge agent add --name "ci-deploy" --kind remote --bootstrap   # issue a one-ti
 abadge agent add --name "ci-deploy" --kind remote --public-key ./key.jwk  # pre-existing public key
 
 abadge agent list
-abadge agent rotate <id>   # rotates the legacy API key on legacy agents
 abadge agent rm <id>       # revoke the agent and invalidate all sessions
 ```
 
-Legacy API key auth is not creatable via the CLI; create one through the
-API if you need it for migration.
+Agents authenticate only with Ed25519 keypair sessions. To replace an
+agent's keypair, revoke it and register a new one (or re-issue a bootstrap
+token and re-enroll).
 
 ### Permissions (grants)
 

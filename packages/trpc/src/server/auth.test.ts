@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { BadRequestError, ForbiddenError, UnauthorizedError } from "@abadge/core";
+import {
+  BadRequestError,
+  ForbiddenError,
+  UnauthorizedError,
+  USER_API_KEY_PREFIX,
+} from "@abadge/core";
+import { generateApiKey } from "@abadge/crypto/shared";
 import { Effect } from "effect";
 import {
   _resetUnauthBearerAuditCounters,
@@ -135,6 +141,140 @@ describe("resolveSessionIdentity", () => {
     });
     const caller = createTrpcCallerFactory(router)(ctx);
     await expect(caller.write()).resolves.toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveUserApiKeyIdentity (abu_ personal API keys) — via resolveSessionIdentity
+// ---------------------------------------------------------------------------
+
+interface ApiKeyCandidate {
+  id: string;
+  userId: string;
+  organizationId: string;
+  secretHash: string;
+  expiresAt: Date | null;
+}
+
+/**
+ * Context whose `userApiKeys` select returns `candidates` (first `.limit()`
+ * call), with no-op `update`/`insert` for the touch/audit side effects. The
+ * Better Auth session lookups return null so only the `abu_` branch can match.
+ */
+function createApiKeyContext(
+  candidates: ApiKeyCandidate[],
+  headers?: HeadersInit,
+  // Optional sink: rows passed to any `insert().values(row)` (audit writes) are
+  // pushed here so tests can assert the audit side effects.
+  insertSink?: unknown[],
+): BaseRequestContext {
+  const selectBuilder = {
+    from() {
+      return this;
+    },
+    where() {
+      return this;
+    },
+    limit() {
+      return Promise.resolve(candidates);
+    },
+  };
+  const db = {
+    select: () => selectBuilder,
+    update: () => ({ set: () => ({ where: () => ({ execute: async () => [] }) }) }),
+    insert: () => ({
+      values: (row: unknown) => {
+        insertSink?.push(row);
+        return Promise.resolve([]);
+      },
+    }),
+  };
+  return {
+    req: new Request("http://localhost/trpc/any", { headers }),
+    resHeaders: new Headers(),
+    env: {} as BaseRequestContext["env"],
+    validatedEnv: {} as BaseRequestContext["validatedEnv"],
+    db: db as unknown as BaseRequestContext["db"],
+    auth: {
+      api: { getSession: async () => null },
+      $context: Promise.resolve({ internalAdapter: { findSession: async () => null } }),
+    } as BaseRequestContext["auth"],
+  };
+}
+
+describe("resolveUserApiKeyIdentity (abu_)", () => {
+  test("a valid abu_ key resolves to a session identity bound to the key's org", async () => {
+    const { key, hash } = await generateApiKey(USER_API_KEY_PREFIX);
+    const ctx = createApiKeyContext(
+      [
+        {
+          id: "uak_1",
+          userId: "user_owner",
+          organizationId: "org_bound",
+          secretHash: hash,
+          expiresAt: null,
+        },
+      ],
+      // A mismatched org header MUST be ignored: the key's bound org is authoritative.
+      { Authorization: `Bearer ${key}`, "X-Abadge-Org-Id": "org_other" },
+    );
+
+    const identity = await Effect.runPromise(resolveSessionIdentity(ctx));
+
+    expect(identity).toEqual({
+      kind: "session",
+      userId: "user_owner",
+      organizationId: "org_bound",
+      authMethod: "user_api_key",
+    });
+  });
+
+  test("an abu_ token whose hash matches no row is rejected as unauthorized", async () => {
+    const { key } = await generateApiKey(USER_API_KEY_PREFIX);
+    // Candidate exists by prefix but the stored hash is for a different secret.
+    const other = await generateApiKey(USER_API_KEY_PREFIX);
+    const ctx = createApiKeyContext(
+      [{ id: "uak_1", userId: "u", organizationId: "o", secretHash: other.hash, expiresAt: null }],
+      { Authorization: `Bearer ${key}` },
+    );
+
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
+    expect(error).toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  test("an expired abu_ key is rejected even when the hash matches", async () => {
+    const { key, hash } = await generateApiKey(USER_API_KEY_PREFIX);
+    const ctx = createApiKeyContext(
+      [
+        {
+          id: "uak_1",
+          userId: "u",
+          organizationId: "o",
+          secretHash: hash,
+          expiresAt: new Date(Date.now() - 1000),
+        },
+      ],
+      { Authorization: `Bearer ${key}` },
+    );
+
+    const error = await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
+    expect(error).toMatchObject({ code: "UNAUTHORIZED", message: "Expired user API key" });
+  });
+
+  test("an unmatched abu_ token writes an unrecognized-bearer audit row", async () => {
+    // Reset the module-level rate-limiter so the first probe always audits.
+    _resetUnauthBearerAuditCounters();
+    const { key } = await generateApiKey(USER_API_KEY_PREFIX);
+    const other = await generateApiKey(USER_API_KEY_PREFIX);
+    const inserts: Array<{ meta?: { reason?: string } }> = [];
+    const ctx = createApiKeyContext(
+      [{ id: "uak_1", userId: "u", organizationId: "o", secretHash: other.hash, expiresAt: null }],
+      { Authorization: `Bearer ${key}` },
+      inserts,
+    );
+
+    await Effect.runPromise(Effect.flip(resolveSessionIdentity(ctx)));
+    expect(inserts.some((r) => r.meta?.reason === "unknown_credential")).toBe(true);
   });
 });
 

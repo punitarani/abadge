@@ -47,13 +47,14 @@ The CLI device-login bearer token is not persisted to disk.
 
 ## Agent authentication
 
-Agent-facing procedures accept Bearer credentials and resolve them in this order:
-
-1. `abs_...` short-lived session token lookup in `agent_sessions`
-2. legacy `abl_...` or `abg_...` API-key verification by prefix and hash
-3. legacy Better Auth API-key fallback for migrated principals
+Agent-facing procedures accept a Bearer `abs_...` short-lived session token,
+looked up in `agent_sessions` by hash. It is the only agent auth method.
 
 `abs_...` tokens are opaque, hashed at rest, and expire after 15 minutes by default.
+
+Management-surface procedures (`sessionProcedure`) additionally accept a
+personal API key (`abu_...`). It resolves to a session identity scoped to the
+key's org and never reaches the agent-gated `access.*` surface.
 
 ## Agent enrollment and short-lived session lifecycle
 
@@ -94,7 +95,7 @@ Auth: `sessionProcedure`
 |------|------|----------|-------------|
 | `name` | string | yes | Display name |
 | `kind` | enum | yes | `local_cli`, `local_mcp`, `remote` |
-| `authMethod` | enum | no | `public_key_session` or `legacy_api_key` |
+| `authMethod` | enum | no | `public_key_session` (only value; default) |
 | `publicKey` | string | no | Serialized JWK public key |
 | `issueBootstrapToken` | boolean | no | Issue one-time bootstrap token |
 | `metadata` | object | no | Free-form metadata |
@@ -104,17 +105,20 @@ Response:
 ```ts
 {
   agent: Agent;
-  apiKey: string | null;
   bootstrapToken: string | null;
   bootstrapExpiresAt: string | null;
 }
 ```
 
-### `agents.rotate`
+### `apiKeys.create` / `apiKeys.list` / `apiKeys.revoke`
 
 Auth: `sessionProcedure`
 
-Rotates a legacy API key only.
+Manage personal API keys (`abu_...`) bound to the caller's `(user, org)`
+pair. `create` returns the full secret once; the server stores a SHA-256
+hash plus an 8-character prefix. `list` never returns secrets. `revoke`
+disables a key. A personal API key resolves to a session identity and can
+never reach `access.*`; it also cannot create or revoke other API keys.
 
 ### `access.mount`
 

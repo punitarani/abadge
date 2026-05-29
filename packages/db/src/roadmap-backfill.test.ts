@@ -189,7 +189,7 @@ describe("agent backfill helpers", () => {
         userId: "user-1",
         kind: "device",
         name: "Workstation",
-        authMethod: "legacy_api_key",
+        authMethod: "public_key_session",
         enabled: true,
         createdAt: new Date("2026-04-11T00:00:00.000Z"),
       }),

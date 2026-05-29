@@ -77,16 +77,14 @@ The CLI never persists a human bearer token to disk.
 
 ### Agents
 
-Agents use one of two methods.
+Agents authenticate with **Ed25519 public-key sessions** — the only agent auth method. The agent generates an Ed25519 keypair locally; the server stores only the public key. For each session: `auth.createChallenge` → sign → `auth.exchangeSession` → receive `abs_...` token (15-minute TTL). The SDK refreshes at T-2 minutes. The `abs_...` session token is the only credential that reaches the `access.*` surface.
 
-**Public-key sessions (default).** The agent generates an Ed25519 keypair locally; the server stores only the public key. For each session: `auth.createChallenge` → sign → `auth.exchangeSession` → receive `abs_...` token (15-minute TTL). The SDK refreshes at T-2 minutes.
+**Personal API keys (management surface).** Users can mint personal API keys (`abu_`) from the dashboard org Settings page to script the management surface without a browser. An `abu_` key resolves to a **session identity**, not an agent: it reaches only the `sessionProcedure` surface (organizations, profiles, items metadata, agents, permissions, audit, settings) and is **structurally barred from `access.*`** — it can never reveal or mount secret values. The server stores a SHA-256 hash + 8-char prefix; the secret is shown once. Keys support an optional expiry and can be revoked.
 
-**Legacy API keys.** Token shown once, prefixed `abl_` (local) or `abg_` (remote). The server stores SHA-256 hash + lookup prefix. Use only for migrating existing integrations.
-
-Auth resolution order on every agent request:
-1. `abs_` prefix → session token (hash lookup, TTL check)
-2. `abl_/abg_` prefix → API key (prefix lookup, hash match)
-3. Legacy Better Auth API key fallback
+Bearer resolution order on every request:
+1. Better Auth session cookie / bearer token → operator session (management surface)
+2. `abu_` prefix → personal API key (prefix lookup, hash match) → session identity, management surface only
+3. `abs_` prefix → agent session token (hash lookup, TTL check) → agent identity (the only path to `access.*`)
 
 ## Authorization
 
@@ -154,7 +152,7 @@ ZK items remain protected after a full server breach, assuming a strong master p
 | Recovery key | Wraps root key (shown once) | Never stored in plaintext |
 | ZK item value | XChaCha20-Poly1305 ciphertext | Only by profile owner |
 | Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
-| Agent API key | SHA-256 hash + prefix | Shown once at creation |
+| Personal API key (`abu_`) | SHA-256 hash + prefix | Shown once at creation |
 | Agent session token | SHA-256 hash | Shown once at exchange |
 | Bootstrap token | SHA-256 hash | Shown once at issuance |
 | Challenge token | SHA-256 hash | Used once, 60-second TTL |

@@ -98,10 +98,8 @@ An automated caller scoped to an org. Agents are either local (same machine as t
 | locality | AgentLocality | Derived: `local` or `remote` |
 | name | string (1-255) | Human-readable label |
 | description | string \| null | Optional description |
-| authMethod | AuthMethod | `public_key_session` (default) or `legacy_api_key` |
+| authMethod | AuthMethod | `public_key_session` (only value; default) |
 | publicKey | string \| null | Ed25519 public key (session auth) |
-| secretHash | string \| null | SHA-256 hash of API key (legacy auth) |
-| secretPrefix | string \| null | First characters of API key for lookup |
 | enabled | boolean | Whether the agent can authenticate |
 | revokedAt | ISO 8601 \| null | When revoked (null = active) |
 | lastUsedAt | ISO 8601 \| null | Last successful authentication |
@@ -109,11 +107,35 @@ An automated caller scoped to an org. Agents are either local (same machine as t
 | createdAt | ISO 8601 | Registration timestamp |
 
 **Invariants:**
-- Default `authMethod` is `public_key_session`. Legacy API keys are opt-in.
-- API keys are SHA-256 hashed before storage. The plaintext key is shown exactly once at creation time and is never retrievable.
+- `authMethod` is always `public_key_session`; agents authenticate only via Ed25519 keypair → `abs_` session tokens.
+- The private key never leaves the agent host; the server stores only the public key.
 - `locality` is derived from `kind` and cannot be set directly.
 - A revoked agent (`revokedAt != null`) cannot authenticate.
-- Key rotation invalidates the old key immediately.
+- Revoking an agent invalidates its active sessions immediately. To replace a keypair, revoke and re-enroll.
+
+### UserApiKey
+
+A personal API key (prefix `abu_`) bound to a `(user, org)` pair. Authenticates the management surface as the issuing user.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | string (UUID) | Unique identifier |
+| userId | string | Owning user (FK → user, ON DELETE cascade) |
+| organizationId | string | Scoped org (FK → organization, ON DELETE cascade) |
+| name | string | Human-readable label |
+| secretHash | string | SHA-256 hash of the `abu_...` secret |
+| secretPrefix | string | First 8 characters of the secret for lookup |
+| enabled | boolean | Whether the key can authenticate |
+| revokedAt | ISO 8601 \| null | When revoked (null = active) |
+| expiresAt | ISO 8601 \| null | Optional expiration (null = no expiry) |
+| lastUsedAt | ISO 8601 \| null | Last successful authentication |
+| metadata | Record\<string, unknown\> | Arbitrary key-value data |
+| createdAt | ISO 8601 | Creation timestamp |
+
+**Invariants:**
+- The secret is shown exactly once at creation. The server stores only the SHA-256 hash + prefix.
+- Resolves to a **session identity**, not an agent. It reaches only the `sessionProcedure` management surface and can **never** reach the agent-gated `access.*` surface — it cannot reveal or mount secret values.
+- A personal API key cannot create or revoke other API keys (that requires a real browser session).
 
 ### Permission
 
@@ -262,12 +284,18 @@ This is the core authorization table. It defines what is possible given an agent
 | `agent.create` | Agent registration |
 | `agent.bootstrap_issue` | Bootstrap token issued |
 | `agent.enroll` | Agent enrollment (public key set) |
-| `agent.rotate` | API key or key rotation |
 | `agent.revoke` | Agent revocation |
 | `agent.revoke_cascade` | Agent revocation as a downstream cascade |
 | `agent.session_issue` | Session token issued |
 | `agent.session_reject` | Session exchange rejected |
 | `agent.session_revoke` | Session revoked |
+
+**API key lifecycle:**
+
+| Value | Triggered by |
+|-------|-------------|
+| `user_api_key.create` | Personal API key created |
+| `user_api_key.revoke` | Personal API key revoked |
 
 **Permission lifecycle:**
 
@@ -296,13 +324,12 @@ This is the core authorization table. It defines what is possible given an agent
 | `revoked` | Agent or permission was revoked |
 | `cascade` | Downstream effect of another operation |
 
-### API Key Prefixes
+### Token Prefixes
 
 | Prefix | Meaning |
 |--------|---------|
-| `abl_` | Local agent API key |
-| `abg_` | Remote agent API key |
-| `abs_` | Agent session token |
+| `abu_` | Personal API key (user + org; management surface, session identity) |
+| `abs_` | Agent session token (only credential that reaches `access.*`) |
 | `abe_` | Agent enrollment bootstrap token |
 | `abc_` | Agent session challenge |
 
@@ -356,11 +383,6 @@ Revocation and deletion have explicit, documented effects on dependent state. Ev
 - Future access attempts return `AGENT_REVOKED`
 - One audit event per invalidated session
 
-### Agent rotated
-- Old credential material is invalidated atomically
-- Permissions are unaffected (they reference the agent, not the credential)
-- A single audit event records the rotation
-
 ### Item soft-deleted
 - `deletedAt` is set; the `label` is preserved for audit readability
 - Active file mounts are released by the daemon on its next housekeeping tick
@@ -393,7 +415,7 @@ Every error response includes `{ code, message, hint, meta? }`. The `hint` is al
 | `UNAUTHORIZED` | 401 | Missing or invalid authentication | -- |
 | `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent register --name <name> --kind <kind>` |
 | `SESSION_EXPIRED` | 401 | Human session has expired | `Run: abadge login` |
-| `BOOTSTRAP_TOKEN_EXPIRED` | 401 | Enrollment token has expired | `Run: abadge agent rotate <agent-id> to issue a fresh token` |
+| `BOOTSTRAP_TOKEN_EXPIRED` | 401 | Enrollment token has expired | `Issue a fresh bootstrap token for the agent and re-enroll.` |
 | `FORBIDDEN` | 403 | Authenticated but not authorized | -- |
 | `PERMISSION_DENIED` | 403 | No matching permission for this capability | `Run: abadge permission create --agent <name> --item <label> --capability <cap>` |
 | `PERMISSION_EXPIRED` | 403 | Permission exists but has expired | -- |

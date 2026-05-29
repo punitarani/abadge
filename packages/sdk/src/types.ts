@@ -9,7 +9,6 @@ export type {
   AgentLocality,
   AgentRegistrationResult,
   AgentResult,
-  AgentRotateResult,
   AgentSession,
   AgentSessionResult,
   AgentWithKey,

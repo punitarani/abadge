@@ -18,7 +18,12 @@ export type AgentKind = (typeof AGENT_KINDS)[number];
 export const AGENT_LOCALITIES = ["local", "remote"] as const;
 export type AgentLocality = (typeof AGENT_LOCALITIES)[number];
 
-export const AGENT_AUTH_METHODS = ["public_key_session", "legacy_api_key"] as const;
+// `public_key_session` (Ed25519 keypair → short-lived `abs_` session tokens) is
+// the only agent auth method. The former `legacy_api_key` method (`abl_`/`abg_`
+// long-lived keys) was fully removed; programmatic secret access now always goes
+// through keypair-backed agent sessions. The column stays a single-value enum so
+// the public `Agent` shape is unchanged.
+export const AGENT_AUTH_METHODS = ["public_key_session"] as const;
 export type AgentAuthMethod = (typeof AGENT_AUTH_METHODS)[number];
 
 export const CAPABILITIES = [
@@ -88,6 +93,12 @@ export const AUDIT_EVENT_TYPES = [
   "auth.signup",
   "auth.token_issue",
   "auth.token_revoke",
+  // personal user API key events (management-surface credentials, prefix `abu_`)
+  "user_api_key.create",
+  "user_api_key.revoke",
+  // Expired-at-auth-time rejection (passive expiry, not admin-initiated revocation).
+  // Distinct from user_api_key.revoke so audit queries can distinguish the two.
+  "user_api_key.expire",
   // org events
   "org.create",
   "org.read",
@@ -105,6 +116,8 @@ export const AUDIT_EVENT_TYPES = [
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
+  // Retained for querying historical audit rows only; the rotate procedure was
+  // removed when legacy_api_key was dropped. New code must not write this event.
   "agent.rotate",
   "agent.revoke",
   "agent.revoke_cascade",
@@ -177,16 +190,17 @@ export function isCapabilityAllowed(
   return getAllowedCapabilities(locality, storageMode).includes(capability);
 }
 
-/** API key prefixes by agent locality */
-export const API_KEY_PREFIX = {
-  remote: "abg_",
-  local: "abl_",
-} as const;
-
 export const AGENT_SESSION_PREFIX = "abs_";
 export const AGENT_BOOTSTRAP_PREFIX = "abe_";
 export const AGENT_CHALLENGE_PREFIX = "abc_";
 export const INVITE_TOKEN_PREFIX = "abi_";
+/**
+ * Personal user API key prefix. An `abu_` token is bound to a (user, org) pair
+ * and authenticates the management surface only — it resolves to a session
+ * identity and can never reach the agent-gated `access.*` surface, so it cannot
+ * reveal or mount secret values.
+ */
+export const USER_API_KEY_PREFIX = "abu_";
 
 export const AGENT_BOOTSTRAP_TTL_MS = 10 * 60 * 1000;
 export const AGENT_CHALLENGE_TTL_MS = 60 * 1000;

@@ -28,18 +28,23 @@ export interface BaseRequestContext {
   ipAddress?: string;
 }
 
+// `user_api_key` is a personal `abu_` token resolved on the bearer/session path.
+// It authenticates the management surface only; it never yields an AgentIdentity,
+// so it cannot reach the agent-gated `access.*` surface.
+export type SessionAuthMethod = "browser_session" | "bearer_session" | "user_api_key";
+
 export interface SessionIdentity {
   kind: "session";
   userId: string;
   organizationId: string;
-  authMethod: "browser_session" | "bearer_session";
+  authMethod: SessionAuthMethod;
 }
 
 export interface OptionalOrgSessionIdentity {
   kind: "session";
   userId: string;
   organizationId: string | null;
-  authMethod: "browser_session" | "bearer_session";
+  authMethod: SessionAuthMethod;
 }
 
 export interface OptionalOrgSessionRequestContext extends BaseRequestContext {

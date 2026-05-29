@@ -1,6 +1,7 @@
 export type {
   SeedAgentResult,
   SeedAgentSessionResult,
+  SeedAuthenticatedAgentResult,
   SeedOrgResult,
   SeedPermissionResult,
   SeedProfileResult,
@@ -11,6 +12,7 @@ export type {
 export {
   seedAgent,
   seedAgentSession,
+  seedAuthenticatedAgent,
   seedMember,
   seedOrg,
   seedPermission,

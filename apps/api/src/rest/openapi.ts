@@ -108,7 +108,7 @@ function buildOpenApiDocument(): OpenApiDocument {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          bearerFormat: "abs_<token> or legacy_api_key",
+          bearerFormat: "abs_<token> (agent session) or abu_<token> (personal API key)",
         },
       },
     },

@@ -38,7 +38,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
-    value: "abg_prod_4eTwM6bqsW7nD9kP2x4k",
+    value: "abu_test_4eTwM6bqsW7nD9kP2x4k",
   },
 };
 

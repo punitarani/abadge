@@ -16,24 +16,24 @@ describe("agents CRUD", () => {
     await truncateAll();
   });
 
-  test("create legacy API key agent returns one-time key", async () => {
+  test("create agent with bootstrap token and fetch it back", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
 
     const result = await caller.agents.create({
-      name: "legacy-bot",
+      name: "fetch-bot",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
 
     expect(result.agent.id).toBeTruthy();
-    expect(result.apiKey).toBeTruthy();
+    expect(result.bootstrapToken).toBeTruthy();
 
     const agentId = result.agent.id;
     const fetched = await caller.agents.get({ agentId });
     expect(fetched.agent.id).toBe(agentId);
-    expect(fetched.agent.name).toBe("legacy-bot");
+    expect(fetched.agent.name).toBe("fetch-bot");
   });
 
   test("create public_key_session agent with bootstrap token", async () => {
@@ -60,37 +60,17 @@ describe("agents CRUD", () => {
     await caller.agents.create({
       name: "bot-one",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
 
     await caller.agents.create({
       name: "bot-two",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
 
     const result = await caller.agents.list({});
     expect(result.agents).toHaveLength(2);
-  });
-
-  test("rotate legacy API key agent issues new key", async () => {
-    const owner = await seedUser(auth);
-    const org = await seedOrg(auth, owner.userId);
-    const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
-
-    const created = await caller.agents.create({
-      name: "rotate-bot",
-      kind: "remote",
-      authMethod: "legacy_api_key",
-    });
-
-    const originalKey = created.apiKey;
-    const agentId = created.agent.id;
-
-    const rotated = await caller.agents.rotate({ agentId });
-
-    expect(rotated.apiKey).toBeTruthy();
-    expect(rotated.apiKey).not.toBe(originalKey);
   });
 
   test("revoke agent disables it", async () => {
@@ -101,7 +81,7 @@ describe("agents CRUD", () => {
     const created = await caller.agents.create({
       name: "revoke-bot",
       kind: "remote",
-      authMethod: "legacy_api_key",
+      issueBootstrapToken: true,
     });
 
     const agentId = created.agent.id;
