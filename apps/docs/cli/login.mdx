@@ -3,7 +3,7 @@ title: "abadge login"
 description: "Device-code authentication. Browser approval, daemon-held bearer token."
 ---
 
-`abadge login` starts a Better Auth device authorization flow, opens your browser to approve the request, and stores the resulting operator session in **daemon memory** — never on disk.
+`abadge login` starts a device authorization flow, opens your browser to approve the request, and stores the resulting operator session in **daemon memory** — never on disk.
 
 ## Usage
 
@@ -33,7 +33,7 @@ abadge login --no-open-browser
     `POST /api/auth/device/token` is polled until the user approves or denies the request.
   </Step>
   <Step title="Hold the bearer in daemon memory">
-    The Better Auth bearer token is stored in the daemon's process memory. The config file never holds a human bearer token.
+    The operator bearer token is stored in the daemon's process memory. The config file never holds a human bearer token.
   </Step>
   <Step title="Audit auth.login">
     the login-audit operation appends an `auth.login` event (best-effort — this step is silent for new signups without org membership).

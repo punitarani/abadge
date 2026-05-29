@@ -23,7 +23,7 @@ flowchart TD
 
   subgraph Edge["Cloudflare edge"]
     API["Hono REST API (/v1)"]
-    Auth["Better Auth"]
+    Auth["Auth"]
     Policy["Permission check"]
     Audit["Audit logger"]
   end
@@ -56,7 +56,7 @@ flowchart TD
 | SDK | TypeScript client (`packages/sdk`) |
 | Database | PostgreSQL via Hyperdrive, Drizzle ORM (`packages/db`) |
 | Crypto | XChaCha20-Poly1305 (ZK), AES-256-GCM (server), Argon2id KDF, Ed25519 (`packages/crypto`) |
-| Auth | Better Auth (`packages/auth`) |
+| Auth | Authentication service (`packages/auth`) |
 
 ## Trust tiers
 
@@ -106,7 +106,7 @@ Every operation in abadge maps to one of four layers:
 | Frontend | Next.js App Router via OpenNext |
 | Database | PostgreSQL via Hyperdrive |
 | ORM | Drizzle |
-| Auth | Better Auth |
+| Auth | Authentication service |
 | Validation | Effect Schema |
 | ZK crypto | XChaCha20-Poly1305 (`@noble/ciphers`), Argon2id (`@noble/hashes`) |
 | Server crypto | AES-256-GCM (WebCrypto) |

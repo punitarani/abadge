@@ -30,7 +30,7 @@
         "operationId": "createOrganization",
         "tags": ["Organizations"],
         "summary": "Create an organization",
-        "description": "Creates an organization, the owner membership, and a default `server_managed` profile (`externalId: \"default\"`) in one transaction, so the org is immediately usable. Authenticated with a Better Auth session or personal API key.",
+        "description": "Creates an organization, the owner membership, and a default `server_managed` profile (`externalId: \"default\"`) in one transaction, so the org is immediately usable. Authenticated with a session token or personal API key.",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOrganization" } } }
@@ -200,7 +200,7 @@
         "operationId": "createApiKey",
         "tags": ["API keys"],
         "summary": "Create a personal API key",
-        "description": "Creates a personal API key (`abu_`) bound to the caller and active org. The full secret is returned exactly once. A personal API key authenticates the management surface only — it can never reach `access.*` and cannot create or revoke other API keys, so this must be called from a browser-backed Better Auth session.",
+        "description": "Creates a personal API key (`abu_`) bound to the caller and active org. The full secret is returned exactly once. A personal API key authenticates the management surface only — it can never reach `access.*` and cannot create or revoke other API keys, so this must be called from a browser-backed session.",
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateApiKey" } } }
@@ -228,7 +228,7 @@
         "operationId": "revokeApiKey",
         "tags": ["API keys"],
         "summary": "Revoke a personal API key",
-        "description": "Revokes a personal API key. Must be called from a browser-backed Better Auth session.",
+        "description": "Revokes a personal API key. Must be called from a browser-backed session.",
         "parameters": [{ "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
           "200": { "description": "Revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResult" } } } },
@@ -722,7 +722,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Bearer token in the `Authorization` header. Management routes accept a Better Auth session token or a personal API key (`abu_`). Agent-facing `access.*` routes require an agent session token (`abs_`)."
+        "description": "Bearer token in the `Authorization` header. Management routes accept a session token or a personal API key (`abu_`). Agent-facing `access.*` routes require an agent session token (`abs_`)."
       }
     },
     "parameters": {

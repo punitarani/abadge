@@ -21,7 +21,7 @@ const client = new AbadgeUserClient({
   API endpoint URL, no trailing slash.
 </ParamField>
 <ParamField path="sessionToken" type="string" required>
-  Better Auth bearer token (the same token the CLI receives from the device-code flow and the dashboard holds in its session cookie), or a personal API key (`abu_...`). A personal API key authenticates the management surface only and can never reach `access.*`.
+  Operator session token (the same token the CLI receives from the device-code flow and the dashboard holds in its session cookie), or a personal API key (`abu_...`). A personal API key authenticates the management surface only and can never reach `access.*`.
 </ParamField>
 <ParamField path="orgId" type="string">
   Active organization ID. Sent as `X-Abadge-Org-Id` on every request. Required when the signed-in user belongs to multiple organizations.

@@ -24,7 +24,7 @@ flowchart LR
   subgraph Edge["Cloudflare edge"]
     Web["Next.js<br/>(Dashboard)"]
     API["Hono REST<br/>(/v1 API)"]
-    Auth["Better Auth"]
+    Auth["Auth"]
   end
 
   subgraph Data["Storage"]
@@ -52,7 +52,7 @@ sequenceDiagram
   participant User as User
   participant Web as Dashboard
   participant API as API
-  participant Auth as Better Auth
+  participant Auth as Authentication
   participant DB as PostgreSQL
 
   User->>Web: Open login page

@@ -1,10 +1,9 @@
 ---
 title: "Human authentication"
-description: "Better Auth: email + password sign-in, OAuth, and the device authorization flow."
+description: "Email + password sign-in, OAuth, and the device authorization flow."
 ---
 
-Human operator authentication is handled by [Better Auth](https://www.better-auth.com),
-mounted at `/api/auth/*`. The dashboard, the CLI, and any custom client use
+Human operator authentication is served at `/api/auth/*`. The dashboard, the CLI, and any custom client use
 these routes to obtain an operator session. This surface is separate from the
 `/v1` REST API and is not rate-limited under the `/v1` bucket.
 
@@ -22,7 +21,7 @@ these routes to obtain an operator session. This surface is separate from the
 | POST | `/api/auth/sign-out` | none | Invalidate the current session |
 | GET | `/api/auth/get-session` | none | Return the current session, if any |
 
-All four set or read the standard Better Auth session cookie, and also accept
+All four set or read the session cookie, and also accept
 the cookie via the `Cookie` header.
 
 ## OAuth (Google / GitHub)
@@ -62,7 +61,7 @@ OAuth providers are enabled only when the deployment configures the matching
 
 ## Bearer tokens
 
-The Better Auth access token returned by `device/token` (and `sign-in/email`)
+The access token returned by `device/token` (and `sign-in/email`)
 is used in `Authorization: Bearer …` against any `/v1` management endpoint. The
 CLI holds this token in daemon memory only — it is never written to disk.
 

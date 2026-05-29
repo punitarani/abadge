@@ -100,7 +100,7 @@ const { items } = await client.items.list();
 | Surface | Path | Purpose |
 |---|---|---|
 | REST API | `/v1/*` | The public application API documented here |
-| Better Auth | `/api/auth/*` | Human authentication and device authorization |
+| Authentication | `/api/auth/*` | Human sign-in and device authorization |
 | Agentic registration | `/agent/auth*`, `/.well-known/*`, `/auth.md` | [auth.md](/api/agentic-registration) agent self-registration and human claim |
 
 Human authentication lives at `/api/auth/*` and is not part of `/v1`. See
