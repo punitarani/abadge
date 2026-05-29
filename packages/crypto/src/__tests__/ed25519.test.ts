@@ -38,6 +38,18 @@ describe("ed25519 public key canonicalization", () => {
     await expect(verifyEd25519(publicKey, "msg", forged)).resolves.toBe(false);
   });
 
+  test("verifyEd25519 returns false (never throws) on a malformed signature", async () => {
+    // Guards the SECOND fail-closed catch (signature decode + crypto.subtle.verify),
+    // distinct from the malformed-key catch above. A non-base64 / wrong-length
+    // signature must surface as a 401, never a 500 at the session-exchange
+    // handler — the same bug class this PR fixes, on the signature input.
+    // (On Bun the base64 decode may be lenient and yield `false` rather than
+    // throwing; this still pins the fail-closed contract for that branch.)
+    const { publicKey } = await generateEd25519KeyPair();
+    await expect(verifyEd25519(publicKey, "msg", "!!!not-base64!!!")).resolves.toBe(false);
+    await expect(verifyEd25519(publicKey, "msg", "AAAA")).resolves.toBe(false);
+  });
+
   test("normalizeEd25519PublicKeyJwk strips alg + extras to the canonical {kty,crv,x}", async () => {
     const { publicKey } = await generateEd25519KeyPair();
     const { x } = JSON.parse(publicKey) as { x: string };
