@@ -543,14 +543,18 @@ const deleteOrg = (input: { orgId: string; confirmName: string; password: string
     const { orgId, confirmName, password } = input;
     const ctx = yield* SessionRequestContextTag;
 
+    // Denied attempts are logged under the *target* org (`orgId`), not the
+    // caller's session org, so the targeted org's administrators retain audit
+    // visibility into failed deletion attempts even when the caller's session
+    // is scoped elsewhere. `sessionOrgId` records where the request came from.
     const denied = (reason: string) =>
       logSessionAudit({
-        organizationId: ctx.identity.organizationId,
+        organizationId: orgId,
         userId: ctx.identity.userId,
         eventType: "org.delete",
         result: "denied",
         ipAddress: ctx.ipAddress,
-        meta: { reason, targetOrgId: orgId },
+        meta: { reason, sessionOrgId: ctx.identity.organizationId },
       });
 
     yield* tryAsync(() => requireOrgRole(ctx.db, orgId, ctx.identity.userId, "owner")).pipe(
@@ -632,13 +636,22 @@ const reauthenticatePassword = (
 ) =>
   Effect.gen(function* () {
     const authContext = (yield* tryAsync(() => ctx.auth.$context)) as {
-      internalAdapter: { findAccounts: (userId: string) => Promise<Array<AuthAccount>> };
-      password: { verify: (data: { password: string; hash: string }) => Promise<boolean> };
+      internalAdapter?: { findAccounts?: (userId: string) => Promise<Array<AuthAccount>> };
+      password?: { verify?: (data: { password: string; hash: string }) => Promise<boolean> };
     };
 
-    const accounts = yield* tryAsync(() =>
-      authContext.internalAdapter.findAccounts(ctx.identity.userId),
-    );
+    // Runtime guard: these are Better Auth internals reached via an unchecked
+    // cast. If a future release renames them, fail fast with an internal error
+    // rather than a cryptic `TypeError` mid-call. (Maps to 500, not a user deny.)
+    const findAccounts = authContext.internalAdapter?.findAccounts;
+    const verify = authContext.password?.verify;
+    if (typeof findAccounts !== "function" || typeof verify !== "function") {
+      return yield* Effect.fail(
+        new Error("Better Auth context is missing the expected re-authentication API"),
+      );
+    }
+
+    const accounts = yield* tryAsync(() => findAccounts(ctx.identity.userId));
     const credential = accounts.find((a) => a.providerId === "credential" && a.password);
 
     if (!credential?.password) {
@@ -651,9 +664,7 @@ const reauthenticatePassword = (
       );
     }
 
-    const valid = yield* tryAsync(() =>
-      authContext.password.verify({ password, hash: credential.password as string }),
-    );
+    const valid = yield* tryAsync(() => verify({ password, hash: credential.password as string }));
     if (!valid) {
       return yield* Effect.fail(
         new UnauthorizedError({
