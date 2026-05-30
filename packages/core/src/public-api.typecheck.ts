@@ -12,17 +12,19 @@ new BadRequestError({
   message: "Missing input",
 });
 
-// @ts-expect-error legacy operator-token surface removed
+// These names are deliberately not part of the public API; the expect-errors
+// fail the build if any are reintroduced as exports.
+// @ts-expect-error not exported: no operator-token surface
 type _LegacyOperatorToken = import("./index").OperatorToken;
-// @ts-expect-error legacy operator-token scope removed
+// @ts-expect-error not exported: no operator-token scope
 type _LegacyOperatorTokenScope = import("./index").OperatorTokenScope;
-// @ts-expect-error legacy operator-token creation input removed
+// @ts-expect-error not exported: no operator-token creation input
 type _LegacyCreateOperatorTokenInput = import("./index").CreateOperatorTokenInput;
-// @ts-expect-error legacy item display surface removed
+// @ts-expect-error not exported: no item display surface
 type _LegacyItemDisplayEntry = import("./index").ItemDisplayEntry;
-// @ts-expect-error PrincipalAuthMethod renamed to AgentAuthMethod
+// @ts-expect-error not exported: agent auth method type is AgentAuthMethod
 type _LegacyPrincipalAuthMethod = import("./index").PrincipalAuthMethod;
-// @ts-expect-error PRINCIPAL_AUTH_METHODS renamed to AGENT_AUTH_METHODS
+// @ts-expect-error not exported: agent auth methods constant is AGENT_AUTH_METHODS
 type _LegacyPrincipalAuthMethods = typeof import("./index").PRINCIPAL_AUTH_METHODS;
 
 export const corePublicApiTypecheck = true;

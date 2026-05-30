@@ -1,14 +1,17 @@
 import { bigserial, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
+// Append-only audit trail. Carries no foreign keys on purpose: an audit row
+// must survive deletion of any entity it references (user, agent, item,
+// profile), so every reference column is a bare text id, not an FK.
 export const auditLogs = pgTable(
   "audit_logs",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     organizationId: text("organization_id").notNull(),
-    // §AB-0043 — nullable: an orphaned agent (its creating user deleted, per
+    // Nullable: an orphaned agent (its creating user deleted, per
     // agents.created_by SET NULL) still acts and must still be logged, but has
-    // no actor-user. The "every access is logged" invariant holds (the row is
-    // written); only the actor-user is null for this case.
+    // no actor-user. The "every access is logged" invariant holds — the row is
+    // written; only the actor-user is null in this case.
     userId: text("user_id"),
     agentId: text("agent_id"),
     itemId: text("item_id"),

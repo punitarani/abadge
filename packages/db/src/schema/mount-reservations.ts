@@ -3,7 +3,7 @@ import { agents } from "./agents";
 import { items } from "./items";
 
 /**
- * §RM-PR2 — Short-lived `use`-action mount handles.
+ * Short-lived `use`-action mount handles.
  *
  * `access.use` and `access.useProfile` mint an opaque `mountId` (prefix
  * `mnt_`) that the local daemon exchanges for the actual decrypted material.

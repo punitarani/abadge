@@ -10,10 +10,10 @@ export const agents = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    // §AB-0043 — nullable + SET NULL so an agent's lifecycle follows the org,
-    // not its creating user: deleting the user orphans (does not delete) the
-    // agent. An orphaned agent keeps working; its audit rows carry a null
-    // actor-user (see audit_logs.user_id).
+    // Nullable + SET NULL so an agent's lifecycle follows the org, not its
+    // creating user: deleting the user orphans (does not delete) the agent. An
+    // orphaned agent keeps working; its audit rows carry a null actor-user (see
+    // audit_logs.user_id).
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     description: text("description"),

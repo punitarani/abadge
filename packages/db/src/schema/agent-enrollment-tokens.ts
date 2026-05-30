@@ -9,9 +9,9 @@ export const agentEnrollmentTokens = pgTable(
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    // §AB-0043 — nullable + SET NULL: enrollment for an orphaned agent has no owning
-    // user. createdBy stays NOT NULL — the insert always supplies the acting user, and
-    // these tokens are 10-min ephemeral, so cleaning up a deleted issuer's is harmless.
+    // Nullable + SET NULL: enrollment for an orphaned agent has no owning user.
+    // createdBy stays NOT NULL — the insert always supplies the acting user, and
+    // these tokens are 10-min ephemeral, so cascading a deleted issuer is harmless.
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
     createdBy: text("created_by")
       .notNull()

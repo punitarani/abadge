@@ -15,17 +15,17 @@ import {
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1));
 
 /**
- * §W1S7-001 — Client-provided UUIDs for ZK item create. The itemId is bound
- * into the XChaCha20-Poly1305 AAD at encrypt time, so the client must choose
- * the id before wrapping the payload. The server validates this pattern and
- * maps the insert-time unique-violation to a ConflictError so two clients
- * racing with the same UUID see a domain error rather than a 500.
+ * Client-provided UUID for ZK item create. The itemId is bound into the
+ * XChaCha20-Poly1305 AAD at encrypt time, so the client must choose the id
+ * before wrapping the payload. The server maps an insert-time unique-violation
+ * to a ConflictError so two clients racing with the same UUID see a domain
+ * error rather than a 500.
  */
 const UuidString = Schema.String.pipe(
   Schema.pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
 );
 
-// §AGC1b — iterative depth check: avoids stack-overflow on adversarial input.
+// Iterative depth check: avoids stack-overflow on adversarial input.
 function jsonDepth(root: unknown): number {
   let maxDepth = 0;
   // [value, depth] pairs
@@ -46,9 +46,9 @@ function jsonDepth(root: unknown): number {
   return maxDepth;
 }
 
-// §AGC1d — Reject names that are pure whitespace or contain zero-width /
-// bidi-control characters commonly used to disguise identifiers.
-// Keep maxLength at 255 to preserve existing data compatibility.
+// Reject names that are pure whitespace or contain zero-width / bidi-control
+// characters commonly used to disguise identifiers. maxLength is 255 to match
+// the stored column width.
 const BoundedNameString = Schema.String.pipe(
   Schema.minLength(1),
   Schema.maxLength(255),
@@ -63,10 +63,11 @@ const BoundedNameString = Schema.String.pipe(
   }),
 );
 
-// §AGC1e — publicKey must be a JSON-serialised JWK with kty:"OKP" and crv:"Ed25519".
-// The codebase stores the result of JSON.stringify(crypto.subtle.exportKey("jwk", ...))
-// which produces ~111-char strings like {"crv":"Ed25519","ext":true,"key_ops":["verify"],"kty":"OKP","x":"..."}.
-// We validate structure rather than a raw base64url pattern.
+// publicKey must be a JSON-serialised JWK with kty:"OKP" and crv:"Ed25519".
+// Callers store JSON.stringify(crypto.subtle.exportKey("jwk", ...)), which
+// produces ~111-char strings like
+// {"crv":"Ed25519","ext":true,"key_ops":["verify"],"kty":"OKP","x":"..."}.
+// Validate structure rather than a raw base64url pattern.
 const AgentPublicKeyString = Schema.String.pipe(
   Schema.minLength(50), // JWK with Ed25519 x-value is at least ~80 chars; 50 gives room
   Schema.maxLength(1024), // generous upper bound; real JWKs are ~111 chars
@@ -101,9 +102,8 @@ export const AgentKindSchema = Schema.Literal(...AGENT_KINDS);
 export const AgentAuthMethodSchema = Schema.Literal(...AGENT_AUTH_METHODS);
 export const CapabilitySchema = Schema.Literal(...CAPABILITIES);
 /**
- * §RM-PR1 — Canonical capabilities only. New API surfaces should validate
- * with this schema; legacy capability values are accepted via
- * `CapabilitySchema` for backward compatibility.
+ * Canonical capabilities only. New API surfaces should validate with this
+ * schema; legacy capability aliases are accepted via `CapabilitySchema`.
  */
 export const CanonicalCapabilitySchema = Schema.Literal(...CANONICAL_CAPABILITIES);
 export const AuditEventTypeSchema = Schema.Literal(...AUDIT_EVENT_TYPES);
@@ -155,15 +155,15 @@ export const RotateKeySchema = Schema.Struct({
 
 export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("zero_knowledge"),
-  // §W1S7-001 — Client-provided id. The id is bound into the XChaCha20-Poly1305
-  // AAD at encrypt time (see `buildZkContentAad` / `buildZkDekWrapAad`), so the
-  // server MUST use this value verbatim when inserting the row. Any server-side
-  // replacement would break the AAD binding and make the item undecryptable.
+  // Client-provided id, bound into the XChaCha20-Poly1305 AAD at encrypt time
+  // (see `buildZkContentAad` / `buildZkDekWrapAad`), so the server MUST insert
+  // it verbatim. Any server-side replacement would break the AAD binding and
+  // make the item undecryptable.
   id: UuidString,
-  // §AB-0002 — optional explicit target profile. Omitted preserves legacy
-  // behavior (server resolves the org's first zero_knowledge profile). When
-  // set it MUST be a zero_knowledge profile in the caller's org; the client
-  // is responsible for having wrapped the DEK under that profile's root key.
+  // Optional explicit target profile. Omitted resolves the org's first
+  // zero_knowledge profile. When set it MUST be a zero_knowledge profile in the
+  // caller's org; the client must have wrapped the DEK under that profile's
+  // root key.
   profileId: Schema.optional(UuidString),
   label: NonEmptyString,
   encryptedItemKey: NonEmptyString,
@@ -176,9 +176,8 @@ export const ZeroKnowledgeCreateItemSchema = Schema.Struct({
 
 export const ServerManagedCreateItemSchema = Schema.Struct({
   storageMode: Schema.Literal("server_managed"),
-  // §AB-0002 — optional explicit target profile. Omitted resolves the org's
-  // default server_managed profile. Must be a server_managed profile in the
-  // caller's org.
+  // Optional explicit target profile. Omitted resolves the org's default
+  // server_managed profile. Must be a server_managed profile in the caller's org.
   profileId: Schema.optional(UuidString),
   payload: ItemPayloadSchema,
 });
@@ -211,27 +210,26 @@ const CreateAgentSchemaBase = Schema.Struct({
   kind: AgentKindSchema,
   name: BoundedNameString,
   authMethod: Schema.optional(AgentAuthMethodSchema),
-  publicKey: Schema.optional(AgentPublicKeyString), // §AGC1e — JWK format
+  publicKey: Schema.optional(AgentPublicKeyString), // JWK format
   issueBootstrapToken: Schema.optional(Schema.Boolean),
   metadata: Schema.optional(JsonRecord),
 });
 
 export const CreateAgentSchema = CreateAgentSchemaBase.pipe(
   Schema.filter((input) => {
-    // §AGC1c — reject ambiguous combo: an agent created with BOTH publicKey and
-    // issueBootstrapToken set. Callers must specify exactly one. (All agents are
-    // public_key_session; authMethod is accepted for forward-compat but optional.)
+    // Reject the ambiguous combo of BOTH publicKey and issueBootstrapToken.
+    // Callers must specify exactly one. (All agents are public_key_session;
+    // authMethod is optional.)
     if (input.publicKey && input.issueBootstrapToken === true) {
       return "Specify either publicKey OR issueBootstrapToken, not both.";
     }
 
-    // §AGC1b — metadata size (UTF-16 code units; TextEncoder is unavailable in
-    // Effect Schema filter which runs in both browser and CF Workers). JSON.stringify
-    // length is an upper bound on actual UTF-8 bytes because every ASCII char ≤1 byte;
-    // multi-byte chars are fewer in code units than bytes only for >U+FFFF, which are
-    // rare. The 16 KB cap here is a "good enough" guard — a body-limit middleware
-    // (§DoS2) enforces the hard 1 MB ceiling. Depth check runs first to guard against
-    // a pathological tree that causes stringify to stack-overflow.
+    // Bound metadata size by JSON.stringify length (UTF-16 code units;
+    // TextEncoder is unavailable in an Effect Schema filter, which runs in both
+    // browser and CF Workers). Code-unit length is a usable proxy for UTF-8
+    // bytes; this 16 KB cap is a soft guard, with a body-limit middleware
+    // enforcing the hard ceiling. Depth check runs first so a pathological tree
+    // cannot stack-overflow stringify.
     if (input.metadata !== undefined) {
       const depth = jsonDepth(input.metadata);
       if (depth > MAX_AGENT_METADATA_DEPTH) {
@@ -258,7 +256,7 @@ export const IssueAgentBootstrapTokenSchema = Schema.Struct({
 
 export const EnrollAgentSchema = Schema.Struct({
   bootstrapToken: NonEmptyString,
-  publicKey: AgentPublicKeyString, // §AGC1e — JWK format validation
+  publicKey: AgentPublicKeyString, // JWK format validation
 });
 
 export const CreateAgentChallengeSchema = Schema.Struct({
@@ -302,13 +300,11 @@ const CreatePermissionCapabilities = Schema.NonEmptyArray(CapabilitySchema).pipe
 );
 
 /**
- * §RM-PR1 — A permission grant targets EXACTLY one of (item, profile). The
- * discriminated union mirrors the storage-layer CHECK constraint so the
- * router cannot construct an illegal row.
- *
- * Capabilities remain `CapabilitySchema` (legacy + canonical) for now so
- * existing item-target grants keep working; PR2 narrows new write paths to
- * `CanonicalCapabilitySchema` once the unified pipeline lands.
+ * A permission grant targets EXACTLY one of (item, profile). The discriminated
+ * union mirrors the storage-layer CHECK constraint so the router cannot
+ * construct an illegal row. Capabilities accept both legacy aliases and the
+ * canonical pair (`CapabilitySchema`); legacy aliases map to canonical at
+ * access time via `LEGACY_TO_CANONICAL`.
  */
 export const CreateItemPermissionSchema = Schema.Struct({
   agentId: NonEmptyString,
@@ -330,11 +326,11 @@ export const CreatePermissionSchema = Schema.Union(
 );
 
 /**
- * §RM-PR1 — Unified access shapes. `read` returns either a server-decrypted
- * payload or a ZK envelope for client decrypt; `use` returns an opaque mount
- * handle with an expiry. Profile-target reads are not exposed yet because
- * "read a whole profile" has no single canonical response shape; profile
- * grants gate per-item access at the policy layer.
+ * Unified access shapes. `read` returns either a server-decrypted payload or a
+ * ZK envelope for client decrypt; `use` returns an opaque mount handle with an
+ * expiry. There is no profile-target read shape: "read a whole profile" has no
+ * single canonical response, so profile grants gate per-item access at the
+ * policy layer instead.
  */
 export const ReadAccessSchema = Schema.Struct({
   itemId: NonEmptyString,
@@ -379,7 +375,7 @@ export const UseAccessResponseSchema = Schema.Struct({
 });
 
 /**
- * §RM-PR4 — Redeem a previously-minted mount handle. The local daemon (or any
+ * Redeem a previously-minted mount handle. The local daemon (or any
  * authenticated local agent) atomically marks the reservation consumed and
  * receives the actual envelope / decrypted payload. Cross-agent or repeated
  * redemption returns NOT_FOUND.
@@ -445,9 +441,9 @@ export const ProfileSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
   name: NonEmptyString,
-  // §REVAMP-PR5 — stable, customer/tenant-supplied identifier scoped
-  // per-org (partial-unique index, NULL allowed). The auto-default
-  // profile created with each org has `externalId: "default"`.
+  // Stable, customer/tenant-supplied identifier scoped per-org (partial-unique
+  // index, NULL allowed). The auto-default profile created with each org has
+  // `externalId: "default"`.
   externalId: Schema.NullOr(Schema.String),
   description: Schema.NullOr(Schema.String),
   storageMode: StorageModeSchema,
@@ -466,10 +462,9 @@ export const ItemSummarySchema = Schema.Struct({
   storageMode: StorageModeSchema,
   cryptoVersion: Schema.Int,
   contentVersion: Schema.Int,
-  // §C2 — surfacing this on summaries lets the dashboard's
-  // profile-grant blast-radius dialog count items in a profile without
-  // needing to fetch detail rows. Nullable because items can sit at the
-  // org root (legacy / pre-PR1 rows) until they get assigned to a profile.
+  // Surfaced on summaries so the dashboard's profile-grant blast-radius dialog
+  // can count items in a profile without fetching detail rows. Nullable because
+  // an item can sit at the org root until it is assigned to a profile.
   profileId: Schema.NullOr(Schema.String),
   createdAt: IsoDateString,
   updatedAt: IsoDateString,
@@ -506,7 +501,8 @@ export const ItemDetailSchema = Schema.Union(
 export const AgentSchema = Schema.Struct({
   id: NonEmptyString,
   organizationId: NonEmptyString,
-  // §AB-0043 — null when the creating user has been deleted (agent orphaned, org-scoped).
+  // Null when the creating user has been deleted; the agent is orphaned but
+  // stays org-scoped and usable.
   createdBy: Schema.NullOr(NonEmptyString),
   kind: AgentKindSchema,
   locality: Schema.Literal("local", "remote"),
@@ -672,9 +668,9 @@ export const DaemonOperatorSessionSchema = Schema.Struct({
 });
 
 /**
- * §RM-PR2 — A permission row's target is now nullable on both columns: each
- * row sets exactly one of (itemId, profileId), enforced by the DB CHECK. The
- * wire shape mirrors the row shape so callers can branch on which is null.
+ * A permission row's target is nullable on both columns: each row sets exactly
+ * one of (itemId, profileId), enforced by the DB CHECK. The wire shape mirrors
+ * the row shape so callers can branch on which is null.
  */
 export const PermissionSchema = Schema.Struct({
   id: NonEmptyString,
@@ -684,7 +680,7 @@ export const PermissionSchema = Schema.Struct({
   profileId: Schema.NullOr(NonEmptyString),
   capability: CapabilitySchema,
   expiresAt: NullableIsoDateString,
-  // §AB-0043 — null when the granting user has been deleted (grant survives).
+  // Null when the granting user has been deleted; the grant survives its granter.
   grantedBy: Schema.NullOr(NonEmptyString),
   createdAt: IsoDateString,
 });
@@ -692,7 +688,7 @@ export const PermissionSchema = Schema.Struct({
 export const AuditEntrySchema = Schema.Struct({
   id: Schema.Int,
   organizationId: NonEmptyString,
-  // §AB-0043 — null for an orphaned agent's actions (no actor-user).
+  // Null for an orphaned agent's actions, which have no actor-user.
   userId: Schema.NullOr(NonEmptyString),
   agentId: Schema.NullOr(Schema.String),
   itemId: Schema.NullOr(Schema.String),
@@ -712,9 +708,9 @@ export const CiphertextAccessResponseSchema = Schema.Struct({
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   cryptoVersion: Schema.Int,
-  // §W1S7-001 — local agents need these to rebuild the XChaCha20-Poly1305
-  // AAD for ZK decryption. The server computes them from the row and returns
-  // them verbatim; clients MUST pass them through to the daemon unchanged.
+  // Local agents need these to rebuild the XChaCha20-Poly1305 AAD for ZK
+  // decryption. The server computes them from the row and returns them
+  // verbatim; clients MUST pass them through to the daemon unchanged.
   itemId: NonEmptyString,
   profileId: NonEmptyString,
   contentVersion: Schema.Int.pipe(Schema.positive()),
@@ -729,7 +725,7 @@ export const ZeroKnowledgeMountAccessResponseSchema = Schema.Struct({
   encryptedItemKey: NonEmptyString,
   ciphertext: NonEmptyString,
   cryptoVersion: Schema.Int,
-  // §W1S7-001 — see CiphertextAccessResponseSchema. AAD meta for local decrypt.
+  // AAD meta for local ZK decrypt — see CiphertextAccessResponseSchema.
   itemId: NonEmptyString,
   profileId: NonEmptyString,
   contentVersion: Schema.Int.pipe(Schema.positive()),
@@ -811,7 +807,7 @@ export const ItemResultSchema = Schema.Struct({
 
 export const ItemListResultSchema = Schema.Struct({
   items: Schema.Array(ItemSummarySchema),
-  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  // Keyset pagination cursor; null when this is the last page.
   nextCursor: Schema.NullOr(Schema.String),
 });
 
@@ -821,13 +817,13 @@ export const AgentResultSchema = Schema.Struct({
 
 export const AgentListResultSchema = Schema.Struct({
   agents: Schema.Array(AgentSchema),
-  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  // Keyset pagination cursor; null when this is the last page.
   nextCursor: Schema.NullOr(Schema.String),
 });
 
 export const PermissionListResultSchema = Schema.Struct({
   permissions: Schema.Array(PermissionSchema),
-  // §AB-0050 — keyset pagination cursor; null when this is the last page.
+  // Keyset pagination cursor; null when this is the last page.
   nextCursor: Schema.NullOr(Schema.String),
 });
 
