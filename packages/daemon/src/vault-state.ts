@@ -49,8 +49,8 @@ export class VaultState {
     const kek = deriveKEK(password, salt, meta.kdfParams);
     const wrapped: WrappedKey = { wrapped: meta.wrappedRootKey };
 
-    // §W1S7-001 — AAD binds the wrapped root key to (profileId, keyVersion).
-    // unwrapRootKey throws if password is wrong OR the AAD does not match the
+    // AAD binds the wrapped root key to (profileId, keyVersion). unwrapRootKey
+    // throws if the password is wrong OR the AAD does not match the
     // server-supplied meta — the latter catches a profile-swap or stale-
     // keyVersion replay before the root key lands in memory.
     const rootKey = unwrapRootKey(wrapped, kek, {
@@ -81,11 +81,10 @@ export class VaultState {
   ): { wrappedRootKey: string; kdfSalt: string; kdfParams: KDFParams } {
     const rootKey = this.requireUnlocked();
 
-    // Verify old password by attempting unwrap. §W1S7-001: AAD binds
-    // (profileId, keyVersion) — the re-wrap below uses the same meta so
-    // the server-side UPDATE (which does NOT advance keyVersion for a
-    // password change — see `profiles.changePassword` in the trpc router)
-    // stays symmetric with the unwrap.
+    // Verify old password by attempting unwrap. AAD binds (profileId,
+    // keyVersion); the re-wrap below reuses the same meta. A password change
+    // does NOT advance keyVersion, so the server-side UPDATE stays symmetric
+    // with this unwrap.
     const aadMeta = { profileId: meta.id, keyVersion: meta.keyVersion };
     const oldSalt = fromBase64(meta.kdfSalt);
     const oldKek = deriveKEK(oldPassword, oldSalt, meta.kdfParams);
@@ -109,10 +108,10 @@ export class VaultState {
   }
 
   /**
-   * Encrypt an item payload. §W1S7-001 requires callers to supply the
-   * identity the ciphertext will be stored under, so it can be bound as
-   * AAD. `contentVersion` defaults to `1` on create; on rewrite, callers
-   * MUST pass the NEW version the row will take.
+   * Encrypt an item payload. Callers supply the identity the ciphertext will
+   * be stored under so it can be bound as AAD. `contentVersion` defaults to
+   * `1` on create; on rewrite, callers MUST pass the NEW version the row will
+   * take.
    */
   encrypt(
     payload: unknown,
@@ -126,9 +125,9 @@ export class VaultState {
   }
 
   /**
-   * Decrypt an item. §W1S7-001 requires the same `{profileId, itemId,
-   * contentVersion}` used at encrypt time — any mismatch fails the AEAD
-   * tag check and throws from `decryptItem`.
+   * Decrypt an item. The same `{profileId, itemId, contentVersion}` used at
+   * encrypt time is required — any mismatch fails the AEAD tag check and
+   * throws from `decryptItem`.
    */
   decrypt(
     encryptedItemKey: string,
@@ -144,9 +143,9 @@ export class VaultState {
   }
 
   /**
-   * Re-wrap item DEKs with the currently-unlocked (new) root key.
-   * §W1S7-001: each rewrap requires the item's identity so the DEK-wrap
-   * AAD stays bound across rotations.
+   * Re-wrap item DEKs with the currently-unlocked (new) root key. Each rewrap
+   * requires the item's identity so the DEK-wrap AAD stays bound across
+   * rotations.
    */
   rekey(
     items: Array<{ id: string; encryptedItemKey: string }>,

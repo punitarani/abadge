@@ -54,42 +54,37 @@ function concat(parts: Uint8Array[]): Uint8Array {
 export interface ServerAadMeta {
   orgId: string;
   /**
-   * Profile the item belongs to. Pass `NO_PROFILE_AAD_SENTINEL` when the
-   * item has no profile assigned (legacy server-managed items may have
-   * `profileId === null`). Using a sentinel keeps the AAD well-defined
-   * and constant-width for the "no profile" case.
+   * Profile the item belongs to. Pass `NO_PROFILE_AAD_SENTINEL` (via
+   * `profileIdForServerAad`) when the item has no profile assigned, so the AAD
+   * stays well-defined and constant-width for the "no profile" case.
    */
   profileId: string;
   itemId: string;
   /**
-   * `serverKeyVersion` column value. Doubles as the AAD-epoch marker:
-   *   `1` → legacy ciphertext without AAD (must NOT be passed here).
-   *   `>= 2` → AAD-bound ciphertext produced by `buildServerAad`.
+   * `serverKeyVersion` column value, which doubles as the AAD-epoch marker.
+   * Versions below `SERVER_AAD_MIN_VERSION` carry no AAD and must NOT be passed
+   * here; `>= SERVER_AAD_MIN_VERSION` are AAD-bound by `buildServerAad`.
    */
   keyVersion: number;
 }
 
 /**
- * Sentinel substituted into the AAD when a server-managed item has no
- * profile (legacy items predate the requirement). Keep this value stable
- * and identical on both encrypt and decrypt; changing it would strand
- * the corresponding ciphertext.
+ * Sentinel substituted into the AAD when a server-managed item has no profile.
+ * This value MUST stay stable and identical on both encrypt and decrypt;
+ * changing it would strand the corresponding ciphertext.
  */
 export const NO_PROFILE_AAD_SENTINEL = "__no_profile__";
 
 /**
- * First `serverKeyVersion` that carries AAD. Rows with
- * `serverKeyVersion < SERVER_AAD_MIN_VERSION` are legacy v1 ciphertext
- * and MUST be decrypted without AAD.
+ * Lowest `serverKeyVersion` that carries AAD. Rows below this version were
+ * written without AAD and MUST be decrypted without it.
  */
 export const SERVER_AAD_MIN_VERSION = 2;
 
 /**
- * Canonical `profileId` component for server-managed AAD.
- * Encrypt and decrypt sites MUST both use this helper so that a future
- * change to the fallback (e.g. when server-managed items gain a
- * required profile) is applied symmetrically in one place. A mismatch
- * here would silently prevent decrypt of already-stored ciphertext.
+ * Canonical `profileId` component for server-managed AAD. Encrypt and decrypt
+ * sites MUST both route through this helper so the no-profile fallback stays
+ * symmetric; a mismatch would silently prevent decrypt of stored ciphertext.
  */
 export function profileIdForServerAad(profileId: string | null | undefined): string {
   return profileId ?? NO_PROFILE_AAD_SENTINEL;
@@ -127,7 +122,7 @@ export function buildServerDekWrapAad(meta: ServerDekWrapAadMeta): Uint8Array {
 }
 
 // -----------------------------------------------------------------------------
-// Zero-knowledge (XChaCha20-Poly1305) AAD — W1S7-001
+// Zero-knowledge (XChaCha20-Poly1305) AAD
 // -----------------------------------------------------------------------------
 
 export interface ZkContentAadMeta {

@@ -18,13 +18,12 @@ function parseJwk(serialized: string): unknown {
  * Validate and canonicalize an Ed25519 PUBLIC key JWK, returning the minimal
  * `{kty, crv, x}` form and dropping every other member.
  *
- * Critically this strips a non-standard `alg`: Node's WebCrypto stamps
- * `alg:"Ed25519"` onto exported Ed25519 JWKs (the JWA value should be "EdDSA";
- * Bun and Cloudflare Workers omit `alg`). Workers' `importKey()` throws on that
- * unexpected `alg`, so a key registered by a Node client would store fine but
- * make every later signature verification throw → an uncaught 500. Canonicalizing
- * here — at registration AND inside `importPublicKey` — fixes new keys and heals
- * any bad-`alg` key already in the database.
+ * Critically this strips a non-standard `alg`: some WebCrypto implementations
+ * stamp `alg:"Ed25519"` onto exported Ed25519 JWKs (the JWA value should be
+ * "EdDSA"). Workers' `importKey()` rejects that unexpected `alg`, so an
+ * un-normalized key would store fine yet make every later signature
+ * verification throw. Canonicalizing at registration AND inside
+ * `importPublicKey` keeps stored keys importable everywhere.
  *
  * Throws on anything that is not a well-formed Ed25519 public JWK.
  */
@@ -92,9 +91,9 @@ export async function verifyEd25519(
   message: string,
   signature: string,
 ): Promise<boolean> {
-  // Never throw: a malformed/unsupported stored key or signature is an
-  // authentication failure (caller maps `false` → 401), not a 500. The previous
-  // shape let importKey() throw straight through the session-exchange handler.
+  // Fail closed: a malformed/unsupported stored key or signature is an
+  // authentication failure (caller maps `false` → 401), never an uncaught
+  // error. importKey and verify are both wrapped so neither can throw out.
   let key: CryptoKey;
   try {
     key = await importPublicKey(publicKey);

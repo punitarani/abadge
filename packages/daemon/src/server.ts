@@ -50,8 +50,8 @@ const MAX_AUTH_SESSION_MS = 24 * 60 * 60 * 1000;
  */
 const BULK_ITEMS_MAX = 256;
 
-// RESERVED_ENV_KEYS and ENV_VAR_NAME_PATTERN are imported from @abadge/core
-// (see import above) — single authoritative source shared with MCP (W3P10-001).
+// RESERVED_ENV_KEYS and ENV_VAR_NAME_PATTERN come from @abadge/core — the
+// single authoritative source shared with the MCP server.
 
 function validateEnvKey(key: string): void {
   if (!ENV_VAR_NAME_PATTERN.test(key)) {
@@ -168,11 +168,10 @@ function buildHandlers(
   let auth: DaemonAuthState | null = null;
 
   return {
-    // W3P12-001 / Critical C-2: TOFU peer verification. Client calls this
-    // BEFORE any sensitive RPC to confirm it's talking to the real daemon and
-    // not a same-UID squatter. Un-gated (no auth / unlock check) on purpose:
-    // gating this would deadlock the handshake since auth.setSession runs
-    // AFTER verification.
+    // TOFU peer verification. The client calls this BEFORE any sensitive RPC to
+    // confirm it is talking to the real daemon and not a same-UID squatter.
+    // Un-gated (no auth / unlock check) on purpose: gating it would deadlock the
+    // handshake, since auth.setSession runs only AFTER verification.
     "identity.sign": async (params) => {
       const nonce = params.nonce as string | undefined;
       if (!nonce || typeof nonce !== "string") {
@@ -220,8 +219,7 @@ function buildHandlers(
     },
 
     // Updates the cached org scope without re-supplying the token. Called by
-    // `abadge org use` so outbound tRPC calls pick up the new org immediately
-    // (§O3 / multi-org CLI fix).
+    // `abadge org use` so outbound tRPC calls pick up the new org immediately.
     "auth.setOrg": async (params): Promise<DaemonAuthStatus> => {
       if (!auth || isAuthExpired(auth)) {
         throw {
@@ -352,9 +350,9 @@ function buildHandlers(
       if (payload === undefined) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "payload is required" };
       }
-      // §W1S7-001 — profileId + itemId are bound into the XChaCha20-Poly1305
-      // AAD. CLI callers MUST pre-generate the itemId (UUID) before calling
-      // item.encrypt and pass the same value to items.create.
+      // profileId + itemId are bound into the XChaCha20-Poly1305 AAD. CLI
+      // callers MUST pre-generate the itemId (UUID) before calling item.encrypt
+      // and pass the same value to items.create.
       if (!profileId || !itemId) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
@@ -382,8 +380,8 @@ function buildHandlers(
           message: "encryptedItemKey and ciphertext are required",
         };
       }
-      // §W1S7-001 — AAD meta is mandatory on decrypt; a missing param would
-      // otherwise mask the row-swap detection the AAD is designed to provide.
+      // AAD meta is mandatory on decrypt; a missing param would otherwise mask
+      // the row-swap detection the AAD is designed to provide.
       if (!profileId || !itemId) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
@@ -411,11 +409,11 @@ function buildHandlers(
       if (!items || !oldRootKeyB64) {
         throw { code: RPC_ERRORS.INVALID_PARAMS, message: "items and oldRootKey are required" };
       }
-      // §W1S7-001 — rekey re-wraps each DEK under the new root key with the
-      // DEK-wrap AAD bound to (profileId, itemId). profileId MUST come from
-      // the caller, not the currently-unlocked vault meta: during rotation
-      // the unlocked vault may represent a different profile than the items
-      // being rewrapped (e.g. password-change flows on a staged keyVersion).
+      // rekey re-wraps each DEK under the new root key with the DEK-wrap AAD
+      // bound to (profileId, itemId). profileId MUST come from the caller, not
+      // the currently-unlocked vault meta: during rotation the unlocked vault
+      // may represent a different profile than the items being rewrapped (e.g.
+      // password-change flows on a staged keyVersion).
       if (!profileId) {
         throw {
           code: RPC_ERRORS.INVALID_PARAMS,
@@ -430,9 +428,8 @@ function buildHandlers(
     },
 
     "exec.env": async (params): Promise<EnvExecResult> => {
-      // W1S6-003: exec.* RPCs gated on auth + unlock — unauthenticated or
-      // pre-unlock callers must not be able to spawn subprocesses as the
-      // daemon UID.
+      // exec.* RPCs are gated on auth + unlock — unauthenticated or pre-unlock
+      // callers must not be able to spawn subprocesses as the daemon UID.
       buildAuthHeaders(auth);
       requireUnlocked(vault);
 
@@ -459,9 +456,8 @@ function buildHandlers(
     },
 
     "exec.expandEnv": async (params): Promise<EnvExecResult> => {
-      // W1S6-003: exec.* RPCs gated on auth + unlock (moved from the ZK branch
-      // below so that server-managed payloads also require the operator to be
-      // authenticated and the vault unlocked before any subprocess is spawned).
+      // Auth + unlock gate before any decrypt or subprocess spawn — applies to
+      // both the ZK and server-managed branches below.
       buildAuthHeaders(auth);
       requireUnlocked(vault);
 
@@ -483,9 +479,9 @@ function buildHandlers(
 
       let payload: unknown;
       if (encryptedItemKey && ciphertext) {
-        // §W1S7-001 — ZK decrypt requires the AAD meta so the XChaCha20-Poly1305
-        // tag check binds to the same (profile, item, contentVersion) the row
-        // was stored under.
+        // ZK decrypt requires the AAD meta so the XChaCha20-Poly1305 tag check
+        // binds to the same (profile, item, contentVersion) the row was stored
+        // under.
         if (!profileId || !itemId) {
           throw {
             code: RPC_ERRORS.INVALID_PARAMS,
@@ -531,7 +527,7 @@ function buildHandlers(
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: exec.envBulk decrypts N items (ZK + SM), validates labels → env-key normalization, detects reserved-key + collision violations, builds env map, and spawns a subprocess — splitting it would scatter the audit/cleanup paths.
     "exec.envBulk": async (params): Promise<EnvExecResult> => {
-      // W1S6-003 — auth + unlock gate (matches exec.expandEnv).
+      // Auth + unlock gate (matches exec.expandEnv).
       buildAuthHeaders(auth);
       requireUnlocked(vault);
 
@@ -656,7 +652,7 @@ function buildHandlers(
     },
 
     "exec.mount": async (params): Promise<MountExecResult> => {
-      // W1S6-003: exec.* RPCs gated on auth + unlock.
+      // Auth + unlock gate.
       buildAuthHeaders(auth);
       requireUnlocked(vault);
 
@@ -685,9 +681,8 @@ function buildHandlers(
     },
 
     "exec.cleanup": async (params) => {
-      // W1S6-003: exec.* RPCs gated on auth + unlock (cleanup removes files
-      // that only an authenticated, unlocked operator could have created via
-      // exec.mount).
+      // Auth + unlock gate: cleanup removes files that only an authenticated,
+      // unlocked operator could have created via exec.mount.
       buildAuthHeaders(auth);
       requireUnlocked(vault);
 
@@ -787,10 +782,10 @@ export async function startServer(config: DaemonConfig): Promise<DaemonServer> {
   // Clean up temp files left behind by previous crashed sessions
   void cleanupOrphanedMounts();
 
-  // W3P12-003: parent dir MUST be 0700 — if it already exists with wider
-  // perms (e.g. a prior install under a permissive umask, or a cross-UID
-  // attacker pre-creating it), fail early rather than silently tightening
-  // with chmod (which would paper over the real issue).
+  // The parent dir MUST be 0700. If it already exists with wider perms (e.g. a
+  // prior install under a permissive umask, or a cross-UID attacker
+  // pre-creating it), fail early rather than silently tightening with chmod,
+  // which would paper over the real issue.
   const socketDir = dirname(config.socketPath);
   mkdirSync(socketDir, { recursive: true, mode: 0o700 });
   const dirMode = statSync(socketDir).mode & 0o777;
@@ -800,10 +795,9 @@ export async function startServer(config: DaemonConfig): Promise<DaemonServer> {
     );
   }
 
-  // W3P12-001 / Critical C-2: load or create the daemon's Ed25519 keypair
-  // BEFORE the socket starts accepting connections. This ensures
-  // `identity.sign` handler has the identity in memory the first time a
-  // client calls it for TOFU fingerprint pinning.
+  // Load or create the daemon's Ed25519 keypair BEFORE the socket accepts
+  // connections, so the `identity.sign` handler has the identity in memory the
+  // first time a client calls it for TOFU fingerprint pinning.
   const identity = await loadOrCreateDaemonIdentity(socketDir);
   const handlers = buildHandlers(vault, config, identity);
 
@@ -817,13 +811,12 @@ export async function startServer(config: DaemonConfig): Promise<DaemonServer> {
   // Buffer for accumulating data per connection
   const connectionBuffers = new WeakMap<object, string>();
 
-  // W1S6-001 / W3P12-002: atomic socket permissions. `Bun.listen({ unix })`
-  // creates the socket inode under the process umask. With the default
-  // umask 0022 the socket briefly exists at mode 0755, giving a cross-UID
-  // attacker with an inotify/fsevents watcher a deterministic window to
-  // connect before the follow-up chmodSync(0o600) runs. We temporarily
-  // set umask to 0o077 so the socket is created at 0o600 atomically, then
-  // restore the previous umask in finally{}.
+  // Atomic socket permissions. `Bun.listen({ unix })` creates the socket inode
+  // under the process umask. With the default umask 0022 the socket would
+  // briefly exist at mode 0755, giving a cross-UID attacker with an
+  // inotify/fsevents watcher a deterministic window to connect before a
+  // follow-up chmod runs. Temporarily set umask to 0o077 so the socket is
+  // created at 0o600 atomically, then restore the previous umask in finally{}.
   // biome-ignore lint/style/noRestrictedGlobals: daemon needs process.umask for atomic socket creation
   const previousUmask = process.umask(0o077);
   let server: ReturnType<typeof Bun.listen>;
