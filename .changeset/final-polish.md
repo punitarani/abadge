@@ -1,4 +1,5 @@
 ---
+"@abadge/cli": patch
 "@abadge/mcp": patch
 ---
 
