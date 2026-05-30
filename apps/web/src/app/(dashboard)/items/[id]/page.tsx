@@ -7,7 +7,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ItemSecretSection, useItemReveal } from "@/components/dashboard/item-detail-panel";
+import {
+  ItemSecretSection,
+  storageModeLabel,
+  useItemReveal,
+} from "@/components/dashboard/item-detail-panel";
 import { DetailSkeleton } from "@/components/dashboard/skeletons/detail-skeleton";
 import { TableRowsSkeleton } from "@/components/dashboard/skeletons/table-rows-skeleton";
 import {
@@ -137,7 +141,7 @@ export default function ItemDetailPage(): React.ReactElement {
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-semibold">{item.label}</h1>
             <Badge variant={isZK ? "default" : "secondary"}>
-              {isZK ? "zero_knowledge" : "server_managed"}
+              {storageModeLabel(item.storageMode)}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">Created {formatDate(item.createdAt)}</p>

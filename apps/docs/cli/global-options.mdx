@@ -9,12 +9,13 @@ The CLI accepts a small set of flags on every command.
 |---|---|
 | `--help`, `-h` | Show help for the command |
 | `--version`, `-v` | Print the CLI version |
-| `--json` | Print machine-readable JSON output (where supported) |
 | `--token-stdin` | Read a bearer session token from stdin for this command |
+
+`--json` is **not** a global flag — it is a per-subcommand option declared on the commands that support machine-readable output (see below).
 
 ## `--json`
 
-Most commands have a default human-readable output and an opt-in JSON output. When `--json` is set:
+`--json` is a per-subcommand flag, not a program-level option. Most commands have a default human-readable output and an opt-in JSON output. When `--json` is set:
 
 - Tables become arrays of objects
 - Status messages move to stderr
