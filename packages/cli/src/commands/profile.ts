@@ -23,7 +23,10 @@ export type ProfileJsonDto = Pick<
   | "updatedAt"
 >;
 
-export function toProfileJsonDto(profile: ProfileJsonDto): ProfileJsonDto {
+// Accepts a full `Profile` row and projects it down to the safe DTO. Typing the
+// input as `Profile` (not the already-stripped DTO) keeps the projection honest:
+// a new sensitive field added to `Profile` is simply not picked here, by design.
+export function toProfileJsonDto(profile: Profile): ProfileJsonDto {
   return {
     id: profile.id,
     name: profile.name,
