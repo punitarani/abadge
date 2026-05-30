@@ -29,9 +29,9 @@ import {
 import { browserTrpcClient, getClientErrorMessage } from "./trpc-browser";
 
 /**
- * §W1S7-001 — profile bootstrap always lands at keyVersion=1 (the
- * `profiles.key_version` column default). Binding AAD to (profileId, 1)
- * matches what `vault.unlock` rebuilds when the daemon later unwraps.
+ * Profile bootstrap always lands at keyVersion=1 (the `profiles.key_version`
+ * column default). Binding AAD to (profileId, 1) matches what `vault.unlock`
+ * rebuilds when the daemon later unwraps.
  */
 const INITIAL_PROFILE_KEY_VERSION = 1;
 
@@ -103,9 +103,9 @@ export async function unlockProfile(
   const kek = deriveKEK(masterPassword, salt, profile.kdfParams);
 
   try {
-    // §W1S7-001 — AAD binds to (profileId, keyVersion); both come from the
-    // server-side profile row. A stale wrap from a prior keyVersion will fail
-    // the AEAD tag check and surface as "Incorrect master password" below.
+    // AAD binds to (profileId, keyVersion); both come from the server-side
+    // profile row. A stale wrap from a prior keyVersion fails the AEAD tag
+    // check and surfaces as "Incorrect master password" below.
     const rootKey = unwrapRootKey({ wrapped: profile.wrappedRootKey }, kek, {
       profileId,
       keyVersion: profile.keyVersion,
@@ -125,9 +125,9 @@ export async function changeProfilePassword(
 ): Promise<{ recoveryKey: string }> {
   const rootKey = await unlockProfile(profileId, currentPassword);
 
-  // §W1S7-001 — profiles.changePassword (trpc) does NOT advance keyVersion;
-  // only profiles.rotateKey does. The re-wrap must bind to the CURRENT
-  // keyVersion so subsequent unwraps succeed.
+  // profiles.changePassword (trpc) does NOT advance keyVersion; only
+  // profiles.rotateKey does. The re-wrap must bind to the CURRENT keyVersion
+  // so subsequent unwraps succeed.
   const profile = await browserTrpcClient.profiles.get.query({ profileId });
   const rootWrapMeta = { profileId, keyVersion: profile.profile.keyVersion };
 
@@ -194,7 +194,7 @@ export async function recoverProfile(
 
   let rootKey: Uint8Array;
   try {
-    // §W1S7-001 — recovery-wrap AAD matches the primary-wrap AAD schema.
+    // Recovery-wrap AAD matches the primary-wrap AAD schema.
     rootKey = recoverRootKey(
       recoveryKeyInput,
       { wrapped: profile.recoveryWrappedRootKey },
@@ -243,7 +243,7 @@ export async function recoverProfile(
 }
 
 /**
- * Encrypt a ZK item payload. §W1S7-001: `meta` binds profileId + itemId +
+ * Encrypt a ZK item payload. `meta` binds profileId + itemId +
  * contentVersion into the XChaCha20-Poly1305 AAD. The caller MUST pre-generate
  * the itemId (UUID) and pass the same value to `items.create` so the stored
  * row id matches the AAD.

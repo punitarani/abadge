@@ -3,11 +3,11 @@ import { getCompiledRoutes } from "./v1";
 /**
  * OpenAPI 3.1 document derived from the compiled REST routing table.
  *
- * Generated at module load (cold-start cost; cached in module scope). Each
- * compiled route becomes one `paths[template][method]` operation. We don't
- * serialize the Effect Schema input/output shapes — bridging Effect Schema
- * to JSON Schema is a separate task; the spec here is sufficient as a
- * route directory for clients and an integration test surface.
+ * Built lazily on first request and cached in module scope (see
+ * `getOpenApiDocument`). Each compiled route becomes one
+ * `paths[template][method]` operation. The Effect Schema input/output shapes
+ * are not serialized — the spec serves as a route directory for clients and
+ * an integration test surface, not a full schema contract.
  *
  * The doc is the same shape whether served from `/v1/openapi.json` or
  * imported in tests; there's exactly one builder.

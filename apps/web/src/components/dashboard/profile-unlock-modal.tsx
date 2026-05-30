@@ -62,9 +62,8 @@ export function ProfileUnlockModal({
       const kek = deriveKEK(password, salt, profile.kdfParams as KDFParams);
 
       try {
-        // §W1S7-001 — AAD binds to (profileId, keyVersion); stale wraps or
-        // cross-profile wraps fail the AEAD tag check and surface as a
-        // password error below.
+        // AAD binds to (profileId, keyVersion); stale wraps or cross-profile
+        // wraps fail the AEAD tag check and surface as a password error below.
         const rootKey = unwrapRootKey({ wrapped: profile.wrappedRootKey }, kek, {
           profileId,
           keyVersion: profile.keyVersion,

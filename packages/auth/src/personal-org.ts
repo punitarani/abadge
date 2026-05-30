@@ -58,10 +58,10 @@ export async function seedOrgWithOwnerProfile(
     createdAt,
   });
 
-  // §AB-0011 — the org was just minted, so no middleware could have set the
-  // org GUC yet; set it here (transaction-local) so the default-profile INSERT
-  // below passes the FORCE-RLS WITH CHECK on `profiles`. `organization`/`member`
-  // are not RLS tables, so their inserts above are unaffected by ordering.
+  // The org was just minted, so no middleware could have set the org GUC yet;
+  // set it here (transaction-local) so the default-profile INSERT below passes
+  // the FORCE-RLS WITH CHECK on `profiles`. `organization`/`member` are not RLS
+  // tables, so their inserts above are unaffected by ordering.
   await tx.execute(sql`select set_config('app.current_org', ${org.id}, true)`);
 
   await tx.insert(profiles).values({

@@ -10,16 +10,12 @@ export interface TriageProfile {
 }
 
 /**
- * A profile is considered "bootstrapped" (usable) when:
+ * A profile is "bootstrapped" (usable) when:
  * - it is server_managed (no client-side key needed), OR
  * - it is zero_knowledge and has a wrappedRootKey set.
  *
- * Historically also enforced server-side via the onboarding-completeness
- * gate; that gate was dropped in §REVAMP-PR3 Task 5.2 once
- * `organizations.create` started auto-seeding a default profile. This
- * helper survives because `resolve-profile.ts` still uses it to decide
- * whether an "already exists" profile is an unbootstrapped orphan we may
- * adopt, or a real profile we must never clobber.
+ * `resolve-profile.ts` uses this to tell an unbootstrapped orphan profile
+ * (safe to adopt) apart from a real profile we must never clobber.
  */
 export function isProfileBootstrapped(p: TriageProfile): boolean {
   if (p.storageMode === "server_managed") return true;
@@ -37,15 +33,13 @@ export interface ResumeOrgSummary {
 export type ResumeAction = { kind: "redirect" } | { kind: "fall-through" };
 
 /**
- * §REVAMP-PR5 (Task 9.1) — Decide what the onboarding page should do on
- * mount when the user already has one or more orgs.
+ * Decide what the onboarding page should do on mount.
  *
- * - Any org at all  -> redirect to the dashboard. With PR3's auto-default
- *                      profile, every org created through the normal flow
- *                      already has a usable `server_managed` profile.
- *                      If an admin somehow has an unbootstrapped org (e.g.
- *                      they deleted the default profile), the profiles page
- *                      surfaces the recovery path — not onboarding.
+ * - Any org at all  -> redirect to the dashboard. Every org created through
+ *                      the normal flow is auto-seeded with a usable
+ *                      `server_managed` profile, so it is immediately usable.
+ *                      An admin who deleted the default profile recovers from
+ *                      the profiles page, not onboarding.
  * - No orgs         -> fall through to the choose screen so the user can
  *                      create their first org or paste an invite token.
  */

@@ -88,13 +88,12 @@ export interface CreateOrgFormProps {
 }
 
 /**
- * §REVAMP-PR5 (Task 9.1) — Single-step org creation.
+ * Single-step org creation.
  *
  * `organizations.create` auto-provisions a default `server_managed`
- * profile in the same transaction (PR3), so the form no longer needs a
- * second step to bootstrap a profile. Additional profiles — including
- * zero-knowledge ones with their own KDF/password — are created from
- * the profiles page after onboarding.
+ * profile in the same transaction, so the form needs no second step to
+ * bootstrap a profile. Additional profiles — including zero-knowledge ones
+ * with their own KDF/password — are created from the profiles page later.
  *
  * Two entry points render this:
  *   - /onboarding (mode === "create"): fresh-signup flow.

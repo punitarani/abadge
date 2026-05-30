@@ -2,15 +2,14 @@
  * RateLimitCounter — cross-isolate consistent fixed-window counter.
  *
  * One DO instance per `path:ip` key (via `idFromName`), so different paths
- * and client IPs never contaminate each other's buckets (§RL5). State lives
- * in DO storage (SQLite-backed, single-byte-scale per key), so the same
- * counter value is observed across isolates — fixing §RL4 (per-isolate
- * non-determinism) without the unbounded memory growth of a module-level
- * `Map`.
+ * and client IPs never contaminate each other's buckets. State lives in DO
+ * storage (SQLite-backed, single-byte-scale per key), so every isolate
+ * observes the same counter value — a module-level `Map` would count
+ * independently per isolate (under-counting) and grow without bound.
  *
- * AGENTS.md "No Durable Objects" invariant carries a documented exception
- * for this module: rate-limit correctness requires cross-isolate
- * consistency, and no primitive simpler than a DO provides it on Workers.
+ * This is the documented exception to the "No Durable Objects" invariant:
+ * rate-limit correctness requires a counter consistent across isolates, and
+ * no primitive simpler than a DO provides that on Workers.
  */
 export interface RateLimitCheckResult {
   /** True when count <= limit (request is allowed). */

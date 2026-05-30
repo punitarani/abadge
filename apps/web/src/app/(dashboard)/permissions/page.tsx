@@ -53,9 +53,9 @@ const PAGE_SIZE = 25;
 
 interface PermissionGroup {
   agentId: string;
-  // §RM-PR2 — itemId is null for profile-target grants. The grouping key
-  // builds in a synthetic "profile:<profileId>" token so item and profile
-  // grants for the same agent never collide.
+  // itemId is null for profile-target grants. The grouping key builds in a
+  // synthetic "profile:<profileId>" token so item and profile grants for the
+  // same agent never collide.
   itemId: string | null;
   profileId: string | null;
   permissions: Permission[];
@@ -357,8 +357,8 @@ export default function PermissionsListPage(): React.ReactElement {
     queryFn: () => listAllItems(),
     enabled: !!activeOrgId,
   });
-  // §REVAMP-PR5 — Look up profile names so profile-target grants render
-  // as `profile:<name>` rather than `profile:<id-prefix>`.
+  // Look up profile names so profile-target grants render as `profile:<name>`
+  // rather than `profile:<id-prefix>`.
   const profilesQuery = useQuery({
     queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
     queryFn: () => browserTrpcClient.profiles.list.query({ orgId: activeOrgId ?? "" }),
@@ -675,7 +675,7 @@ function CapabilityChip({
   const expired = isExpired(permission.expiresAt);
   const expiringSoon = isExpiringSoon(permission.expiresAt);
   const tooltip = [
-    // §AB-0043 — grantedBy is null when the granting user was deleted (grant survives).
+    // grantedBy is null when the granting user was deleted (the grant survives).
     `Granted by ${permission.grantedBy?.slice(0, 12) ?? "(deleted user)"}`,
     `Created ${formatDate(permission.createdAt)}`,
     permission.expiresAt

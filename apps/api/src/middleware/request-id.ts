@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 
 /**
- * X-Request-Id propagation middleware (§REVAMP-PR3).
+ * X-Request-Id propagation middleware.
  *
  * Echo a caller-provided ID if it looks reasonable; otherwise mint a fresh
  * `req_<uuid>`. The id is stashed on the Hono context as `c.var.requestId`

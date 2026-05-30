@@ -10,8 +10,8 @@ type RateLimitBindings = {
 /**
  * Optional bucket-key strategy. Returning `null` skips the throttle for this
  * request (fail-open) — e.g. the per-account key fn returns `null` when the
- * body carries no email. When omitted, the key is the default `path:ip`
- * (§RL5) and behavior is identical to the IP-only limiter.
+ * body carries no email. When omitted, the key is the default `path:ip` and
+ * behavior is identical to the IP-only limiter.
  */
 export type RateLimitKeyFn = (
   c: Context<{ Bindings: RateLimitBindings }>,
@@ -20,23 +20,16 @@ export type RateLimitKeyFn = (
 /**
  * Hono middleware backed by the `RateLimitCounter` Durable Object.
  *
- * Fixes the five §RL findings that lived in the previous 20-LoC sketch:
- *   §RL1  — 429 response now uses the canonical `{code,message,hint,meta}`
- *           envelope (was `{error: "..."}`).
- *   §RL1b — `Retry-After` + `X-RateLimit-{Limit,Remaining,Reset}` on every
- *           response per RFC 6585 §4.
- *   §RL2  — `cf-connecting-ip` is trusted only when running behind
- *           Cloudflare (`NODE_ENV === "production"` in wrangler.jsonc).
- *           `X-Forwarded-For` is never consulted — trivially spoofable.
- *   §RL3  — headerless requests never share a global `"unknown"` bucket;
- *           fall back to `request.cf.clientIp`, then `cf-ray` /
- *           `x-request-id`, then a path-segment synthetic.
- *   §RL4  — counter state lives in the Durable Object, not a module-level
- *           `Map`. Cross-isolate consistent, auto-evicted by DO inactivity.
- *   §RL5  — bucket keys are `path:ip` so `/api/auth` and `/trpc` traffic
- *           share no counter. Coarse path prefix keeps intra-surface keys
- *           (e.g. /trpc/items.list and /trpc/items.create) sharing one
- *           bucket.
+ * Design guarantees:
+ *   - 429 responses use the canonical `{code,message,hint,meta}` envelope.
+ *   - `Retry-After` + `X-RateLimit-{Limit,Remaining,Reset}` accompany every
+ *     response per RFC 6585 §4, so clients can back off before being blocked.
+ *   - Caller identity comes only from headers the client cannot spoof; see
+ *     `resolveClientIp`.
+ *   - Counter state lives in the Durable Object, not a module-level `Map`, so
+ *     it stays consistent across isolates and is auto-evicted on inactivity.
+ *   - Bucket keys are `path:ip`, so `/api/auth` and `/trpc` traffic share no
+ *     counter while requests within one surface do; see `normalizePath`.
  */
 export function rateLimitMiddleware(limit: number, windowMs: number, keyFn?: RateLimitKeyFn) {
   return createMiddleware<{ Bindings: RateLimitBindings }>(async (c, next) => {
@@ -90,15 +83,15 @@ export function rateLimitMiddleware(limit: number, windowMs: number, keyFn?: Rat
 }
 
 /**
- * §RL2 + §RL3: identify the caller without trusting spoofable headers.
+ * Identify the caller without trusting spoofable headers.
  *
- *  - In production (behind the CF edge, enforced by `NODE_ENV` in
- *    wrangler.jsonc) the `cf-connecting-ip` header is authoritative.
- *  - `X-Forwarded-For` is never consulted — per the §RL2 threat model it
- *    is writable by the client in any deployment not strictly behind CF.
+ *  - In production (behind the CF edge, enforced by `NODE_ENV`) the
+ *    `cf-connecting-ip` header is authoritative.
+ *  - `X-Forwarded-For` is never consulted — it is writable by the client in
+ *    any deployment not strictly behind CF.
  *  - Anywhere else we fall back to request-bound identifiers the client
  *    cannot freely rewrite (`cf.clientIp`, `cf-ray`, `x-request-id`) and
- *    finally a path-segment synthetic. Never "unknown" (§RL3).
+ *    finally a path-segment synthetic. Never a shared "unknown" bucket.
  */
 function resolveClientIp(req: Request, env: { NODE_ENV?: string }): string {
   const isProd = env.NODE_ENV === "production";
@@ -121,7 +114,7 @@ function resolveClientIp(req: Request, env: { NODE_ENV?: string }): string {
 
 /**
  * Coarse bucket prefix so `/trpc/items.list` and `/trpc/items.create` share
- * a counter while still isolating `/trpc` from `/api/auth` (§RL5).
+ * a counter while still isolating `/trpc` from `/api/auth`.
  */
 function normalizePath(path: string): string {
   if (path.startsWith("/trpc/")) return "/trpc";

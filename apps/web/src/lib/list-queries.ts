@@ -3,8 +3,8 @@ import { browserTrpcClient } from "./trpc-browser";
 
 /**
  * Browser-client list helpers that return the *full* org dataset by draining
- * every page (§AB-0050). The dashboard filters and joins these client-side, so
- * a single capped page would silently hide rows beyond the first 50.
+ * every page. The dashboard filters and joins these client-side, so a single
+ * capped page would silently hide rows beyond the first one.
  *
  * Return types are derived from the tRPC client itself (not the core schema) so
  * they match exactly what the page components already consume — the wrappers
