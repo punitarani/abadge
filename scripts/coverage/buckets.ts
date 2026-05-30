@@ -36,6 +36,10 @@ export const BUCKETS: Record<Bucket, readonly string[]> = {
     "packages/trpc/src/client.test.ts",
     "packages/trpc/src/server/*.test.ts",
     "packages/trpc/src/server/routers/*.test.ts",
+    // Pure (DB-free) router helpers nested one level deeper, e.g. the
+    // access-denial hint builder. The DB-backed access/pipeline.test.ts is
+    // run under integration, not here.
+    "packages/trpc/src/server/routers/access/denial-hint.test.ts",
     "scripts/*.test.ts",
     "scripts/coverage/*.test.ts",
   ],

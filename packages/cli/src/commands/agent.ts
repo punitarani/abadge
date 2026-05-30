@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -46,6 +46,16 @@ export function buildMcpConfigObject(input: McpConfigSnippetInput): McpConfigObj
 
 export function buildMcpConfigSnippet(input: McpConfigSnippetInput): string {
   return JSON.stringify(buildMcpConfigObject(input), null, 2);
+}
+
+/**
+ * Path where `agent add` writes a local agent's Ed25519 private key. Resolves
+ * $HOME at call time (matching `registerKeypairAgent`) so tests can redirect to
+ * a tmpdir.
+ */
+export function localAgentKeyPath(agentId: string): string {
+  // biome-ignore lint/style/noRestrictedGlobals: cli helper resolves $HOME at call time so tests can redirect to a tmpdir
+  return join(process.env.HOME ?? homedir(), ".abadge", "agents", `${agentId}.ed25519.jwk`);
 }
 
 export function defaultMcpBinaryPath(): string {
@@ -235,6 +245,50 @@ export async function registerWithExistingPublicKey(
   success(`Agent "${result.agent.name}" registered (id: ${result.agent.id}).`);
 }
 
+/**
+ * Resolve a registered `local_mcp` agent by id from the API and locate its
+ * local private key, then print the Claude Desktop snippet. Resolving via the
+ * API (not just ~/.abadge/config.json) means an agent registered with `--json`
+ * — which never writes the `mcp` config slot — can still produce a snippet, as
+ * long as its key file exists locally.
+ */
+export async function printMcpConfigForAgent(client: AbadgeUserClient, id: string): Promise<void> {
+  const apiUrl = loadConfig()?.apiUrl;
+  if (!apiUrl) {
+    error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
+    process.exit(1);
+  }
+
+  // agents.get is org-scoped, so a cross-org or unknown id surfaces as a
+  // NOT_FOUND error caught by the action handler below.
+  const { agent } = await client.agents.get(id);
+
+  if (agent.kind !== "local_mcp") {
+    error(
+      `Agent ${id} is a ${agent.kind} agent, not local_mcp. mcp-config only applies to local_mcp agents.`,
+    );
+    process.exit(1);
+  }
+
+  const privateKeyPath = localAgentKeyPath(id);
+  if (!existsSync(privateKeyPath)) {
+    error(
+      `No local private key found for agent ${id} at ${privateKeyPath}. ` +
+        "The MCP server needs this key to authenticate; register the agent on this machine " +
+        "with `abadge agent add --kind local_mcp` (which writes the key) before generating a config.",
+    );
+    process.exit(1);
+  }
+
+  const snippet = buildMcpConfigSnippet({
+    agentId: id,
+    apiUrl,
+    privateKeyPath,
+    binaryPath: defaultMcpBinaryPath(),
+  });
+  console.log(snippet);
+}
+
 export function createAgentCommand(): Command {
   const cmd = new Command("agent").description("Manage agents");
 
@@ -313,39 +367,15 @@ export function createAgentCommand(): Command {
   cmd
     .command("mcp-config")
     .description("Print a Claude Desktop config snippet for a registered local_mcp agent")
-    .argument(
-      "<id>",
-      "Agent ID (must match the registered local_mcp agent in ~/.abadge/config.json)",
-    )
-    .action((id: string) => {
-      const config = loadConfig();
-      const apiUrl = config?.apiUrl;
-      const localMcp = config?.localAgents?.mcp;
-
-      if (!apiUrl) {
-        error("Could not resolve ABADGE_API_URL from local config; run `abadge login` first.");
+    .argument("<id>", "Agent ID of a local_mcp agent in the active organization")
+    .action(async (id: string) => {
+      try {
+        const client = await createUserApiClient();
+        await printMcpConfigForAgent(client, id);
+      } catch (err) {
+        error(errorMessage(err, "Failed to build MCP config."));
         process.exit(1);
       }
-      if (!localMcp) {
-        error(
-          "No local_mcp agent is registered on this machine. Run `abadge agent add --kind local_mcp --mcp-config` first.",
-        );
-        process.exit(1);
-      }
-      if (localMcp.agentId !== id) {
-        error(
-          `Local config has agent ${localMcp.agentId}, not ${id}. Re-register the agent or pass the matching id.`,
-        );
-        process.exit(1);
-      }
-
-      const snippet = buildMcpConfigSnippet({
-        agentId: localMcp.agentId,
-        apiUrl,
-        privateKeyPath: localMcp.privateKeyPath,
-        binaryPath: defaultMcpBinaryPath(),
-      });
-      console.log(snippet);
     });
 
   cmd

@@ -44,9 +44,23 @@ import {
   loadProfileContentKey,
   SERVER_DEK_MIN_VERSION,
 } from "../server-envelope";
+import {
+  buildPermissionDeniedHint,
+  buildPermissionDeniedMeta,
+  type DenialHintTarget,
+} from "./access/denial-hint";
 import { resolveAccess, resolveProfileAccess } from "./access/pipeline";
 
-function permissionDeniedError(result: "denied" | "expired", defaultHint: string): ForbiddenError {
+/**
+ * Missing-grant / expired denial for the item-target access endpoints. The
+ * denied caller is an agent and cannot grant itself; for `denied` the hint
+ * names the human actor and a copy-pasteable `abadge permission create`
+ * command, and the same identifiers ride along on `meta`.
+ */
+function permissionDeniedError(
+  result: "denied" | "expired",
+  target: DenialHintTarget,
+): ForbiddenError {
   if (result === "expired") {
     return new ForbiddenError({
       code: "PERMISSION_EXPIRED",
@@ -57,7 +71,8 @@ function permissionDeniedError(result: "denied" | "expired", defaultHint: string
   return new ForbiddenError({
     code: "PERMISSION_DENIED",
     message: "No valid permission",
-    hint: defaultHint,
+    hint: buildPermissionDeniedHint(target),
+    meta: buildPermissionDeniedMeta(target),
   });
 }
 
@@ -267,10 +282,11 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       });
 
       return yield* Effect.fail(
-        permissionDeniedError(
-          permResult,
-          "Grant read_ciphertext on this item to the agent before retrying.",
-        ),
+        permissionDeniedError(permResult, {
+          agentId: ctx.identity.agentId,
+          itemId: input.itemId,
+          capability: "read_ciphertext",
+        }),
       );
     }
 
@@ -416,10 +432,11 @@ const accessReveal = (input: RevealAccessInput) =>
       });
 
       return yield* Effect.fail(
-        permissionDeniedError(
-          permResult,
-          "Grant reveal_plaintext on this item to the agent before retrying.",
-        ),
+        permissionDeniedError(permResult, {
+          agentId: ctx.identity.agentId,
+          itemId: input.itemId,
+          capability: "reveal_plaintext",
+        }),
       );
     }
 
@@ -495,10 +512,11 @@ const accessMount = (input: MountAccessInput) =>
       });
 
       return yield* Effect.fail(
-        permissionDeniedError(
-          permResult,
-          "Grant the matching mount capability on this item to the agent before retrying.",
-        ),
+        permissionDeniedError(permResult, {
+          agentId: ctx.identity.agentId,
+          itemId: input.itemId,
+          capability,
+        }),
       );
     }
 
