@@ -83,7 +83,7 @@ export function loadConfig(): CliConfig | null {
 
   if (hadLegacy && normalized) {
     console.warn(
-      "[abadge] Legacy principal*/operator-token keys detected in ~/.abadge/config.json; clearing. Re-run `abadge login` and `abadge agent register --kind local_cli` to re-enroll.",
+      "[abadge] Legacy principal*/operator-token keys detected in ~/.abadge/config.json; clearing. Re-run `abadge login` and `abadge agent add --kind local_cli` to re-enroll.",
     );
     writeConfig(normalized);
   }

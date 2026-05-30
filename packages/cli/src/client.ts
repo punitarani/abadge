@@ -253,7 +253,7 @@ export async function createAgentApiClient(): Promise<AbadgeAgentClient> {
   throw new Error(
     "No agent credentials found.\n" +
       "hint: Set ABADGE_API_URL + ABADGE_AGENT_ID + ABADGE_PRIVATE_KEY env vars,\n" +
-      "      or run `abadge agent register --kind local_cli` to configure via config file.",
+      "      or run `abadge agent add --kind local_cli` to configure via config file.",
   );
 }
 

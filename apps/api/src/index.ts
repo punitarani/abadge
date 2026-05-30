@@ -179,8 +179,9 @@ app.get("/health", async (c) => {
     console.info(`[health] db reachable role=${r?.role ?? "unknown"} bypassRls=${r?.rolbypassrls}`);
     if (r?.audit_update === true) {
       console.warn(
-        "current DB role has UPDATE on audit_logs — revoke write access to " +
-          "preserve the append-only audit invariant.",
+        "current DB role has UPDATE on audit_logs — run migration " +
+          "0023_least_privilege_role to revoke write access and preserve the " +
+          "append-only audit invariant.",
       );
     }
     return c.json({ status: "ok", db: { reachable: true } });

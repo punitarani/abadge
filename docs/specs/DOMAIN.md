@@ -436,7 +436,7 @@ Every error response includes `{ code, message, hint, meta? }`. The `hint` is al
 | `INVALID_CAPABILITY_STORAGE` | 400 | Capability incompatible with item storage mode | `read_ciphertext requires a zero-knowledge item. Use reveal_plaintext for server-managed items.` |
 | `STALE_VERSION` | 400 | `contentVersion` mismatch on item update | -- |
 | `UNAUTHORIZED` | 401 | Missing or invalid authentication | -- |
-| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent register --name <name> --kind <kind>` |
+| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent add --name <name> --kind <kind>` |
 | `SESSION_EXPIRED` | 401 | Human session has expired | `Run: abadge login` |
 | `BOOTSTRAP_TOKEN_EXPIRED` | 401 | Enrollment token has expired | `Issue a fresh bootstrap token for the agent and re-enroll.` |
 | `FORBIDDEN` | 403 | Authenticated but not authorized | -- |

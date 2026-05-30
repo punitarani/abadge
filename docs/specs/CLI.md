@@ -128,12 +128,15 @@ abadge profile status
 
 ## Item commands
 
-### `abadge item create`
+### `abadge item add`
 
-Creates a zero-knowledge item using daemon-side encryption.
+Creates a vault item. Defaults to `server_managed` (the API encrypts at rest);
+pass `--storage-mode zero_knowledge` to target a zero-knowledge profile, where
+the daemon encrypts client-side. Omit `--value` to be prompted; `--value` is
+rejected on a TTY, so pipe the secret via stdin instead.
 
 ```bash
-abadge item create
+echo -n 'sk-...' | abadge item add --label OPENAI_API_KEY --kind api_key
 ```
 
 ### `abadge item list`
@@ -160,48 +163,40 @@ abadge item update <item-id>
 abadge item update <item-id> --json
 ```
 
-### `abadge item delete <item-id>`
+### `abadge item rm <item-id>`
 
 ```bash
-abadge item delete <item-id>
-abadge item delete <item-id> --force
+abadge item rm <item-id>
+abadge item rm <item-id> --force
 ```
 
 ## Agent commands
 
-### `abadge agent register`
+### `abadge agent add`
 
-Registers an agent.
-
-Defaults:
-
-* `authMethod` is always `public_key_session`
-* remote agents receive a one-time `abe_...` bootstrap token unless disabled
+Registers an agent. `authMethod` is always `public_key_session`. By default the
+CLI generates a local Ed25519 keypair, writes the private key at `0600`, and
+uploads only the public key. Use `--bootstrap` instead to issue a one-time
+`abe_...` token for a client that will enroll its own keypair, or `--public-key`
+to enroll an existing public-key JWK.
 
 ```bash
-abadge agent register --name "ci bot" --kind remote
-abadge agent register --name "dev laptop" --kind local_cli --json
+abadge agent add --name "dev laptop" --kind local_cli
+abadge agent add --name "ci bot" --kind remote --bootstrap
+abadge agent add --name "remote svc" --kind remote --public-key ./agent.pub.jwk
 ```
 
 Flags:
 
 | Flag | Description |
 |------|-------------|
-| `--name, -n` | Agent display name |
-| `--kind, -k` | Agent kind |
-| `--description, -d` | Optional metadata description |
-| `--no-bootstrap-token` | Skip one-time bootstrap token issuance |
+| `-n, --name` | Agent name (required) |
+| `-k, --kind` | Agent kind (default `local_cli`) |
+| `-d, --description` | Optional description |
+| `--mcp-config` | For a `local_mcp` agent, print a Claude Desktop config snippet |
+| `--bootstrap` | Issue a one-time bootstrap token instead of generating a local keypair |
+| `--public-key <path>` | Enroll an existing Ed25519 public-key JWK |
 | `--json` | Print raw JSON |
-
-### `abadge agent enroll`
-
-Redeems a one-time bootstrap token, generates a local Ed25519 keypair, writes the private key with
-`0600` permissions, and uploads only the public key.
-
-```bash
-abadge agent enroll --bootstrap-token abe_...
-abadge agent enroll --bootstrap-token abe_... --private-key-path ~/.abadge/agents/remote.jwk
-```
 
 ### `abadge agent list`
 
@@ -212,10 +207,12 @@ abadge agent list
 abadge agent list --json
 ```
 
-### `abadge agent revoke <agent-id>`
+### `abadge agent rm <agent-id>`
+
+Revokes an agent and cascades the revocation to its sessions and grants.
 
 ```bash
-abadge agent revoke <agent-id>
+abadge agent rm <agent-id>
 ```
 
 ## Permission commands

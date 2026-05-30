@@ -136,10 +136,10 @@ curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh |
 abadge login
 
 # Store a secret
-abadge item create --label "prod-db" --kind login --storage-mode server_managed
+abadge item add --label "prod-db" --kind login --storage-mode server_managed
 
 # Register an agent
-abadge agent register -n "deploy-bot"
+abadge agent add -n "deploy-bot"
 
 # Grant access
 abadge permission create --agent-id <id> --item-id <id> --capability mount_env
