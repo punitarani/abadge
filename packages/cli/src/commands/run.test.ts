@@ -356,19 +356,24 @@ describe("runWithUseRedeemBulk", () => {
           },
         }) as unknown as DaemonClient,
     );
+    // Drive the BULK path (use -> items -> redeemMount -> expandEnvBulk) so this
+    // describe block's own catch block is exercised, not the single-item path.
     const client = makeAgentClientWithAccess({
+      use: async () => ({
+        items: [{ itemId: "i1", mountId: "mnt_1", delivery: "env", expiresAt: "" }],
+      }),
       redeemMount: async () => ({
         storageMode: "server_managed",
         delivery: "env",
         payload: { fields: { value: "x" } },
         label: "openai",
-        itemId: "item_x",
+        itemId: "i1",
       }),
     });
-    const { runWithUseRedeem } = await import("./run");
+    const { runWithUseRedeemBulk } = await import("./run");
     let caught: unknown;
     try {
-      await runWithUseRedeem(client, "item_x", "/bin/true", []);
+      await runWithUseRedeemBulk(client, "p_1", "/bin/true", []);
     } catch (err) {
       caught = err;
     }

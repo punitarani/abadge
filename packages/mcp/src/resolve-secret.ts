@@ -35,6 +35,10 @@ export async function resolveSecret(
           throw new Error(
             "This zero-knowledge item needs the local abadge daemon, which isn't running. Ask the operator to run `abadge daemon start` (and `abadge profile unlock`) on this machine, or use a server-managed profile for MCP access.",
           );
+        case "auth":
+          throw new Error(
+            "This zero-knowledge item can't be decrypted: the local daemon has no operator session. Ask the operator to run `abadge login` (then `abadge profile unlock`) on the machine running this MCP server.",
+          );
         default:
           throw new Error(
             `Could not decrypt this zero-knowledge item via the local daemon: ${err instanceof Error ? err.message : String(err)}. Check the field name, or ask the operator to restart \`abadge daemon\` and re-unlock the profile.`,
