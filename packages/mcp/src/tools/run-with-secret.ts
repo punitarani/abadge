@@ -32,7 +32,7 @@ export const STREAM_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
 /**
  * Build the child process env, stripping abadge-private vars so the
  * spawned command cannot read session tokens / API keys out of its
- * inherited environment (mirrors the daemon's COMPOSITE-001 fix).
+ * inherited environment.
  */
 export function buildChildEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {};
@@ -154,8 +154,8 @@ export async function handler(
 
   const envVarName = input.envVarName ?? "ABADGE_SECRET";
 
-  // Reject reserved env vars (RESERVED_ENV_KEYS shared with daemon's exec.env
-  // blocklist — same loader/runtime escalation surface). Also rejects malformed
+  // Reject reserved env vars (RESERVED_ENV_KEYS shared with the daemon's
+  // exec.env blocklist — same loader/runtime escalation surface) and malformed
   // names (not matching POSIX [A-Z_][A-Z0-9_]*).
   const envVarValidation = validateEnvVarName(envVarName);
   if (!envVarValidation.ok) {
@@ -177,7 +177,7 @@ export async function handler(
   // the truncation flag are returned so the model can tell whether the command
   // produced output without being able to read it. This eliminates all
   // semantic-leakage vectors (base64, hex, URL-encoded, nth-char, etc.) that
-  // string-based redaction cannot catch (§RED1).
+  // string-based redaction cannot catch.
   return JSON.stringify({
     exitCode,
     durationMs: Date.now() - startMs,

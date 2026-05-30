@@ -81,10 +81,9 @@ async function completeDeviceLogin(
 
   // Persist the config BEFORE the first sensitive daemon RPC so that
   // DaemonClient's onFirstContact handler can pin the TOFU fingerprint in
-  // ~/.abadge/config.json (W3P12-001 / Critical C-2). Without this ordering,
-  // the pin was being computed but silently dropped on fresh installs,
-  // forcing re-pinning on every login — defeating TOFU's "one-shot-attacker"
-  // guarantee.
+  // ~/.abadge/config.json. Without this ordering the pin is computed but
+  // dropped on fresh installs, forcing re-pinning on every login and
+  // defeating TOFU's one-shot-attacker guarantee.
   if (loadConfig()) {
     updateConfig({ apiUrl });
   } else {
@@ -98,7 +97,7 @@ async function completeDeviceLogin(
       token: accessToken,
       expiresAt,
       // Pass the active org so the daemon scopes outbound tRPC calls to the
-      // right org immediately after login (§O3 / multi-org CLI fix).
+      // right org immediately after login.
       organizationId: loadConfig()?.activeOrgId ?? null,
     });
   }
@@ -187,7 +186,7 @@ async function startDeviceLogin(opts: LoginOptions): Promise<void> {
   await completeDeviceLogin(apiUrl, result.accessToken, result.expiresAt, false);
 
   success("Logged in.");
-  success("Run `abadge agent register --kind local_cli` to register a local agent.");
+  success("Run `abadge agent add --kind local_cli` to register a local agent.");
 }
 
 async function pollDeviceLogin(opts: PollOptions): Promise<void> {

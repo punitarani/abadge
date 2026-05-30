@@ -5,7 +5,7 @@ import { daemonSetAuthOrg } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createOrgCommand(): Command {
-  const cmd = new Command("org").description("Manage organizations");
+  const cmd = new Command("org").description("Create, list, and switch organizations");
 
   cmd
     .command("add")
@@ -68,8 +68,8 @@ export function createOrgCommand(): Command {
         }
         updateConfig({ activeOrgId: org.id, activeProfileId: undefined });
         // Push the org change to the daemon so vault.unlock uses the right org
-        // scope immediately without a re-login (§O3 / multi-org CLI fix).
-        // Best-effort: if the daemon is not running, silently skip.
+        // scope immediately without a re-login. Best-effort: if the daemon is
+        // not running, silently skip.
         await daemonSetAuthOrg(org.id).catch(() => undefined);
         success(`Active organization set to ${org.name} (${org.id}).`);
       } catch (err) {

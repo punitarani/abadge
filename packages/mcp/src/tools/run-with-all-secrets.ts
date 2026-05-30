@@ -27,11 +27,11 @@ export const toolInputSchema = z.object({
 });
 
 /**
- * §RED1-aligned per-item secret-size guard. Mirrors run_with_secret's
- * MAX_OUTPUT_BYTES bound: the in-process redaction property only holds when
- * each individual injected secret fits in the per-stream capture window. A
- * single oversized secret would defeat the bound for the whole call, so we
- * reject the entire call rather than silently dropping the offender.
+ * Per-item secret-size guard. Mirrors run_with_secret's MAX_OUTPUT_BYTES
+ * bound: the in-process redaction property only holds when each individual
+ * injected secret fits in the per-stream capture window. A single oversized
+ * secret would defeat the bound for the whole call, so the entire call is
+ * rejected rather than silently dropping the offender.
  */
 function assertSecretFits(envKey: string, value: string): void {
   const byteLength = Buffer.byteLength(value, "utf8");
@@ -155,7 +155,7 @@ export async function handler(
     childEnv,
   );
 
-  // Same §RED1 contract as run_with_secret: subprocess output text is NEVER
+  // Same contract as run_with_secret: subprocess output text is NEVER
   // forwarded to the model. The LLM sees only enough to know the command
   // ran (exit code, duration, line counts, truncation) but cannot extract
   // any secret value via stdout/stderr leakage.

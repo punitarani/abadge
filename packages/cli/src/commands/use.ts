@@ -5,10 +5,9 @@ import { daemonSetAuthOrg } from "../daemon";
 import { error, errorMessage, success } from "../output";
 
 /**
- * Top-level `abadge use` context switcher for org and profile.
- *
- * Mirrors `abadge org use <id|slug>` and `abadge profile use <id|name>`
- * but provides the canonical entry point promoted in PR 4.
+ * Top-level `abadge use` context switcher for org and profile — the canonical
+ * entry point. Mirrors `abadge org use <id|slug>` and
+ * `abadge profile use <id|name>`.
  */
 export function createUseCommand(): Command {
   const cmd = new Command("use").description("Switch active organization or profile context");

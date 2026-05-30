@@ -6,7 +6,9 @@ import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
 
 export function createProfileCommand(): Command {
-  const cmd = new Command("profile").description("Manage credential profiles");
+  const cmd = new Command("profile").description(
+    "Manage encryption profiles and the daemon-held vault key",
+  );
 
   cmd
     .command("add")
@@ -88,12 +90,23 @@ export function createProfileCommand(): Command {
       }
     });
 
-  cmd.command("unlock").description("Unlock the active profile").action(profileUnlock);
-  cmd.command("lock").description("Lock the profile").action(profileLock);
-  cmd.command("status").description("Show profile status").action(profileStatus);
+  cmd
+    .command("unlock")
+    .description(
+      "Unlock the active zero-knowledge profile into daemon memory (prompts for password)",
+    )
+    .action(profileUnlock);
+  cmd
+    .command("lock")
+    .description("Clear the unlocked profile key from daemon memory")
+    .action(profileLock);
+  cmd
+    .command("status")
+    .description("Show whether the daemon holds an unlocked profile key")
+    .action(profileStatus);
   cmd
     .command("change-password")
-    .description("Change active profile's master password")
+    .description("Change the active zero-knowledge profile's master password")
     .action(profileChangePassword);
 
   return cmd;

@@ -66,8 +66,8 @@ async function importEntry(
       return "skipped";
     }
     // Import only writes server_managed items. Overwriting a zero_knowledge item
-    // would need the profile unlocked via the daemon to rewrap the new DEK; not
-    // supported for now — users should `abadge item delete` + re-import, or use
+    // would need the profile unlocked via the daemon to rewrap the new DEK,
+    // which this path does not do — delete and re-import, or use
     // `abadge item update` interactively.
     if (existing.storageMode !== "server_managed") {
       error(
@@ -189,11 +189,15 @@ async function runImport(
 
 export function createImportCommand(): Command {
   return new Command("import")
-    .description("Import secrets from a .env file")
+    .description("Import secrets from a .env file as server_managed items")
     .argument("<file>", "Path to .env file")
-    .option("--dry-run", "Preview what would happen without writing")
-    .option("--kind <kind>", "Item kind", "opaque")
-    .option("--overwrite", "Overwrite existing items with the same label")
+    .option("--dry-run", "Preview the outcome without writing anything")
+    .option(
+      "--kind <kind>",
+      `Item kind for every entry (one of: ${ITEM_KINDS.join(", ")})`,
+      "opaque",
+    )
+    .option("--overwrite", "Overwrite existing server_managed items with the same label")
     .action(
       async (file: string, opts: { dryRun?: boolean; kind?: string; overwrite?: boolean }) => {
         try {

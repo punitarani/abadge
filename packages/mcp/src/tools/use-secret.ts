@@ -11,16 +11,10 @@ export const toolDescription =
 
 /**
  * Discriminated input: exactly one of itemId / profileId. MCP tool registration
- * consumes `.shape`, so we keep the base ZodObject as the exported schema and
- * enforce the "exactly one of" constraint in the handler body. This keeps the
+ * consumes `.shape`, so the exported schema stays a flat ZodObject and the
+ * "exactly one of" constraint is enforced in the handler. This keeps the
  * JSON-schema surface flat for the LLM while still rejecting bad combinations
  * at runtime.
- *
- * Label and externalId addressing land in PR 5 alongside the server-side
- * profile-externalId lookup. Shipping `profileLabel` / `profileExternalId`
- * without the lookup would be a dishonest API surface (an LLM that follows the
- * JSON schema and supplies "default" would hit `PROFILE_NOT_FOUND` instead of
- * the rich error the rename guards against).
  */
 export const toolInputSchema = z.object({
   itemId: z
@@ -85,10 +79,7 @@ export async function handler(
     );
   }
 
-  // Profile mode: server expects a profileId (UUID). Label / externalId
-  // addressing arrives in PR 5 with the server-side externalId column on
-  // profiles; the corresponding `profileLabel` / `profileExternalId` inputs
-  // will be added back at that time.
+  // Profile mode: the server addresses profiles by id (UUID).
   if (!input.profileId) {
     throw new Error("Internal: profile mode reached without a profile identifier.");
   }

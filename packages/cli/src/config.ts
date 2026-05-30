@@ -17,9 +17,9 @@ export interface CliConfig {
   };
   /**
    * SHA-256 fingerprint of the daemon's Ed25519 public key, pinned on first
-   * contact (W3P12-001 / Critical C-2). A later mismatch means the daemon
-   * regenerated its keypair OR a same-UID attacker is squatting the socket —
-   * the CLI aborts before writing any sensitive RPC frame.
+   * contact (TOFU). A later mismatch means the daemon regenerated its keypair
+   * OR a same-UID attacker is squatting the socket — the CLI aborts before
+   * writing any sensitive RPC frame.
    */
   daemonFingerprint?: string;
 }
@@ -159,9 +159,8 @@ export function requireActiveOrgId(): string {
 }
 
 /**
- * Read the pinned daemon fingerprint (W3P12-001 / Critical C-2). Returns
- * `null` for a first-run client or when the config file doesn't exist yet —
- * the DaemonClient then pins TOFU-style.
+ * Read the pinned daemon fingerprint. Returns `null` for a first-run client or
+ * when the config file doesn't exist yet — the DaemonClient then pins TOFU-style.
  */
 export async function readPinnedDaemonFingerprint(): Promise<string | null> {
   const config = loadConfig();

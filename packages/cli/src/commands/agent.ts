@@ -328,7 +328,7 @@ export function createAgentCommand(): Command {
       }
       if (!localMcp) {
         error(
-          "No local_mcp agent is registered on this machine. Run `abadge agent register --kind local_mcp --mcp-config` first.",
+          "No local_mcp agent is registered on this machine. Run `abadge agent add --kind local_mcp --mcp-config` first.",
         );
         process.exit(1);
       }

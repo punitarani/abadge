@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 
 /**
- * Deprecated-verb aliases for PR 4's verb canonicalization
+ * Deprecated-verb aliases mapping legacy verbs to the canonical ones
  * (create -> add, delete -> rm, register -> add, revoke -> rm).
  *
  * Each entry attaches a hidden subcommand on `parentName` that:
@@ -29,8 +29,8 @@ function findChild(parent: Command, name: string): Command | undefined {
 /**
  * Walk the program tree and attach a hidden deprecated alias for each
  * (noun, oldVerb -> newVerb) tuple. Idempotent: if the new verb is missing
- * the tuple is skipped (lets us land verb renames incrementally without
- * breaking the CLI bootstrap).
+ * the tuple is skipped, so verb renames can land incrementally without
+ * breaking the CLI bootstrap.
  */
 export function registerDeprecatedAliases(program: Command): void {
   for (const [noun, oldVerb, newVerb] of ALIASES) {

@@ -17,7 +17,7 @@ import { daemonAuthHeaders } from "./daemon";
 
 /**
  * Build outbound tRPC headers from a session config, appending
- * X-Abadge-Org-Id when the config has an active org (§O3 / multi-org CLI).
+ * X-Abadge-Org-Id when the config has an active org.
  */
 function buildSessionHeaders(config: SessionConfig): Record<string, string> {
   const headers: Record<string, string> = { ...config.sessionHeaders };
@@ -175,8 +175,8 @@ export async function resolveSessionConfig(
 }
 
 /**
- * @deprecated Use {@link createUserApiClient} instead. This wrapper exists only
- * to ease the migration of callers that previously used `SessionApiClient`.
+ * @deprecated Use {@link createUserApiClient} instead. Thin compatibility
+ * wrapper for callers still referencing the `SessionApiClient` name.
  */
 export async function createSessionApiClient(
   options: { tokenStdin?: boolean } = {},

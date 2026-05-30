@@ -21,12 +21,10 @@ async function decryptMountedPayload(
 }
 
 /**
- * §RM-PR4 — Resolve a single secret value through the redeemMount path. The
- * legacy `accessMount` method was removed in §AB-0080; all CLI invocations
- * route through `access.use` → `redeemMount` so every mint records a
- * `mount_reservations` row + `via=mount_redeem` audit event uniformly with the
- * `--all` / `--expand-env` flows. Plain `abadge run --item` previously bypassed
- * this — review C3.
+ * Resolve a single secret value through the redeemMount path. All CLI
+ * invocations route through `access.use` → `redeemMount` so every mint records
+ * a `mount_reservations` row + `via=mount_redeem` audit event uniformly with
+ * the `--all` / `--expand-env` flows.
  */
 async function resolveMountedSecret(
   client: AbadgeAgentClient,

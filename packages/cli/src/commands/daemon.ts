@@ -156,11 +156,22 @@ async function daemonServe(): Promise<void> {
 }
 
 export function createDaemonCommand(): Command {
-  const cmd = new Command("daemon").description("Manage local daemon");
+  const cmd = new Command("daemon").description(
+    "Manage the local vault daemon that holds your session and unlocked profile keys in memory",
+  );
 
-  cmd.command("start").description("Start the daemon").action(daemonStart);
-  cmd.command("stop").description("Stop the daemon").action(daemonStop);
-  cmd.command("status").description("Show daemon status").action(daemonStatusCmd);
+  cmd
+    .command("start")
+    .description("Start the local daemon (auto-locks after 15 minutes of inactivity)")
+    .action(daemonStart);
+  cmd
+    .command("stop")
+    .description("Stop the daemon and clear all in-memory keys and session state")
+    .action(daemonStop);
+  cmd
+    .command("status")
+    .description("Show whether the daemon is running, locked, and authenticated")
+    .action(daemonStatusCmd);
   cmd.addCommand(createDaemonServeCommand(), { hidden: true });
 
   return cmd;

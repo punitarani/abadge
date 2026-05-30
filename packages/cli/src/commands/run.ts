@@ -64,9 +64,9 @@ export async function runWithUseRedeem(
 }
 
 /**
- * §RM-PR4 — Profile-wide bulk variant of {@link runWithUseRedeem}. Mints one
- * mount handle per item via `access.useProfile`, redeems them concurrently,
- * then asks the daemon to spawn the subprocess with every secret injected.
+ * Profile-wide bulk variant of {@link runWithUseRedeem}. Mints one mount
+ * handle per item via `access.use`, redeems them concurrently, then asks the
+ * daemon to spawn the subprocess with every secret injected.
  */
 export async function runWithUseRedeemBulk(
   client: AbadgeAgentClient,
@@ -140,7 +140,7 @@ export async function runWithUseRedeemBulk(
 
 export function createRunCommand(): Command {
   const cmd = new Command("run")
-    .description("Run command with secret in env")
+    .description("Run a command with one or more secrets injected as environment variables")
     .option("--item <id>", "Item ID — single-secret mode")
     .option(
       "--all",
@@ -151,7 +151,11 @@ export function createRunCommand(): Command {
       "Override the active profile when using --all (defaults to ~/.abadge/config.json::activeProfileId)",
     )
     .option("--field <name>", "Named field to deliver from the item payload (single-item mode)")
-    .option("--env-var <name>", "Environment variable name (single-item mode)", "ABADGE_SECRET")
+    .option(
+      "--env-var <name>",
+      "Environment variable name for the secret (single-item mode)",
+      "ABADGE_SECRET",
+    )
     .option(
       "--expand-env",
       "Inject every field of one item as a separate env var (single-item mode)",
