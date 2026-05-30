@@ -47,38 +47,68 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --animate-loader-logo: loader-logo 3s ease-in-out infinite;
-  --animate-loader-text: loader-text 3s ease-in-out infinite;
 }
 
-/* Dashboard boot loader: logo starts centered alone, then slides left while
-   the wordmark rolls out from behind it to the right — a curtain-open effect.
-   Both elements return in reverse at the end of each cycle.
-   3rem ≈ half the wordmark width, chosen so the logo's center sits at the
-   combined lockup's center at t=0 (logo appears centered alone).
-   motion-reduce users see the static lockup with no transforms. */
-@keyframes loader-logo {
-  0%,
-  100% {
-    transform: translateX(3rem);
+/* AnimatedAbadgeLogo — brand reveal. The icon starts centered alone (shifted
+   right so its center lands on the lockup's center), slides left into place,
+   and the wordmark unfurls left→right out of its right edge with a subtle scale
+   pop. Two keyframes share one timeline; holds at each end let `data-loop`
+   alternate into a gentle reveal/conceal breathing cycle. Reduced-motion users
+   get the static final lockup (no animation applied). */
+@media (prefers-reduced-motion: no-preference) {
+  [data-abadge-logo][data-play="true"] .abadge-logo__icon {
+    animation: abadge-logo-icon var(--abadge-logo-dur, 1.6s) cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  35%,
-  65% {
+  [data-abadge-logo][data-play="true"] .abadge-logo__text {
+    animation: abadge-logo-text var(--abadge-logo-dur, 1.6s) cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  [data-abadge-logo][data-play="true"][data-loop="true"] .abadge-logo__icon,
+  [data-abadge-logo][data-play="true"][data-loop="true"] .abadge-logo__text {
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+}
+
+/* shift ≈ half the (gap + wordmark) advance (measured: icon 1.06em, gap 0.32em,
+   wordmark 3.94em → 2.13em), so the icon's center sits at the lockup's center at
+   t=0 and it reads as "icon alone, centered". em-relative, so it holds at every
+   scale. */
+@keyframes abadge-logo-icon {
+  0%,
+  18% {
+    transform: translateX(var(--abadge-logo-shift, 2.13em));
+  }
+  52%,
+  100% {
     transform: translateX(0);
   }
 }
 
-@keyframes loader-text {
+/* The wordmark unfurls left→right out of the icon's edge: clip-path reveals the
+   leading letters first (all-percentage points so it interpolates), while a
+   slight rightward nudge + scale settle land it in place with a hair of
+   overshoot. transform-origin (origin-left in the markup) anchors the pop to the
+   icon side. The icon leads (text holds to 24%), so it reads as "icon shifts,
+   then the wordmark pops out". */
+@keyframes abadge-logo-text {
   0%,
-  100% {
-    transform: translateX(-3rem);
-    clip-path: polygon(0% 0%, 0% 0%, 0% 100%, 0% 100%);
+  24% {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+    transform: translateX(-0.4em) scale(0.96);
     opacity: 0;
   }
-  35%,
-  65% {
-    transform: translateX(0);
-    clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%);
+  40% {
+    opacity: 1;
+  }
+  62% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    transform: translateX(0) scale(1.02);
+    opacity: 1;
+  }
+  78%,
+  100% {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    transform: translateX(0) scale(1);
     opacity: 1;
   }
 }
