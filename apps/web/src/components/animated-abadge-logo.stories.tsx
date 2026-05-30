@@ -1,23 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { AnimatedAbadgeLogo } from "./animated-abadge-logo";
 
-// Annotate `meta` explicitly (rather than `satisfies Meta<…>`): with a
-// `decorators` array, the inferred type otherwise reaches into Storybook's
-// internal `csf` module, which TS can't name portably across install layouts
-// (TS2742). The annotation keeps the emitted type to the named `Meta` import.
+// Explicit annotation (not `satisfies Meta<…>`) keeps the emitted type on the
+// named `Meta` import; the inferred form can reach into Storybook's internal
+// `csf` module, which TS can't name portably across install layouts (TS2742).
 const meta: Meta<typeof AnimatedAbadgeLogo> = {
   title: "Brand/AnimatedAbadgeLogo",
   component: AnimatedAbadgeLogo,
   parameters: {
     layout: "centered",
   },
-  decorators: [
-    (Story) => (
-      <div style={{ width: "min(48rem, 90vw)" }}>
-        <Story />
-      </div>
-    ),
-  ],
   args: {
     autoPlay: true,
     loop: false,
