@@ -357,13 +357,20 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
     await user.profiles.delete("p_x");
     expect(calls[0]?.path).toBe("profiles.delete");
   });
-  test("profiles.update -> profiles.changePassword", async () => {
+  test("profiles.changePassword -> profiles.changePassword", async () => {
     const { user, calls } = makeUserClient({ ok: true });
-    await user.profiles.update("p_x", {
+    await user.profiles.changePassword("p_x", {
       oldPassword: "a",
       newPassword: "b",
     } as never);
     expect(calls[0]?.path).toBe("profiles.changePassword");
+  });
+  test("profiles.update rejects and does not call the API", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await expect(
+      user.profiles.update("p_x", { oldPassword: "a", newPassword: "b" } as never),
+    ).rejects.toThrow(/profiles\.changePassword/);
+    expect(calls).toHaveLength(0);
   });
 
   // agents
@@ -419,6 +426,11 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
     const { user, calls } = makeUserClient({ ok: true });
     await user.permissions.delete("p_x");
     expect(calls[0]?.path).toBe("permissions.revoke");
+  });
+  test("permissions.update rejects and does not revoke", async () => {
+    const { user, calls } = makeUserClient({ ok: true });
+    await expect(user.permissions.update("p_x")).rejects.toThrow(/immutable/);
+    expect(calls).toHaveLength(0);
   });
 
   // audit
