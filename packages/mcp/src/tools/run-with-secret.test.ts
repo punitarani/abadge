@@ -5,6 +5,7 @@ import * as resolveSecretModule from "../resolve-secret.js";
 import {
   buildChildEnv,
   countLines,
+  FAILURE_HINT,
   handler,
   MAX_OUTPUT_BYTES,
   runCommand,
@@ -401,6 +402,94 @@ describe("handler response shape", () => {
       "outputLineCount",
       "truncated",
     ]);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+});
+
+/**
+ * Failure-path hint (RED1 rationale).
+ *
+ * On a failed run that produced (withheld) output, the result carries a static,
+ * secret-free `hint` explaining WHY there's no stdout/stderr and how to debug.
+ * The hint must NEVER contain subprocess output (it would become the
+ * exfiltration channel the suppression closes) and must be absent on success so
+ * the response shape is unchanged for the common case.
+ */
+describe("handler failure hint", () => {
+  const fakeClient = {} as never;
+  const fakeConfig = {
+    apiUrl: "http://localhost",
+    agentId: "agent_test",
+    privateKey: "{}",
+  } as never;
+
+  test("attaches the static RED1 hint on failure with output — no subprocess text leaks", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secret = "supersecret";
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(secret);
+
+    // Exit 1 after writing a sentinel to stderr — must NOT appear in the result.
+    const result = await handler(
+      {
+        itemId: "item_test",
+        command: process.execPath,
+        args: ["-e", "process.stderr.write('boom-sentinel\\n'); process.exit(1)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(1);
+    expect(parsed.hint).toBe(FAILURE_HINT);
+    expect(typeof parsed.hint).toBe("string");
+    expect(parsed.hint.length).toBeGreaterThan(0);
+    // The withheld subprocess output must never reach the model via any field.
+    expect(result).not.toContain("boom-sentinel");
+    expect(result).not.toContain(secret);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("omits the hint key entirely on a clean exit", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue("mysecret");
+
+    const result = await handler(
+      {
+        itemId: "item_test",
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('ok\\n'); process.exit(0)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(0);
+    expect("hint" in parsed).toBe(false);
+
+    clientSpy.mockRestore();
+    secretSpy.mockRestore();
+  });
+
+  test("omits the hint when a failed run produced no output at all", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
+    const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue("mysecret");
+
+    const result = await handler(
+      {
+        itemId: "item_test",
+        command: process.execPath,
+        args: ["-e", "process.exit(3)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(3);
+    expect("hint" in parsed).toBe(false);
 
     clientSpy.mockRestore();
     secretSpy.mockRestore();

@@ -133,6 +133,12 @@ Output:
 
 `injectedCount` is present only in bulk mode.
 
+On a failed run (`exitCode !== 0`) that produced withheld output, the result
+also carries a static, secret-free `hint` string explaining that stdout/stderr
+were suppressed per §RED1 and pointing at `mount_secret` for output inspection.
+The hint is a fixed constant containing no subprocess output, and is omitted
+entirely on success.
+
 Security:
 
 * Output text is captured for line counting only — never forwarded to

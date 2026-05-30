@@ -42,6 +42,15 @@ export interface AbadgeUserClientConfig {
   /**
    * User credential sent as `Authorization: Bearer`. Accepts either a Better
    * Auth session token or a personal API key (prefixed `abu_`).
+   *
+   * How to obtain one:
+   * - **Personal API key (`abu_…`)** — mint one in the dashboard under
+   *   Settings → "API keys". Recommended for scripts and CI: it authenticates
+   *   the management surface only and never reaches the agent-gated `access.*`
+   *   endpoints (it cannot reveal or mount secret values).
+   * - **Better Auth session token** — issued by an interactive login via
+   *   `@abadge/auth` (the value the browser dashboard holds). Use this when you
+   *   already have an authenticated user session to act on behalf of.
    */
   sessionToken: string;
   /** Active organization ID. Sent as X-Abadge-Org-Id header for org-scoped requests. */

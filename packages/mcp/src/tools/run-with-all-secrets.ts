@@ -8,7 +8,14 @@ import { z } from "zod";
 import { getApiClient } from "../api-client.js";
 import type { McpConfig } from "../config.js";
 import { daemonDecrypt } from "../daemon-client.js";
-import { buildChildEnv, countLines, MAX_OUTPUT_BYTES, runCommand } from "./run-with-secret.js";
+import {
+  buildChildEnv,
+  countLines,
+  FAILURE_HINT,
+  MAX_OUTPUT_BYTES,
+  runCommand,
+  shouldAttachFailureHint,
+} from "./run-with-secret.js";
 
 export const toolName = "run_with_all_secrets";
 
@@ -159,17 +166,22 @@ export async function handler(
   // forwarded to the model. The LLM sees only enough to know the command
   // ran (exit code, duration, line counts, truncation) but cannot extract
   // any secret value via stdout/stderr leakage.
+  const stdoutLines = countLines(stdout);
+  const stderrLines = countLines(stderr);
   return JSON.stringify({
     exitCode,
     durationMs: Date.now() - startMs,
     outputLineCount: {
-      stdout: countLines(stdout),
-      stderr: countLines(stderr),
+      stdout: stdoutLines,
+      stderr: stderrLines,
     },
     truncated: stdoutTruncated || stderrTruncated,
     // Useful operational signal — how many env vars actually got injected
     // after the structural filter and bulk-skip rules. Helps the model tell
     // "no items in profile" from "subprocess just had nothing to do."
     injectedCount: Object.keys(envMap).length,
+    // Static, secret-free rationale on failure-with-output only. Omitted on
+    // success so the response shape is unchanged for the common case.
+    ...(shouldAttachFailureHint(exitCode, stdoutLines, stderrLines) ? { hint: FAILURE_HINT } : {}),
   });
 }

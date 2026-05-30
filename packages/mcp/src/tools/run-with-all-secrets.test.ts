@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import * as apiClientModule from "../api-client.js";
 import * as daemonClientModule from "../daemon-client.js";
 import { handler } from "./run-with-all-secrets";
+import { FAILURE_HINT } from "./run-with-secret";
 
 const fakeConfig = {
   apiUrl: "http://localhost",
@@ -281,5 +282,64 @@ describe("run_with_all_secrets handler", () => {
 
     clientSpy.mockRestore();
     daemonSpy.mockRestore();
+  });
+
+  test("attaches the static RED1 hint on failure with output — no subprocess text leaks", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
+      clientReturning([
+        {
+          storageMode: "server_managed",
+          itemId: "item-1",
+          label: "openai-api-key",
+          payload: { fields: { value: "sk-secret-aaa" } },
+        },
+      ]),
+    );
+
+    const result = await handler(
+      {
+        profileId: "prof-1",
+        command: process.execPath,
+        args: ["-e", "process.stderr.write('boom-sentinel\\n'); process.exit(1)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(1);
+    expect(parsed.hint).toBe(FAILURE_HINT);
+    expect(parsed.hint.length).toBeGreaterThan(0);
+    expect(result).not.toContain("boom-sentinel");
+    expect(result).not.toContain("sk-secret-aaa");
+
+    clientSpy.mockRestore();
+  });
+
+  test("omits the hint key entirely on a clean exit", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
+      clientReturning([
+        {
+          storageMode: "server_managed",
+          itemId: "item-1",
+          label: "openai-api-key",
+          payload: { fields: { value: "sk-secret-aaa" } },
+        },
+      ]),
+    );
+
+    const result = await handler(
+      {
+        profileId: "prof-1",
+        command: process.execPath,
+        args: ["-e", "process.stdout.write('ok\\n'); process.exit(0)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(0);
+    expect("hint" in parsed).toBe(false);
+
+    clientSpy.mockRestore();
   });
 });
