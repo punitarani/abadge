@@ -5,7 +5,7 @@ import { createUserApiClient } from "../client";
 import { loadConfig } from "../config";
 import { daemonDecrypt, daemonEncrypt } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
-import { prompt } from "../prompt";
+import { prompt, readSecretValue } from "../prompt";
 
 /**
  * Resolve the ZK profile id the server will insert into. The server picks the
@@ -22,7 +22,7 @@ async function resolveZkProfileId(client: AbadgeUserClient): Promise<string> {
   const zkProfile = result.profiles.find((p) => p.storageMode === "zero_knowledge");
   if (!zkProfile) {
     throw new Error(
-      "No zero-knowledge profile in this organization. Create one with `abadge profile create --storage-mode zero_knowledge`.",
+      "No zero-knowledge profile in this organization. Create one with `abadge profile add --storage-mode zero_knowledge`.",
     );
   }
   return zkProfile.id;
@@ -63,7 +63,7 @@ async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItem
   }
 
   const label = opts.label ?? opts.name ?? (await prompt("Label: "));
-  const value = opts.value ?? (await prompt("Value (secret): ", true));
+  const value = opts.value ?? (await readSecretValue("Value (secret): "));
 
   if (!label || !value) {
     error("Label and value are required.");
@@ -236,7 +236,7 @@ export function createItemCommand(): Command {
         const currentItem = (await client.items.get(id)).item;
         const label = await prompt("Label: ");
         const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
-        const value = await prompt("Value (secret): ", true);
+        const value = await readSecretValue("Value (secret): ");
 
         if (!label || !kind || !value) {
           error("Label, kind, and value are required.");

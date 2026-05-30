@@ -93,6 +93,19 @@ describe("errorMessage()", () => {
     expect(out).toBe("Agent lacks mount_env\n  → Grant mount_env via abadge permission grant");
   });
 
+  test("NO_ORG_MEMBERSHIP gets a CLI-specific hint, not the web onboarding one", () => {
+    const err = new AbadgeApiError(
+      401,
+      "NO_ORG_MEMBERSHIP",
+      "User has no organization membership",
+      "Complete onboarding to create your first organization.",
+    );
+    const out = stripAnsi(errorMessage(err, "fallback"));
+    expect(out).toContain("abadge org add --name <name>");
+    expect(out).toContain("abadge org use <id>");
+    expect(out.toLowerCase()).not.toContain("onboarding");
+  });
+
   test("just the message when AbadgeApiError has no hint", () => {
     const err = new AbadgeApiError(404, "ITEM_NOT_FOUND", "Item not found");
     expect(stripAnsi(errorMessage(err, "fallback"))).toBe("Item not found");
