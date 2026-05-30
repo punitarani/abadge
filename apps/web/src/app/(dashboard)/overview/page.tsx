@@ -108,7 +108,7 @@ function SummaryCards({
         label="Access events"
         loading={isLoading || auditLoading}
         value={auditEventCount}
-        subtitle="last 24 hours"
+        subtitle="most recent"
       />
     </div>
   );

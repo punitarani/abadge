@@ -63,6 +63,17 @@ export class AbadgeApiError extends Error {
    */
   public readonly issues?: ReadonlyArray<ValidationIssue>;
 
+  /**
+   * Server-assigned request correlation id, echoed by the API as the
+   * `X-Request-Id` response header. Include it in bug reports so the failing
+   * request can be traced in server logs.
+   *
+   * Populated on the REST/`fromResponse` path (read from the response header)
+   * and on the tRPC/`fromUnknown` path when the API surfaces the id in the
+   * error envelope `meta.requestId`. Absent when neither source is available.
+   */
+  public readonly requestId?: string;
+
   constructor(
     statusCode: number,
     code: ErrorCode | string,
@@ -70,6 +81,7 @@ export class AbadgeApiError extends Error {
     hint?: string,
     meta?: Readonly<Record<string, unknown>>,
     issues?: ReadonlyArray<ValidationIssue>,
+    requestId?: string,
   ) {
     super(message);
     this.name = "AbadgeApiError";
@@ -78,6 +90,7 @@ export class AbadgeApiError extends Error {
     this.hint = hint;
     this.meta = meta;
     this.issues = issues;
+    this.requestId = requestId;
   }
 
   /**
@@ -108,7 +121,10 @@ export class AbadgeApiError extends Error {
     } catch {
       // Non-JSON response body
     }
-    return new AbadgeApiError(res.status, code, message, hint, meta, issues);
+    // `Headers.get` is case-insensitive; the API echoes `X-Request-Id` on every
+    // response (see apps/api request-id middleware).
+    const requestId = res.headers.get("X-Request-Id") ?? undefined;
+    return new AbadgeApiError(res.status, code, message, hint, meta, issues, requestId);
   }
 
   /**
@@ -120,6 +136,12 @@ export class AbadgeApiError extends Error {
    */
   static fromUnknown(error: unknown, fallback: string): AbadgeApiError {
     const normalized = normalizeTrpcError(error);
+    // The tRPC client error does not expose response headers, so `X-Request-Id`
+    // is not reachable here. We pass through `meta.requestId` if the API
+    // surfaces it in the error envelope; otherwise `requestId` is undefined on
+    // the tRPC path.
+    const metaRequestId =
+      typeof normalized.meta?.requestId === "string" ? normalized.meta.requestId : undefined;
     return new AbadgeApiError(
       normalized.httpStatus ?? 500,
       normalized.code ?? normalized.trpcCode ?? "UNKNOWN",
@@ -127,6 +149,7 @@ export class AbadgeApiError extends Error {
       normalized.hint,
       normalized.meta,
       normalized.issues,
+      metaRequestId,
     );
   }
 }

@@ -42,10 +42,21 @@ export function json(data: unknown): void {
   console.log(JSON.stringify(data, null, 2));
 }
 
+/**
+ * CLI-specific overrides for API error hints. The server's hint for some codes
+ * references web-only concepts (e.g. onboarding) that the CLI cannot offer, so
+ * we render an actionable CLI command instead.
+ */
+const CLI_HINT_OVERRIDES: Record<string, string> = {
+  NO_ORG_MEMBERSHIP:
+    "Run `abadge org add --name <name>` to create your first organization, or `abadge org use <id>` to select one.",
+};
+
 /** Extract a user-facing message from an unknown catch value, including API hint if present. */
 export function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof AbadgeApiError) {
-    return err.hint ? `${err.message}\n  ${DIM}→ ${err.hint}${RESET}` : err.message;
+    const hint = CLI_HINT_OVERRIDES[err.code] ?? err.hint;
+    return hint ? `${err.message}\n  ${DIM}→ ${hint}${RESET}` : err.message;
   }
   return err instanceof Error ? err.message : fallback;
 }
