@@ -13,10 +13,10 @@ export const items = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     profileId: text("profile_id").references(() => profiles.id, { onDelete: "set null" }),
-    // §RM-PR1 — audit metadata, not ownership. Items belong to the
-    // organization (organizationId is the isolation boundary), not to a user.
-    // `createdBy` records who *created* the row for traceability, and is
-    // nullable so deleting the user does not require also deleting the item.
+    // Audit metadata, not ownership. Items belong to the organization
+    // (organizationId is the isolation boundary), not to a user. `createdBy`
+    // records who created the row for traceability, and is nullable so deleting
+    // the user orphans the item rather than deleting it.
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     label: text("label").notNull(),
     kind: text("kind", { enum: ITEM_KINDS }),
@@ -32,11 +32,11 @@ export const items = pgTable(
     // Server-managed fields (null for zero_knowledge)
     serverCiphertext: text("server_ciphertext"),
     serverIv: text("server_iv"),
-    // Doubles as the AAD-epoch marker (§W1S7-002):
-    //   1     → legacy no-AAD ciphertext (pre-§W1S7-002).
+    // Doubles as the AAD-epoch marker:
+    //   1     → no-AAD ciphertext.
     //   >= 2  → AAD-bound (org, profile, item, keyVersion) — see
     //           `buildServerAad` in @abadge/crypto/shared.
-    // Future AES master-key rotations bump this further.
+    // AES master-key rotations bump this further.
     serverKeyVersion: integer("server_key_version"),
 
     // Common
@@ -50,7 +50,7 @@ export const items = pgTable(
     index("items_organization_id_idx").on(table.organizationId),
     index("items_profile_id_idx").on(table.profileId),
     index("items_created_by_idx").on(table.createdBy),
-    // §AB-0050/§AB-0052 — serve the keyset list directly: `WHERE organization_id = ?
+    // Serve the keyset list directly: `WHERE organization_id = ?
     // AND deleted_at IS NULL ORDER BY created_at DESC, id DESC`. Without this the
     // planner seq-scans the org's items + top-N sorts. Columns are plain ASC on
     // purpose: the query orders DESC (Postgres default NULLS FIRST), and Postgres

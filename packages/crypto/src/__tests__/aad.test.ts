@@ -110,7 +110,7 @@ describe("profileIdForServerAad", () => {
 });
 
 // -----------------------------------------------------------------------------
-// §W1S7-001 — zero-knowledge AAD helpers (content, DEK-wrap, root-wrap).
+// Zero-knowledge AAD helpers (content, DEK-wrap, root-wrap).
 // -----------------------------------------------------------------------------
 
 describe("buildZkContentAad", () => {

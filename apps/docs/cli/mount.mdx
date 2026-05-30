@@ -3,9 +3,9 @@ title: "abadge mount"
 description: "Resolve a secret and write it to a temporary file with 0600 permissions."
 ---
 
-`abadge mount` resolves a secret and asks the daemon to mount it as a temporary file. The CLI prints the file path so you can use it in subsequent commands.
+`abadge mount` resolves a secret and writes it to a temporary file. The CLI prints the file path so you can use it in subsequent commands.
 
-The file lives inside a `0700` temp directory under the OS tmpdir. The file itself is `0600`. The daemon tracks active mounts and cleans them up on `daemon stop` (and the MCP server cleans up its own mounts after 5 minutes).
+The file is written with `0600` permissions. By default it lands at `<os.tmpdir()>/abadge-<uuid>`; pass `--path` to choose the location. The CLI does not track or auto-clean the file — remove it yourself when you're done.
 
 ## Usage
 
@@ -19,31 +19,27 @@ abadge mount --item <item-id> --path /tmp/my-secret.txt
 
 | Flag | Description |
 |---|---|
-| `--item` | Item ID or label |
-| `--field` | Named field to mount (for multi-field items) |
-| `--path` | Suggest a path. The daemon may reject paths outside its allowed temp directory. |
-| `--purpose` | Caller-declared purpose, recorded in audit |
+| `--item <id>` | Item ID (required) |
+| `--field <name>` | Named field to mount (for multi-field items) |
+| `--path <path>` | Target file path. Parent directories are created as needed. Defaults to `<os.tmpdir()>/abadge-<uuid>`. |
 
 ## Behavior
 
 <Steps>
-  <Step title="Resolve the item">
-    Same path as `abadge run`: API call to `POST /v1/access/{itemId}/use` with `delivery: file`, daemon decryption for ZK items.
+  <Step title="Resolve the secret">
+    Same access path as `abadge run`: `POST /v1/access/{itemId}/use` with `delivery: file`, with daemon decryption for zero-knowledge items.
   </Step>
-  <Step title="Pick a path">
-    The daemon allocates a temp directory and writes the secret to a file inside it. If `--path` is provided, the daemon validates that it falls inside the allowed temp directory and uses it. Paths outside `os.tmpdir()` are rejected.
+  <Step title="Write the file">
+    The CLI writes the resolved secret value to `--path` (or a generated temp path), creating parent directories as needed, with `0600` permissions.
   </Step>
   <Step title="Print the path">
-    The CLI prints the absolute path on stdout. With `--json`, the path is in the `path` field.
-  </Step>
-  <Step title="Track for cleanup">
-    The daemon records the mount so `daemon stop` (or `abadge profile lock`) can release it.
+    The CLI prints `Mounted at: <path>` on stdout.
   </Step>
 </Steps>
 
 ## Cleanup
 
-The CLI's mount lifetime is tied to the daemon. There's no auto-expiry like the MCP server's 5-minute timeout — the file persists until you stop the daemon or remove it manually.
+`abadge mount` does not track the file or expire it. The file persists until you delete it manually.
 
 ```bash
 # Manual cleanup

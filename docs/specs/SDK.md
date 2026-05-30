@@ -193,13 +193,13 @@ agent.enroll(bootstrapToken: string, publicKey: string)
 
 ### Access Methods
 
-These methods enforce the capability matrix and log every attempt.
+These methods enforce locality + storage-mode legality and log every attempt.
 
 #### `agent.access.read(itemId, opts?)`
 
 Read an item. For server-managed items returns the decrypted payload. For ZK items returns the encrypted envelope for local daemon decryption.
 
-**Requires:** `reveal_plaintext` (server-managed) or `read_ciphertext` (ZK, local only).
+**Requires:** the `read` capability. Server-managed items decrypt server-side; ZK ciphertext is returned to local agents only. Remote agents can `read` server-managed items only.
 
 Returns a discriminated union on `storageMode`:
 
@@ -220,7 +220,7 @@ const result = await agent.access.read(itemId, { field: "password" });
 
 Mint a short-lived mount handle for local injection (env var or temp file). The daemon redeems the handle for the actual material.
 
-**Requires:** `mount_env` or `mount_file` permission. Local agent only.
+**Requires:** the `use` capability. Local agent only.
 
 ```typescript
 // Single item
@@ -328,7 +328,15 @@ export type ItemKind = "login" | "api_key" | "token" | "json" | "certificate" | 
 export type StorageMode = "zero_knowledge" | "server_managed";
 export type AgentKind = "local_cli" | "local_mcp" | "remote";
 export type AgentLocality = "local" | "remote";
-export type Capability = "read_ciphertext" | "reveal_plaintext" | "mount_env" | "mount_file";
+// Canonical capabilities are `read` and `use`. The four legacy names remain in
+// the union because existing permission rows and item-target grants still use them.
+export type Capability =
+  | "read"
+  | "use"
+  | "read_ciphertext"
+  | "reveal_plaintext"
+  | "mount_env"
+  | "mount_file";
 export type AuditEventType = "profile.create" | "profile.rotate" | "item.export" | ... ;
 export type AuditResult = "allowed" | "denied" | "expired" | "revoked" | "cascade";
 
@@ -373,7 +381,9 @@ const { agent, bootstrapToken } = await client.agents.create({
   issueBootstrapToken: true,
 });
 
-// Grant reveal_plaintext capability
+// Grant read access. Item-target grants accept the legacy capability names only
+// (`reveal_plaintext` maps to canonical `read`); profile-target grants accept
+// canonical `read` / `use`.
 await client.permissions.create({
   agentId: agent.id,
   itemId,

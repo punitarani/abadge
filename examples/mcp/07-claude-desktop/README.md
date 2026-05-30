@@ -52,11 +52,13 @@ config block. Mechanically:
    > `/Users/you/.abadge/bin/abadge-mcp`); the `claude_desktop_config.json` in
    > this folder uses that form. `abadge-mcp` on a bare `$PATH` is fine for
    > terminal-launched clients.
-3. Grant the agent a `use` permission on each item it should consume — without
-   an explicit grant, access is **denied** (and audited):
+3. Grant the agent a use permission on each item it should consume — without
+   an explicit grant, access is **denied** (and audited). Item-target CLI
+   grants use the legacy alias `mount_env` (or `mount_file`), which maps to
+   canonical `use`:
 
    ```sh
-   abadge permission create --agent-id <agent-id> --item-id <item-id> --capability use
+   abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
    ```
 
 4. **Zero-knowledge items only:** start the local daemon and unlock the profile

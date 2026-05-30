@@ -44,9 +44,9 @@ flowchart TB
 - Secret injection into spawned subprocesses
 
 **Attack surface:**
-- Unix domain socket (`0600` permissions, owner-only)
-- Process memory (mitigated by auto-lock timeout and `sodium_memzero` on lock)
-- Swap or core dumps (best-effort `mlock` via libsodium; not guaranteed)
+- Unix domain socket (`0600` permissions, owner-only, inside a `0700` directory)
+- Process memory (mitigated by a 15-minute inactivity auto-lock that zeroes key buffers with `Uint8Array.fill(0)`; best-effort only — the JS runtime does not guarantee every copy is erased)
+- Swap or core dumps (not mitigated: abadge does not `mlock` key pages)
 
 **Honest limitation.** A local attacker with root or sudo access can read process memory. The daemon protects against network attackers and server compromise — not local root.
 
@@ -102,9 +102,9 @@ Remote agents (cloud workers, CI runners, webhook handlers) authenticate with sh
 | Threat | Mitigation |
 |---|---|
 | Server breach | ZK items remain encrypted. Server-managed items exposed if `ENCRYPTION_KEY` also leaks. |
-| Weak master password | Argon2id with 64 MiB memory makes brute-force expensive. The product enforces minimum entropy. |
+| Weak master password | Argon2id with 64 MiB memory makes brute-force expensive. The dashboard enforces a 12-character minimum and shows a strength meter; there is no hard server-side entropy gate. |
 | Lost master password | Recovery key (shown once, user stores offline). No server-side recovery. |
-| XSS in browser | CSP headers. Root key in JS memory only. Prefer CLI for high-security operations. |
+| XSS in browser | Root key in JS memory only, lost on tab close (no `localStorage`/`IndexedDB`). `secureHeaders()` sets baseline hardening headers. Prefer CLI + daemon for high-security operations. |
 | Compromised remote agent | Scoped permissions with expiry. Cannot access ZK items. Audit trail. |
 | Local root attacker | Out of scope for v1. Daemon is defense-in-depth, not a guarantee. |
 | Metadata leakage | ZK item metadata is encrypted inside the ciphertext envelope. Server sees only IDs, timestamps, and storage mode. |

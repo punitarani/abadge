@@ -8,10 +8,10 @@ import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
 
 /**
- * §W1S7-001 — Resolve the ZK profile id the server will insert into. The
- * server picks the first ZK profile in the active org (see
- * `insertZeroKnowledgeItem` in the items router); we match that here so the
- * AAD we bind at encrypt time matches the row the server persists.
+ * Resolve the ZK profile id the server will insert into. The server picks the
+ * first ZK profile in the active org (see `insertZeroKnowledgeItem` in the
+ * items router); matching that here keeps the AAD bound at encrypt time
+ * consistent with the row the server persists.
  */
 async function resolveZkProfileId(client: AbadgeUserClient): Promise<string> {
   const config = loadConfig();
@@ -57,7 +57,7 @@ function buildPayload(label: string, value: string, kind: ItemKind): ItemPayload
 async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItemValues> {
   if (opts.value && process.stdin.isTTY) {
     error(
-      "The --value flag is not accepted on a TTY to prevent shell history leaks. Pipe the value instead: echo 'mysecret' | abadge item create --label 'name'",
+      "The --value flag is not accepted on a TTY to prevent shell history leaks. Pipe the value instead: echo 'mysecret' | abadge item add --label 'name'",
     );
     process.exit(1);
   }
@@ -97,9 +97,9 @@ async function buildCreateItemInput(
     };
   }
 
-  // §W1S7-001 — ZK path: itemId is bound into the XChaCha20-Poly1305 AAD at
-  // encrypt time, so we mint the UUID here and pass the same value to both
-  // the daemon (for the AAD) and the server insert (for the row id).
+  // ZK path: itemId is bound into the XChaCha20-Poly1305 AAD at encrypt time,
+  // so mint the UUID here and pass the same value to both the daemon (for the
+  // AAD) and the server insert (for the row id).
   const profileId = await resolveZkProfileId();
   const itemId = crypto.randomUUID();
   const encrypted = await daemonEncrypt(payload, { profileId, itemId });
@@ -113,16 +113,19 @@ async function buildCreateItemInput(
 }
 
 export function createItemCommand(): Command {
-  const cmd = new Command("item").description("Manage vault items");
+  const cmd = new Command("item").description("Create, read, update, and delete vault items");
 
   cmd
     .command("add")
-    .description("Create a new vault item")
-    .option("--name <name>", "Item label")
+    .description("Create a new vault item (omit --value to be prompted)")
+    .option("--name <name>", "Item label (alias for --label)")
     .option("--label <label>", "Item label")
-    .option("--kind <kind>", "Item kind")
-    .option("--value <value>", "Secret value")
-    .option("--storage-mode <mode>", "zero_knowledge or server_managed")
+    .option("--kind <kind>", `Item kind (one of: ${ITEM_KINDS.join(", ")}; default: opaque)`)
+    .option("--value <value>", "Secret value (rejected on a TTY; pipe via stdin instead)")
+    .option(
+      "--storage-mode <mode>",
+      "zero_knowledge (client-side encrypted) or server_managed (default: server_managed)",
+    )
     .option("--json", "Output as JSON")
     .action(async (opts: CreateItemOptions) => {
       try {
@@ -173,10 +176,13 @@ export function createItemCommand(): Command {
 
   cmd
     .command("get")
-    .description("Get a vault item")
+    .description("Get a vault item's metadata")
     .argument("<id>", "Item ID")
     .option("--json", "Output as JSON")
-    .option("--reveal", "Decrypt zero-knowledge item locally")
+    .option(
+      "--reveal",
+      "Decrypt a zero-knowledge item locally via the daemon and print its payload",
+    )
     .action(async (id: string, opts: { json?: boolean; reveal?: boolean }) => {
       try {
         const client = await createUserApiClient();
@@ -200,7 +206,7 @@ export function createItemCommand(): Command {
           return;
         }
 
-        // §W1S7-001 — reveal needs profileId + contentVersion to rebuild AAD.
+        // Reveal needs profileId + contentVersion to rebuild the AAD.
         if (!item.profileId) {
           throw new Error("Item is missing a profile binding; cannot decrypt.");
         }
@@ -246,9 +252,9 @@ export function createItemCommand(): Command {
         let result: { ok: boolean; contentVersion: number };
 
         if (currentItem.storageMode === "zero_knowledge") {
-          // §W1S7-001 — the update will land as contentVersion = current + 1;
-          // bind that NEW version into the AAD so the refreshed row decrypts
-          // with the same contentVersion the server persists.
+          // The update lands as contentVersion = current + 1; bind that new
+          // version into the AAD so the refreshed row decrypts with the same
+          // contentVersion the server persists.
           if (!currentItem.profileId) {
             throw new Error("Item is missing a profile binding; cannot update.");
           }

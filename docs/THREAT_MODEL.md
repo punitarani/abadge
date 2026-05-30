@@ -46,9 +46,9 @@ The local daemon (`vaultd`) is the primary trust boundary for zero-knowledge ope
 - Secret injection into subprocesses
 
 **Attack surface:**
-- Unix domain socket (mitigated: file permissions 0o600, owner-only)
-- Process memory (mitigated: auto-lock timeout, sodium_memzero on lock)
-- Swap/core dumps (mitigated: best-effort mlock via libsodium, not guaranteed)
+- Unix domain socket (mitigated: file permissions 0o600, owner-only, inside a 0o700 directory)
+- Process memory (mitigated: 15-minute inactivity auto-lock that zeroes key buffers via `zeroKey` / `Uint8Array.fill(0)`; best-effort only — the JS runtime does not guarantee the bytes are erased from every copy)
+- Swap/core dumps (not mitigated: abadge does not `mlock` key pages)
 
 **Honest limitation:** A local attacker with root/sudo access can read process memory. The daemon protects against network attackers and server compromise, not local root compromise.
 
@@ -104,9 +104,9 @@ Remote agents (hosted agents, cloud workers) authenticate with short-lived Ed255
 | Threat | Mitigation |
 |--------|-----------|
 | Server breach | ZK items remain encrypted. Server-managed items exposed. |
-| Weak master password | Argon2id with 64MB memory makes brute-force expensive. Product should enforce minimum entropy. |
+| Weak master password | Argon2id with 64 MiB memory makes brute-force expensive. The dashboard enforces a 12-character minimum and shows a strength meter; there is no hard server-side entropy gate. |
 | Lost master password | Recovery key (shown once, user stores offline). No server-side recovery. |
-| XSS in browser | CSP headers. Root key in JS memory only. Prefer CLI for high-security ops. |
+| XSS in browser | Root key in JS memory only, lost on tab close (no `localStorage`/`IndexedDB`). Hono `secureHeaders()` sets baseline hardening headers. Prefer CLI + daemon for high-security ops. |
 | Compromised remote agent | Scoped permissions with expiry. Cannot access ZK items. Audit trail. |
 | Local attacker with root | Out of scope for v1. Daemon provides defense-in-depth, not a guarantee. |
 | Metadata leakage | ZK item metadata encrypted inside ciphertext. Server sees only IDs + timestamps + storage mode. |

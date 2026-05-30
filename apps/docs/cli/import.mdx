@@ -17,10 +17,9 @@ abadge import .env --dry-run
 
 | Flag | Description |
 |---|---|
-| `--kind` | Item kind to assign to every imported variable. Defaults to `opaque`. |
+| `--kind <kind>` | Item kind to assign to every imported variable. Defaults to `opaque`. |
 | `--overwrite` | Update existing items (matched by label). Refuses zero-knowledge items. |
 | `--dry-run` | Print what would change without calling the API |
-| `--json` | Print the summary as JSON |
 
 ## Behavior
 
@@ -75,11 +74,13 @@ SENTRY_DSN=https://abc@sentry.io/123
 
 ```bash
 abadge import secrets.env --kind opaque --dry-run
-# created: 3, updated: 0, skipped: 0, refused: 0, failed: 0
+# Import complete (dry-run): 3 created, 0 updated, 0 skipped.
 
 abadge import secrets.env --kind opaque
-# created: 3, updated: 0, skipped: 0, refused: 0, failed: 0
+# Import complete: 3 created, 0 updated, 0 skipped.
 ```
+
+The `created`/`updated`/`skipped` buckets always print; `refused` and `failed` are appended only when nonzero.
 
 ## Related
 

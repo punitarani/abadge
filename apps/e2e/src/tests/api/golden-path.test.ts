@@ -23,7 +23,7 @@ describe("api golden path", () => {
       sessionToken: owner.sessionToken,
     });
 
-    // 2. create org (server seeds no profile — caller is responsible)
+    // 2. create org (transactionally seeds a default server_managed profile)
     const org = await orgUserClient.orgs.create({
       name: "E2E Org",
       slug: `e2e-${crypto.randomUUID()}`,
@@ -37,8 +37,8 @@ describe("api golden path", () => {
       orgId: org.id,
     });
 
-    // 3. organizations.create auto-seeds a default server_managed profile
-    // (§REVAMP-PR3 Task 5.1), so no explicit createProfile is needed here.
+    // 3. org creation already seeded the default server_managed profile, so the
+    // item below can be created without a separate profile-bootstrap step.
 
     // 4. create a server-managed item
     const { id: itemId } = await userClient.items.create({

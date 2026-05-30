@@ -111,9 +111,9 @@ export function createAuth(db: Database, env: AuthEnv): any {
     secret: env.BETTER_AUTH_SECRET,
     emailAndPassword: {
       enabled: true,
-      // §AU1: block sign-in until email is verified; also defends against B36
-      // OAuth pre-claim by ensuring unverified email accounts cannot be used
-      // to silently absorb incoming OAuth logins.
+      // Block sign-in until email is verified. This also closes an OAuth
+      // pre-claim hole: an unverified credential account cannot be used to
+      // silently absorb an incoming OAuth login for the same address.
       requireEmailVerification: true,
       sendResetPassword: async ({ user, token }) => {
         const resetUrl = `${env.ABADGE_APP_URL.replace(/\/$/, "")}/reset-password/${token}`;
@@ -141,7 +141,7 @@ export function createAuth(db: Database, env: AuthEnv): any {
       },
     },
     account: {
-      // B36: block OAuth pre-claim takeover. With disableImplicitLinking: true,
+      // Block OAuth pre-claim takeover. With disableImplicitLinking: true,
       // Better Auth will not silently link an incoming OAuth login to a
       // pre-existing credential account that shares the same email. Users must
       // explicitly call linkSocial() while authenticated to merge accounts.
@@ -156,10 +156,10 @@ export function createAuth(db: Database, env: AuthEnv): any {
       updateAge: 60 * 60 * 24,
       // Cache the validated session in a short-lived signed cookie so the
       // browser dashboard's per-request session validation reads from the
-      // cookie instead of hitting the DB — the connection pool, not query
-      // latency, is the throughput wall (PS-10 + Hyperdrive). Better Auth
-      // returns the cached session before any DB read when this cookie is
-      // present (and our DB-backed config takes the zero-write path).
+      // cookie instead of hitting the DB — on Hyperdrive the connection pool,
+      // not query latency, is the throughput wall. Better Auth returns the
+      // cached session before any DB read when this cookie is present (and the
+      // DB-backed config takes the zero-write path).
       //
       // Scope of the cache: ONLY session identity ({session, user}). It does
       // NOT cache org membership — `resolveUserOrgId`'s `member` lookup stays a
@@ -260,9 +260,9 @@ export function createAuth(db: Database, env: AuthEnv): any {
 
             // Run the full cascade (revoke agents, sessions, grants) so the
             // plugin path is consistent with the tRPC removeMember path.
-            // §AB-0011 — set the org GUC first: onMemberRemoved deletes the
-            // removed member's `permissions` rows (an RLS table), which would
-            // affect zero rows under the NOBYPASSRLS runtime role without it.
+            // Set the org GUC first: onMemberRemoved deletes the removed
+            // member's `permissions` rows (an RLS table), which would affect
+            // zero rows under the NOBYPASSRLS runtime role without it.
             try {
               await db.transaction(async (tx) => {
                 await tx.execute(

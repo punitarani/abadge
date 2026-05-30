@@ -6,13 +6,12 @@ import {
 } from "@abadge/crypto/shared";
 
 /**
- * §AB-0003 — backfill pre-fix server_managed items onto a real profile.
+ * Backfill server_managed items that have `profileId = NULL` onto a real profile.
  *
- * Before §AB-0001, server_managed items were written with `profileId = NULL`,
- * so profile-level permission grants (which skip NULL-profile rows) never
- * covered them. This re-encrypts each unbound item under its org's default
- * profile and binds it. Pre-fix ciphertext comes in two formats — both decrypt
- * cleanly here and re-encrypt at v2 bound to the real profile:
+ * A NULL-profile item is not covered by profile-level permission grants (which
+ * skip NULL-profile rows). This re-encrypts each unbound item under its org's
+ * default profile and binds it. Unbound ciphertext comes in two on-disk formats,
+ * both decrypted here and re-encrypted at v2 bound to the real profile:
  *   - v1 (`serverKeyVersion < SERVER_AAD_MIN_VERSION`): no AAD.
  *   - v2 (`>= SERVER_AAD_MIN_VERSION`, `profileId = NULL`): the no-profile AAD sentinel.
  *

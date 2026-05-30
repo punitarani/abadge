@@ -60,9 +60,9 @@ export async function onAgentRevoked(
     );
   }
 
-  // §RM-PR2 — Surface every (item-level OR profile-level) permission as
-  // implicitly invalidated. The grant rows themselves remain in place; the
-  // agent's revokedAt makes them dormant at access time.
+  // Surface every (item-level OR profile-level) permission as implicitly
+  // invalidated. The grant rows themselves remain in place; the agent's
+  // revokedAt makes them dormant at access time.
   const grants = await tx
     .select({
       id: permissions.id,

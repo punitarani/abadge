@@ -10,26 +10,32 @@ abadge applies per-principal rate limits at the API edge.
 | Path | Limit | Principal |
 |---|---|---|
 | `/api/auth/*` | 60 requests / minute | IP address |
+| `/agent/auth*` | 60 requests / minute | IP address |
 | `/v1/*` | 100 requests / minute | Bearer token (or IP when unauthenticated) |
+| `/trpc/*` | 100 requests / minute | Bearer token (or IP when unauthenticated) |
 
+`/v1/*` and `/trpc/*` share the same per-principal limit but are independent
+buckets. A handful of unauthenticated auth routes carry stricter per-IP sub-limits
+(e.g. `sign-in/email` 10 / 15 min, `request-password-reset` 5 / 15 min).
 Counters reset every minute.
 
 ## Response
 
 When a caller exceeds the limit, the API returns HTTP `429 Too Many Requests`
-with a minimal body:
+with the standard error envelope:
 
 ```json
-{ "error": "Too many requests" }
+{
+  "code": "RATE_LIMITED",
+  "message": "Rate limit exceeded (100 requests per 60s)",
+  "hint": "Wait 12 seconds and retry.",
+  "meta": { "retryAfter": 12, "limit": 100, "resetAt": 1730000000000 }
+}
 ```
 
-<Note>
-  The edge rate-limit check runs before the application layer, so a 429 from
-  these paths uses this terse body rather than the standard
-  `{ code, message, hint, meta }` envelope. Treat any 429 as `RATE_LIMITED`.
-</Note>
-
-A `Retry-After` header accompanies the 429 where available.
+A `Retry-After` header accompanies every 429. Every response (not just 429s)
+also carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and
+`X-RateLimit-Reset` so clients can back off before they hit the ceiling.
 
 ## Recommended client behavior
 

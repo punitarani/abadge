@@ -122,7 +122,7 @@ interface TrpcMutationWithoutInput<TOutput> {
   mutate(): Promise<TOutput>;
 }
 
-/** Optional keyset-pagination input shared by the cursor-paginated lists (§AB-0050). */
+/** Optional keyset-pagination input shared by the cursor-paginated lists. */
 type ListPageInput = { cursor?: string; limit?: number };
 
 interface SdkTrpcClient {
@@ -310,8 +310,8 @@ async function call<T>(operation: () => Promise<T>, fallback: string): Promise<T
 
 /**
  * The per-request page size the drainer asks for. Equal to the server's
- * `MAX_PAGE_LIMIT` (§AB-0050); requesting the ceiling minimises round-trips.
- * Asking for more would be rejected by input validation, not clamped.
+ * `MAX_PAGE_LIMIT`; requesting the ceiling minimises round-trips. Asking for
+ * more is rejected by input validation, not clamped.
  */
 const DRAIN_PAGE_SIZE = 100;
 
@@ -324,10 +324,9 @@ const MAX_DRAIN_PAGES = 1000;
 
 /**
  * Follow `nextCursor` across every page of a cursor-paginated list and return
- * the concatenation. The server caps each request (§AB-0050); this restores the
- * "return everything" contract that the SDK list helpers had before pagination,
- * so callers that need the full set (CLI export/import, list-then-find) keep
- * working. Throws if pagination fails to terminate (see {@link MAX_DRAIN_PAGES}).
+ * the concatenation. The server caps each request, so callers that need the
+ * full set (CLI export/import, list-then-find) drain every page here. Throws if
+ * pagination fails to terminate (see {@link MAX_DRAIN_PAGES}).
  */
 async function drainPages<T>(
   fetchPage: (
@@ -400,11 +399,14 @@ async function resolvePrivateKey(
 // ---------------------------------------------------------------------------
 
 /**
- * SDK client for user-facing operations authenticated with a session token.
+ * SDK client for the management surface. The bearer is a Better Auth session
+ * token or a personal API key (`abu_`); both resolve to a session identity.
  *
- * Provides vault management, item CRUD, agent registration, permission
- * management, and audit log access. All methods throw {@link AbadgeApiError}
- * on failure with a typed {@link ErrorCode} code.
+ * Covers org, profile, item, agent, permission, and audit management. It does
+ * NOT reach the agent-gated `access.*` surface: this client cannot reveal or
+ * mount secret values — that requires a keypair agent (see
+ * {@link AbadgeAgentClient}). All methods throw {@link AbadgeApiError} on
+ * failure with a typed {@link ErrorCode} code.
  *
  * @example
  * ```typescript
@@ -423,7 +425,8 @@ export class AbadgeUserClient {
   protected readonly client: SdkTrpcClient;
 
   /**
-   * §RM-PR4 — Namespaced API surface.
+   * Organization management: create (team or personal), list, fetch, rename,
+   * and delete orgs the caller is a member of.
    *
    * @example
    * ```typescript
@@ -842,14 +845,31 @@ export class AbadgeUserClient {
 // ---------------------------------------------------------------------------
 
 /**
- * SDK client for agent-facing operations. Agents authenticate via Ed25519
- * keypair session exchange (short-lived `abs_` session tokens) with automatic
- * background refresh. Call {@link connect} before using access methods.
+ * Bounded exponential backoff schedule for background session refresh retries.
+ * 5 attempts total: 30s → 60s → 120s → 240s → 300s. After the final failure,
+ * the client flips to `sessionExpired` and outgoing calls reject fast.
+ * @internal
+ */
+export const REFRESH_RETRY_SCHEDULE_MS: readonly number[] = [
+  30_000, 60_000, 120_000, 240_000, 300_000,
+] as const;
+
+/**
+ * SDK client for agent-facing secret access. Agents authenticate solely by
+ * Ed25519 keypair: {@link connect} runs a challenge/signature exchange for a
+ * short-lived `abs_` session token, then a background timer refreshes it at
+ * T-2 minutes before expiry. No long-lived secret is held on disk.
  *
- * All methods throw {@link AbadgeApiError} on failure with a typed
- * {@link ErrorCode} code.
+ * Lifecycle: call {@link connect} before any access method and {@link disconnect}
+ * to stop the refresh loop. If background refresh exhausts its retries the
+ * client enters `sessionExpired` and every call rejects fast with
+ * `SESSION_REFRESH_FAILED`; reconnect to recover.
  *
- * @example Keypair auth
+ * The `access` methods reach the agent-gated secret surface and are subject to
+ * per-item permission checks. All methods throw {@link AbadgeApiError} on
+ * failure with a typed {@link ErrorCode} code.
+ *
+ * @example
  * ```typescript
  * import { AbadgeAgentClient } from "@abadge/sdk";
  *
@@ -862,16 +882,6 @@ export class AbadgeUserClient {
  * const secret = await agent.access.read("item_id");
  * ```
  */
-/**
- * Bounded exponential backoff schedule for background session refresh retries.
- * 5 attempts total: 30s → 60s → 120s → 240s → 300s. After the final failure,
- * the client flips to `sessionExpired` and outgoing calls reject fast.
- * @internal
- */
-export const REFRESH_RETRY_SCHEDULE_MS: readonly number[] = [
-  30_000, 60_000, 120_000, 240_000, 300_000,
-] as const;
-
 export class AbadgeAgentClient {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly config: AbadgeAgentClientConfig;
@@ -892,9 +902,10 @@ export class AbadgeAgentClient {
   }
 
   /**
-   * For keypair-auth agents: performs Ed25519 session exchange and starts the
-   * background T-2 minute refresh loop. Must be called before using access methods.
-   * For API-key agents: no-op (session is implicit).
+   * Performs the Ed25519 session exchange and starts the background T-2 minute
+   * refresh loop. Must be called before any access method. Safe to call again
+   * after {@link disconnect} (or after refresh exhaustion) to re-establish a
+   * session and reset the `sessionExpired` state.
    *
    * Timer lifecycle: the refresh timer is `.unref()`'d so it does NOT keep the
    * Node/Bun event loop alive on its own. Long-lived consumers (MCP stdio,
@@ -1009,7 +1020,7 @@ export class AbadgeAgentClient {
   /**
    * Replace the current refresh timer using the configured scheduler (default
    * `setTimeout`) and `.unref()` it if supported. Centralising timer creation
-   * preserves the B1 event-loop-does-not-hang invariant for every refresh/retry.
+   * keeps every refresh/retry from holding the event loop open on its own.
    */
   private armTimer(delayMs: number, callback: () => void): void {
     if (this.refreshTimer) {
@@ -1110,9 +1121,8 @@ export class AbadgeAgentClient {
 
   /**
    * Retrieve a single item's metadata and encrypted content.
-   * Only works when the agent session also carries user-level privileges.
-   * If called with an agent-only API key, throws {@link AbadgeApiError} with
-   * code `UNAUTHORIZED` — the caller should fall back to the `access*` methods.
+   * Returns the stored envelope, not decrypted plaintext; to consume a secret
+   * value use the {@link access} methods, which enforce per-item permissions.
    *
    * @param id - Item ID
    * @throws {AbadgeApiError} ITEM_NOT_FOUND, UNAUTHORIZED
@@ -1142,9 +1152,10 @@ export class AbadgeAgentClient {
   // -- Access (unified) -----------------------------------------------------
 
   /**
-   * §RM-PR2 canonical access surface. Both `read` and `use` are evaluated by
-   * the unified pipeline server-side; ZK vs server_managed dispatch is implicit
-   * in the response shape.
+   * Secret-access surface, gated by per-item agent permissions. Both `read` and
+   * `use` run through the unified server-side pipeline; zero-knowledge vs
+   * server-managed dispatch is implicit in the response shape. Requires a live
+   * keypair session — call {@link connect} first.
    *
    * @example
    * ```typescript

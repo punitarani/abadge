@@ -1,7 +1,7 @@
 /**
- * CLI binary covers the item / agent / permission triad for a server-managed
- * item end-to-end. Mirrors §3.1–§3.6 of TESTING.md Phase 4 in TypeScript so
- * it runs in CI instead of the manual bash harness.
+ * Drives the real CLI binary through the item / agent / permission triad for a
+ * server-managed item end-to-end, asserting that `permission create` accepts
+ * repeated `--capability` flags and writes one row per capability.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
@@ -45,7 +45,7 @@ describe("cli item + agent + permission flow", () => {
       sessionToken: owner.sessionToken,
       orgId: org.id,
     });
-    // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
+    // Org creation already seeded the default server_managed profile.
     const item = await scoped.items.create({
       storageMode: "server_managed",
       payload: {

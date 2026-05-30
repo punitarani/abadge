@@ -21,10 +21,10 @@ type ListPageInput = { cursor?: string; limit?: number };
 
 export interface PrefetchClient {
   profiles: { list: { query: (args: { orgId: string }) => Promise<unknown> } };
-  // §AB-0050 — list endpoints are cursor-paginated; the prefetch drains every
-  // page so the warmed cache matches what the page component reads (which also
-  // drains). Warming only the first page would leave the page trusting a
-  // truncated cache and silently hiding rows past the first 50.
+  // List endpoints are cursor-paginated; the prefetch drains every page so the
+  // warmed cache matches what the page component reads (which also drains).
+  // Warming only the first page would leave the page trusting a truncated cache
+  // and silently hiding rows past the first page.
   items: {
     list: {
       query: (

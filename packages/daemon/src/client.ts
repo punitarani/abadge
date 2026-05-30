@@ -20,8 +20,8 @@ import type {
 /**
  * Methods that touch the operator's master password, Better Auth bearer, or
  * plaintext secrets. These MUST pass the TOFU handshake before the frame is
- * written to the socket — otherwise a same-UID squatter would silently
- * capture credentials (W3P12-001 / Critical C-2).
+ * written to the socket — otherwise a same-UID squatter could silently
+ * capture credentials.
  */
 const SENSITIVE_RPC_METHODS = new Set<string>([
   "auth.setSession",
@@ -77,9 +77,9 @@ export class DaemonClient {
   private verifyInFlight: Promise<string> | null = null;
 
   /**
-   * Accepts either a plain socket path (back-compat) or a full options bag.
+   * Accepts either a plain socket path or a full options bag.
    *
-   * Plain-string / undefined path: back-compat for tests and one-shot scripts.
+   * Plain-string / undefined path: intended for tests and one-shot scripts.
    * Still performs Ed25519 signature verification on every sensitive call, but
    * does NOT persist or check a pinned fingerprint across sessions.
    *
@@ -89,11 +89,10 @@ export class DaemonClient {
    */
   constructor(options?: string | DaemonClientOptions) {
     if (typeof options === "string" || options === undefined) {
-      // Plain-string / undefined back-compat path: no pinning callbacks, no
-      // explicit opt-in. Still safe for single-session tests and dev tools but
-      // should NEVER appear in user-facing CLI/MCP production paths. Callers
-      // who want to stay on this path with an options bag must pass
-      // `skipPersistentPinning: true`.
+      // Plain-string / undefined path: no pinning callbacks, no explicit
+      // opt-in. Safe for single-session tests and dev tools but should NEVER
+      // appear in user-facing CLI/MCP production paths. Callers who want this
+      // behavior with an options bag must pass `skipPersistentPinning: true`.
       this.socketPath = options ?? defaultSocketPath();
       this.onMismatch = defaultMismatchError;
       return;
@@ -227,7 +226,7 @@ export class DaemonClient {
   /**
    * Update the cached org scope without re-supplying the token.
    * Called after `abadge org use` so outbound tRPC calls pick up the new
-   * org immediately without a full re-login (§O3 / multi-org CLI fix).
+   * org immediately without a full re-login.
    */
   async setAuthOrg(organizationId: string | null): Promise<DaemonAuthStatus> {
     return (await this.send("auth.setOrg", { organizationId })) as DaemonAuthStatus;
@@ -285,8 +284,8 @@ export class DaemonClient {
   }
 
   /**
-   * Encrypt a plaintext value. §W1S7-001: the caller MUST pre-generate the
-   * itemId and know the target profileId so both can be bound into the
+   * Encrypt a plaintext value. The caller MUST pre-generate the itemId and
+   * know the target profileId so both can be bound into the
    * XChaCha20-Poly1305 AAD.
    */
   async encrypt(
@@ -297,8 +296,8 @@ export class DaemonClient {
   }
 
   /**
-   * Decrypt an encrypted item. §W1S7-001: `meta` MUST exactly match the values
-   * bound at encrypt time, otherwise the AEAD tag verification fails.
+   * Decrypt an encrypted item. `meta` MUST exactly match the values bound at
+   * encrypt time, otherwise the AEAD tag verification fails.
    */
   async decrypt(
     encryptedItemKey: string,
@@ -313,8 +312,8 @@ export class DaemonClient {
   }
 
   /**
-   * Re-wrap item DEKs with a new root key. §W1S7-001: profileId is carried
-   * alongside the items so the daemon can bind the DEK-wrap AAD for each item.
+   * Re-wrap item DEKs with a new root key. profileId is carried alongside the
+   * items so the daemon can bind the DEK-wrap AAD for each item.
    */
   async rekey(
     items: Array<{ id: string; encryptedItemKey: string }>,
@@ -362,9 +361,9 @@ export class DaemonClient {
    * Decrypts the item if encryptedItemKey+ciphertext are provided, or uses
    * serverPayload directly if the caller already has the decrypted payload.
    *
-   * §W1S7-001: when encryptedItemKey+ciphertext are provided, `zkMeta` MUST
-   * also be provided so the daemon can rebuild the XChaCha20-Poly1305 AAD.
-   * Pass `null` in the server-managed (serverPayload) case.
+   * When encryptedItemKey+ciphertext are provided, `zkMeta` MUST also be
+   * provided so the daemon can rebuild the XChaCha20-Poly1305 AAD. Pass `null`
+   * in the server-managed (serverPayload) case.
    */
   async expandEnv(
     encryptedItemKey: string | null,
@@ -419,10 +418,10 @@ export async function daemonExpandEnv(
   options?: DaemonIdentityCallbacks,
   zkMeta?: { profileId: string; itemId: string; contentVersion: number } | null,
 ): Promise<{ exitCode: number }> {
-  // Pass `options` directly: if undefined, the constructor takes the back-compat
+  // Pass `options` directly: if undefined, the constructor takes the
   // string/undefined path (no pinning, still verifies signatures). Spreading
-  // `options ?? {}` would produce an empty options bag which now requires
-  // `skipPersistentPinning: true` — passing undefined preserves back-compat.
+  // `options ?? {}` would produce an empty options bag, which requires
+  // `skipPersistentPinning: true`; passing undefined avoids that.
   const client = new DaemonClient(options ? { ...options } : undefined);
   return client.expandEnv(encryptedItemKey, ciphertext, serverPayload, command, args, zkMeta);
 }

@@ -36,8 +36,9 @@ abadge agent add --name "deploy-bot" --kind remote --json
 # 2. Create a server_managed secret (piped via stdin; --value is rejected on a TTY).
 echo -n 'super-secret-downstream-token' | abadge item add --label DEPLOY_TOKEN --kind token --json
 
-# 3. Grant THIS agent the canonical `read` capability on THAT item.
-abadge permission create --agent-id <AGENT_ID> --item-id <ITEM_ID> --capability read
+# 3. Grant THIS agent read access on THAT item. Item-target CLI grants use the
+#    legacy alias `reveal_plaintext`, which maps to canonical `read`.
+abadge permission create --agent-id <AGENT_ID> --item-id <ITEM_ID> --capability reveal_plaintext
 ```
 
 Export the environment the example reads:

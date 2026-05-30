@@ -10,23 +10,23 @@ An **item** is a stored credential. Every item belongs to a profile, inherits it
 | Field | Type | Description |
 |---|---|---|
 | `id` | text (PK) | Item ID |
-| `organizationId` | text | Owning organization |
-| `profileId` | text | Parent profile |
+| `organizationId` | text | Owning organization (the isolation boundary) |
+| `profileId` | text \| null | Parent profile (`ON DELETE set null`) |
+| `createdBy` | text \| null | User who created the row (audit metadata, not ownership; `ON DELETE set null`) |
 | `label` | text | Cleartext display name |
-| `kind` | text | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
-| `tags` | jsonb | Array of strings |
+| `kind` | text \| null | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
+| `tags` | jsonb | Array of strings (default `[]`) |
 | `storageMode` | text | `zero_knowledge` or `server_managed` (inherited from profile) |
-| `encryptedItemKey` | text | DEK wrapped by root key, nonce prepended (ZK only) |
-| `ciphertext` | text | Payload encrypted by DEK (ZK only) |
-| `contentNonce` | text | Nonce for content encryption (ZK only) |
-| `serverCiphertext` | text | AES-256-GCM ciphertext (server-managed only) |
-| `serverIv` | text | 12-byte IV (server-managed only) |
-| `serverKeyVersion` | integer | Encryption-key version (server-managed only) |
-| `cryptoVersion` | integer | Envelope format version |
-| `contentVersion` | integer | Optimistic-concurrency counter |
-| `deletedAt` | timestamptz | Soft-delete timestamp |
+| `encryptedItemKey` | text \| null | DEK wrapped by root key; the 24-byte XChaCha20-Poly1305 wrap nonce is prepended into its first bytes (ZK only) |
+| `ciphertext` | text \| null | Payload encrypted by DEK; the 24-byte content nonce is prepended into its first bytes (ZK only) |
+| `serverCiphertext` | text \| null | AES-256-GCM ciphertext (server-managed only) |
+| `serverIv` | text \| null | 12-byte IV (server-managed only) |
+| `serverKeyVersion` | integer \| null | Encryption-key version; also the AAD-epoch marker (1 = legacy no-AAD, ≥2 = AAD-bound, ≥3 = per-profile DEK) (server-managed only) |
+| `cryptoVersion` | integer | Envelope format version (default `1`) |
+| `contentVersion` | integer | Optimistic-concurrency counter (default `1`) |
+| `deletedAt` | timestamptz \| null | Soft-delete timestamp |
 
-Labels and tags are stored in cleartext to allow listing without decryption.
+There is no separate `contentNonce` or `keyNonce` column — both nonces are prepended into the ciphertext/key fields. Labels and tags are stored in cleartext to allow listing without decryption.
 
 ## The plaintext envelope
 

@@ -6,10 +6,10 @@ import { seedOrg, seedServerItem, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-// §AB-0010 — the scoped data-access layer must make a forgotten WHERE clause
+// The scoped data-access layer must make a forgotten WHERE clause
 // structurally impossible: every read is org-filtered by construction, every
 // insert sets organizationId, and a cross-org row is unreachable even by id.
-describe("§AB-0010 scopedDb — org-scoped data-access layer", () => {
+describe("scopedDb — org-scoped data-access layer", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 

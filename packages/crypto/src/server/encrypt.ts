@@ -28,12 +28,14 @@ async function importKey(base64Key: string): Promise<CryptoKey> {
   ]);
 }
 
-// §AB-0032 — key commitment. AES-GCM is not key-committing: a single ciphertext can,
-// in principle, be crafted to decrypt validly under two different keys (partitioning
-// oracle / key confusion). v4 server-managed ciphertext prefixes a key-commitment tag
-// — HMAC-SHA256(contentKey, fixed context) — to the AES-GCM output, binding the
-// ciphertext to the exact content key. Verified (constant-time) before decryption.
-// v1–v3 carry no commitment (the version drives the format; older rows are untouched).
+// Key commitment. AES-GCM is not key-committing: a single ciphertext can, in
+// principle, be crafted to decrypt validly under two different keys
+// (partitioning-oracle / key-confusion attack). At keyVersion >=
+// COMMIT_MIN_VERSION, server-managed ciphertext prefixes a key-commitment tag —
+// HMAC-SHA256(contentKey, fixed context) — to the AES-GCM output, binding the
+// ciphertext to the exact content key. It is verified (constant-time) before
+// decryption. The stored keyVersion selects the on-disk format, so versions
+// below the threshold (which carry no commitment) decrypt unchanged.
 const COMMIT_MIN_VERSION = 4;
 const COMMITMENT_LENGTH = 32; // HMAC-SHA256 output
 const COMMITMENT_CONTEXT = new TextEncoder().encode("abadge/server-envelope/key-commitment/v1");
@@ -52,7 +54,8 @@ async function keyCommitment(base64Key: string): Promise<Uint8Array> {
   );
 }
 
-/** Constant-time equality (acceptance §AB-0032 #3) — no early-exit on first mismatch. */
+/** Constant-time equality — no early-exit on first mismatch, so comparing the
+ * key-commitment tag leaks no timing signal. */
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) return false;
   let diff = 0;
@@ -65,11 +68,11 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
  * Uses WebCrypto for Cloudflare Workers compatibility.
  *
  * When `aadMeta` is provided, the ciphertext is bound to the
- * `(orgId, profileId, itemId, keyVersion)` tuple via AES-GCM
- * `additionalData`. New writes MUST pass `aadMeta` and use
- * `keyVersion >= SERVER_AAD_MIN_VERSION`. Omitting `aadMeta` reproduces
- * the legacy v1 no-AAD ciphertext format and is only used for migration
- * and backward-compatible decrypts (see `serverDecrypt`).
+ * `(orgId, profileId, itemId, keyVersion)` tuple via AES-GCM `additionalData`,
+ * so a DB-write adversary cannot transplant ciphertext between items. New
+ * writes pass `aadMeta` with `keyVersion >= SERVER_AAD_MIN_VERSION`. Omitting
+ * `aadMeta` produces the no-AAD format, which only `serverDecrypt` of rows
+ * written below that version relies on.
  */
 export async function serverEncrypt(
   plaintext: Uint8Array,
@@ -91,7 +94,7 @@ export async function serverEncrypt(
   const encrypted = new Uint8Array(
     await crypto.subtle.encrypt(algorithm, key, toArrayBuffer(plaintext)),
   );
-  // §AB-0032 — v4+ prefixes the key-commitment tag to the AES-GCM output.
+  // At/above COMMIT_MIN_VERSION, prefix the key-commitment tag to the output.
   let body = encrypted;
   if (keyVersion >= COMMIT_MIN_VERSION) {
     const commitment = await keyCommitment(base64Key);
@@ -106,9 +109,9 @@ export async function serverEncrypt(
  * Decrypt a server-managed item using AES-256-GCM.
  *
  * Pass `aadMeta` only for rows whose `serverKeyVersion >=
- * SERVER_AAD_MIN_VERSION` (v2+). Legacy v1 ciphertext was written
- * without AAD; attempting to decrypt it with AAD will fail tag
- * verification. Callers must branch on the stored `serverKeyVersion`.
+ * SERVER_AAD_MIN_VERSION`. Older ciphertext was written without AAD;
+ * decrypting it WITH AAD fails tag verification. Callers must branch on the
+ * stored `serverKeyVersion`.
  */
 export async function serverDecrypt(
   item: ServerEncryptedItem,
@@ -119,8 +122,9 @@ export async function serverDecrypt(
   let ciphertext = fromBase64(item.ciphertext);
   const iv = fromBase64(item.iv);
 
-  // §AB-0032 — v4+ carries a key-commitment prefix; verify (constant-time) and strip it
-  // before decryption, rejecting a ciphertext whose commitment does not match this key.
+  // Versions at/above COMMIT_MIN_VERSION carry a key-commitment prefix; verify
+  // it (constant-time) and strip it before decryption, rejecting a ciphertext
+  // whose commitment does not match this key.
   if (item.keyVersion >= COMMIT_MIN_VERSION) {
     const stored = ciphertext.subarray(0, COMMITMENT_LENGTH);
     const expected = await keyCommitment(base64Key);
@@ -143,9 +147,9 @@ export async function serverDecrypt(
 }
 
 // Per-profile envelope: each server_managed profile owns a 32-byte DEK wrapped
-// under the master ENCRYPTION_KEY; v3 item content encrypts under the DEK, so
-// rotating the master key rewraps DEKs only — no content re-encryption.
-// See docs/ENVELOPE_SPEC.md ("Server-managed per-profile envelope (v3)").
+// under the master ENCRYPTION_KEY, and item content encrypts under the DEK.
+// Rotating the master key therefore rewraps DEKs only — no content
+// re-encryption.
 
 const DEK_LENGTH = 32;
 

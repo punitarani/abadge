@@ -32,16 +32,16 @@ Credentials live in abadge, encrypted at rest. Choose between:
 
 ### 2. Permission
 
-Every agent must be explicitly granted access to each credential it needs. Permissions are scoped to a specific capability:
+Every agent must be explicitly granted access to each credential it needs. Permissions are scoped to a specific capability. There are two canonical capabilities:
 
 | Capability | What it allows |
 |---|---|
-| `read_ciphertext` | Download the encrypted blob (local agents, ZK items only) |
-| `reveal_plaintext` | Decrypt and return the secret value (server-managed items) |
-| `mount_env` | Inject the secret as an environment variable into a subprocess |
-| `mount_file` | Write the secret to a temporary file with 0600 permissions |
+| `read` | Read the secret — the encrypted blob for ZK items (local agents only), or the decrypted value for server-managed items |
+| `use` | Deliver the secret for local injection — an environment variable or a 0600 temp file (local agents only) |
 
-Permissions can have expiration dates. Remote agents are restricted to `reveal_plaintext` on server-managed items only.
+Four legacy capability names remain accepted on the wire and stored in existing rows, mapped to the canonical pair at access time: `read_ciphertext` and `reveal_plaintext` map to `read`; `mount_env` and `mount_file` map to `use`. Item-target grants currently accept the legacy names only; profile-target grants accept canonical `read` / `use`.
+
+Permissions can have expiration dates. Remote agents are restricted to `read` (reveal) on server-managed items only — no ciphertext read, no mounts.
 
 ### 3. Deliver
 
@@ -136,10 +136,10 @@ curl -fsSL https://raw.githubusercontent.com/punitarani/abadge/main/install.sh |
 abadge login
 
 # Store a secret
-abadge item create --label "prod-db" --kind login --storage-mode server_managed
+abadge item add --label "prod-db" --kind login --storage-mode server_managed
 
 # Register an agent
-abadge agent register -n "deploy-bot"
+abadge agent add -n "deploy-bot"
 
 # Grant access
 abadge permission create --agent-id <id> --item-id <id> --capability mount_env

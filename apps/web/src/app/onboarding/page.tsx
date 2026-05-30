@@ -63,8 +63,8 @@ export default function OnboardingPage(): React.ReactElement | null {
   }, [sessionPending, userId, router]);
 
   // Resume-triage: if the user already has any org, redirect to /overview.
-  // PR3's auto-default profile makes every fresh org immediately usable;
-  // an admin who deletes the default profile recovers from the profiles
+  // Org creation auto-seeds a default profile, so every org is immediately
+  // usable; an admin who deletes the default profile recovers from the profiles
   // page, not from this onboarding flow.
   useEffect(() => {
     if (sessionPending || !userId) return;

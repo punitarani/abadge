@@ -7,21 +7,30 @@ The dashboard is the operator surface for abadge. It runs at [abadge.io](https:/
 
 ## Layout
 
-The dashboard is organized around the active organization:
+The sidebar groups every page under the active organization:
 
-| Section | What you do there |
-|---|---|
-| Overview | Recent activity, item counts, agent counts |
-| Profiles | Create profiles, bootstrap zero-knowledge encryption, manage recovery keys |
-| Items | Browse, create, update, and delete credentials |
-| Agents | Register agents, view bootstrap tokens, revoke |
-| Permissions | Grant capabilities, set expiries, revoke |
-| Audit | Inspect every event, filter by agent / item / type |
-| Settings | Organization settings, members, API keys, vault security |
+| Group | Page | What you do there |
+|---|---|---|
+| — | Overview | Posture banner, summary cards, quick actions, recent access events |
+| Secrets | Profiles | Create profiles, opt into zero-knowledge encryption |
+| Secrets | Items | Browse, create, and delete credentials |
+| Access | Agents | Register agents, view bootstrap tokens, revoke |
+| Access | Permissions | Grant capabilities, set expiries, revoke |
+| Monitor | Audit log | Inspect every event, filter by event type / result / profile / date |
+| — | Settings | Organization details, members, API keys, delete |
 
-The active organization is shown in the header. Switch organizations from the org switcher; every subsequent action targets the new active org.
+The active organization is shown in the sidebar org switcher. Switch organizations from the switcher; every subsequent action targets the new active org.
 
 The Overview leads with a posture banner that reflects the active workspace. A **team organization** runs in **custody mode**: you manage permissions and audit access on behalf of your users and the dashboard never reveals plaintext. A **personal account** is framed as your own vault — you own every secret and can reveal your own values from an item's page. See [Items](/dashboard/items#custody-mode-vs-personal-vault).
+
+## Overview page
+
+| Element | Contents |
+|---|---|
+| Posture banner | Personal-vault or custody-mode copy for the active workspace |
+| Summary cards | Profiles (by storage mode), Items, Agents (active/revoked), Permissions (expiring soon), Access events (last 24h) |
+| Quick actions | Links to create a profile, item, agent, or permission |
+| Recent access events | Last few audit entries, with a link to the full audit log |
 
 ## When to use the dashboard vs the CLI
 
@@ -29,16 +38,17 @@ The Overview leads with a posture banner that reflects the active workspace. A *
 |---|---|
 | Initial onboarding (sign up, first profile, first item) | Dashboard |
 | Bulk import from `.env` | CLI (`abadge import`) |
-| Day-to-day item edits | Dashboard or CLI |
+| Day-to-day item creation | Dashboard or CLI |
 | Granting and revoking permissions | Either |
 | Long-running secret injection | CLI (`abadge run`) |
+| Changing a vault password, rotating keys, or managing recovery | CLI (`abadge profile`) — not in the dashboard |
 | Auditing access | Dashboard for filters; CLI for `--json` piping |
 
-The dashboard does not run the CLI's local daemon. Zero-knowledge decryption in the dashboard happens in browser memory (Tier 2 trust). For high-security operations, prefer the CLI plus daemon.
+The dashboard does not run the CLI's local daemon. Zero-knowledge decryption in the dashboard happens in browser memory. For high-security operations, prefer the CLI plus daemon.
 
 ## Browser trust model
 
-When you unlock a zero-knowledge profile in the dashboard, the browser derives the KEK from your master password (Argon2id) and unwraps the root key into JavaScript memory. The key is lost when the tab closes.
+When you unlock a zero-knowledge profile in the dashboard, the browser derives the KEK from your profile password (Argon2id) and unwraps the root key into JavaScript memory. The key is lost when the tab closes.
 
 <Warning>
   The browser is more exposed than the CLI: a successful XSS attack can steal the unlocked root key. Use the dashboard for management, but reach for the CLI when you need maximum confidentiality.
@@ -57,18 +67,18 @@ When you unlock a zero-knowledge profile in the dashboard, the browser derives t
     Set up zero-knowledge or server-managed encryption boundaries.
   </Card>
   <Card title="Items" href="/dashboard/items">
-    Store credentials with named fields and tags.
+    Store credentials with typed fields.
   </Card>
   <Card title="Agents" href="/dashboard/agents">
     Register and manage automated callers.
   </Card>
   <Card title="Permissions" href="/dashboard/permissions">
-    Grant capabilities to agents on individual items.
+    Grant capabilities to agents on items or whole profiles.
   </Card>
   <Card title="Audit" href="/dashboard/audit">
     Inspect every action.
   </Card>
   <Card title="Vault security" href="/dashboard/vault-security">
-    Change the master password, set up a recovery key, rotate the root key.
+    Where password change, recovery, and rotation live (CLI).
   </Card>
 </CardGroup>

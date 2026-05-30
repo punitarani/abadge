@@ -3,54 +3,59 @@ title: "Agents"
 description: "Register agents, view bootstrap tokens, and revoke."
 ---
 
-The **Agents** view is where you register the automated callers that consume credentials. Each agent has a kind (`local_cli`, `local_mcp`, `remote`), an authentication method, and an enable/revoke state.
+The **Agents** view is where you register the automated callers that consume credentials. Each agent has a kind (`local_cli`, `local_mcp`, `remote`), authenticates with an Ed25519 keypair session, and has an active/revoked state.
 
 ## Listing agents
 
 The agents table shows:
 
-- Name and kind
-- Auth method (`public_key_session`)
-- Locality (`local` or `remote`)
-- Enabled / revoked state
-- Last successful authentication
+- Name (links to the agent detail page)
+- Kind (`CLI`, `MCP`, `Remote`)
+- Status (`Active` or `Revoked`)
+- Last used (most recent successful authentication)
+- Created timestamp
+
+Search by name, and filter by kind or status.
 
 ## Registering an agent
 
+Click **Register agent** to open the panel.
+
 <Steps>
-  <Step title="Click New agent">
-    Provide a display name and pick a kind. Auth method defaults to `public_key_session`.
+  <Step title="Name and describe">
+    Provide a name (kebab-case recommended) and an optional description, stored in the agent's metadata.
   </Step>
-  <Step title="Choose enrollment">
-    - **Bootstrap token** — abadge issues a one-time `abe_...` token (10-minute TTL). The agent runtime redeems it via `POST /v1/agents/enroll`, generates a keypair locally, and uploads the public key.
-    - **Direct enrollment** — paste an Ed25519 JWK public key the agent already has.
+  <Step title="Pick an agent type">
+    `Local CLI`, `Local MCP`, or `Remote`. This sets the agent's kind and locality.
   </Step>
-  <Step title="Save the secret">
-    The success dialog displays the bootstrap token. There is no way to retrieve it later.
+  <Step title="Choose how it enrolls its keypair">
+    Agents authenticate only with an Ed25519 keypair. Leave **Issue bootstrap token** checked to mint a one-time `abe_…` enrollment token (10-minute TTL); the agent runtime redeems it, generates a keypair locally, and uploads the public key. Uncheck it to register the agent now and enroll its public key later via the SDK.
+  </Step>
+  <Step title="Save the token">
+    If a bootstrap token was issued, the success panel shows it once, with a warning and the expiry. There is no way to retrieve it later.
   </Step>
 </Steps>
 
 <Warning>
-  Bootstrap tokens are shown exactly once. If you lose the value, revoke the agent and re-create it.
+  Bootstrap tokens are shown exactly once. If you lose the value before enrolling, revoke the agent and register a new one.
 </Warning>
 
 ## Viewing an agent
 
-The agent detail panel shows:
+The agent detail page shows:
 
-- Metadata, last-used timestamp, and revocation state
-- Permissions granted to this agent (with capability and expiry)
-- Recent audit entries scoped to this agent
+- Status, kind, locality, and auth method
+- Metadata cards: Agent ID, kind, last used, registered date, permission count
+- **Granted permissions** — every grant for this agent (item or profile target, capability, expiry), each revocable
+- **Recent access events** — audit entries scoped to this agent
 
 ## Replacing an agent keypair
 
-Agents have no rotatable long-lived secret. To replace a keypair, re-enroll: revoke the agent and create a new one, or issue a fresh bootstrap token (`POST /v1/agents/{agentId}/bootstrap`) and re-enroll with a new keypair.
+Agents have no rotatable long-lived secret. To replace a keypair, register a new agent (or issue a fresh bootstrap token through the API) and re-enroll. The dashboard registration panel handles new agents; there is no in-dashboard re-enroll button on the detail page.
 
 ## Revoking an agent
 
-**Revoke** disables the agent and invalidates every active `abs_...` session. Permissions are not deleted; they remain visible (and useless) until the agent is re-enabled or the permissions are revoked.
-
-Audit entries for in-flight requests show `result: cascade` with `agent.revoke_cascade`.
+On the agent detail page, **Revoke agent** disables the agent and cascade-removes its permissions and sessions. This is irreversible. In-flight requests are denied with `result: cascade` audit entries.
 
 ## Related
 

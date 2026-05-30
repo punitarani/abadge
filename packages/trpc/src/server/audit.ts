@@ -11,10 +11,10 @@ import {
 import { redactedJson } from "./log";
 
 // ---------------------------------------------------------------------------
-// auditDenied helpers (W2T12-003)
+// auditDenied helpers
 //
 // Write a denied audit row and re-raise the original domain error. The audit
-// write is caller-safe: a DB blip does NOT invert the auth-fail (see C1).
+// write is caller-safe: a DB blip does NOT invert the auth-fail.
 // Use auditDeniedSession for sessionProcedure routes (most common),
 // auditDeniedUser for userProcedure routes, auditDeniedBase for publicProcedure
 // routes with a BaseRequestContext.
@@ -148,9 +148,9 @@ function withAuditFailureWarning(
     // would false-positive.
     Effect.tap(() => Effect.sync(() => mirrorAuditRow(buildAuditRow(entry)))),
     Effect.catchAll((err) => {
-      // §AB-0091 — meta is redacted before logging so an audit-write failure
-      // can't surface a secret to Workers observability, even if a future
-      // caller puts sensitive data in `meta`.
+      // meta is redacted before logging so an audit-write failure can't surface
+      // a secret to Workers observability, even if a caller puts sensitive data
+      // in `meta`.
       console.warn(
         `audit_write_failed event_type=${entry.eventType} org=${entry.organizationId} user=${entry.userId} meta=${redactedJson(entry.meta ?? {})} err=${err instanceof Error ? err.message : String(err)}`,
       );

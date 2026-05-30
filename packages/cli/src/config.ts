@@ -17,9 +17,9 @@ export interface CliConfig {
   };
   /**
    * SHA-256 fingerprint of the daemon's Ed25519 public key, pinned on first
-   * contact (W3P12-001 / Critical C-2). A later mismatch means the daemon
-   * regenerated its keypair OR a same-UID attacker is squatting the socket —
-   * the CLI aborts before writing any sensitive RPC frame.
+   * contact (TOFU). A later mismatch means the daemon regenerated its keypair
+   * OR a same-UID attacker is squatting the socket — the CLI aborts before
+   * writing any sensitive RPC frame.
    */
   daemonFingerprint?: string;
 }
@@ -83,7 +83,7 @@ export function loadConfig(): CliConfig | null {
 
   if (hadLegacy && normalized) {
     console.warn(
-      "[abadge] Legacy principal*/operator-token keys detected in ~/.abadge/config.json; clearing. Re-run `abadge login` and `abadge agent register --kind local_cli` to re-enroll.",
+      "[abadge] Legacy principal*/operator-token keys detected in ~/.abadge/config.json; clearing. Re-run `abadge login` and `abadge agent add --kind local_cli` to re-enroll.",
     );
     writeConfig(normalized);
   }
@@ -159,9 +159,8 @@ export function requireActiveOrgId(): string {
 }
 
 /**
- * Read the pinned daemon fingerprint (W3P12-001 / Critical C-2). Returns
- * `null` for a first-run client or when the config file doesn't exist yet —
- * the DaemonClient then pins TOFU-style.
+ * Read the pinned daemon fingerprint. Returns `null` for a first-run client or
+ * when the config file doesn't exist yet — the DaemonClient then pins TOFU-style.
  */
 export async function readPinnedDaemonFingerprint(): Promise<string | null> {
   const config = loadConfig();

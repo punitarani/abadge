@@ -2,7 +2,7 @@ import type { AgentLocality, StorageMode } from "@abadge/core";
 import { ForbiddenError } from "@abadge/core";
 
 /**
- * §RM-PR2 — Runtime constraints replacing the compile-time CAPABILITY_MATRIX.
+ * Runtime constraints on canonical access actions.
  *
  * The canonical `read`/`use` actions are evaluated against agent locality and
  * item storage mode at access time. Two combinations are illegal:

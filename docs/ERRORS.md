@@ -44,6 +44,12 @@ Validation errors include an additional `issues` array:
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile key rotate payload does not rewrap every ZK item in the profile; `meta.missingItemIds` lists the omitted ones |
 | `CONFIRMATION_MISMATCH` | 400 | `organizations.delete` confirmation text does not match the org's current name |
 | `REAUTH_PASSWORD_REQUIRED` | 400 | `organizations.delete` re-authentication requested but the account has no password set (social-login only); set one via password reset first |
+| `INVALID_CLAIM_TOKEN` | 400 | auth.md claim token is unknown, already used, or malformed |
+| `CLAIM_TOKEN_EXPIRED` | 400 | auth.md claim token passed its 24-hour TTL; register again |
+| `OTP_NOT_REQUESTED` | 400 | `claim/complete` called before `claim` issued an OTP |
+| `OTP_INVALID` | 400 | Supplied auth.md claim OTP is incorrect |
+| `OTP_EXPIRED` | 400 | auth.md claim OTP passed its 10-minute TTL; restart the claim |
+| `OTP_ATTEMPTS_EXCEEDED` | 400 | Too many wrong OTP attempts (max 5); restart the claim |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
 | `REAUTH_FAILED` | 401 | `organizations.delete` re-authentication failed: the supplied account password is incorrect |
 | `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
@@ -65,8 +71,17 @@ Validation errors include an additional `issues` array:
 | `PERMISSION_NOT_FOUND` | 404 | Permission ID does not exist |
 | `PROFILE_NOT_FOUND` | 404 | Profile ID does not exist or belongs to another org |
 | `VAULT_NOT_FOUND` | 404 | Vault has not been bootstrapped yet |
+| `INVITE_NOT_FOUND` | 404 | Invite token does not exist |
+| `INVITE_EXPIRED` | 404 | Invite token passed its expiry |
+| `MOUNT_NOT_FOUND` | 404 | Mount handle does not exist or was already redeemed (one-shot) |
 | `AGENT_ALREADY_ENROLLED` | 409 | Agent already has a public key enrolled |
 | `CONFLICT` | 409 | Generic conflict |
+| `ITEM_ALREADY_EXISTS` | 409 | An item with this ID already exists; generate a new UUID and retry |
+| `SLUG_TAKEN` | 409 | Organization slug is already in use |
+| `INVITE_ALREADY_USED` | 409 | Invite token has already been accepted |
+| `ALREADY_MEMBER` | 409 | User is already a member of the organization |
+| `CLAIM_EMAIL_IN_USE` | 409 | auth.md claim email already maps to an existing account |
+| `CLAIM_ALREADY_COMPLETED` | 409 | auth.md claim was already completed |
 | `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault already exists |
 | `PROFILE_ALREADY_EXISTS` | 409 | Profile with this name already exists in the org |
 | `PROFILE_LIMIT_EXCEEDED` | 409 | Personal accounts are limited to a single profile; `profiles.create` rejects an additional profile on a personal org |
@@ -84,7 +99,8 @@ The SDK wraps all API errors in `AbadgeApiError`:
 ```ts
 import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
-const agent = new AbadgeAgentClient({ apiUrl, apiKey });
+const agent = new AbadgeAgentClient({ apiUrl, agentId, privateKey });
+await agent.connect();
 
 try {
   const result = await agent.access.read(itemId);

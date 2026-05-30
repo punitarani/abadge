@@ -10,11 +10,11 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 import { TEST_ENV } from "../helpers/test-env";
 
 /**
- * §AB-0001 (P0) + §AB-0002 — server-managed items must be bound to a real
- * profile at create time so profile-level grants cover them and the AAD is
- * profile-scoped, while pre-fix NULL-profile rows keep decrypting.
+ * Server-managed items must be bound to a real profile at create time so
+ * profile-level grants cover them and the AAD is profile-scoped, while legacy
+ * NULL-profile rows keep decrypting.
  */
-describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
+describe("server-managed item profile binding", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 
@@ -36,7 +36,7 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     return p.id;
   }
 
-  // AB-0001 #1 + #4 — create binds the org's default server_managed profile and round-trips.
+  // Create binds the org's default server_managed profile and round-trips.
   test("server_managed create binds the default profile (non-null) and round-trips", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -58,10 +58,10 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect((revealed.payload.fields as Record<string, string>).token).toBe("abc123");
   });
 
-  // AB-0001 #2 — the core P0 proof: a PROFILE-level grant now covers a freshly
-  // created server_managed item end-to-end (owner creates -> profile grant ->
-  // agent reveals). Before the fix the item had profileId=NULL and the profile
-  // grant was silently skipped in lookupPermission.
+  // A PROFILE-level grant covers a freshly created server_managed item
+  // end-to-end (owner creates -> profile grant -> agent reveals). The item
+  // must carry a non-null profileId so the profile grant is honored in
+  // lookupPermission.
   test("a profile-level grant covers a new server_managed item (agent reveal succeeds)", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -112,10 +112,10 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect(fields?.value).toBe("grant-covers-me");
   });
 
-  // AB-0001 #3 — regression: a row written BEFORE the fix (server_managed,
-  // profileId NULL, AAD-bound v2 under the no-profile sentinel) must still
-  // decrypt, because decrypt reproduces the sentinel from the stored NULL.
-  test("a pre-fix NULL-profile sentinel-AAD row still decrypts", async () => {
+  // A legacy row (server_managed, profileId NULL, AAD-bound v2 under the
+  // no-profile sentinel) must still decrypt, because decrypt reproduces the
+  // sentinel from the stored NULL.
+  test("a legacy NULL-profile sentinel-AAD row still decrypts", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -129,8 +129,8 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
       fields: { token: "still-decryptable" },
     };
     const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-    // Reproduce exactly what items.create wrote before AB-0001: v2 AAD whose
-    // profileId component is the no-profile sentinel, row stored with NULL profile.
+    // Reproduce a legacy write: v2 AAD whose profileId component is the
+    // no-profile sentinel, row stored with NULL profile.
     const encrypted = await serverEncrypt(
       plaintext,
       TEST_ENV.ENCRYPTION_KEY,
@@ -158,7 +158,7 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect((revealed.payload.fields as Record<string, string>).token).toBe("still-decryptable");
   });
 
-  // AB-0002 #1 — explicit valid profileId places the item under that profile.
+  // Explicit valid profileId places the item under that profile.
   test("explicit profileId stores the item under that profile", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -181,9 +181,9 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect(row?.profileId).toBe(second.profileId);
   });
 
-  // AB-0002 #1 (ZK) — explicit profileId places a zero_knowledge item under
-  // that specific ZK profile, not the arbitrary "first" one. Two ZK profiles
-  // make the default ambiguous, so this proves the explicit id wins.
+  // Explicit profileId places a zero_knowledge item under that specific ZK
+  // profile, not the arbitrary "first" one. Two ZK profiles make the default
+  // ambiguous, so this proves the explicit id wins.
   test("explicit profileId stores a zero_knowledge item under that ZK profile", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -210,7 +210,7 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     expect(row?.profileId).toBe(target.profileId);
   });
 
-  // AB-0002 #2 — a profileId from another org is rejected as PROFILE_NOT_FOUND
+  // A profileId from another org is rejected as PROFILE_NOT_FOUND
   // (org-scoped lookup; no cross-tenant existence leak).
   test("a profileId from another org returns PROFILE_NOT_FOUND", async () => {
     const owner = await seedUser(auth);
@@ -232,7 +232,7 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     }
   });
 
-  // AB-0002 #3 — a profileId whose storage mode mismatches the item mode is a
+  // A profileId whose storage mode mismatches the item mode is a
   // validation error (BAD_REQUEST with meta.reason=profile_mode_mismatch).
   test("a storage-mode-mismatched profileId is a validation error", async () => {
     const owner = await seedUser(auth);
@@ -254,8 +254,8 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     }
   });
 
-  // AB-0002 #2 (ZK) — the explicit-profileId validation also applies to ZK
-  // creates: a profileId from another org is rejected as PROFILE_NOT_FOUND.
+  // The explicit-profileId validation also applies to ZK creates: a profileId
+  // from another org is rejected as PROFILE_NOT_FOUND.
   test("a ZK create with another org's profileId returns PROFILE_NOT_FOUND", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
@@ -283,8 +283,8 @@ describe("server-managed item profile binding (AB-0001 / AB-0002)", () => {
     }
   });
 
-  // AB-0002 #3 (ZK) — a server_managed profileId on a ZK create is a validation
-  // error (proves the up-front ZK validation call is load-bearing).
+  // A server_managed profileId on a ZK create is a validation error (proves
+  // the up-front ZK validation call is load-bearing).
   test("a ZK create targeting a server_managed profile is a validation error", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);

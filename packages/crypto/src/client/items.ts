@@ -6,19 +6,18 @@ import type { EncryptedItem } from "../shared/types";
 const NONCE_LEN = 24; // XChaCha20-Poly1305 nonce size
 
 /**
- * Metadata required to derive AAD for ZK encrypt/decrypt (§W1S7-001).
+ * Metadata that names the identity a ZK ciphertext is bound to via AAD.
  *
  * Binding the per-item DEK wrap and content cipher to `{profileId, itemId,
- * contentVersion}` closes the "row-swap" attack: a DB-write adversary that
- * exchanges `(encryptedItemKey, ciphertext)` pairs between two items in the
- * same profile would previously see XChaCha20-Poly1305 decrypt succeed and
- * return the wrong plaintext under the wrong label. Post-§W1S7-001 the
- * AEAD tag check now ties the ciphertext to its identity.
+ * contentVersion}` closes the row-swap attack: without it, a DB-write adversary
+ * that exchanges `(encryptedItemKey, ciphertext)` pairs between two items in the
+ * same profile would see XChaCha20-Poly1305 decrypt succeed and return the wrong
+ * plaintext under the wrong label. With the binding, the AEAD tag check ties the
+ * ciphertext to its identity and a swap fails to authenticate.
  *
- * `contentVersion` defaults to `1` (the initial value; see `items.content_version`
- * column default) on create. On rewrite, callers MUST pass the NEW version the
- * row is about to take (i.e. `currentContentVersion + 1`). Decrypt sites pass
- * the stored `contentVersion` from the row.
+ * `contentVersion` defaults to `1` (the `items.content_version` column default)
+ * on create. On rewrite, callers MUST pass the NEW version the row is about to
+ * take (`currentContentVersion + 1`). Decrypt sites pass the stored version.
  */
 export interface ZkItemMeta {
   profileId: string;
@@ -29,14 +28,13 @@ export interface ZkItemMeta {
 /**
  * Encrypt an item payload using a fresh per-item DEK wrapped by the root key.
  *
- * 1. Generate random 32-byte DEK
- * 2. Encrypt plaintext with DEK (XChaCha20-Poly1305 + content AAD)
- * 3. Wrap DEK with root key (XChaCha20-Poly1305 + DEK-wrap AAD)
- * 4. Return both as base64url strings (nonce prepended to each)
+ * 1. Generate a random 32-byte DEK
+ * 2. Encrypt plaintext with the DEK (XChaCha20-Poly1305 + content AAD)
+ * 3. Wrap the DEK with the root key (XChaCha20-Poly1305 + DEK-wrap AAD)
+ * 4. Return both as base64url strings, each with its 24-byte nonce prepended
  *
- * AAD is mandatory — §W1S7-001. Callers MUST pass the same `{profileId, itemId,
- * contentVersion}` to the matching `decryptItem` call, or the AEAD tag check
- * will fail and `decrypt` will throw.
+ * AAD is mandatory: the matching `decryptItem` call MUST receive the same
+ * `{profileId, itemId, contentVersion}`, or both AEAD tag checks fail and throw.
  */
 export function encryptItem(
   plaintext: Uint8Array,
@@ -82,9 +80,9 @@ export function encryptItem(
 /**
  * Decrypt an item by unwrapping its DEK with the root key, then decrypting the payload.
  *
- * AAD is mandatory — §W1S7-001. The `{profileId, itemId, contentVersion}` passed here
- * must exactly match the values used at encrypt time; otherwise both AEAD tag checks
- * (DEK unwrap and content decrypt) fail with an "invalid tag" error.
+ * The `{profileId, itemId, contentVersion}` passed here must exactly match the
+ * values used at encrypt time; otherwise both AEAD tag checks (DEK unwrap and
+ * content decrypt) fail with an "invalid tag" error.
  */
 export function decryptItem(
   item: EncryptedItem,

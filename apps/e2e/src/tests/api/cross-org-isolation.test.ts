@@ -1,8 +1,7 @@
 /**
- * Port of the cross-org assertions from scripts/e2e-multiperm.sh and
- * scripts/pentest-cross-profile.sh into TypeScript so they run in CI.
- * Hits the live API; verifies AGENT_NOT_FOUND / ITEM_NOT_FOUND when an
- * org-A caller injects org-B's IDs.
+ * Cross-org isolation against the live API: an org-A caller that injects org-B's
+ * agent or item IDs must be rejected with AGENT_NOT_FOUND / ITEM_NOT_FOUND
+ * rather than leaking the existence of the other org's resources.
  */
 import { describe, expect, test } from "bun:test";
 import { AbadgeApiError, AbadgeUserClient } from "@abadge/sdk";
@@ -18,7 +17,7 @@ async function setupOrg(apiUrl: string, sessionToken: string, label: string) {
     slug: `org-${label}-${crypto.randomUUID()}`,
   });
   const scoped = new AbadgeUserClient({ apiUrl, sessionToken, orgId: org.id });
-  // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
+  // Org creation already seeded the default server_managed profile.
   const item = await scoped.items.create({
     storageMode: "server_managed",
     payload: {

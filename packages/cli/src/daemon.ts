@@ -27,7 +27,7 @@ import {
  * Build a DaemonClient wired with the CLI's persistent-pin storage. The
  * handshake callbacks route through the CLI config so TOFU pinning survives
  * restarts — the daemon package itself deliberately doesn't import CLI
- * storage to keep the layering clean (W3P12-001 / Critical C-2).
+ * storage to keep the layering clean.
  */
 function defaultCreateClient(): DaemonClient {
   return new DaemonClient({

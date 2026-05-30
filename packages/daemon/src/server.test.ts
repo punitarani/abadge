@@ -74,7 +74,7 @@ async function startTestServer(): Promise<{
  * Build fake vault meta and unlock the in-memory VaultState directly —
  * bypasses `fetchVaultMeta` so tests don't need a live API. Also wires up
  * a short-lived auth session so `exec.*` handlers pass the `buildAuthHeaders`
- * gate that closes W1S6-003.
+ * gate.
  */
 async function startTestServerUnlocked(): Promise<{
   client: DaemonClient;
@@ -87,7 +87,7 @@ async function startTestServerUnlocked(): Promise<{
   const salt = generateSalt();
   const kek = deriveKEK(password, salt, TEST_KDF_PARAMS);
   const rootKey = generateRootKey();
-  // §W1S7-001 — daemon unlock rebuilds this same AAD; must stay in sync.
+  // daemon unlock rebuilds this same AAD; must stay in sync.
   const wrapped = wrapRootKey(rootKey, kek, { profileId, keyVersion: 1 });
   zeroKey(kek);
   zeroKey(rootKey);
@@ -201,7 +201,7 @@ describe("daemon auth session state", () => {
     });
   });
 
-  // §O3 / multi-org CLI — organizationId plumbing regression tests.
+  // Multi-org CLI — organizationId plumbing.
 
   test("auth.setSession accepts and stores organizationId", async () => {
     const { client } = await startTestServer();
@@ -412,18 +412,18 @@ describe("daemon env-var injection guard", () => {
 });
 
 // -----------------------------------------------------------------------------
-// B26 / COMPOSITE-001 regression tests — cross-UID daemon RCE chain closure.
+// Cross-UID daemon RCE chain closure.
 // -----------------------------------------------------------------------------
 
-describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
+describe("daemon socket permissions", () => {
   test("socket file mode is 0o600 atomically after startServer resolves", async () => {
     // biome-ignore lint/style/noRestrictedGlobals: test needs process.umask to set a permissive umask
     const prev = process.umask(0o022);
     try {
       const { socketPath } = await startTestServer();
       const mode = statSync(socketPath).mode & 0o777;
-      // The load-bearing assertion for W1S6-001: under a permissive umask,
-      // the socket MUST still be 0o600 by the time startServer returns.
+      // The load-bearing assertion: under a permissive umask, the socket
+      // MUST still be 0o600 by the time startServer returns.
       expect(mode).toBe(0o600);
     } finally {
       // biome-ignore lint/style/noRestrictedGlobals: test needs process.umask
@@ -459,7 +459,7 @@ describe("daemon socket permissions (W1S6-001 / W3P12-002 / W3P12-003)", () => {
   });
 });
 
-describe("daemon exec.* auth + unlock gate (W1S6-003)", () => {
+describe("daemon exec.* auth + unlock gate", () => {
   test("exec.env without auth rejects with AUTH_REQUIRED and spawns nothing", async () => {
     const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
@@ -581,10 +581,10 @@ describe("daemon strips ABADGE_* from child env (defence-in-depth)", () => {
 });
 
 // -----------------------------------------------------------------------------
-// W3P12-001 / Critical C-2 — identity.sign RPC regression tests.
+// identity.sign RPC.
 // -----------------------------------------------------------------------------
 
-describe("daemon identity.sign RPC (W3P12-001)", () => {
+describe("daemon identity.sign RPC", () => {
   test("returns a valid Ed25519 signature over nonce|sessionStartMs", async () => {
     const { socketPath } = await startTestServer();
     const response = await sendRawRpc(socketPath, {
@@ -669,10 +669,10 @@ describe("daemon identity.sign RPC (W3P12-001)", () => {
 });
 
 // -----------------------------------------------------------------------------
-// §O3 / multi-org CLI — X-Abadge-Org-Id header forwarding in fetchVaultMeta.
+// Multi-org CLI — X-Abadge-Org-Id header forwarding in fetchVaultMeta.
 // -----------------------------------------------------------------------------
 
-describe("fetchVaultMeta X-Abadge-Org-Id header plumbing (§O3)", () => {
+describe("fetchVaultMeta X-Abadge-Org-Id header plumbing", () => {
   const originalFetch = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = originalFetch;

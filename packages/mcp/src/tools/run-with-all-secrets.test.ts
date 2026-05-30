@@ -46,7 +46,7 @@ function clientReturning(items: ItemData[]) {
 }
 
 describe("run_with_all_secrets handler", () => {
-  test("response shape matches §RED1 contract — exit code, duration, line counts, truncation, injected count", async () => {
+  test("response shape exposes only metadata — exit code, duration, line counts, truncation, injected count", async () => {
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
       clientReturning([
         {
@@ -219,7 +219,7 @@ describe("run_with_all_secrets handler", () => {
     clientSpy.mockRestore();
   });
 
-  test("rejects per-item secret larger than MAX_OUTPUT_BYTES (W3P4-001 bound)", async () => {
+  test("rejects per-item secret larger than MAX_OUTPUT_BYTES", async () => {
     const oversized = "A".repeat(9000);
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
       clientReturning([

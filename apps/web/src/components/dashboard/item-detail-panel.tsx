@@ -63,9 +63,9 @@ export function useItemReveal(item: ItemDetail | null): ItemReveal {
     }
 
     try {
-      // §W1S7-001 — rebuild the XChaCha20-Poly1305 AAD from the row metadata
-      // so decrypt succeeds only for the specific (profile, item, version)
-      // the server persisted.
+      // Rebuild the XChaCha20-Poly1305 AAD from the row metadata so decrypt
+      // succeeds only for the specific (profile, item, version) the server
+      // persisted.
       const plaintext = decryptItemFromProfile(item.encryptedItemKey, item.ciphertext, key, {
         profileId: item.profileId,
         itemId: item.id,

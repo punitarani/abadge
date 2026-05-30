@@ -4,7 +4,7 @@ import { createDb, sql } from "@abadge/db";
 import { getTestDb, migrateTestDb } from "../helpers/test-db";
 
 /**
- * §AB-0012 — the application runtime must connect as a least-privilege,
+ * The application runtime must connect as a least-privilege,
  * non-owner role. This proves the GRANT/REVOKE policy in
  * `scripts/least-privilege.sql`: the role is NOSUPERUSER/NOBYPASSRLS, can
  * do normal DML, and CANNOT mutate the audit trail (the TRUNCATE revoke closes
@@ -30,7 +30,7 @@ function databaseName(): string {
   return new URL(TEST_DATABASE_URL).pathname.replace(/^\//, "");
 }
 
-describe("least-privilege application role (§AB-0012)", () => {
+describe("least-privilege application role", () => {
   const owner = getTestDb();
 
   beforeAll(async () => {
@@ -130,14 +130,14 @@ describe("least-privilege application role (§AB-0012)", () => {
     }
   });
 
-  // §AB — migration 0029 bounds runaway queries on the runtime role so one
+  // Migration 0029 bounds runaway queries on the runtime role so one
   // cannot indefinitely pin a scarce connection-pool slot. It is set as a ROLE
   // DEFAULT (ALTER ROLE … SET) rather than via the postgres-js `connection:{}`
   // param, because Hyperdrive's transaction pooler RESETs driver-set session
   // GUCs on connection return — a role default survives RESET (which restores
   // role defaults). This asserts the migration applied; the through-Hyperdrive
   // behavior is a deploy-gated check documented on the migration.
-  test("§AB — migration 0029 sets app_runtime's statement_timeout role default", async () => {
+  test("migration 0029 sets app_runtime's statement_timeout role default", async () => {
     // The client runs with `fetch_types: false`, so postgres-js returns the
     // `text[]` rolconfig as its raw PG array literal string (e.g.
     // `{statement_timeout=15s}`) rather than a parsed JS array — assert on the

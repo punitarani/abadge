@@ -14,8 +14,11 @@ A personal workspace is just an organization with one member.
 | `id` | text (PK) | Unique organization ID |
 | `name` | text | Display name |
 | `slug` | text (unique) | URL-safe identifier |
-| `logo` | text | Optional logo URL |
+| `logo` | text \| null | Optional logo URL |
+| `metadata` | text \| null | JSON blob; `{"type":"personal"}` marks a personal workspace (`PERSONAL_ORG_METADATA` / `isPersonalOrg`). No dedicated column. |
 | `createdAt` | timestamptz | Creation time |
+
+A **personal account** is a normal single-member org flagged via `metadata`. It is capped at a single profile (`profiles.create` rejects a second profile with `PROFILE_LIMIT_EXCEEDED`; the cap is an `≤ 1` existence check). Team orgs are uncapped. Creating any org auto-seeds one default `server_managed` profile (name and `externalId` both `"default"`) in the same transaction, so a fresh org is immediately usable. A personal account is **not** in custody mode — its owner can reveal their own item values (`items.ownerReveal` for server-managed, in-browser decrypt for ZK); team orgs stay in custody mode and the dashboard never reveals plaintext there.
 
 ## Membership
 

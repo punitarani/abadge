@@ -28,7 +28,7 @@ description: "Release a previously mounted secret file and its temporary directo
 
 ## Safety
 
-`release_mount` only removes mounts owned by the calling agent. Passing a `mountId` that doesn't exist (or has already been released) is idempotent — the response still reports `{ released: true, mountId }`.
+`release_mount` only acts on mounts tracked by this MCP server process. Passing a `mountId` that doesn't exist (or has already been released) returns an error (`"No active mount found for this mountId"`) rather than a success response.
 
 ## Audit
 

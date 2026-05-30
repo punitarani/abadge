@@ -99,10 +99,9 @@ export function OrgSwitcher(): React.ReactElement {
   const orgs: Org[] = (data?.organizations as Org[]) ?? [];
   const currentOrg = orgs.find((o) => o.id === activeOrgId);
 
-  // §REVAMP-PR5 (Task 9.1) — CreateOrgForm is single-step now. The server
-  // auto-creates a default `server_managed` profile in the same transaction,
-  // so the previous "resume the unbootstrapped org" path is unreachable
-  // under normal flow. If an admin has somehow left an org without a
+  // CreateOrgForm is single-step: the server auto-creates a default
+  // `server_managed` profile in the same transaction, so an org always has a
+  // usable profile under normal flow. If an admin has left an org without a
   // profile, the profiles page surfaces the recovery flow.
 
   function handleSelect(org: Org): void {

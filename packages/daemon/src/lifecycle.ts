@@ -26,9 +26,9 @@ function readPid(pidPath: string): number | null {
 }
 
 function writePid(pidPath: string): void {
-  // W3P12-003: parent dir MUST be 0700. `mkdirSync` only applies `mode` on
-  // creation — if `~/.abadge/` already exists with wider perms, we must fail
-  // early rather than silently paper over a pre-existing permissions issue.
+  // The parent dir MUST be 0700. `mkdirSync` only applies `mode` on creation —
+  // if `~/.abadge/` already exists with wider perms, fail early rather than
+  // silently papering over a pre-existing permissions issue.
   const parent = dirname(pidPath);
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   const parentMode = statSync(parent).mode & 0o777;

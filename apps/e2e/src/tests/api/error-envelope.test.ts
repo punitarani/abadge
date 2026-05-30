@@ -1,8 +1,8 @@
 /**
- * §ENV2 — every error response carries the canonical
+ * Verifies every error response carries the canonical
  * `{ code, message, hint, meta }` envelope. The in-process tests in
- * packages/trpc cover this at the tRPC layer; we verify it survives Hono
- * + the bodyLimit / cors / secureHeaders / Better Auth middleware stack.
+ * packages/trpc cover this at the tRPC layer; this test confirms it survives the
+ * full Hono stack (bodyLimit / cors / secureHeaders / Better Auth middleware).
  */
 import { describe, expect, test } from "bun:test";
 import { useTestStack } from "../../harness/test-stack";

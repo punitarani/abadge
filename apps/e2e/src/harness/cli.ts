@@ -33,9 +33,9 @@ const COMPILED_BINARY = join(REPO_ROOT, "packages", "cli", "dist", "abadge");
  * packages/cli/dist/abadge if present (CI builds it), and falls back to
  * `bun packages/cli/bin/abadge.ts` for local iteration.
  *
- * Always writes a fresh ~/.abadge/config.json into the per-test HOME so
- * config-file `apiUrl` (which overrides ABADGE_API_URL — see TESTING.md
- * Phase 4 notes) points at the e2e wrangler port.
+ * Always writes a fresh ~/.abadge/config.json into the per-test HOME so the
+ * config-file `apiUrl` (which takes precedence over the ABADGE_API_URL env var)
+ * points at the e2e wrangler port.
  */
 export async function runCli(args: string[], opts: CliRunOptions): Promise<CliRunResult> {
   const configDir = join(opts.home, ".abadge");

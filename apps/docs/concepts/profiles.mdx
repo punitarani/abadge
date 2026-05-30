@@ -29,15 +29,18 @@ A profile is created with one of two storage modes, fixed for the lifetime of th
 | `id` | text (PK) | Profile ID |
 | `organizationId` | text | Owning organization |
 | `name` | text | Display name (unique within org) |
-| `description` | text | Optional |
+| `description` | text \| null | Optional |
+| `externalId` | text \| null | Optional caller-supplied identifier for idempotent provisioning |
 | `storageMode` | text | `zero_knowledge` or `server_managed` |
-| `wrappedRootKey` | text | Root key encrypted by KEK (ZK only) |
-| `kdfSalt` | text | Argon2id salt (16 bytes, base64) |
-| `kdfParams` | jsonb | `{ algorithm, memory, iterations, parallelism, hashLength }` |
-| `recoveryWrappedRootKey` | text | Root key encrypted by recovery key |
-| `keyVersion` | integer | Incremented on root-key rotation |
+| `wrappedRootKey` | text \| null | Root key encrypted by KEK (ZK only) |
+| `kdfSalt` | text \| null | Argon2id salt (16 bytes, base64; ZK only) |
+| `kdfParams` | jsonb \| null | `{ algorithm, memory, iterations, parallelism, hashLength }` (ZK only) |
+| `recoveryWrappedRootKey` | text \| null | Root key encrypted by recovery key (ZK only) |
+| `serverWrappedDek` | text \| null | Per-profile AES-256-GCM DEK wrapped under `ENCRYPTION_KEY` (server-managed only; null until the first v3 write) |
+| `serverEncryptionCount` | bigint | Running count of encryptions under the profile DEK (nonce-reuse warning at 2^27; default `0`) |
+| `keyVersion` | integer | Incremented on root-key rotation (default `1`) |
 
-The unique constraint `(organizationId, name)` enforces one profile name per organization.
+The unique constraint `(organizationId, name)` enforces one profile name per organization. A partial unique constraint `(organizationId, externalId)` (where `externalId` is set) supports idempotent provisioning.
 
 Personal accounts are capped at a single profile: the default profile is seeded at account creation, and `profiles.create` rejects an additional profile on a personal org with `PROFILE_LIMIT_EXCEEDED`. Team organizations are uncapped.
 

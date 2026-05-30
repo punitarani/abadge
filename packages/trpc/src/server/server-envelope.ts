@@ -23,7 +23,7 @@ import { profiles } from "@abadge/db/schema";
  *   v2 — content under ENCRYPTION_KEY, AAD-bound.
  *   v3 — content under a per-profile DEK (itself wrapped by ENCRYPTION_KEY,
  *        the wrap bound to (orgId, profileId)), AAD-bound.
- *   v4 — v3 + a key-commitment tag prefixed to the ciphertext (§AB-0032).
+ *   v4 — v3 + a key-commitment tag prefixed to the ciphertext.
  *
  * New writes are v4. The decrypt path branches on the stored `serverKeyVersion`,
  * so existing v1/v2/v3 rows keep decrypting unchanged.
@@ -173,11 +173,11 @@ export async function encryptServerEnvelope(
   };
   const result = await serverEncrypt(plaintext, contentKey, keyVersion, aad);
 
-  // §AB-0031 — track this profile's AES-GCM encryption count against the
-  // per-profile-DEK nonce budget. Only v3+ (per-profile DEK) writes are counted
-  // here; v1/v2 NULL-profile rows encrypt under the master ENCRYPTION_KEY, whose
-  // (separate, shared) budget this per-profile counter intentionally does not
-  // track — see docs/SECURITY.md §AB-0031.
+  // Track this profile's AES-GCM encryption count against the per-profile-DEK
+  // nonce budget. Only v3+ (per-profile DEK) writes are counted here; v1/v2
+  // NULL-profile rows encrypt under the master ENCRYPTION_KEY, whose (separate,
+  // shared) budget this per-profile counter intentionally does not track — see
+  // docs/SECURITY.md.
   //
   // Awaited (not fire-and-forget): an un-awaited update on a `db` that is a
   // transaction can execute after the tx closes and be lost, silently

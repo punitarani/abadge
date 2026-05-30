@@ -5,23 +5,20 @@ import { createUserApiClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
 
 export function createPermissionCommand(): Command {
-  const cmd = new Command("permission").description("Manage access permissions");
+  const cmd = new Command("permission").description("Grant, list, and revoke agent access grants");
 
   cmd
     .command("create")
-    .description("Grant one or more capabilities to an agent on an item")
+    .description("Grant one or more capabilities to an agent on a single item (atomic per batch)")
     .requiredOption("--agent-id <id>", "Agent ID")
     .requiredOption("--item-id <id>", "Item ID")
     .requiredOption(
       "--capability <cap>",
-      "Capability (repeat the flag or comma-separate to grant multiple)",
+      "Capability: read, use, or a legacy name (read_ciphertext, reveal_plaintext, mount_env, mount_file). Repeat the flag or comma-separate to grant several.",
       (value: string, previous: string[]) => previous.concat([value]),
       [] as string[],
     )
-    .option(
-      "--expires-at <timestamp>",
-      "Optional ISO timestamp expiry (applied to every capability)",
-    )
+    .option("--expires-at <timestamp>", "ISO 8601 expiry applied to every granted capability")
     .option("--json", "Output as JSON")
     .action(
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: permission.grant parses comma-separated capabilities, validates each against the canonical+legacy set, branches on capability-matrix legality per locality+storage-mode, and surfaces detailed per-capability errors — splitting it would obscure the audit trail.

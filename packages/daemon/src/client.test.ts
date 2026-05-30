@@ -44,7 +44,7 @@ async function startServerInDir(dir: {
 }
 
 // -----------------------------------------------------------------------------
-// W3P12-001 / Critical C-2 — DaemonClient TOFU handshake regression tests.
+// DaemonClient TOFU handshake.
 // -----------------------------------------------------------------------------
 //
 // These drive DaemonClient with a mock in-memory pinned-fingerprint store so
@@ -55,7 +55,7 @@ async function startServerInDir(dir: {
 //   4. Non-sensitive RPCs don't trigger the handshake (otherwise identity.sign
 //      would infinitely recurse).
 
-describe("DaemonClient TOFU handshake (W3P12-001)", () => {
+describe("DaemonClient TOFU handshake", () => {
   test("first contact with an empty pin pins the fingerprint and invokes onFirstContact", async () => {
     const daemonDir = allocDaemonDir();
     await startServerInDir(daemonDir);

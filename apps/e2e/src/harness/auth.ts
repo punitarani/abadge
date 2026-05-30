@@ -14,9 +14,8 @@ export interface SignedUpUser {
  * verification through a direct DB update, then sign in to capture the
  * `set-auth-token` bearer-plugin token.
  *
- * Mirrors the flow scripts/pentest-cross-profile.sh uses; doing it this
- * way exercises the full HTTP path (Hono + cors + secureHeaders + better
- * auth + drizzleAdapter) instead of stubbing it.
+ * Going through the real HTTP path exercises the full stack (Hono + cors +
+ * secureHeaders + Better Auth + drizzleAdapter) instead of stubbing it.
  */
 export async function signupAndLogin(
   apiUrl: string,

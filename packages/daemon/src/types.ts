@@ -18,7 +18,7 @@ export interface DaemonAuthState {
   type: DaemonAuthType;
   token: string;
   expiresAt: string;
-  /** Scopes outbound tRPC calls to this org (§O3 / multi-org CLI fix). */
+  /** Scopes outbound tRPC calls to this org. */
   organizationId?: string | null;
 }
 
@@ -35,11 +35,9 @@ export interface DaemonAuthHeaders {
 }
 
 /**
- * Profile metadata fetched from the API for daemon-side ZK operations.
- *
- * Sourced from `profiles.get` (Phase D — superseded the legacy per-user
- * vault). The daemon retains the historical `VaultMeta` type name to
- * avoid churn in callers; `id` is the profile id.
+ * Profile metadata fetched from the API (`profiles.get`) for daemon-side ZK
+ * operations. `id` is the profile id; the wrapped root key, KDF salt, and KDF
+ * params let the daemon derive the KEK and unwrap the root key locally.
  */
 export interface VaultMeta {
   id: string;

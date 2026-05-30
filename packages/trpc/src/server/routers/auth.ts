@@ -55,8 +55,8 @@ import { scopedDb, tenantTables } from "../scoped-db";
 import { serializeAgent } from "../serialize";
 
 // Pre-auth agent table reference — no org scope available at query time.
-// §routers/auth — enrollAgent, createAgentChallenge, exchangeAgentSession run
-// before any org context is established (BaseRequestContextTag). These queries
+// enrollAgent, createAgentChallenge, and exchangeAgentSession run before any
+// org context is established (BaseRequestContextTag). These queries
 // look up agents by agentId / bootstrap token / challenge; the org filter is
 // applied after the agent row is loaded (via its organizationId field).
 // loadOwnedAgent and revokeAgentSession (post-auth) use scopedDb instead.
@@ -86,7 +86,7 @@ interface ReturningIdRow {
 
 interface RevocableAgentSessionRow {
   id: string;
-  // §AB-0043 — userId is null once the session's creating user is deleted (FK SET NULL).
+  // userId is null once the session's creating user is deleted (FK SET NULL).
   userId: string | null;
   agentId: string;
 }
@@ -429,7 +429,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
         .where(
           and(
             eq(agentRecords.id, bootstrap.agentId),
-            // §AB-0043 — tolerate an orphaned agent (createdBy null) whose enrollment token
+            // Tolerate an orphaned agent (createdBy null) whose enrollment token
             // was also issued without an owner; otherwise the creator must match the token.
             bootstrap.userId === null
               ? isNull(agentRecords.createdBy)
@@ -471,7 +471,7 @@ const enrollAgent = (input: EnrollAgentInput) =>
           .where(
             and(
               eq(agentRecords.id, agent.id),
-              // §AB-0043 — match the re-fetched agent's creator, tolerating orphans (null).
+              // Match the re-fetched agent's creator, tolerating orphans (null).
               agent.createdBy === null
                 ? isNull(agentRecords.createdBy)
                 : eq(agentRecords.createdBy, agent.createdBy),
@@ -553,7 +553,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
       );
     }
 
-    // §R5 — per-agent rate-limit: count live (unused, unexpired) challenges.
+    // Per-agent rate-limit: count live (unused, unexpired) challenges.
     // Normal usage is ~1 per 15 min (session TTL); 30 gives 30x headroom.
     const CHALLENGE_RATE_LIMIT = 30;
     const [stats] = yield* tryAsync(() =>
@@ -578,7 +578,7 @@ const createAgentChallenge = (input: CreateAgentChallengeInput) =>
       );
     }
 
-    // §DoS1 — opportunistic GC: delete expired rows older than 1h.
+    // Opportunistic GC: delete expired rows older than 1h.
     // 1h grace window past expiry preserves data for replay-attack forensics.
     // Fire-and-forget: GC failures must not block challenge creation.
     yield* tryAsync(() =>
@@ -626,11 +626,10 @@ const exchangeAgentSession = (input: ExchangeAgentSessionInput) =>
     }
     yield* ensureAgentEligibleForSessionExchange(agent);
 
-    // §REVAMP-PR3 Task 5.2 — the at-issuance onboarding-complete gate was
-    // dropped here. Default profiles are auto-seeded at `organizations.create`
-    // (Task 5.1), so an agent's org is normally bootstrapped by the time it
-    // exchanges its first session. The matching at-use gate in
-    // `agentProcedure` was dropped at the same time.
+    // No onboarding-complete gate at session issuance: `organizations.create`
+    // auto-seeds a default profile, so an agent's org is normally bootstrapped
+    // by the time it exchanges its first session. `agentProcedure` likewise has
+    // no at-use gate.
 
     const challengeHash = yield* tryAsync(() => hashApiKey(input.challenge));
     const [challengeRecord] = (yield* tryAsync(() =>
@@ -786,9 +785,9 @@ const revokeAgentSession = (input: RevokeAgentSessionInput) =>
     const tokenHash = yield* tryAsync(() => hashApiKey(input.token));
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     // Sessions carry no org column, so join the agent to scope revocation to the
-    // caller's active org. §AB-0043 — this also reaches orphaned sessions whose
-    // userId was SET NULL when the creating user was deleted; the previous
-    // `eq(userId, caller)` filter could never match those rows.
+    // caller's active org. Scoping by agent (not userId) also reaches orphaned
+    // sessions whose userId was SET NULL when the creating user was deleted; a
+    // userId filter could never match those rows.
     const [sessionRecord] = (yield* tryAsync(() =>
       scope.executor
         .select({

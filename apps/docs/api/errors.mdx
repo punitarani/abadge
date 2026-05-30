@@ -47,6 +47,12 @@ Validation errors include an extra `issues` array:
 | `ROTATE_KEY_INCOMPLETE` | 400 | Profile rotateKey payload does not rewrap every ZK item; `meta.missingItemIds` lists the omitted ones |
 | `CONFIRMATION_MISMATCH` | 400 | `DELETE /v1/orgs/{orgId}` confirmation text does not match the org's current name |
 | `REAUTH_PASSWORD_REQUIRED` | 400 | `DELETE /v1/orgs/{orgId}` re-authentication requested but the account has no password set (social-login only); set one via password reset first |
+| `INVALID_CLAIM_TOKEN` | 400 | auth.md claim token is unknown, already used, or malformed |
+| `CLAIM_TOKEN_EXPIRED` | 400 | auth.md claim token passed its 24-hour TTL; register again |
+| `OTP_NOT_REQUESTED` | 400 | `claim/complete` called before `claim` issued an OTP |
+| `OTP_INVALID` | 400 | Supplied auth.md claim OTP is incorrect |
+| `OTP_EXPIRED` | 400 | auth.md claim OTP passed its 10-minute TTL; restart the claim |
+| `OTP_ATTEMPTS_EXCEEDED` | 400 | Too many wrong OTP attempts (max 5); restart the claim |
 | `UNAUTHORIZED` | 401 | No valid bearer credential provided |
 | `REAUTH_FAILED` | 401 | `DELETE /v1/orgs/{orgId}` re-authentication failed: the supplied account password is incorrect |
 | `NO_ORG_MEMBERSHIP` | 401 | Authenticated user has no organization membership; complete onboarding |
@@ -68,6 +74,9 @@ Validation errors include an extra `issues` array:
 | `PERMISSION_NOT_FOUND` | 404 | Permission ID does not exist |
 | `PROFILE_NOT_FOUND` | 404 | Profile ID does not exist or belongs to another org |
 | `VAULT_NOT_FOUND` | 404 | Vault has not been bootstrapped yet |
+| `INVITE_NOT_FOUND` | 404 | Invite token does not exist |
+| `INVITE_EXPIRED` | 404 | Invite token passed its expiry |
+| `MOUNT_NOT_FOUND` | 404 | Mount handle does not exist or was already redeemed (one-shot) |
 | `AGENT_ALREADY_ENROLLED` | 409 | Agent already has a public key enrolled |
 | `CONFLICT` | 409 | Generic conflict |
 | `VAULT_ALREADY_EXISTS` | 409 | Vault bootstrap attempted when vault already exists |
@@ -75,8 +84,16 @@ Validation errors include an extra `issues` array:
 | `PROFILE_LIMIT_EXCEEDED` | 409 | Personal accounts are limited to a single profile; `profiles.create` rejects an additional profile on a personal org |
 | `PROFILE_NOT_EMPTY` | 409 | Profile deletion blocked because it still contains items |
 | `ITEM_DELETED` | 409 | Operation attempted on a soft-deleted item |
-| `RATE_LIMITED` | 429 | Too many requests; back off and retry. Emitted by edge middleware as `{ "error": "Too many requests" }` — see [Rate limiting](/api/rate-limiting). |
+| `ITEM_ALREADY_EXISTS` | 409 | An item with this ID already exists; generate a new UUID and retry |
+| `SLUG_TAKEN` | 409 | Organization slug is already in use |
+| `INVITE_ALREADY_USED` | 409 | Invite token has already been accepted |
+| `ALREADY_MEMBER` | 409 | User is already a member of the organization |
+| `CLAIM_EMAIL_IN_USE` | 409 | auth.md claim email already maps to an existing account |
+| `CLAIM_ALREADY_COMPLETED` | 409 | auth.md claim was already completed |
+| `PERMISSION_ALREADY_EXISTS` | 409 | One or more capabilities in a `permissions.create` batch are already granted on this `(agent, item)` pair; `meta.duplicateCapabilities` lists every duplicate. The batch is rejected atomically |
+| `RATE_LIMITED` | 429 | Too many requests; back off and retry. Carries `meta.retryAfter`, `meta.limit`, `meta.resetAt` — see [Rate limiting](/api/rate-limiting). |
 | `INTEGRITY_ERROR` | 500 | Server-side data integrity failure |
+| `SERVICE_UNAVAILABLE` | 503 | Database at capacity or briefly unreachable; retry after `meta.retryAfterSeconds` |
 
 ## SDK error handling
 
@@ -85,7 +102,8 @@ The SDK wraps every API error in `AbadgeApiError`:
 ```ts
 import { AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 
-const agent = new AbadgeAgentClient({ apiUrl, apiKey });
+const agent = new AbadgeAgentClient({ apiUrl, agentId, privateKey });
+await agent.connect();
 
 try {
   const result = await agent.access.read(itemId);

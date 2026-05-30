@@ -96,7 +96,7 @@ const createAgent = (input: CreateAgentInput) =>
       );
     }
 
-    // §AGC1a — Enforce per-org agent quota before insert.
+    // Enforce per-org agent quota before insert.
     const [countRow] = yield* tryAsync(() =>
       scope.executor
         .select({ count: count() })
@@ -183,7 +183,7 @@ const listAgents = (input: Schema.Schema.Type<typeof AgentListQuerySchema>) =>
     const ctx = yield* SessionRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
     const agentRecords = scope.tables.agents;
-    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
+    // Keyset pagination over (createdAt DESC, id DESC).
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
@@ -364,8 +364,8 @@ export const agentsRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createAgent(input))),
   list: scopedSessionProcedure("agents:read")
     .meta({ openapi: { method: "GET", path: "/agents", tags: ["agents"], protect: true } })
-    // §AB-0050 — input is optional so existing no-arg `list()` callers keep
-    // working (first page); pagination params are opt-in.
+    // Input is optional: a no-arg `list()` returns the first page, and
+    // pagination params are opt-in.
     .input(strictSchema(Schema.UndefinedOr(AgentListQuerySchema)))
     .output(strictSchema(AgentListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listAgents(input ?? {}))),

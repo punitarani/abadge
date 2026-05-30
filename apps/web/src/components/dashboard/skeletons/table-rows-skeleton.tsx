@@ -18,8 +18,8 @@ interface TableRowsSkeletonProps {
   action?: boolean;
   /**
    * Visually-hidden status announced to assistive tech while the table loads.
-   * The replaced `"Loading..."` cell was read by screen readers; this preserves
-   * that signal now that the shimmer rows themselves are `aria-hidden`.
+   * The shimmer rows are `aria-hidden`, so this is the only loading signal
+   * screen readers receive.
    */
   label?: string;
 }

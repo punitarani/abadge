@@ -133,7 +133,7 @@ describe("buildPrefetchPlan", () => {
       "permissions.list",
     ]);
     // profiles.list is called with { orgId }; items/agents/permissions are
-    // drained — each first page requests the max limit with no cursor (§AB-0050).
+    // drained — each first page requests the max limit with no cursor.
     expect(calls[0]?.args).toEqual({ orgId: ORG_ID });
     expect(calls[1]?.args).toEqual({ cursor: undefined, limit: 100 });
     expect(calls[2]?.args).toEqual({ cursor: undefined, limit: 100 });

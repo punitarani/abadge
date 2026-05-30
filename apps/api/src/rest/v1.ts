@@ -13,10 +13,8 @@ import type { Bindings } from "../types";
  * annotation. There's no second source of truth: changes in
  * `packages/trpc/src/server/routers/*` propagate here on the next build.
  *
- * We picked a hand-written adapter over `trpc-to-openapi` because that
- * package's 3.x line peer-depends on zod ^4 and this codebase uses Effect
- * Schema. See the commit "feat(trpc): annotate procedures with openapi
- * metadata for REST derivation" for the full reasoning.
+ * This is a hand-written adapter rather than `trpc-to-openapi`: that package
+ * peer-depends on zod, and this codebase validates with Effect Schema.
  */
 
 type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";

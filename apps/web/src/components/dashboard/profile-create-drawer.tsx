@@ -21,13 +21,12 @@ export interface ProfileCreateDrawerProps {
 }
 
 /**
- * §REVAMP-PR5 (Task 9.2) — Profile create form.
+ * Profile create form.
  *
  * Default storage mode is `server_managed`; the operator opts into
- * zero-knowledge with an "advanced" toggle. The ZK code path is the
- * same as before: derive a KEK from a profile password, encrypt a fresh
- * root key client-side, and call `profiles.bootstrap` with the
- * wrapped key.
+ * zero-knowledge with an "advanced" toggle. The ZK path derives a KEK from a
+ * profile password, encrypts a fresh root key client-side, and calls
+ * `profiles.bootstrap` with the wrapped key.
  *
  * External ID is optional. It's surfaced because per-customer or
  * per-tenant provisioning often wants a stable identifier the API

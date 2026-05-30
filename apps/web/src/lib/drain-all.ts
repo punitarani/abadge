@@ -1,7 +1,7 @@
 /**
- * Per-request page size a drainer asks for — the server's `MAX_PAGE_LIMIT`
- * (§AB-0050). Requesting the ceiling minimises round-trips; asking for more is
- * rejected by input validation, not clamped.
+ * Per-request page size a drainer asks for — the server's `MAX_PAGE_LIMIT`.
+ * Requesting the ceiling minimises round-trips; asking for more is rejected by
+ * input validation, not clamped.
  */
 export const DRAIN_PAGE_SIZE = 100;
 
@@ -15,8 +15,8 @@ const MAX_DRAIN_PAGES = 1000;
 /**
  * Follow `nextCursor` across every page and return the concatenation. The
  * dashboard does client-side search, filtering, and cross-list joins, all of
- * which assume the *whole* org dataset; AB-0050 caps each request at 50, so the
- * list views must drain to stay correct for orgs larger than one page.
+ * which assume the *whole* org dataset; the server caps each request at one
+ * page, so the list views must drain to stay correct for orgs larger than that.
  *
  * Transport-agnostic and client-free on purpose: both the browser-client
  * wrappers and the (stub-injected, unit-tested) prefetch planner share it.

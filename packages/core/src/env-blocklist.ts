@@ -10,8 +10,7 @@
  *
  * Adding new entries: the bar is "a concrete escalation path under
  * commonly-available runtimes." Don't cargo-cult entries; each one
- * must have a named exploit. Adversarial survey iter 10 (audit
- * W3P10-001) identified this set as minimum coverage.
+ * must have a named exploit.
  */
 export const RESERVED_ENV_KEYS: ReadonlySet<string> = new Set([
   "PATH",

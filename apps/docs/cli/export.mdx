@@ -30,19 +30,17 @@ DATABASE_URL=postgres://app:s3cret@db.example.com/prod
 REDIS_URL=redis://red.example.com
 ```
 
-Single-field items (kind `opaque` or `token` with a `value` field) emit `LABEL=value`. Multi-field items emit one line per field: `LABEL_FIELDNAME=value`.
+One line per item: the label is normalized to a POSIX env-var name (`openai-api-key` → `OPENAI_API_KEY`) and the value is taken from the item's `fields.value`. Values containing newlines or quotes are double-quoted and escaped. Items whose payload has no `value` field fall back to a JSON-serialized value.
 
 ## json format
 
+A flat object mapping each item's label to its value:
+
 ```json
-[
-  {
-    "id": "item_...",
-    "label": "DATABASE_URL",
-    "kind": "opaque",
-    "fields": { "value": "postgres://..." }
-  }
-]
+{
+  "DATABASE_URL": "postgres://app:s3cret@db.example.com/prod",
+  "REDIS_URL": "redis://red.example.com"
+}
 ```
 
 ## Audit

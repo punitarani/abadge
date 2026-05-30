@@ -3,42 +3,48 @@ title: "Organizations"
 description: "Create, switch, and invite teammates to organizations."
 ---
 
-Every resource in abadge belongs to an organization. The dashboard always operates against the **active organization**, shown in the header.
+Every resource in abadge belongs to an organization. The dashboard always operates against the **active organization**, shown in the sidebar org switcher.
+
+A **personal account** is structurally a single-member organization flagged as personal. It is labelled "Personal" in the switcher and is not in custody mode. See [Items](/dashboard/items#custody-mode-vs-personal-vault).
 
 ## Creating an organization
 
 <Steps>
   <Step title="Open the org switcher">
-    Click the organization name in the header.
+    Click the workspace name at the top of the sidebar, then **Create organization…**. (The same form is the **Create a new organization** option during [onboarding](/dashboard/signing-in).)
   </Step>
-  <Step title="Choose Create organization">
-    Enter a display name. The slug is auto-generated; override it if you want a specific URL fragment.
+  <Step title="Name it">
+    Enter a display name. The slug is auto-generated from the name; override it if you want a specific URL fragment. Slug availability is checked live.
   </Step>
   <Step title="Land inside the new org">
-    The dashboard switches context. The new org has no profiles, items, agents, or permissions yet.
+    The dashboard switches context and lands you on the overview. The org is created with a default `server_managed` profile in the same transaction, so you can store secrets immediately — there's no separate profile-bootstrap step.
   </Step>
 </Steps>
 
+Add more profiles — including zero-knowledge profiles with their own password — later from the [Profiles](/dashboard/profiles) page.
+
 ## Switching organizations
 
-The org switcher lists every organization you're a member of. Selecting one updates the active context and reloads the items, agents, permissions, and audit views.
+The org switcher lists every organization (and personal account) you belong to. Selecting one updates the active context; org-scoped views — items, agents, permissions, audit — refetch for the new org. The switcher also offers **Create organization…** and **Join another organization…**.
 
-The active organization is also persisted to the session, so subsequent dashboard visits land in the same place.
+The active organization is persisted locally, so subsequent dashboard visits land in the same place.
+
+Members apply to **team organizations only**. A personal account is a single-user vault, so the Members section is hidden in its Settings.
 
 ## Inviting members
 
 <Steps>
-  <Step title="Open Settings → Members">
-    Available to `owner` and `admin` roles.
+  <Step title="Open Settings → Members → Invite member">
+    The members table and invite card are available to `owner` and `admin` roles.
   </Step>
-  <Step title="Click Invite">
-    Choose a role: `owner`, `admin`, or `member`. The dashboard generates a one-time invite token.
+  <Step title="Pick a role and generate a link">
+    Choose `owner`, `admin`, or `member`, then **Generate link**. The dashboard returns a one-time invite link.
   </Step>
   <Step title="Send the invite link">
-    Copy the link from the success dialog and send it through your usual channel. The link expires after 7 days; the token can be redeemed exactly once.
+    Copy the link from the card and send it through your usual channel. The link expires after 7 days; the token can be redeemed exactly once.
   </Step>
   <Step title="Recipient accepts">
-    The recipient signs in (or creates an account) and lands at `/invite/accept?token=...`. After confirming the org name and role, they're added with the assigned role.
+    The recipient signs in (or creates an account) and opens the link (`/invite/accept?token=...`). They can also paste the raw token or URL at `/join` or via the org switcher's **Join another organization…** dialog. After confirming the org name and role, they're added with the assigned role.
   </Step>
 </Steps>
 
@@ -56,29 +62,25 @@ The active organization is also persisted to the session, so subsequent dashboar
 
 ## Managing members
 
-The members table on **Settings → Members** lets owners and admins:
-
-- Change a member's role
-- Remove a member (cascades agent revocation)
-- Revoke a pending invitation
+The members table on **Settings → Members** lists each member's name, role, and join time. Owners and admins can **Remove** a member; removal disables that member's agents and deletes their permissions. (Removal is confirmed in a dialog.)
 
 ## Personal API keys
 
 **Settings → API keys** lets you mint personal API keys to script the management surface without a browser. Each key is bound to your user and the active org.
 
 <Steps>
-  <Step title="Click New API key">
-    Give it a name and an optional expiry.
+  <Step title="Create the key">
+    In the **Create API key** card, give it a name and pick an expiry (Never, 30 days, 90 days, or 1 year), then **Create key**.
   </Step>
   <Step title="Copy the secret">
-    The success dialog shows the full `abu_...` secret exactly once. The server stores only its SHA-256 hash plus an 8-character prefix.
+    The card then shows the full `abu_...` secret exactly once, with a warning. The server stores only its SHA-256 hash plus a short prefix.
   </Step>
   <Step title="Use it as a bearer token">
     Send `Authorization: Bearer abu_...`, or pass it as the `sessionToken` to `AbadgeUserClient`.
   </Step>
 </Steps>
 
-The keys table lists each key's name, prefix, expiry, last-used time, and enabled/revoked state. **Revoke** disables a key immediately.
+The keys table lists each key's name, prefix, created time, last-used time, and status (Active / Expired / Revoked). **Revoke** disables a key immediately.
 
 <Warning>
   A personal API key authenticates the **management surface only** — organizations, profiles, items metadata, agents, permissions, audit, settings. It resolves to a session identity, **not** an agent, so it can never reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key also cannot create or revoke other API keys — use a browser session for that.
@@ -106,6 +108,5 @@ Only an **owner** can delete the organization. If either gate fails, the dialog 
 ## Related
 
 - [Concepts: organizations](/concepts/organizations)
-- [API reference](/api/overview)
 - [API reference](/api/overview)
 - [CLI: org commands](/cli/org)

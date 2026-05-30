@@ -283,7 +283,7 @@ describe("AbadgeUserClient happy paths", () => {
 });
 
 // -----------------------------------------------------------------------------
-// AbadgeUserClient — namespaced API (§RM-PR4)
+// AbadgeUserClient — namespaced API
 // -----------------------------------------------------------------------------
 
 describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
@@ -430,7 +430,7 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
 });
 
 // -----------------------------------------------------------------------------
-// AbadgeUserClient — list methods drain pagination (§AB-0050 regression guard)
+// AbadgeUserClient — list methods drain every page of cursor pagination
 // -----------------------------------------------------------------------------
 
 describe("AbadgeUserClient list methods drain every page", () => {
@@ -559,7 +559,7 @@ describe("AbadgeAgentClient happy paths", () => {
     expect(calls[0]?.kind).toBe(expectedKind as RecordedCall["kind"]);
   });
 
-  // §RM-PR2 — unified access namespace
+  // Unified access namespace
   test("access.read routes to access.read with optional field/purpose", async () => {
     const a = makeAgentClient({ storageMode: "server_managed", payload: { fields: {} } });
     await a.agent.access.read("item_x");

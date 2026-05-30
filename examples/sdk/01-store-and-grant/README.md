@@ -1,8 +1,8 @@
 # SDK example 01 — Store a secret and grant an agent access
 
 **What this shows:** the operator (management) side of abadge — store a `server_managed`
-secret, register a remote agent with a one-time bootstrap token, grant the agent the
-`read` capability on that item, and print the recent audit trail. It deliberately does
+secret, register a remote agent with a one-time bootstrap token, grant the agent
+read access (a `reveal_plaintext` item grant) on that item, and print the recent audit trail. It deliberately does
 **not** read the secret value: that requires a keypair agent (example 02).
 
 ## Prerequisites

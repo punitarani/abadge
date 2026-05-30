@@ -90,7 +90,7 @@ function buildEventTypeCondition(
 }
 
 interface AuditConditionsContext {
-  // §AB-0043 — null when the caller is an orphaned agent (no owning user).
+  // Null when the caller is an orphaned agent (no owning user).
   userId: string | null;
   role: string;
   profileId?: string;
@@ -108,7 +108,7 @@ function buildAuditConditions(
 
   // Non-admin users can only see their own audit entries
   if (roleRank(ctx.role) < roleRank("admin")) {
-    // §AB-0043 — an orphaned agent (userId null) sees the org's ownerless audit rows
+    // An orphaned agent (userId null) sees the org's ownerless audit rows
     // (its own bucket); `eq(userId, null)` matches nothing under SQL NULL semantics.
     conditions.push(ctx.userId === null ? isNull(table.userId) : eq(table.userId, ctx.userId));
   }

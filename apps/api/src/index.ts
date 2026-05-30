@@ -30,7 +30,8 @@ import type { Bindings } from "./types";
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Reject oversized bodies before any other middleware runs to prevent
-// write-amplification DoS (§DoS2): 100 req/min × 100MB = 10 GB/min otherwise.
+// write-amplification DoS: at 100 req/min, an unbounded body size lets a single
+// caller force gigabytes of work per minute. Bounding here caps that exposure.
 app.use(
   "*",
   bodyLimit({
@@ -75,8 +76,8 @@ app.use("/api/auth/*", rateLimitMiddleware(60, 60_000));
 // that victim's email/password sign-in — never a lockout, and OAuth sign-in is
 // unaffected.
 //
-// Each path MUST be a live Better Auth route (a wrong path silently never
-// throttles). Verified against better-auth@1.5.6's email/password route table:
+// Each path MUST be a live Better Auth route — a wrong path silently never
+// throttles. The email/password routes are:
 //   /sign-in/email · /sign-up/email · /request-password-reset · /send-verification-email
 // (NB: the reset route is `/request-password-reset`, NOT `/forget-password` —
 // the latter only exists in the unused emailOTP plugin.) Re-verify on a
@@ -153,10 +154,10 @@ app.all("/v1/*", (c) => handleV1Request(c));
 //
 // This endpoint is unauthenticated and unrate-limited, so it deliberately does
 // NOT expose the DB role name or its attributes in the response body (that would
-// leak the internal role to anonymous callers). The deployment-time role
-// assertions are logged for operators here, not part of the public contract:
-//   - rolbypassrls must be false once the least-privilege role is live (§AB-0011),
-//   - the role must NOT hold UPDATE on audit_logs (§AB-0012/§AB-0020).
+// leak the internal role to anonymous callers). The role assertions are logged
+// for operators here, not part of the public contract:
+//   - rolbypassrls must be false under the least-privilege role,
+//   - the role must NOT hold UPDATE on audit_logs (append-only invariant).
 //
 // Failure semantics: a configured-but-unreachable DB returns 503 `degraded` so
 // load balancers and uptime probes detect the outage instead of seeing a masked
@@ -178,8 +179,9 @@ app.get("/health", async (c) => {
     console.info(`[health] db reachable role=${r?.role ?? "unknown"} bypassRls=${r?.rolbypassrls}`);
     if (r?.audit_update === true) {
       console.warn(
-        "[§AB-0012] current DB role has UPDATE on audit_logs — run migration " +
-          "0023_least_privilege_role to revoke write access.",
+        "current DB role has UPDATE on audit_logs — run migration " +
+          "0023_least_privilege_role to revoke write access and preserve the " +
+          "append-only audit invariant.",
       );
     }
     return c.json({ status: "ok", db: { reachable: true } });
@@ -189,7 +191,7 @@ app.get("/health", async (c) => {
   }
 });
 
-// §ENV2c — canonical 404 envelope for unmatched routes.
+// Canonical {code, message, hint, meta} envelope for unmatched routes.
 app.notFound((c) =>
   c.json(
     {
@@ -202,7 +204,7 @@ app.notFound((c) =>
   ),
 );
 
-// §ENV2c — canonical envelope for unhandled errors.
+// Canonical {code, message, hint, meta} envelope for unhandled errors.
 app.onError((err, c) => {
   if (err instanceof HTTPException) {
     const status = err.status;

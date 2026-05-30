@@ -32,10 +32,10 @@ function createMockDb(): BaseRequestContext["db"] {
   };
   const db = {
     select: () => mockQuery,
-    // §AB-0011 — scopedSessionProcedure/agentProcedure now wrap the request in a
-    // transaction that sets the org GUC. The mock runs the callback with a tx
-    // whose `execute` (the set_config call) is a no-op and that shares the same
-    // query mock, so middleware-wrapped procedures resolve in unit tests.
+    // scopedSessionProcedure/agentProcedure wrap the request in a transaction
+    // that sets the org GUC. The mock runs the callback with a tx whose
+    // `execute` (the set_config call) is a no-op and that shares the same query
+    // mock, so middleware-wrapped procedures resolve in unit tests.
     execute: async () => [],
     transaction: async (fn: (tx: unknown) => unknown) => fn(db),
   };

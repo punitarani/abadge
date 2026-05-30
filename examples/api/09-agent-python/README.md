@@ -27,8 +27,11 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Create the agent and grant it `read` once, using the CLI (or the dashboard /
-management API). Register it as a `local_cli` agent: that kind generates an
+Create the agent and grant it read access once, using the CLI (or the dashboard /
+management API). CLI grants target a single item, so they use the legacy
+capability name `reveal_plaintext` (it maps to canonical `read`, which is what
+the `POST /v1/access/{itemId}/read` endpoint requires). Register it as a
+`local_cli` agent: that kind generates an
 Ed25519 keypair, uploads the public key (so the agent is enrolled and can sign
 challenges immediately), and writes the **private key** to
 `~/.abadge/agents/<agent-id>.ed25519.jwk` at mode `0600`. The locality is just
@@ -40,8 +43,8 @@ boundary is the permission, not where the agent runs.
 abadge agent add --name "py-reader" --kind local_cli --json
 # → { "agent": { "id": "<AGENT_ID>", ... }, "privateKeyPath": "/Users/you/.abadge/agents/<AGENT_ID>.ed25519.jwk" }
 
-# Grant it read on the target item.
-abadge permission create --agent-id <AGENT_ID> --item-id <ITEM_ID> --capability read
+# Grant it read access on the target item (legacy alias for canonical `read`).
+abadge permission create --agent-id <AGENT_ID> --item-id <ITEM_ID> --capability reveal_plaintext
 ```
 
 Then export the runtime config (take `ABADGE_PRIVATE_KEY_PATH` from the

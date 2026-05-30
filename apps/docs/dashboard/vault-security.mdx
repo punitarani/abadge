@@ -1,91 +1,47 @@
 ---
 title: "Vault security"
-description: "Change the master password, set up a recovery key, and rotate the profile root key."
+description: "Change the profile password, manage recovery, and rotate the root key — performed through the CLI."
 ---
 
-The **Vault security** page lives on each profile detail view. It exposes operations that touch the encryption material directly. All of them happen client-side for zero-knowledge profiles — the server only sees the new wrapped material.
-
-## Change master password
-
-Re-wraps the existing root key under a new KEK derived from a new password. The root key itself is unchanged — every existing item remains decryptable.
-
-<Steps>
-  <Step title="Open Vault security → Change master password">
-    Available on profile detail pages for zero-knowledge profiles.
-  </Step>
-  <Step title="Enter the current password">
-    The browser derives the old KEK and unwraps the root key. If the old password is wrong, the unwrap fails — abadge does not check passwords directly.
-  </Step>
-  <Step title="Enter and confirm the new password">
-    The browser generates a new 16-byte salt and derives a new KEK via Argon2id (64 MiB memory, 3 iterations).
-  </Step>
-  <Step title="Wrap and ship">
-    The new wrapped root key, salt, and KDF parameters are sent to the password-change operation. The profile envelope is replaced atomically.
-  </Step>
-</Steps>
+Zero-knowledge profiles expose three key-management operations: change the profile password, manage the recovery key, and rotate the root key. These touch the encryption material directly and require the root key in memory.
 
 <Note>
-  Existing recovery keys still work — the root key didn't change. You only need to redo recovery setup if you generated a new root key.
+  In the dashboard, these operations are **delegated to the CLI**. The profile detail page surfaces a **Key management** section, but each action points you to the CLI, where the local daemon holds the root key. The dashboard does not perform password changes, recovery-key generation, or key rotation in the browser.
 </Note>
 
-## Set up recovery
+## Where to perform each operation
 
-Without recovery, losing your master password means losing every item in a zero-knowledge profile. Recovery adds a second wrap of the root key under a 256-bit recovery key.
+| Operation | How | Notes |
+|---|---|---|
+| Change profile password | `abadge profile change-password` | Re-wraps the existing root key under a new KEK. Items are not re-encrypted. |
+| Recovery key | CLI | Generate or view the recovery key for a profile. The recovery key wraps a copy of the root key independently of the password. |
+| Rotate root key | CLI | Generates a fresh root key and re-wraps every item DEK. Use after a suspected key compromise. |
 
-<Steps>
-  <Step title="Open Vault security → Set up recovery">
-    Click **Generate recovery key**.
-  </Step>
-  <Step title="Save the recovery key">
-    The dashboard displays a 52-character base32 recovery key, grouped in fives:
-    ```
-    ABCDE-FGHIJ-KLMNO-PQRST-UVWXY-Z2345-67ABC-DEFGH-IJKLM-NOPQR-STUVW
-    ```
-    **Store it offline.** Print it, write it down, or save it in a separate password manager. abadge does not retain the value.
-  </Step>
-  <Step title="Confirm">
-    The browser wraps the root key with the recovery key (XChaCha20-Poly1305) and ships the `recoveryWrappedRootKey` to the recovery-setup operation.
-  </Step>
-</Steps>
+The dashboard's **Key management** section on a zero-knowledge profile lists these actions; selecting one shows a prompt telling you to run the corresponding CLI command.
 
-<Warning>
-  The recovery key is the only way to restore access if you forget the master password. There is no server-side recovery for zero-knowledge profiles.
-</Warning>
+## What the operations do
 
-## Rotate root key
+These run client-side (CLI + daemon); the server only sees the new wrapped material.
 
-Generates a fresh root key and re-wraps every item DEK. Use this if you suspect the root key has been exposed — for example, after a stolen browser tab or an old laptop.
+### Change profile password
 
-<Steps>
-  <Step title="Unlock the profile">
-    The browser must hold the current root key in memory.
-  </Step>
-  <Step title="Generate a new root key">
-    32 random bytes.
-  </Step>
-  <Step title="Re-wrap every DEK">
-    The browser walks every item, decrypts the DEK with the old root key, and re-wraps with the new one.
-  </Step>
-  <Step title="Wrap the new root key">
-    Once with the current KEK. Once with the recovery key (if recovery is set up).
-  </Step>
-  <Step title="Ship the batch">
-    Send the new wrapped keys plus the rekeyed items map to `POST /v1/profiles/{profileId}/rotate`. The server applies all updates in a single transaction and increments `keyVersion`.
-  </Step>
-</Steps>
+Re-wraps the existing root key under a new KEK derived from the new password. The root key itself is unchanged, so every existing item remains decryptable and any existing recovery key still works.
 
-<Note>
-  The plaintext payload of every item is unchanged — only the wrap changes. There's no risk of mangling values during rotation.
-</Note>
+### Recovery key
 
-If your client misses any items, the server returns `ROTATE_KEY_INCOMPLETE` with the missing IDs in `meta.missingItemIds`. Re-fetch and retry.
+Without recovery, losing the profile password means losing every item in a zero-knowledge profile. A recovery key adds a second wrap of the root key under a separate 256-bit key. Store it offline — abadge does not retain the value, and there is no server-side recovery.
+
+### Rotate root key
+
+Generates a fresh 32-byte root key, re-wraps every item DEK with it, and re-wraps the new root key under the current KEK (and the recovery key, if set). The plaintext payload of every item is unchanged — only the wrap changes. The server applies all updates in one transaction and increments `keyVersion`. If the client misses any items, the server returns `ROTATE_KEY_INCOMPLETE` with the missing IDs in `meta.missingItemIds`.
 
 ## Server-managed profiles
 
-Server-managed profiles do not expose vault security operations — there is no master password and no client-side root key. Server key rotation (changing the Worker's `ENCRYPTION_KEY`) is an operational task handled outside the dashboard.
+Server-managed profiles do not expose vault security operations — there is no profile password and no client-side root key. Rotating the Worker's `ENCRYPTION_KEY` is an operational task handled outside the dashboard.
 
 ## Related
 
-- [Concepts: profiles](/concepts/profiles)
+- [Profiles](/dashboard/profiles)
 - [Security: zero-knowledge](/security/zero-knowledge)
+- [CLI: profile commands](/cli/profile)
 - [API reference](/api/overview)

@@ -170,6 +170,35 @@ sequenceDiagram
   API-->>Agent: Session token (abs_...)
 ```
 
+### Agentic registration (auth.md anonymous → user-claimed)
+
+An agent can self-register a placeholder personal account a human later claims via emailed OTP.
+
+```mermaid
+sequenceDiagram
+  participant Agent as Agent
+  participant API as API
+  participant Human as Human owner
+
+  Agent->>API: POST /agent/auth (register)
+  API->>API: Seed unclaimed user + personal org + default profile
+  API->>API: Mint abu_ key + hashed clm_ claim record
+  API->>API: Audit: account.register
+  API-->>Agent: abu_ credential + clm_ claim token
+
+  Agent->>API: POST /agent/auth/claim (email)
+  API->>API: Mint 6-digit OTP (hashed, 10-min TTL)
+  API->>API: Audit: account.claim
+  API-->>Human: Email OTP
+
+  Human->>API: POST /agent/auth/claim/complete (OTP)
+  API->>API: Verify OTP, bind verified email in place
+  API->>API: Audit: account.claim_complete
+  API-->>Human: Account claimed (set password email)
+```
+
+The `abu_` credential authenticates the personal account's management surface only; it never reaches `access.*`.
+
 ## Profile and item management
 
 ### Zero-knowledge profile bootstrap
@@ -185,8 +214,8 @@ sequenceDiagram
   User->>User: Generate root key (32 bytes)
   User->>User: Wrap root key with KEK (XChaCha20-Poly1305)
   User->>API: Bootstrap profile (wrapped root key, salt, KDF params)
-  API->>API: Store profile envelope
-  API->>API: Audit: profile.create
+  API->>API: Store profile encryption envelope
+  API->>API: Audit: profile.bootstrap
   API-->>User: Success
 ```
 
@@ -216,9 +245,10 @@ sequenceDiagram
   participant API as API
 
   User->>API: Create item (payload: {label, kind, fields})
+  API->>API: Load/provision per-profile DEK (wrapped under ENCRYPTION_KEY)
   API->>API: Generate IV (12 bytes)
-  API->>API: Encrypt with AES-256-GCM (ENCRYPTION_KEY)
-  API->>API: Store ciphertext + IV
+  API->>API: Encrypt with AES-256-GCM (profile DEK, AAD-bound)
+  API->>API: Store serverCiphertext + serverIv + serverKeyVersion (>=3)
   API->>API: Audit: item.create
   API-->>User: Item ID
 ```
@@ -233,13 +263,14 @@ sequenceDiagram
   participant API as API
   participant DB as PostgreSQL
 
-  User->>API: Create permission (agent, item, capability, expiry?)
-  API->>API: Validate capability vs agent locality
-  API->>API: Validate capability vs item storage mode
-  API->>DB: Insert grant record
+  User->>API: Create permission (agent, item-or-profile, capability, expiry?)
+  API->>API: Validate capability vs agent locality + item storage mode
+  API->>DB: Insert grant row(s) (one per capability, all-or-none)
   API->>DB: Audit: permission.create
-  API-->>User: Permission ID
+  API-->>User: Permission ID(s)
 ```
+
+Capabilities are `read` and `use`; a grant targets either a single item or a whole profile (profile grants cover every item added later). Legacy `read_ciphertext` / `reveal_plaintext` / `mount_env` / `mount_file` are still accepted on the wire and map to `read` / `use`.
 
 ### Full access decision flow
 
@@ -255,7 +286,7 @@ flowchart TD
 
   LoadItem --> ItemExists{"Item<br/>exists?"}
   ItemExists -->|No| Deny2["DENY<br/>(404 Not Found)"]
-  ItemExists -->|Yes| PermCheck["Check permission<br/>(agent + item + capability)"]
+  ItemExists -->|Yes| PermCheck["Check permission<br/>(agent + item-or-profile + capability)"]
 
   PermCheck --> HasPerm{"Explicit<br/>permission?"}
   HasPerm -->|No| Deny3["DENY<br/>(403 Forbidden)"]
@@ -286,13 +317,14 @@ sequenceDiagram
   participant Proc as Subprocess
 
   User->>CLI: abadge run --item <id> --env-var SECRET -- ./app
-  CLI->>API: Access mount (item ID, mountType: env)
+  CLI->>API: access.use (item ID, delivery: env)
   API->>API: Auth + permission + capability check
-  API->>API: Decrypt (server-managed) or return ciphertext (ZK)
-  API-->>CLI: Secret payload
+  API-->>CLI: Mount handle (mnt_..., 5-min TTL)
+  CLI->>Daemon: Redeem mount handle
+  Daemon->>API: Fetch material (ciphertext / server-decrypted value)
+  API-->>Daemon: Payload
   alt Zero-knowledge item
-    CLI->>Daemon: Decrypt (encryptedItemKey, ciphertext)
-    Daemon-->>CLI: Plaintext
+    Daemon->>Daemon: Decrypt (encryptedItemKey, ciphertext)
   end
   CLI->>Proc: Spawn with SECRET=<value> in env
   Note over Proc: Secret lives only in process memory
@@ -306,14 +338,17 @@ sequenceDiagram
 sequenceDiagram
   participant User as User
   participant CLI as CLI
+  participant Daemon as Daemon
   participant API as API
   participant FS as Filesystem
 
   User->>CLI: abadge mount --item <id>
-  CLI->>API: Access mount (item ID, mountType: file)
+  CLI->>API: access.use (item ID, delivery: file)
   API->>API: Auth + permission check
-  API-->>CLI: Secret payload
-  CLI->>FS: Write to temp file (mode 0600)
+  API-->>CLI: Mount handle (mnt_..., 5-min TTL)
+  CLI->>Daemon: Redeem mount handle
+  Daemon->>FS: Write to temp file (mode 0600)
+  Daemon-->>CLI: File path
   CLI-->>User: File path
   Note over FS: File auto-cleaned on process exit
 ```

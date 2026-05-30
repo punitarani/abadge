@@ -91,9 +91,12 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
   const activeOrgId = useOrgStore((s) => s.activeOrgId);
   const setActiveOrg = useOrgStore((s) => s.setActiveOrg);
   const clearActiveOrg = useOrgStore((s) => s.clearActiveOrg);
+  // Gate hydration in an effect, never in the useState initializer: the
+  // initializer runs during the Next.js static prerender where `persist` isn't
+  // wired up, so reading `hasHydrated()` there would crash the build. Start
+  // false and flip once persist finishes rehydrating from storage.
   const [hydrated, setHydrated] = useState(false);
 
-  // Wait for Zustand persist rehydration
   useEffect(() => {
     if (useOrgStore.persist.hasHydrated()) {
       setHydrated(true);
@@ -207,7 +210,7 @@ function DashboardGate({ children }: { children: React.ReactNode }): React.React
   // Inline loader while auth, orgs, or store hydration are pending. orgReady
   // requires only that the stored active org is one the user actually belongs
   // to — it MUST NOT require a bootstrapped profile. Gating on
-  // `hasBootstrappedProfile` here (combined with the effect's redirect) made a
+  // `hasBootstrappedProfile` (combined with the effect's redirect) would make a
   // profile-less org ping-pong between /overview and /onboarding forever, since
   // onboarding's `decideResumeAction` sends any org straight back to the
   // dashboard. A profile-less org renders the dashboard; the profiles page

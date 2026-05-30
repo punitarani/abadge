@@ -64,7 +64,7 @@ async function runExport(format: string): Promise<void> {
 
 export function createExportCommand(): Command {
   return new Command("export")
-    .description("Export secrets from the active profile to stdout")
+    .description("Export server_managed secrets to stdout (zero-knowledge items are skipped)")
     .option("--format <format>", "Output format: env or json", "env")
     .action(async (opts: { format?: string }) => {
       const format = opts.format ?? "env";

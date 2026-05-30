@@ -8,10 +8,10 @@ import { resolveSecretValue } from "../secret";
 
 export function createMountCommand(): Command {
   return new Command("mount")
-    .description("Mount secret as temp file")
+    .description("Write a secret to a temp file with 0600 permissions")
     .requiredOption("--item <id>", "Item ID")
     .option("--field <name>", "Named field to deliver from the item payload")
-    .option("--path <path>", "Target mount path")
+    .option("--path <path>", "Target mount path (default: a random file under the temp directory)")
     .action(async (opts: { item: string; field?: string; path?: string }) => {
       let client: Awaited<ReturnType<typeof createAgentApiClient>> | undefined;
       try {

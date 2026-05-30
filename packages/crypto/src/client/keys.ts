@@ -21,11 +21,11 @@ export function generateRootKey(): Uint8Array {
  * Wrap (encrypt) a root key with a KEK using XChaCha20-Poly1305.
  * Returns base64url string: nonce (24 bytes) || ciphertext + tag.
  *
- * AAD binds the wrap to `{profileId, keyVersion}` (§W1S7-001) so a wrapped
- * root key cannot be substituted across profiles or replayed onto a rotated
- * profile with a different `keyVersion`. The same wrapper is used for the
- * primary password-derived wrap and the recovery-key wrap — the distinction
- * lives in the KEK, not the AAD.
+ * AAD binds the wrap to `{profileId, keyVersion}` so a wrapped root key cannot
+ * be substituted across profiles or replayed onto a rotated profile with a
+ * different `keyVersion`. The same wrapper serves both the primary
+ * password-derived wrap and the recovery-key wrap — the distinction lives in
+ * the KEK, not the AAD.
  */
 export function wrapRootKey(
   rootKey: Uint8Array,

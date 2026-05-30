@@ -93,7 +93,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("ProfileCreateDrawer — rendering (§REVAMP-PR5)", () => {
+describe("ProfileCreateDrawer — rendering", () => {
   test("renders nothing when open=false", () => {
     renderDrawer({ open: false });
     expect(screen.queryByLabelText(/profile name/i)).toBeNull();

@@ -179,7 +179,7 @@ describe("resolveSessionConfig", () => {
   });
 });
 
-// §O3 / multi-org CLI — X-Abadge-Org-Id header plumbing in outbound tRPC.
+// Multi-org CLI — X-Abadge-Org-Id header plumbing in outbound tRPC.
 
 describe("buildSessionHeaders / X-Abadge-Org-Id plumbing", () => {
   let capturedHeaders: Record<string, string> = {};

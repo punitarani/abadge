@@ -17,7 +17,12 @@ import {
 
 type Assert<T extends true> = T;
 
-// -- Backward-compat type assertions (existing) ----------------------------
+// Compile-time guard for the SDK's public type surface. Each block asserts that
+// a public type keeps its expected shape, or that a deliberately-absent legacy
+// symbol stays absent (the `@ts-expect-error` lines fail the build if a removed
+// export is reintroduced).
+
+// -- Public-shape assertions -----------------------------------------------
 
 type _PermissionUsesAgentId = Assert<Permission["agentId"] extends string ? true : false>;
 type _AgentCreateInput = Assert<CreateAgentInput["kind"] extends string ? true : false>;
@@ -59,7 +64,7 @@ type _UserClientConfig = Assert<
 type _AgentKeypairConfigShape = Assert<
   AbadgeAgentKeypairConfig extends { apiUrl: string; agentId: string } ? true : false
 >;
-// AbadgeAgentClientConfig is the keypair config (legacy API-key auth removed).
+// Agents authenticate only by keypair, so AbadgeAgentClientConfig is the keypair config.
 type _AgentClientConfigIsKeypair = Assert<
   AbadgeAgentClientConfig extends AbadgeAgentKeypairConfig ? true : false
 >;

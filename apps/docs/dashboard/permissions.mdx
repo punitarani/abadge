@@ -3,41 +3,47 @@ title: "Permissions"
 description: "Grant capabilities to agents on individual items, with optional expiries."
 ---
 
-The **Permissions** view is where you connect agents to the items they can use. Each grant is still one row at the storage level (agent + item + capability), but the dashboard groups grants by `(agent, item)` so a single line shows every capability the agent has on that item.
+The **Permissions** view is where you connect agents to the secrets they can use. A grant can target a **single item** or an **entire profile** (every item in the profile, now and in the future). Each grant is one row at the storage level (agent + target + capability), but the dashboard groups grants by `(agent, target)` so a single line shows every capability the agent has on that target.
 
 ## Listing permissions
 
-The permissions table groups rows by `(agent, item)` pair. Each row shows:
+The permissions table groups rows by `(agent, target)` pair, where the target is an item or a profile. Each row shows:
 
 - Agent name and kind
-- Item label and storage mode
+- Target — item label and storage mode, or the profile name for profile-wide grants
 - Capabilities — one chip per granted capability, with `read` before `use`
 - Expires — the soonest deadline among the group's capabilities, or "Mixed" when capabilities have different expiries
 - A small `✕` on each chip to revoke that one capability without touching the others
 
-Filter and search remain row-level (agent / item / capability / expiry), then groups are formed from the filtered rows. The footer shows both the row count and the pair count.
+Filter and search remain row-level (agent / capability / expiry, plus a text search over agent and target), then groups are formed from the filtered rows.
 
 ## Creating a permission
 
+Click **Grant permission** to open the panel.
+
 <Steps>
-  <Step title="Click Grant permission">
-    Select an agent and an item from the dropdowns.
+  <Step title="Select an agent">
+    Only enabled, non-revoked agents are listed.
+  </Step>
+  <Step title="Choose a target">
+    **Single item** grants access to one credential. **Entire profile** grants access to every item in the profile, now and in the future. Then pick the item or profile.
   </Step>
   <Step title="Pick one or more capabilities">
-    The dashboard shows only capabilities that are valid for the chosen agent + item combination, based on the [capability matrix](/concepts/permissions-and-capabilities). Tick as many as you need — multi-grant is atomic.
-  </Step>
-  <Step title="Already-granted capabilities">
-    If the agent already has a capability on the chosen item, that capability is dimmed and labelled "already granted" — you can't accidentally re-pick it. (The backend would reject a duplicate with `PERMISSION_ALREADY_EXISTS` anyway.)
+    The dashboard shows only capabilities valid for the chosen agent + target, based on the [capability matrix](/concepts/permissions-and-capabilities) (for a profile target, it intersects the matrix across the profile's current items). Tick as many as you need — multi-grant is atomic. A capability the agent already holds on the target is dimmed and labelled "already granted".
   </Step>
   <Step title="(Optional) Set an expiry">
-    ISO date. Applies to every capability you ticked in this submission. Leave blank for non-expiring grants. To grant some capabilities with one expiry and others with another, submit two batches.
+    A date. Applies to every capability you ticked in this submission. Leave blank for non-expiring grants. To grant some capabilities with one expiry and others with another, submit two batches.
   </Step>
   <Step title="Save">
     The whole batch lands atomically — every ticked capability becomes one row, all in one transaction. Future access attempts check those rows.
   </Step>
 </Steps>
 
-The composite unique constraint `(agentId, itemId, capability)` means each triple has at most one row. The router pre-checks for duplicates with one `IN` query so the error envelope can list every conflicting capability up front (`meta.duplicateCapabilities`).
+<Warning>
+  Granting **`read` on an entire profile** hands the agent the plaintext of every credential in the profile, now and forever. The dashboard surfaces a confirmation dialog before this specific grant and suggests `use` instead — the agent runs processes with the secret but never sees it.
+</Warning>
+
+The composite unique constraint `(agentId, itemId, capability)` means each triple has at most one row. The router pre-checks for duplicates so the error envelope can list every conflicting capability up front (`meta.duplicateCapabilities`).
 
 ## Capability cheatsheet
 
@@ -71,6 +77,5 @@ There is no auto-renewal. To extend a permission, revoke and re-grant with a lat
 ## Related
 
 - [Concepts: permissions and capabilities](/concepts/permissions-and-capabilities)
-- [API reference](/api/overview)
 - [API reference](/api/overview)
 - [CLI: permission commands](/cli/permission)

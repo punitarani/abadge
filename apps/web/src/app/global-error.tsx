@@ -3,12 +3,12 @@
 /**
  * Next.js global-error boundary.
  *
- * Required workaround for the Next 15.5.14 turbopack RSC Client Manifest
- * bug (§W-STACK): under the bun pnpm-style `.bun` store, turbopack fails
- * to resolve `next/dist/client/components/builtin/global-error.js`, so
- * every HTML route 500s with "Could not find module global-error.js".
- * Having a user-level global-error.tsx in the app directory short-circuits
- * the builtin lookup and restores normal rendering.
+ * Required workaround for a turbopack RSC Client Manifest bug: under the bun
+ * pnpm-style `.bun` store, turbopack fails to resolve
+ * `next/dist/client/components/builtin/global-error.js`, so every HTML route
+ * 500s with "Could not find module global-error.js". A user-level
+ * global-error.tsx in the app directory short-circuits the builtin lookup and
+ * restores normal rendering.
  *
  * Pair with `rm -rf .next` before `next dev` (see apps/web/package.json
  * predev script) to purge stale manifest entries that can mask this file.
@@ -27,9 +27,9 @@ export default function GlobalError({
   reset: () => void;
 }): React.ReactElement {
   // A ChunkLoadError almost always means the user's tab is running an older
-  // build whose chunk hashes were replaced by a deploy (§stale-deploy). One
-  // hard reload pulls the live manifest; `reset()` cannot fix it because it
-  // re-attempts the same dead import.
+  // build whose chunk hashes were replaced by a deploy. One hard reload pulls
+  // the live manifest; `reset()` cannot fix it because it re-attempts the same
+  // dead import.
   const isChunkError = isChunkLoadError(error);
   const [reloadSuppressed, setReloadSuppressed] = useState(false);
 

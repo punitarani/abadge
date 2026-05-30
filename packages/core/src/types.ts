@@ -135,7 +135,7 @@ export type CiphertextAccessResponse = TypeOf<typeof CiphertextAccessResponseSch
 export type RevealAccessResponse = TypeOf<typeof RevealAccessResponseSchema>;
 export type MountAccessResponse = TypeOf<typeof MountAccessResponseSchema>;
 
-// §RM-PR2 — unified read/use surfaces
+// Unified read/use access surfaces (canonical capabilities).
 export type ReadAccessInput = TypeOf<typeof ReadAccessSchema>;
 export type ReadAccessResponse = TypeOf<typeof ReadAccessResponseSchema>;
 export type UseAccessInput = TypeOf<typeof UseAccessSchema>;

@@ -15,10 +15,10 @@ import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
- * §AB-0050 — cursor pagination on items/permissions/agents. Pages must be
+ * Cursor pagination on items/permissions/agents. Pages must be
  * stable and non-overlapping under the (createdAt DESC, id DESC) keyset.
  */
-describe("list cursor pagination (AB-0050)", () => {
+describe("list cursor pagination", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 
@@ -87,7 +87,7 @@ describe("list cursor pagination (AB-0050)", () => {
     });
   });
 
-  test("items.listForAgent pages the agent's grant set exactly once each (AB-0010)", async () => {
+  test("items.listForAgent pages the agent's grant set exactly once each", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const agent = await seedAgent(db, { userId: owner.userId, orgId: org.orgId, kind: "remote" });
@@ -129,10 +129,9 @@ describe("list cursor pagination (AB-0050)", () => {
     expect([...seen].sort()).toEqual([...granted].sort()); // no gaps
   });
 
-  // §AB-0052 — regression for the sub-millisecond cursor precision bug.
   // When >MAX_PAGE_LIMIT rows share an identical `created_at` (e.g. a single
   // transaction), page 2+ must not silently drop rows.
-  describe("sub-millisecond cursor precision (AB-0052)", () => {
+  describe("sub-millisecond cursor precision", () => {
     const FIXED_TS = "2024-01-01 10:00:00.444588+00"; // has sub-ms component
     const N = 150; // page 1 = 100, page 2 = 50 — exercises the exact-match branch
 

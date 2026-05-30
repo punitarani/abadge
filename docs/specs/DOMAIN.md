@@ -139,23 +139,29 @@ A personal API key (prefix `abu_`) bound to a `(user, org)` pair. Authenticates 
 
 ### Permission
 
-A specific grant of one capability from one agent to one item.
+A specific grant of one capability from one agent to one **target**. A target is
+either a single item (`itemId`) or a whole profile (`profileId`) — exactly one is
+set per row.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | id | string (UUID) | Unique identifier |
 | organizationId | string | Owning org (FK → organization) |
 | agentId | string | The agent receiving access (FK → agent) |
-| itemId | string | The item being accessed (FK → item) |
+| itemId | string \| null | The item being accessed (set for item-target grants) |
+| profileId | string \| null | The profile being accessed (set for profile-target grants) |
 | capability | Capability | What the agent can do |
 | expiresAt | ISO 8601 \| null | Optional expiration (null = permanent) |
-| grantedBy | string | User who granted this permission |
+| grantedBy | string \| null | User who granted this permission (null if the granter was deleted) |
 | createdAt | ISO 8601 | Grant timestamp |
 
 **Invariants:**
-- Unique constraint on `(agentId, itemId, capability)` -- no duplicate permissions.
+- Exactly one of `itemId` / `profileId` is set per row.
+- Unique constraint on `(agentId, itemId, capability)` -- no duplicate item-target permissions.
 - Expired permissions are checked at access time and result in `PERMISSION_EXPIRED`.
 - No wildcard permissions exist.
+- **Item-target** grants accept only the legacy capability names (`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`) and reject canonical `read`/`use`.
+- **Profile-target** grants accept canonical `read`/`use`.
 
 ### AuditEntry
 
@@ -231,30 +237,47 @@ This table is defined in `packages/core/src/constants.ts` as `STANDARD_FIELDS_BY
 
 ### Capability
 
+The capability model is **two canonical capabilities** (`§RM-PR1` collapse):
+
 | Value | Description |
 |-------|-------------|
-| `read_ciphertext` | Read the encrypted blob for local decryption (ZK items, local agents only) |
-| `reveal_plaintext` | Decrypt and return plaintext via API (server-managed items only) |
-| `mount_env` | Inject secret into subprocess environment variable (local agents only) |
-| `mount_file` | Write secret to temporary file with 0600 permissions (local agents only) |
+| `read` | Read the secret: encrypted blob for local decryption (ZK), or decrypted plaintext via API (server-managed). |
+| `use` | Deliver the secret for local injection: env var or temp file (0600). Local agents only. |
 
-### Capability Access Matrix
+**Legacy capability aliases** — still accepted on the wire and stored in
+existing `permissions` rows, mapped to canonical at access time:
 
-This is the core authorization table. It defines what is possible given an agent's locality and an item's storage mode.
+| Legacy alias | Maps to | Original meaning |
+|---|---|---|
+| `read_ciphertext` | `read` | Read the encrypted blob (ZK items, local agents only) |
+| `reveal_plaintext` | `read` | Decrypt and return plaintext (server-managed items) |
+| `mount_env` | `use` | Inject secret into subprocess environment variable |
+| `mount_file` | `use` | Write secret to a temporary file (0600) |
 
-| Capability | Local + ZK | Local + Server | Remote + ZK | Remote + Server |
-|---|---|---|---|---|
-| `read_ciphertext` | **Allowed** | **Denied** | **Denied** | **Denied** |
-| `reveal_plaintext` | **Denied** | **Allowed** | **Denied** | **Allowed** |
-| `mount_env` | **Allowed** | **Allowed** | **Denied** | **Denied** |
-| `mount_file` | **Allowed** | **Allowed** | **Denied** | **Denied** |
+New code and grants should use the canonical pair. The mapping is
+`LEGACY_TO_CANONICAL` in `packages/core/src/constants.ts`.
 
-**Key rules:**
+### Locality / storage-mode legality
+
+Runtime legality of an access attempt is determined by the unified access
+pipeline (agent locality × item storage mode × canonical capability):
+
 1. Remote agents can never access ZK items (they cannot decrypt).
-2. Remote agents can only use `reveal_plaintext` on server-managed items.
-3. `read_ciphertext` only makes sense for ZK items (returns encrypted blob for local decryption).
-4. `reveal_plaintext` only makes sense for server-managed items (server must decrypt).
-5. `mount_env` and `mount_file` require a local runtime to inject/write the secret.
+2. Remote agents can only `read` (reveal) server-managed items — they cannot read ZK ciphertext and cannot `use` (mount).
+3. `read` on a ZK item returns the encrypted envelope for local daemon decryption; on a server-managed item the server decrypts and returns plaintext.
+4. `use` (env/file delivery) requires a local runtime to inject/write the secret.
+
+> The legacy `CAPABILITY_MATRIX` (`locality × storage-mode → legacy capabilities`)
+> in `packages/core/src/constants.ts` is `@deprecated`. It is retained only for
+> the legacy item-target access path during the deprecation window. The legacy
+> four names map onto the rules above:
+>
+> | Legacy capability | Local + ZK | Local + Server | Remote + ZK | Remote + Server |
+> |---|---|---|---|---|
+> | `read_ciphertext` | Allowed | Denied | Denied | Denied |
+> | `reveal_plaintext` | Denied | Allowed | Denied | Allowed |
+> | `mount_env` | Allowed | Allowed | Denied | Denied |
+> | `mount_file` | Allowed | Allowed | Denied | Denied |
 
 ### AuditEventType
 
@@ -413,7 +436,7 @@ Every error response includes `{ code, message, hint, meta? }`. The `hint` is al
 | `INVALID_CAPABILITY_STORAGE` | 400 | Capability incompatible with item storage mode | `read_ciphertext requires a zero-knowledge item. Use reveal_plaintext for server-managed items.` |
 | `STALE_VERSION` | 400 | `contentVersion` mismatch on item update | -- |
 | `UNAUTHORIZED` | 401 | Missing or invalid authentication | -- |
-| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent register --name <name> --kind <kind>` |
+| `AGENT_REVOKED` | 401 | Agent is revoked and cannot authenticate | `Register a new agent: abadge agent add --name <name> --kind <kind>` |
 | `SESSION_EXPIRED` | 401 | Human session has expired | `Run: abadge login` |
 | `BOOTSTRAP_TOKEN_EXPIRED` | 401 | Enrollment token has expired | `Issue a fresh bootstrap token for the agent and re-enroll.` |
 | `FORBIDDEN` | 403 | Authenticated but not authorized | -- |

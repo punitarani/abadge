@@ -34,16 +34,15 @@ function org(overrides: Partial<ResumeOrgSummary>): ResumeOrgSummary {
   };
 }
 
-describe("decideResumeAction (§REVAMP-PR5: single-step onboarding)", () => {
+describe("decideResumeAction", () => {
   test("no orgs -> fall-through (show the choose screen)", () => {
     expect(decideResumeAction([])).toEqual({ kind: "fall-through" });
   });
 
   test("any orgs at all -> redirect (auto-default profile exists)", () => {
-    // PR3 auto-creates a server_managed default profile when an org is
-    // created, so any org coming back from the list is usable. We trust
-    // the dashboard and the profiles page to surface recovery flows for
-    // the edge case where an admin deleted the default profile.
+    // A server_managed default profile is auto-created with every org, so any
+    // org coming back from the list is usable. The dashboard and profiles page
+    // surface recovery flows for the edge case where an admin deleted it.
     expect(decideResumeAction([org({ hasBootstrappedProfile: true })])).toEqual({
       kind: "redirect",
     });

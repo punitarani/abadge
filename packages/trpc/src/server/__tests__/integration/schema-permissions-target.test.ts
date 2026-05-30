@@ -4,7 +4,7 @@ import { seedAgent, seedOrg, seedProfile, seedServerItem, seedUser } from "../he
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-// §RM-PR1 — A permission targets EXACTLY one of (item, profile). Both-set
+// A permission targets EXACTLY one of (item, profile). Both-set
 // and both-null rows are illegal at the storage layer, and (agent, profile,
 // capability) is unique-per-row just like (agent, item, capability).
 

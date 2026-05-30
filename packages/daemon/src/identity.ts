@@ -5,9 +5,9 @@ import { generateEd25519KeyPair, signEd25519 } from "@abadge/crypto";
 /**
  * Daemon identity used for TOFU (trust-on-first-use) peer verification.
  *
- * The CLI pins the fingerprint of `publicKey` on first contact (W3P12-001 /
- * Critical C-2) so a same-UID squatter that binds the socket before the real
- * daemon can't capture the operator's master password. `sessionStartMs` is
+ * The CLI pins the fingerprint of `publicKey` on first contact, so a same-UID
+ * squatter that binds the socket before the real daemon can't capture the
+ * operator's master password. `sessionStartMs` is
  * informational metadata baked into the challenge-response payload so replays
  * across daemon restarts are trivially distinguishable — it is NOT part of the
  * freshness guarantee (the client-supplied nonce provides that).

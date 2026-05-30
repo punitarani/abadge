@@ -27,10 +27,6 @@ const client = new AbadgeUserClient({
   Active organization ID. Sent as `X-Abadge-Org-Id` on every request. Required when the signed-in user belongs to multiple organizations.
 </ParamField>
 
-<Tip>
-  A legacy `{ apiUrl, token }` config is also accepted for backwards compatibility, but new code should use `sessionToken`.
-</Tip>
-
 ## Organizations
 
 ```ts
@@ -45,8 +41,8 @@ client.inviteMember(orgId, { role });           // no email param — invites ar
 client.getInviteInfo(token);
 client.acceptInvite(token);
 client.revokeInvite(orgId, invitationId);
-client.removeMember(orgId, memberId);           // memberId, not userId
-client.updateMemberRole(orgId, memberId, role);
+client.removeMember(orgId, userId);
+client.updateMemberRole(orgId, userId, role);
 ```
 
 ## Profiles
@@ -121,27 +117,40 @@ client.issueBootstrapToken(agentId);
 
 ## Permissions
 
+`permissions.create` takes either an item target or a profile target
+(grants then apply to every current and future item in the profile). All
+capabilities in one call commit atomically.
+
 ```ts
+// Item target
 client.permissions.create({
   agentId: string;
   itemId: string;
-  capabilities: Capability[];
-  expiresAt?: string;        // ISO 8601
+  capabilities: Capability[];   // e.g. ["read"] | ["use"]
+  expiresAt?: string;           // ISO 8601
 });
 
-client.permissions.list({ agentId?, itemId? });
+// Profile target
+client.permissions.create({
+  agentId: string;
+  profileId: string;
+  capabilities: Capability[];
+  expiresAt?: string;
+});
+
+client.permissions.list({ agentId?, itemId?, profileId? });
 client.permissions.delete(permissionId);
 ```
 
 ## API keys
 
-Manage personal API keys (`abu_`) for the active org. The full secret is returned exactly once from `create`. A personal API key authenticates the management surface only — it can never reach `access.*` — and cannot create or revoke other API keys (so call these from a browser-backed session).
-
-```ts
-client.apiKeys.create({ name: string; expiresAt?: string });  // returns { apiKey, key }
-client.apiKeys.list();                                        // secrets never returned
-client.apiKeys.revoke(keyId);
-```
+Personal API keys (`abu_`) for the management surface are not exposed through
+the SDK. Create, list, and revoke them from the dashboard org Settings page or
+the REST endpoints (`POST` / `GET` / `DELETE /v1/api-keys`). A personal API key
+authenticates the management surface only — it can never reach `access.*` — and
+cannot create or revoke other API keys (so these calls require a browser-backed
+session). Once issued, an `abu_` key can be used as the `sessionToken` for an
+`AbadgeUserClient`.
 
 ## Audit
 

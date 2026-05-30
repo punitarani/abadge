@@ -38,14 +38,17 @@ The audit log is the source of truth for what happened in abadge. It's append-on
 
 | Category | Events |
 |---|---|
-| Profile | `profile.create`, `profile.rotate`, `profile.delete`, `profile.delete_cascade` |
+| Profile | `profile.create`, `profile.read`, `profile.bootstrap`, `profile.rotate`, `profile.delete`, `profile.delete_cascade`, `profile.setup_recovery` |
 | Item | `item.create`, `item.read`, `item.update`, `item.delete`, `item.delete_cascade`, `item.export` |
-| Auth | `auth.login`, `auth.logout`, `auth.token_issue`, `auth.token_revoke` |
+| Auth | `auth.login`, `auth.logout`, `auth.signup`, `auth.token_issue`, `auth.token_revoke` |
 | Account | `account.register`, `account.claim`, `account.claim_complete` (auth.md [agentic registration](/api/agentic-registration)) |
+| Org | `org.create`, `org.read`, `org.update`, `org.delete`, `org.member_add`, `org.member_list`, `org.member_remove`, `org.member_role_change`, `org.invite`, `org.invite_accept`, `org.invite_reject`, `org.invite_revoke` |
 | Agent | `agent.create`, `agent.bootstrap_issue`, `agent.enroll`, `agent.revoke`, `agent.revoke_cascade`, `agent.session_issue`, `agent.session_reject`, `agent.session_revoke` |
 | API key | `user_api_key.create`, `user_api_key.revoke`, `user_api_key.expire` |
 | Permission | `permission.create`, `permission.revoke`, `permission.revoke_cascade` |
 | Access | `access.ciphertext`, `access.reveal`, `access.mount_env`, `access.mount_file` |
+
+The canonical `read` action audits as `access.reveal`; the canonical `use` action audits as `access.mount_env` or `access.mount_file` by delivery. `access.ciphertext` is emitted only by the legacy ciphertext endpoint.
 
 ## Results
 

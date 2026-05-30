@@ -13,10 +13,10 @@ function parseLimit(value: string | undefined): number | undefined {
 
 export function createAuditCommand(): Command {
   return new Command("audit")
-    .description("View access audit log")
+    .description("View recent access audit events for the active organization")
     .option("--json", "Output as JSON")
-    .option("--limit <count>", "Limit results")
-    .option("--cursor <cursor>", "Pagination cursor")
+    .option("--limit <count>", "Maximum number of entries to return")
+    .option("--cursor <cursor>", "Pagination cursor from a previous page")
     .action(async (opts: { json?: boolean; limit?: string; cursor?: string }) => {
       try {
         const client = await createUserApiClient();

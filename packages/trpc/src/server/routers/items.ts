@@ -83,14 +83,14 @@ const loadOwnedItem = (
   });
 
 /**
- * ZK insert under an advisory lock (§I5-RACE).
- * Resolves the target ZK profile (an explicit `opts.profileId` from §AB-0002
- * when given — already validated for org + mode by the caller — otherwise the
- * org's first ZK profile, legacy behavior), takes `pg_advisory_xact_lock` on
- * it, re-reads keyVersion (defending against a rotate that committed between
- * the profile SELECT and the lock acquisition), optionally enforces CAS via
- * expectedKeyVersion, then inserts with cryptoVersion tagged to the current
- * keyVersion. Designed to be called from inside `ctx.db.transaction(...)`.
+ * ZK insert under an advisory lock.
+ * Resolves the target ZK profile (an explicit `opts.profileId` when given —
+ * already validated for org + mode by the caller — otherwise the org's first ZK
+ * profile), takes `pg_advisory_xact_lock` on it, re-reads keyVersion (defending
+ * against a rotate that committed between the profile SELECT and the lock
+ * acquisition), optionally enforces CAS via expectedKeyVersion, then inserts
+ * with cryptoVersion tagged to the current keyVersion. Designed to be called
+ * from inside `ctx.db.transaction(...)`.
  */
 async function insertZeroKnowledgeItem(
   txScope: ScopedDb,
@@ -101,8 +101,8 @@ async function insertZeroKnowledgeItem(
     encryptedItemKey: string;
     ciphertext: string;
     expectedKeyVersion: number | undefined;
-    // §AB-0002 — explicit target profile id; falls back to the org's first ZK
-    // profile when undefined to preserve legacy single-profile behavior.
+    // Explicit target profile id; falls back to the org's first ZK profile
+    // when undefined.
     profileId: string | undefined;
   },
 ): Promise<void> {
@@ -175,7 +175,7 @@ async function insertZeroKnowledgeItem(
 }
 
 /**
- * §AB-0001 / §AB-0002 — resolve the profile an item.create should target.
+ * Resolve the profile an item.create should target.
  *
  * With an explicit `profileId`: load it scoped to the caller's org and assert
  * it matches the item's storage mode (PROFILE_NOT_FOUND if it isn't in the org,
@@ -259,14 +259,14 @@ const createItem = (input: CreateItemInput) =>
     const ctx = yield* SessionRequestContextTag;
     const userId = ctx.identity.userId;
 
-    // §W1S7-001 — ZK branch: client supplies `id` because it is bound into the
-    // XChaCha20-Poly1305 AAD at encrypt time. Server-managed items still mint
+    // ZK items: the client supplies `id` because it is bound into the
+    // XChaCha20-Poly1305 AAD at encrypt time. Server-managed items mint
     // the id here (the AAD for AES-GCM is derived server-side).
     const id = input.storageMode === "zero_knowledge" ? input.id : crypto.randomUUID();
 
     if (input.storageMode === "zero_knowledge") {
-      // §AB-0002 — when the client targets an explicit profile, validate it
-      // (org ownership + ZK mode) up front so callers get PROFILE_NOT_FOUND /
+      // When the client targets an explicit profile, validate it (org
+      // ownership + ZK mode) up front so callers get PROFILE_NOT_FOUND /
       // PROFILE_MODE_MISMATCH; default resolution + advisory lock stay inside
       // insertZeroKnowledgeItem.
       if (input.profileId !== undefined) {
@@ -288,9 +288,9 @@ const createItem = (input: CreateItemInput) =>
           }),
         ),
       ).pipe(
-        // §W1S7-001 — a client-provided id that collides with an existing row
-        // must surface as ConflictError, not a 500. The unique-violation is
-        // the only domain-neutral DB error this insert can raise.
+        // A client-provided id that collides with an existing row must surface
+        // as ConflictError, not a 500. The unique-violation is the only
+        // domain-neutral DB error this insert can raise.
         Effect.catchIf(
           (e) => isUniqueViolation(e),
           () =>
@@ -305,16 +305,15 @@ const createItem = (input: CreateItemInput) =>
         ),
       );
     } else {
-      // §AB-0001 — bind the item to a real profile (the org's default
-      // server_managed profile, or an explicit one per §AB-0002) so that
-      // profile-level grants cover it (lookupPermission skips NULL-profile
-      // rows) and the AAD is profile-scoped instead of the null sentinel.
+      // Bind the item to a real profile (the org's default server_managed
+      // profile, or an explicit one) so that profile-level grants cover it
+      // (lookupPermission skips NULL-profile rows) and the AAD is
+      // profile-scoped instead of the null sentinel.
       const targetProfileId = yield* resolveTargetProfile("server_managed", input.profileId);
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      // §AB-0030 — encrypt under the profile's DEK (v3 envelope), provisioning
-      // the DEK on first use. AAD still binds (orgId, profileId, itemId,
-      // keyVersion) so a DB-write adversary can't substitute rows across items
-      // or organizations.
+      // Encrypt under the profile's DEK (v3 envelope), provisioning the DEK on
+      // first use. AAD binds (orgId, profileId, itemId, keyVersion) so a
+      // DB-write adversary can't substitute rows across items or organizations.
       const encrypted = yield* tryAsync(() =>
         encryptServerEnvelope(
           ctx.db,
@@ -364,8 +363,8 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.organizationId);
-    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC): an immutable
-    // tuple, so a concurrent insert never shifts an existing page.
+    // Keyset pagination over (createdAt DESC, id DESC): an immutable tuple,
+    // so a concurrent insert never shifts an existing page.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
@@ -376,9 +375,9 @@ const listItems = (input: Schema.Schema.Type<typeof ItemListQuerySchema>) =>
           storageMode: scope.tables.items.storageMode,
           cryptoVersion: scope.tables.items.cryptoVersion,
           contentVersion: scope.tables.items.contentVersion,
-          // §C2 — required so the web dashboard's profile-grant
-          // blast-radius dialog can count items in a profile without
-          // fetching item-detail rows for every item.
+          // Required so the web dashboard's profile-grant blast-radius dialog
+          // can count items in a profile without fetching item-detail rows for
+          // every item.
           profileId: scope.tables.items.profileId,
           createdAt: scope.tables.items.createdAt,
           updatedAt: scope.tables.items.updatedAt,
@@ -403,8 +402,8 @@ const listItemsForAgent = (input: Schema.Schema.Type<typeof ItemListQuerySchema>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
     const scope = scopedDb(ctx.db, ctx.identity.agentOrganizationId);
-    // §AB-0050 — the agent's grant set is not structurally bounded, so page it
-    // on the same (createdAt DESC, id DESC) keyset as the session list.
+    // The agent's grant set is not structurally bounded, so page it on the
+    // same (createdAt DESC, id DESC) keyset as the session list.
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     const result = yield* tryAsync(() =>
@@ -495,8 +494,8 @@ const updateItem = (itemId: string, input: UpdateItemInput) =>
       }
     } else {
       const plaintext = new TextEncoder().encode(JSON.stringify(input.payload));
-      // §AB-0030 — rewrite forward: v3 under the profile's DEK when the row has
-      // a profile, else v2 (legacy NULL-profile rows stay decryptable).
+      // Rewrite forward: v3 under the profile's DEK when the row has a profile,
+      // else v2 (NULL-profile rows stay decryptable).
       const encrypted = yield* tryAsync(() =>
         encryptServerEnvelope(
           ctx.db,
@@ -585,7 +584,8 @@ const ownerReveal = (itemId: string) =>
       );
     }
 
-    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
+    // Version-branched decrypt: v1/v2 under the master key, v3 under the
+    // per-profile DEK.
     const decrypted = yield* tryAsync(() =>
       decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.organizationId, {
         id: item.id,
@@ -668,8 +668,8 @@ export const itemsRouter = createTrpcRouter({
     .mutation(({ ctx, input }) => runSessionEffect(ctx, createItem(input))),
   list: scopedSessionProcedure("items:read")
     .meta({ openapi: { method: "GET", path: "/items", tags: ["items"], protect: true } })
-    // §AB-0050 — input is optional so existing no-arg `list()` callers keep
-    // working (first page); pagination params are opt-in.
+    // Input is optional: a no-arg `list()` returns the first page, and
+    // pagination params are opt-in.
     .input(strictSchema(Schema.UndefinedOr(ItemListQuerySchema)))
     .output(strictSchema(ItemListResultSchema))
     .query(({ ctx, input }) => runSessionEffect(ctx, listItems(input ?? {}))),

@@ -31,10 +31,9 @@ import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
-// §REVAMP-PR5 (Task 9.3) — Surface only the canonical capabilities in
-// the create-grant UI. Legacy capabilities (read_ciphertext / mount_*)
-// are still accepted by the server for existing grants, but no new grant
-// should be written under those names.
+// Surface only the canonical capabilities in the create-grant UI. Legacy
+// capabilities (read_ciphertext / mount_*) remain accepted by the server for
+// existing grants, but no new grant should be written under those names.
 const CAPABILITY_META: Record<
   (typeof CANONICAL_CAPABILITIES)[number],
   { label: string; description: string; constraint: string }

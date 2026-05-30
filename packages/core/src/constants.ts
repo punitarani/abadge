@@ -19,19 +19,18 @@ export const AGENT_LOCALITIES = ["local", "remote"] as const;
 export type AgentLocality = (typeof AGENT_LOCALITIES)[number];
 
 // `public_key_session` (Ed25519 keypair → short-lived `abs_` session tokens) is
-// the only agent auth method. The former `legacy_api_key` method (`abl_`/`abg_`
-// long-lived keys) was fully removed; programmatic secret access now always goes
-// through keypair-backed agent sessions. The column stays a single-value enum so
-// the public `Agent` shape is unchanged.
+// the only agent auth method: programmatic secret access always goes through a
+// keypair-backed agent session. Modelled as a single-value enum so the public
+// `Agent` shape can carry an `authMethod` field without admitting other values.
 export const AGENT_AUTH_METHODS = ["public_key_session"] as const;
 export type AgentAuthMethod = (typeof AGENT_AUTH_METHODS)[number];
 
 export const CAPABILITIES = [
-  // §RM-PR1 — Canonical capabilities (post-collapse).
+  // Canonical capabilities.
   "read",
   "use",
-  // Legacy capabilities — still accepted on the wire and stored in existing
-  // rows; mapped to canonical at access-time via `LEGACY_TO_CANONICAL`.
+  // Legacy capability aliases — accepted on the wire and stored in permission
+  // rows; mapped to canonical at access time via `LEGACY_TO_CANONICAL`.
   "read_ciphertext",
   "reveal_plaintext",
   "mount_env",
@@ -48,9 +47,8 @@ export type Capability = (typeof CAPABILITIES)[number];
 export const CANONICAL_CAPABILITIES = ["read", "use"] as const satisfies readonly Capability[];
 
 /**
- * Legacy capabilities — retained because existing `permissions` rows already
- * use these names, and existing access procedures key off them. New writes
- * should prefer the canonical pair.
+ * Legacy capability aliases. Permission rows and item-target access procedures
+ * use these names; new writes should prefer the canonical pair.
  */
 export const LEGACY_CAPABILITIES = [
   "read_ciphertext",
@@ -60,9 +58,8 @@ export const LEGACY_CAPABILITIES = [
 ] as const satisfies readonly Capability[];
 
 /**
- * Maps each legacy capability to its canonical equivalent. Used by the
- * upcoming unified access pipeline to evaluate legacy grants and canonical
- * grants under one rule set.
+ * Maps each legacy alias to its canonical capability, so the access pipeline can
+ * evaluate legacy and canonical grants under one rule set.
  */
 export const LEGACY_TO_CANONICAL: Record<(typeof LEGACY_CAPABILITIES)[number], Capability> = {
   read_ciphertext: "read",
@@ -100,8 +97,8 @@ export const AUDIT_EVENT_TYPES = [
   "account.register",
   "account.claim",
   "account.claim_complete",
-  // Expired-at-auth-time rejection (passive expiry, not admin-initiated revocation).
-  // Distinct from user_api_key.revoke so audit queries can distinguish the two.
+  // Passive expiry at auth time (a key past `expiresAt`), kept distinct from
+  // `user_api_key.revoke` (admin-initiated) so audit queries can tell them apart.
   "user_api_key.expire",
   // org events
   "org.create",
@@ -120,8 +117,8 @@ export const AUDIT_EVENT_TYPES = [
   "agent.create",
   "agent.bootstrap_issue",
   "agent.enroll",
-  // Retained for querying historical audit rows only; the rotate procedure was
-  // removed when legacy_api_key was dropped. New code must not write this event.
+  // Read-only event type: no procedure emits it; present only so audit rows
+  // carrying it still resolve against this enum.
   "agent.rotate",
   "agent.revoke",
   "agent.revoke_cascade",
@@ -154,11 +151,10 @@ export const STANDARD_FIELDS_BY_KIND = {
 } as const satisfies Record<ItemKind, readonly string[]>;
 
 /**
- * @deprecated As of the §RM-PR1 capability collapse, runtime legality of an
- * access attempt is determined by the unified access pipeline (locality +
- * storage mode + canonical capability), not by lookup in this table. The
- * matrix is retained only for the legacy access endpoints during the
- * deprecation window and will be removed once those endpoints are deleted.
+ * @deprecated Determine access legality in the access pipeline (locality +
+ * storage mode + canonical capability), not by lookup in this table. This
+ * matrix serves only the item-target access endpoints keyed off the legacy
+ * capability names.
  */
 export const CAPABILITY_MATRIX = {
   local: {
@@ -234,13 +230,13 @@ export const UNCLAIMED_ACCOUNT_EMAIL_DOMAIN = "unclaimed.abadge.invalid";
 export const AGENT_PRECLAIM_SCOPES = ["abadge:account.read"] as const;
 export const AGENT_POSTCLAIM_SCOPES = ["abadge:account.read", "abadge:account.manage"] as const;
 
-/** §AGC1a — Maximum agents per organization. */
+/** Maximum agents per organization. */
 export const MAX_AGENTS_PER_ORG = 500;
 
-/** §AGC1b — Maximum serialized JSON bytes for agent metadata. */
+/** Maximum serialized JSON bytes for agent metadata. */
 export const MAX_AGENT_METADATA_JSON_BYTES = 16 * 1024; // 16 KB
 
-/** §AGC1b — Maximum nesting depth for agent metadata JSON. */
+/** Maximum nesting depth for agent metadata JSON. */
 export const MAX_AGENT_METADATA_DEPTH = 8;
 
 /**

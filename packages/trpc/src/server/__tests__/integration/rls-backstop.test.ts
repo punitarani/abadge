@@ -13,7 +13,7 @@ import { createTestAuth } from "../helpers/test-auth";
 import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-// §AB-0011 — the RLS backstop only enforces for NON-superuser, NON-BYPASSRLS roles
+// The RLS backstop only enforces for NON-superuser, NON-BYPASSRLS roles
 // (the default test role is superuser and bypasses RLS, which is why the rest of the
 // suite is unaffected by enabling RLS). This test provisions a restricted role like
 // the production `app_runtime` and proves: the org GUC isolates rows, a wrong/unset
@@ -32,7 +32,7 @@ function rlsRoleUrl(): string {
   return u.toString();
 }
 
-describe("§AB-0011 — Postgres RLS backstop", () => {
+describe("Postgres RLS backstop", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
   let rlsDb: Database;
@@ -207,7 +207,7 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // §AB-0011 activation — real tRPC procedures driven over the NOBYPASSRLS role.
+  // RLS activation — real tRPC procedures driven over the NOBYPASSRLS role.
   //
   // The default integration role is a superuser that BYPASSES RLS, so these are
   // the ONLY tests that prove the request-path GUC wiring (the init.ts middleware
@@ -347,14 +347,14 @@ describe("§AB-0011 — Postgres RLS backstop", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // §AB-0011 regression — org + default-profile creation under the restricted role.
+  // Org + default-profile creation under the restricted role.
   //
-  // These cover the exact path that 500s in prod when a FORCE-RLS schema runs
-  // against code that has not yet wired the request GUC: the default-profile
-  // INSERT in seedOrgWithOwnerProfile is subject to FORCE-RLS WITH CHECK and only
-  // passes because the seed sets `app.current_org` to the just-minted org id. The
-  // rest of the suite seeds orgs via the RLS-bypassing superuser, so before these
-  // the create procedures were never driven as the NOBYPASSRLS role.
+  // These cover the path that 500s when a FORCE-RLS schema runs against code
+  // that has not wired the request GUC: the default-profile INSERT in
+  // seedOrgWithOwnerProfile is subject to FORCE-RLS WITH CHECK and only passes
+  // because the seed sets `app.current_org` to the just-minted org id. The rest
+  // of the suite seeds orgs via the RLS-bypassing superuser, so these are the
+  // only tests that drive the create procedures as the NOBYPASSRLS role.
   // ---------------------------------------------------------------------------
 
   test("organizations.create seeds org + default profile under the restricted role (WITH CHECK passes)", async () => {

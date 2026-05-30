@@ -14,7 +14,7 @@ import { createAgentCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
 /**
- * Access-pipeline audit invariants (AB-0022)
+ * Access-pipeline audit invariants
  *
  * Pins the access pipeline's strongest properties so a future refactor can't
  * silently drop them:
@@ -22,7 +22,7 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
  *  - a granted mount reservation and its "allowed" audit row are written in
  *    one transaction (an audit-insert failure rolls back the reservation).
  */
-describe("access pipeline audit invariants (AB-0022)", () => {
+describe("access pipeline audit invariants", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 
@@ -112,7 +112,7 @@ describe("access pipeline audit invariants (AB-0022)", () => {
     });
 
     // Throw only on `insert(auditLogs)`; the reservation insert in the same
-    // (sub)transaction must roll back with it. §AB-0011: the GUC middleware now
+    // (sub)transaction must roll back with it. The GUC middleware
     // opens the request transaction and the pipeline's reservation+audit writes
     // run in a nested SAVEPOINT of it, so the hijack must recurse into nested
     // `.transaction()` calls — otherwise the savepoint would get a non-hijacked tx

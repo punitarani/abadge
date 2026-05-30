@@ -55,8 +55,8 @@ const testEnv: Bindings = {
 
 type AnyObject = Record<string, unknown>;
 
-describe("Envelope uniformity (§ENV2)", () => {
-  test("§ENV2c — Hono 404 returns canonical envelope", async () => {
+describe("Envelope uniformity", () => {
+  test("Hono 404 returns canonical envelope", async () => {
     const res = await app.request("http://localhost/nonexistent-route-xyz", undefined, testEnv);
     expect(res.status).toBe(404);
     const body = (await res.json()) as AnyObject;
@@ -68,7 +68,7 @@ describe("Envelope uniformity (§ENV2)", () => {
     });
   });
 
-  test("§ENV2c — Hono 404 on POST includes method in meta", async () => {
+  test("Hono 404 on POST includes method in meta", async () => {
     const res = await app.request("http://localhost/bogus", { method: "POST" }, testEnv);
     expect(res.status).toBe(404);
     const body = (await res.json()) as AnyObject;

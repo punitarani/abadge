@@ -17,27 +17,27 @@ export const permissions = pgTable(
     agentId: text("agent_id")
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
-    // §RM-PR1 — A permission targets EITHER a single item or a whole profile,
-    // never both. itemId is now nullable; the CHECK constraint below enforces
+    // A permission targets EITHER a single item or a whole profile, never both.
+    // Both itemId and profileId are nullable; the CHECK constraint below enforces
     // exactly-one-target. Profile-target permissions cascade-grant access to
     // every item under the profile.
     itemId: text("item_id").references(() => items.id, { onDelete: "cascade" }),
     profileId: text("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     capability: text("capability", { enum: CAPABILITIES }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
-    // §AB-0043 — nullable + SET NULL so a grant outlives the user who issued it:
-    // deleting the granter must not revoke the agent's access (org-scoped lifecycle).
+    // Nullable + SET NULL so a grant outlives the user who issued it: deleting
+    // the granter must not revoke the agent's access (org-scoped lifecycle).
     grantedBy: text("granted_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    // Existing uniqueness for item-target rows. Partial WHERE keeps NULL
-    // itemId rows from colliding on the (agent, NULL, cap) tuple.
+    // Uniqueness for item-target rows. Partial WHERE keeps NULL itemId rows
+    // from colliding on the (agent, NULL, cap) tuple.
     uniqueIndex("permissions_unique_idx")
       .on(table.agentId, table.itemId, table.capability)
       .where(sql`${table.itemId} IS NOT NULL`),
-    // §RM-PR1 — Uniqueness for profile-target rows: each (agent, profile, cap)
-    // can be granted at most once.
+    // Uniqueness for profile-target rows: each (agent, profile, cap) can be
+    // granted at most once.
     uniqueIndex("permissions_agent_profile_cap_idx")
       .on(table.agentId, table.profileId, table.capability)
       .where(sql`${table.profileId} IS NOT NULL`),
@@ -45,8 +45,8 @@ export const permissions = pgTable(
     index("permissions_agent_id_idx").on(table.agentId),
     index("permissions_item_id_idx").on(table.itemId),
     index("permissions_profile_id_idx").on(table.profileId),
-    // §RM-PR1 — Exactly one of (itemId, profileId) must be non-null. Both-set
-    // and both-null are illegal at the storage layer.
+    // Exactly one of (itemId, profileId) must be non-null. Both-set and
+    // both-null are illegal at the storage layer.
     check(
       "permissions_exactly_one_target",
       sql`(${table.itemId} IS NOT NULL AND ${table.profileId} IS NULL)

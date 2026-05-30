@@ -48,7 +48,7 @@ describe("items CRUD", () => {
     expect(result.item.storageMode).toBe("server_managed");
   });
 
-  test("§AB-0030/§AB-0032: new server_managed writes land as v4 (per-profile DEK + key commitment) and round-trip", async () => {
+  test("new server_managed writes land as v4 (per-profile DEK + key commitment) and round-trip", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -66,7 +66,7 @@ describe("items CRUD", () => {
 
     const [row] = await db.select().from(items).where(eq(items.id, created.id));
     expect(row).toBeDefined();
-    // §AB-0030/§AB-0032 — new writes are the per-profile envelope with a key-commitment
+    // New writes are the per-profile envelope with a key-commitment
     // tag (v4), not direct-key v2 or the pre-commitment v3.
     expect(row?.serverKeyVersion).toBe(4);
 
@@ -82,7 +82,7 @@ describe("items CRUD", () => {
     expect((revealed.payload.fields as Record<string, string>).token).toBe("bound-to-item");
   });
 
-  test("§W1S7-002: updating a v1 server_managed row rewrites as AAD-bound v2", async () => {
+  test("updating a v1 server_managed row rewrites as AAD-bound v2", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
