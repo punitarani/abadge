@@ -150,4 +150,50 @@ describe("AbadgeApiError", () => {
       field: "token",
     });
   });
+
+  test("fromResponse captures X-Request-Id header", async () => {
+    const res = new Response(JSON.stringify({ error: "boom", code: "INTERNAL_ERROR" }), {
+      status: 500,
+      headers: { "content-type": "application/json", "X-Request-Id": "req_abc123" },
+    });
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.requestId).toBe("req_abc123");
+  });
+
+  test("fromResponse requestId is case-insensitive on the header name", async () => {
+    const res = new Response(JSON.stringify({ error: "boom", code: "INTERNAL_ERROR" }), {
+      status: 500,
+      headers: { "content-type": "application/json", "x-request-id": "req_lower" },
+    });
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.requestId).toBe("req_lower");
+  });
+
+  test("fromResponse requestId is undefined when header absent", async () => {
+    const res = new Response(JSON.stringify({ error: "boom", code: "INTERNAL_ERROR" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+    const err = await AbadgeApiError.fromResponse(res, "fallback");
+    expect(err.requestId).toBeUndefined();
+  });
+
+  test("fromUnknown picks up requestId from error envelope meta", () => {
+    const err = AbadgeApiError.fromUnknown(
+      {
+        message: "boom",
+        data: { httpStatus: 500, code: "INTERNAL_ERROR", meta: { requestId: "req_from_meta" } },
+      },
+      "fallback",
+    );
+    expect(err.requestId).toBe("req_from_meta");
+  });
+
+  test("fromUnknown requestId is undefined when meta lacks it", () => {
+    const err = AbadgeApiError.fromUnknown(
+      { message: "boom", data: { httpStatus: 500, code: "INTERNAL_ERROR" } },
+      "fallback",
+    );
+    expect(err.requestId).toBeUndefined();
+  });
 });

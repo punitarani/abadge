@@ -202,7 +202,13 @@ function resolveCallerMethod(
   const parts = procedurePath.split(".");
   let current: unknown = caller;
   for (const part of parts) {
-    if (current === null || typeof current !== "object") return null;
+    // tRPC v11 caller nodes are callable proxies (typeof === "function"), not
+    // plain objects as in v10. Accept both so `caller.items.list` resolves;
+    // an "object"-only guard rejected the v11 caller on the first hop and
+    // 500'd every /v1 route.
+    if (current === null || (typeof current !== "object" && typeof current !== "function")) {
+      return null;
+    }
     current = (current as Record<string, unknown>)[part];
   }
   return typeof current === "function" ? (current as (input: unknown) => Promise<unknown>) : null;
