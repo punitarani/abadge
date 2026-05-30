@@ -59,7 +59,9 @@ function promptSilent(question: string): Promise<string> {
       stdin.setRawMode(true);
     }
 
-    process.stdout.write(question);
+    // Prompt chrome goes to stderr, never stdout — so `--json` output stays
+    // machine-parseable even when a value is read interactively.
+    process.stderr.write(question);
     stdin.resume();
     let input = "";
 
@@ -74,7 +76,7 @@ function promptSilent(question: string): Promise<string> {
         }
         stdin.removeListener("data", onData);
         stdin.pause();
-        process.stdout.write("\n");
+        process.stderr.write("\n");
         resolve(next.input);
         return;
       }
@@ -83,4 +85,39 @@ function promptSilent(question: string): Promise<string> {
 
     stdin.on("data", onData);
   });
+}
+
+/**
+ * Strip a single trailing newline (`\n` or `\r\n`). `echo 'x'` adds one and
+ * `echo -n 'x'` does not — both should store the same value.
+ */
+export function stripTrailingNewline(value: string): string {
+  return value.replace(/\r?\n$/, "");
+}
+
+/** Read a piped (non-TTY) stream fully to EOF as UTF-8. */
+function readStreamToEnd(stream: NodeJS.ReadStream): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    stream.setEncoding("utf-8");
+    stream.on("data", (chunk: string) => {
+      data += chunk;
+    });
+    stream.on("end", () => resolve(data));
+    stream.on("error", reject);
+    stream.resume();
+  });
+}
+
+/**
+ * Read a secret value. On a TTY, prompt interactively without echo. When stdin
+ * is piped (CI, `echo -n 'secret' | abadge item add`), read it to EOF as the
+ * value and strip one trailing newline — so a value without a trailing newline
+ * is never silently dropped for lack of one, and `echo` / `echo -n` agree.
+ */
+export async function readSecretValue(question: string): Promise<string> {
+  if (process.stdin.isTTY) {
+    return promptSilent(question);
+  }
+  return stripTrailingNewline(await readStreamToEnd(process.stdin));
 }
