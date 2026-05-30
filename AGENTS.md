@@ -189,9 +189,9 @@ Does not own:
 Owns:
 
 * MCP server setup and tool registration (stdio transport)
-* tools: `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`
+* tools: `list_items`, `use_secret`, `mount_secret`, `release_mount`, `get_audit`
 * auth: keypair-backed only (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`)
-* `run_with_secret`: spawns subprocess with secret in env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
+* `use_secret`: spawns subprocess with one secret (or every secret in a profile) injected into env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
 * `mount_secret`: returns opaque `mountId` (file path never returned to model); auto-cleanup after 5 min
 * orphan cleanup on startup (removes `abadge-*` temp dirs older than 10 minutes)
 * daemon client integration for local decryption of ZK items
