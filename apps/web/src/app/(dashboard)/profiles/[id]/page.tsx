@@ -394,13 +394,13 @@ function KeyManagementSection(): React.ReactElement {
       <div className="space-y-2">
         <KeyActionRow
           icon={<Lock className="h-4 w-4" />}
-          title="Change vault password"
+          title="Change profile password"
           description="Derive a new KEK and re-wrap the existing root key. Items are not re-encrypted."
           actionLabel="Change"
           onClick={() =>
             toast.info("Use the CLI: abadge profile change-password", {
               description:
-                "Vault password changes require your local daemon. Run the command in a terminal to proceed.",
+                "Profile password changes require your local daemon. Run the command in a terminal to proceed.",
               duration: 6000,
             })
           }

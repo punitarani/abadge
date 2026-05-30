@@ -15,7 +15,7 @@ import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 
-function storageModeLabel(storageMode: ItemDetail["storageMode"]): string {
+export function storageModeLabel(storageMode: ItemDetail["storageMode"]): string {
   return storageMode === "zero_knowledge" ? "Zero-knowledge" : "Server-managed";
 }
 
@@ -58,7 +58,7 @@ export function useItemReveal(item: ItemDetail | null): ItemReveal {
     try {
       key = await requestUnlock(item.profileId);
     } catch {
-      toast.error("Master password required.");
+      toast.error("Profile password required.");
       return null;
     }
 
@@ -205,7 +205,7 @@ export function ItemSecretSection({
         <Warning className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <p className="text-sm text-amber-800 dark:text-amber-300">
           This is a zero-knowledge item. The server never sees the plaintext. Only authorized local
-          agents with the vault password can decrypt this item.
+          agents with the profile password can decrypt this item.
         </p>
       </div>
     );
