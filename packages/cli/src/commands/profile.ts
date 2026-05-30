@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { loadConfig, requireActiveOrgId, requireConfig, updateConfig } from "../config";
 import { daemonChangePassword, daemonLock, daemonStatus, daemonUnlock } from "../daemon";
-import { error, errorMessage, json, success, table } from "../output";
+import { error, errorMessage, json, success, table, warn } from "../output";
 import { computeBootstrapMaterial } from "../profile-bootstrap";
 import { prompt } from "../prompt";
 
@@ -183,7 +183,9 @@ async function readMasterPassword(): Promise<string> {
       process.stdin.on("data", (chunk: string) => {
         data += chunk;
       });
-      process.stdin.on("end", () => resolve(data.replace(/\r?\n$/, "")));
+      // A master password is single-line; strip ALL trailing newlines so a stray
+      // `printf "pw\n\n"` doesn't silently embed a newline and lock the user out.
+      process.stdin.on("end", () => resolve(data.replace(/[\r\n]+$/, "")));
       process.stdin.on("error", reject);
       process.stdin.resume();
     });
@@ -245,21 +247,37 @@ async function profileBootstrap(nameOrId?: string): Promise<void> {
       kdfSalt: material.kdfSalt,
       kdfParams: material.kdfParams,
     });
-    await client.setupProfileRecovery(target.id, {
-      recoveryWrappedRootKey: material.recoveryWrappedRootKey,
-    });
   } catch (err) {
     error(errorMessage(err, "Failed to bootstrap profile."));
     process.exit(1);
   }
 
+  // The password wrap is now committed: the profile is usable via `profile
+  // unlock`, and re-running bootstrap will report "already bootstrapped". Set up
+  // recovery as a separate step so a failure there doesn't leave the user with a
+  // bootstrapped-but-stuck profile and a silently-discarded recovery key.
+  let recoveryConfigured = true;
+  try {
+    await client.setupProfileRecovery(target.id, {
+      recoveryWrappedRootKey: material.recoveryWrappedRootKey,
+    });
+  } catch {
+    recoveryConfigured = false;
+  }
+
   success(`Profile '${target.name}' bootstrapped.`);
-  console.log("");
-  console.log("=== RECOVERY KEY — save this now, it will not be shown again ===");
-  console.log(`  ${material.recoveryKey}`);
-  console.log("===============================================================");
-  console.log("");
-  console.log("Next: run `abadge profile unlock` to use this profile for zero-knowledge items.");
+  if (recoveryConfigured) {
+    console.log("");
+    console.log("=== RECOVERY KEY — save this now, it will not be shown again ===");
+    console.log(`  ${material.recoveryKey}`);
+    console.log("===============================================================");
+    console.log("");
+    console.log("Next: run `abadge profile unlock` to use this profile for zero-knowledge items.");
+  } else {
+    warn(
+      "The profile is bootstrapped and usable via your master password (`abadge profile unlock`), but recovery-key setup did NOT complete — there is no recovery key for this profile, and the CLI can't configure recovery standalone yet. Keep your master password safe; recreate the profile if you need a recovery key.",
+    );
+  }
 }
 
 async function profileUnlock(): Promise<void> {
