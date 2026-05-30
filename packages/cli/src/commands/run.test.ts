@@ -9,6 +9,53 @@ import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { afterEach, beforeEach, spyOn } from "bun:test";
 import type { DaemonClient } from "@abadge/daemon";
 import { __resetDaemonClientFactoryForTests, __setDaemonClientFactoryForTests } from "../daemon";
+import { type RunFlagsProvided, validateRunFlags } from "./run";
+
+describe("validateRunFlags", () => {
+  const base: RunFlagsProvided = {
+    all: false,
+    item: false,
+    field: false,
+    envVar: false,
+    expandEnv: false,
+  };
+
+  test("accepts single-item mode with field/env-var/expand-env", () => {
+    expect(validateRunFlags({ ...base, item: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, field: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, envVar: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true })).toBeNull();
+  });
+
+  test("accepts bare --all", () => {
+    expect(validateRunFlags({ ...base, all: true })).toBeNull();
+  });
+
+  test("rejects --all combined with --item", () => {
+    expect(validateRunFlags({ ...base, all: true, item: true })).toMatch(/mutually exclusive/);
+  });
+
+  test("rejects neither --all nor --item", () => {
+    expect(validateRunFlags(base)).toMatch(/Specify --item/);
+  });
+
+  test("rejects --all combined with --field / --env-var / --expand-env", () => {
+    expect(validateRunFlags({ ...base, all: true, field: true })).toMatch(/single-item mode only/);
+    expect(validateRunFlags({ ...base, all: true, envVar: true })).toMatch(/single-item mode only/);
+    expect(validateRunFlags({ ...base, all: true, expandEnv: true })).toMatch(
+      /single-item mode only/,
+    );
+  });
+
+  test("rejects --expand-env combined with --field / --env-var", () => {
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true, field: true })).toMatch(
+      /cannot be combined with --expand-env/,
+    );
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true, envVar: true })).toMatch(
+      /cannot be combined with --expand-env/,
+    );
+  });
+});
 
 class FakeRunDaemonClient {
   expandEnvCalls: unknown[] = [];
