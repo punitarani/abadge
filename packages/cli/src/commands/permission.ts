@@ -74,6 +74,18 @@ function resolveGrantTarget(
     }
     return { itemId: opts.itemId };
   }
+
+  // Symmetric guard: profile-target grants accept canonical read/use only, so
+  // catch legacy names here with the actionable fix instead of a confusing
+  // server-side rejection.
+  const legacyGiven = capabilities.filter((c) => !CANONICAL.includes(c));
+  if (legacyGiven.length > 0) {
+    error(
+      `Profile grants don't accept legacy ${legacyGiven.join(", ")}. ` +
+        "Use the canonical `read` or `use` capability instead (or pass --item-id <id> for a single-item grant).",
+    );
+    process.exit(1);
+  }
   return { profileId: opts.profileId as string };
 }
 

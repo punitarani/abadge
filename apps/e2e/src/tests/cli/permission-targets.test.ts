@@ -65,6 +65,25 @@ describe("cli permission create — item vs profile targets", () => {
     expect(res.exitCode).toBe(0);
   });
 
+  test("legacy `mount_env` on a --profile-id target fails fast with an actionable message", async () => {
+    const { base, profileId, agentId } = await setup();
+    const res = await runCli(
+      [
+        "permission",
+        "create",
+        "--agent-id",
+        agentId,
+        "--profile-id",
+        profileId,
+        "--capability",
+        "mount_env",
+      ],
+      base,
+    );
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toLowerCase()).toContain("legacy");
+  });
+
   test("canonical `read` on a --item-id target fails with an actionable message naming --profile-id", async () => {
     const { base, itemId, agentId } = await setup();
     const res = await runCli(
