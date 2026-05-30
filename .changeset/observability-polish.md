@@ -1,5 +1,5 @@
 ---
-"@abadge/cli": minor
+"@abadge/cli": patch
 "@abadge/mcp": patch
 ---
 
