@@ -5,8 +5,8 @@ import { AnimatedAbadgeLogo } from "@/components/animated-abadge-logo";
  * hydrate. The destination route isn't known yet, so a centered abadge brand
  * reveal reads as "workspace loading" honestly, without faking a page layout —
  * once the gate passes, each route's own page-representative skeleton takes
- * over. It loops as a gentle breathing cue so a slow gate still reads as active;
- * `prefers-reduced-motion` users get the static lockup.
+ * over. The logo sits plainly on the page background (no frame) and loops as a
+ * gentle breathing cue; `prefers-reduced-motion` users get the static lockup.
  */
 export function DashboardLoading(): React.ReactElement {
   return (
@@ -17,8 +17,8 @@ export function DashboardLoading(): React.ReactElement {
     >
       {/* Decorative reveal — hidden from the a11y tree so the status announces
           only the sr-only string, not the visible "abadge" wordmark. */}
-      <div aria-hidden="true" className="w-full max-w-md">
-        <AnimatedAbadgeLogo loop className="rounded-xl" />
+      <div aria-hidden="true">
+        <AnimatedAbadgeLogo loop />
       </div>
       <span className="sr-only">Loading your workspace…</span>
     </div>
