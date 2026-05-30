@@ -1,5 +1,22 @@
 # @abadge/mcp
 
+## 0.0.6
+
+### Patch Changes
+
+- ef78690: Stop collapsing every local-daemon failure into a single "start the daemon" message. `abadge run` and the MCP zero-knowledge decrypt path now distinguish a locked vault (→ `abadge profile unlock`), a daemon that isn't running (→ `abadge daemon start`), and other failures, so a user whose daemon is up but locked is no longer told to start it. The MCP messages address the human operator (an agent can't unlock a profile). `abadge profile unlock` now also states the 15-minute auto-lock window.
+- c6f197c: Doc accuracy fixes including `apps/docs/mcp/*` (a release-watched path for the MCP package): correct the `list_items` output shape and the registered tool set.
+- f858681: docs: reconcile reference docs with the current code and remove deprecated references. Corrects the MCP tool name (`use_secret`), the canonical `read`/`use` capability model (including the item-target vs profile-target grant distinction), keypair-only agent auth, and the CLI permission/run examples.
+- 202a50b: mcp: on a failed `use_secret` run that produced (withheld) output, return a static, secret-free `hint` explaining that stdout/stderr were suppressed per RED1 and pointing at `mount_secret` for output inspection. The hint is a fixed constant containing no subprocess output, and is omitted entirely on success.
+- b1ea9ee: Observability and UX polish:
+
+  - **Permission-denied hints now name the human actor and a copy-pasteable command.** When an agent is denied access (item-target `access.*` and the canonical `read`/`use` pipeline), the `ForbiddenError` hint explains that a person with management access must grant it — via the dashboard Permissions page or `abadge permission create --agent-id <id> --item-id <id> --capability <cap>` — and notes the agent cannot grant its own access. The agent/item/capability are interpolated into the command and attached to `error.meta` for machine consumers. This flows through MCP error responses. Authorization is unchanged (messaging only).
+  - **`abadge audit` gains filter flags** `--result`, `--agent-id`, `--item-id`, and `--event-type`, passed through to the audit query the server already accepts. `--json` still works.
+  - **`abadge agent mcp-config <id>` resolves the agent via the API** instead of requiring a match in `~/.abadge/config.json`. An agent registered with `--json` (which never writes the local `mcp` config slot) can now produce a Claude Desktop snippet, as long as its private key exists locally at `~/.abadge/agents/<id>.ed25519.jwk`. A missing key file now produces a clear, distinct error.
+
+- 3110185: Repair the REST `/v1` facade (every route returned HTTP 500 due to a tRPC v11 caller-shape guard bug) and coerce the audit `limit` query param. Touches `packages/trpc`, which the CLI and MCP release binaries bundle.
+- cb2d051: SDK ergonomics: immutable-update footguns now throw, and `AbadgeApiError` carries `requestId`. `packages/sdk` is bundled into the CLI and MCP release binaries.
+
 ## 0.0.5
 
 ### Patch Changes
