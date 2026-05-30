@@ -44,7 +44,18 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
 
 const PAGE_SIZE = 25;
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 8;
+
+/**
+ * Reads the denial reason an entry's `meta` may carry. `meta` is an untyped
+ * JSON record, so guard the shape before rendering — denied/expired/revoked
+ * rows write `meta.reason` (e.g. "permission_not_found", "session_expired"),
+ * but other entries may omit it.
+ */
+function auditReason(meta: AuditEntry["meta"]): string | null {
+  const reason = (meta as Record<string, unknown>)?.reason;
+  return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
 
 function dateRangeThreshold(range: AuditDateRangeFilter): Date | null {
   if (range === "all") return null;
@@ -79,6 +90,17 @@ function AuditRow({
   const agentDisplay = resolveAuditDisplayValue(log.agentId, agentNames);
   const itemDisplay = resolveAuditDisplayValue(log.itemId, itemLabels);
   const profileName = log.profileId ? profileNames.get(log.profileId) : null;
+  const reason = auditReason(log.meta);
+
+  // Self-diagnosis context, most useful on a denied/expired/revoked row: the
+  // reason explains why a grant didn't apply; field/deliveryMode/purpose show
+  // exactly what the agent asked for. All are optional on any given entry.
+  const details: Array<{ key: string; value: string }> = [
+    ...(reason ? [{ key: "reason", value: reason }] : []),
+    ...(log.field ? [{ key: "field", value: log.field }] : []),
+    ...(log.deliveryMode ? [{ key: "delivery", value: log.deliveryMode }] : []),
+    ...(log.purpose ? [{ key: "purpose", value: log.purpose }] : []),
+  ];
 
   return (
     <TableRow className={cn(rowHighlightClass(log.result))}>
@@ -104,6 +126,20 @@ function AuditRow({
       <TableCell className="text-sm">{log.eventType}</TableCell>
       <TableCell>
         <ResultBadge result={log.result} />
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {details.length > 0 ? (
+          <div className="flex flex-col gap-0.5">
+            {details.map((d) => (
+              <span key={d.key} className="whitespace-nowrap">
+                <span className="text-muted-foreground/70">{d.key}:</span>{" "}
+                <span className="font-mono text-foreground">{d.value}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted-foreground">{"\u2014"}</span>
+        )}
       </TableCell>
       <TableCell className="font-mono text-sm text-muted-foreground">
         {log.ipAddress ?? "\u2014"}
@@ -417,6 +453,7 @@ export default function AuditPage(): React.ReactElement {
               <TableHead>Profile</TableHead>
               <TableHead>Event</TableHead>
               <TableHead>Result</TableHead>
+              <TableHead>Detail</TableHead>
               <TableHead>IP address</TableHead>
               <TableHead>Time</TableHead>
             </TableRow>

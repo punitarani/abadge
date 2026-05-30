@@ -29,6 +29,29 @@ export const MAX_OUTPUT_BYTES = 4 * 1024;
 // the line count and truncation flag are returned.
 export const STREAM_CAP_BYTES = MAX_OUTPUT_BYTES * 2;
 
+// Static, secret-free explanation attached to the result only on a failed run
+// that produced withheld output. It tells the model WHY there is no stdout/stderr
+// to read (the §RED1 suppression) and how to debug without breaking it. It MUST
+// stay a fixed constant containing NO subprocess output — otherwise it would
+// itself become the exfiltration channel the suppression exists to close.
+export const FAILURE_HINT =
+  "Command failed; stdout/stderr were withheld to prevent secret leakage (RED1). " +
+  "To inspect output, mount the secret to a file with mount_secret and have the " +
+  "command write logs to a path you read separately.";
+
+/**
+ * Whether to attach {@link FAILURE_HINT} to a run result: only on a non-zero
+ * exit that actually produced output. A clean exit, or a failure with no output
+ * at all, gets no hint — keeping the success-path response shape unchanged.
+ */
+export function shouldAttachFailureHint(
+  exitCode: number,
+  stdoutLines: number,
+  stderrLines: number,
+): boolean {
+  return exitCode !== 0 && (stdoutLines > 0 || stderrLines > 0);
+}
+
 /**
  * Build the child process env, stripping abadge-private vars so the
  * spawned command cannot read session tokens / API keys out of its
@@ -178,13 +201,18 @@ export async function handler(
   // produced output without being able to read it. This eliminates all
   // semantic-leakage vectors (base64, hex, URL-encoded, nth-char, etc.) that
   // string-based redaction cannot catch.
+  const stdoutLines = countLines(stdout);
+  const stderrLines = countLines(stderr);
   return JSON.stringify({
     exitCode,
     durationMs: Date.now() - startMs,
     outputLineCount: {
-      stdout: countLines(stdout),
-      stderr: countLines(stderr),
+      stdout: stdoutLines,
+      stderr: stderrLines,
     },
     truncated: stdoutTruncated || stderrTruncated,
+    // Static, secret-free rationale on failure-with-output only. Omitted on
+    // success so the response shape is unchanged for the common case.
+    ...(shouldAttachFailureHint(exitCode, stdoutLines, stderrLines) ? { hint: FAILURE_HINT } : {}),
   });
 }

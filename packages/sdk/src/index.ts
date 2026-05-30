@@ -27,6 +27,15 @@ export const Abadge = {
   Agent: AbadgeAgentClient,
 } as const;
 export { AbadgeApiError } from "./errors";
+/**
+ * Helper for wrapping a secret the *caller* already holds so it resists
+ * accidental disclosure through logs, `JSON.stringify`, and `console.log`.
+ *
+ * No SDK client method returns a `SecretValue` — agent access flows deliver
+ * secrets to the local daemon (env/file injection), not back to the SDK as
+ * plaintext. This is a utility you opt into around your own credential
+ * handling; see {@link SecretValue.expose} for the single reveal path.
+ */
 export { SecretValue } from "./secret-value";
 export type {
   Agent,
