@@ -104,6 +104,11 @@ function readStreamToEnd(stream: NodeJS.ReadStream): Promise<string> {
       data += chunk;
     });
     stream.on("end", () => resolve(data));
+    // 'close' fires (without a preceding 'end') when the stream is destroyed
+    // abnormally — SIGPIPE, the writer crash-killed, an upstream destroy(). Resolve
+    // with whatever was collected so the caller validates/fails fast instead of
+    // hanging forever. A normal 'end'-then-'close' just no-ops the second resolve.
+    stream.on("close", () => resolve(data));
     stream.on("error", reject);
     stream.resume();
   });
