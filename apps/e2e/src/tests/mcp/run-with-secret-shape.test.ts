@@ -1,10 +1,10 @@
 /**
- * §RED1 over the wire: confirm the MCP `run_with_secret` response carries
- * exactly { exitCode, durationMs, outputLineCount, truncated } and never
- * leaks plaintext (or base64 of the secret) into the JSON returned to the
- * model. The same invariant is asserted at unit-test scope in
- * packages/mcp/src/tools/run-with-secret.test.ts; this test exercises the
- * stdio + real-API path.
+ * Verifies over the real stdio + API wire that the MCP `use_secret` response
+ * carries exactly { exitCode, durationMs, outputLineCount, truncated } and never
+ * leaks plaintext (or the base64 of the secret) into the JSON returned to the
+ * model — even when the spawned command deliberately echoes the secret to
+ * stdout. The same invariant is asserted at unit-test scope in
+ * packages/mcp/src/tools/run-with-secret.test.ts.
  */
 import { describe, expect, test } from "bun:test";
 import { AbadgeUserClient } from "@abadge/sdk";
@@ -34,8 +34,7 @@ async function setup(): Promise<{
     sessionToken: owner.sessionToken,
     orgId: org.id,
   });
-  // §REVAMP-PR3 Task 5.1 — default server_managed profile is auto-seeded.
-
+  // Org creation already seeded the default server_managed profile.
   const item = await scoped.items.create({
     storageMode: "server_managed",
     payload: {
@@ -76,13 +75,11 @@ async function setup(): Promise<{
 }
 
 describe("mcp use_secret", () => {
-  test("response has only the four §RED1 keys and never echoes the secret", async () => {
+  test("response has only the four metadata keys and never echoes the secret", async () => {
     const env = await setup();
     const mcp = await startMcpClient(env);
 
     try {
-      // PR 4 unifies run_with_secret + run_with_all_secrets into use_secret.
-      // The §RED1 return-shape guarantee carries through unchanged.
       const resp = await mcp.callTool("use_secret", {
         itemId: env.itemId,
         // Deliberately echo the secret to stdout — the response shape MUST
