@@ -22,7 +22,7 @@ async function resolveZkProfileId(client: AbadgeUserClient): Promise<string> {
   const zkProfile = result.profiles.find((p) => p.storageMode === "zero_knowledge");
   if (!zkProfile) {
     throw new Error(
-      "No zero-knowledge profile in this organization. Create one with `abadge profile create --storage-mode zero_knowledge`.",
+      "No zero-knowledge profile in this organization. Create one with `abadge profile add --storage-mode zero_knowledge`.",
     );
   }
   return zkProfile.id;

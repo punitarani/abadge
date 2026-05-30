@@ -1,9 +1,43 @@
+import type { Profile } from "@abadge/core";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { loadConfig, requireActiveOrgId, requireConfig, updateConfig } from "../config";
 import { daemonChangePassword, daemonLock, daemonStatus, daemonUnlock } from "../daemon";
 import { error, errorMessage, json, success, table } from "../output";
 import { prompt } from "../prompt";
+
+/**
+ * Public-safe view of a profile for `--json` output. Drops the wrapped-key and
+ * KDF columns (`wrappedRootKey`, `kdfSalt`, `kdfParams`, `recoveryWrappedRootKey`)
+ * which carry encrypted key material and have no business in scripting output.
+ */
+export type ProfileJsonDto = Pick<
+  Profile,
+  | "id"
+  | "name"
+  | "externalId"
+  | "description"
+  | "storageMode"
+  | "keyVersion"
+  | "createdAt"
+  | "updatedAt"
+>;
+
+// Accepts a full `Profile` row and projects it down to the safe DTO. Typing the
+// input as `Profile` (not the already-stripped DTO) keeps the projection honest:
+// a new sensitive field added to `Profile` is simply not picked here, by design.
+export function toProfileJsonDto(profile: Profile): ProfileJsonDto {
+  return {
+    id: profile.id,
+    name: profile.name,
+    externalId: profile.externalId,
+    description: profile.description,
+    storageMode: profile.storageMode,
+    keyVersion: profile.keyVersion,
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt,
+  };
+}
 
 export function createProfileCommand(): Command {
   const cmd = new Command("profile").description(
@@ -48,7 +82,9 @@ export function createProfileCommand(): Command {
         const { profiles } = await client.profiles.list(orgId);
 
         if (opts.json) {
-          json(profiles);
+          // The SDK return type under-declares profile fields; at runtime each
+          // row is a full `Profile` (see ProfileSchema in @abadge/core).
+          json((profiles as unknown as Profile[]).map(toProfileJsonDto));
           return;
         }
 
