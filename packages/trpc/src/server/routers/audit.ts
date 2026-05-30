@@ -44,8 +44,15 @@ export const AuditQueryInputSchema = Schema.Struct({
       Schema.pattern(/^\d+$/, { message: () => "cursor must be a numeric string" }),
     ),
   ),
+  // Accept a number (tRPC clients) or a numeric string (REST `/v1/audit?limit=N`,
+  // where every query param arrives as a string). Decoded type is `number` either
+  // way; `cursor` keeps its numeric-string contract above.
   limit: Schema.optional(
-    Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
+    Schema.Union(Schema.Number, Schema.NumberFromString).pipe(
+      Schema.int(),
+      Schema.greaterThanOrEqualTo(1),
+      Schema.lessThanOrEqualTo(100),
+    ),
   ),
 });
 

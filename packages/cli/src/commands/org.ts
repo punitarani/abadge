@@ -12,10 +12,15 @@ export function createOrgCommand(): Command {
     .description("Create a new organization")
     .requiredOption("--name <name>", "Organization name")
     .option("--slug <slug>", "Organization slug (auto-generated if omitted)")
-    .action(async (opts: { name: string; slug?: string }) => {
+    .option("--json", "Output the created organization as JSON")
+    .action(async (opts: { name: string; slug?: string; json?: boolean }) => {
       try {
         const client = await createUserApiClient();
         const org = await client.orgs.create({ name: opts.name, slug: opts.slug });
+        if (opts.json) {
+          json(org);
+          return;
+        }
         success(`Organization created: ${org.name} (${org.id})`);
       } catch (err) {
         error(errorMessage(err, "Failed to create organization."));

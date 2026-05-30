@@ -148,23 +148,40 @@ abadge agent add --name "ci-deploy" --kind remote
 abadge agent add --name "ci-deploy" --kind remote --bootstrap   # issue a one-time bootstrap token instead
 abadge agent add --name "ci-deploy" --kind remote --public-key ./key.jwk  # pre-existing public key
 
+# Register a local_mcp agent and print a Claude Desktop config snippet
+abadge agent add --name "claude-desktop" --kind local_mcp --mcp-config
+
 abadge agent list
 abadge agent rm <id>       # revoke the agent and invalidate all sessions
+
+# Print a Claude Desktop config snippet for a registered local_mcp agent.
+# Resolves the agent from the API (active org), so it works even if the
+# agent was registered with --json. Requires the agent's private key to
+# exist locally at ~/.abadge/agents/<id>.ed25519.jwk.
+abadge agent mcp-config <id>
 ```
 
 Agents authenticate only with Ed25519 keypair sessions. To replace an
 agent's keypair, revoke it and register a new one (or re-issue a bootstrap
 token and re-enroll).
 
+`--mcp-config` (on `agent add`) is only valid with `--kind local_mcp` and
+cannot be combined with `--json`. `abadge agent mcp-config <id>` reprints the
+snippet for the local_mcp agent already registered on this machine; `<id>`
+must match the agent in `~/.abadge/config.json`.
+
 ### Permissions (grants)
 
 ```bash
-# Grant a single capability to an agent on an item
+# Grant a single capability to an agent on ONE item (legacy capability names)
 abadge permission create --agent-id <id> --item-id <id> --capability mount_env
 
 # Grant several capabilities atomically (repeat the flag or comma-separate)
 abadge permission create --agent-id <id> --item-id <id> \
   --capability mount_env,mount_file
+
+# Grant canonical read/use across an ENTIRE profile (--profile-id)
+abadge permission create --agent-id <id> --profile-id <id> --capability read
 
 # With expiry (applies to every capability in the batch)
 abadge permission create --agent-id <id> --item-id <id> \
@@ -174,18 +191,18 @@ abadge permission list [--agent-id <id>] [--item-id <id>]
 abadge permission revoke <permission-id>
 ```
 
-`permission create` always targets a single item (`--item-id`), and
-item-target grants accept only the legacy capability names —
-`read_ciphertext`, `reveal_plaintext` (mapped to canonical `read`) and
-`mount_env`, `mount_file` (mapped to canonical `use`). Capability legality
-is still bounded by the agent's locality and the item's storage mode (for
-example, remote agents cannot mount, and only server-managed items can be
-revealed over the API).
+`permission create` targets exactly one of `--item-id` or `--profile-id`:
 
-To grant the canonical `read` / `use` capabilities on an entire profile,
-use the dashboard (it requires a blast-radius confirmation) or the API/SDK
-`permissions.create` with a `profileId` target. The CLI does not create
-profile-target grants.
+- **`--item-id`** grants on a single item and accepts only the legacy
+  capability names — `read_ciphertext`, `reveal_plaintext` (mapped to canonical
+  `read`) and `mount_env`, `mount_file` (mapped to canonical `use`). Passing
+  canonical `read`/`use` here is rejected with a hint to use `--profile-id`.
+- **`--profile-id`** grants the canonical `read` / `use` capabilities across
+  every item in a profile.
+
+Capability legality is still bounded by the agent's locality and the item's
+storage mode (for example, remote agents cannot mount, and only server-managed
+items can be revealed over the API).
 
 ### Runtime — use a secret
 
@@ -254,7 +271,20 @@ re-import, or use `abadge item update`. The summary reports
 ```bash
 abadge audit
 abadge audit --json
+abadge audit --result denied --agent-id <id>
+abadge audit --item-id <id> --event-type access.reveal
+abadge audit --limit 25 --cursor <cursor>
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+| `--limit <count>` | Maximum number of entries to return |
+| `--cursor <cursor>` | Pagination cursor from a previous page |
+| `--result <result>` | Filter by outcome (`allowed`, `denied`, `expired`, `revoked`, `cascade`) |
+| `--agent-id <id>` | Filter by agent ID |
+| `--item-id <id>` | Filter by item ID |
+| `--event-type <type>` | Filter by event type (e.g. `access.reveal`) |
 
 ### Daemon
 
@@ -270,8 +300,11 @@ abadge daemon stop
 |------|-------------|
 | `--help, -h` | Show help |
 | `--version, -v` | Show version |
-| `--json` | Print machine-readable output on commands that support it |
 | `--token-stdin` | Read a bearer session token from stdin for this command |
+
+`--json` is **not** a global flag. It is a per-subcommand option on the
+commands that support machine-readable output (e.g. `abadge audit --json`,
+`abadge agent add --json`).
 
 ## Deprecated verbs
 

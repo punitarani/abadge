@@ -21,6 +21,7 @@ import { decodeServerManagedPayload } from "../../item-payload";
 import { type ScopedDb, scopedDb } from "../../scoped-db";
 import { decryptServerEnvelope } from "../../server-envelope";
 import { checkActionConstraint } from "./constraints";
+import { buildPermissionDeniedHint, buildPermissionDeniedMeta } from "./denial-hint";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -340,8 +341,17 @@ export const resolveAccess = (
         new ForbiddenError({
           code: "PERMISSION_DENIED",
           message: `Agent lacks '${action}' permission for this item.`,
-          hint: "Grant the matching capability on this item (or its profile) before retrying.",
-          meta: { itemId, action },
+          hint: buildPermissionDeniedHint({
+            agentId: ctx.identity.agentId,
+            itemId,
+            capability: action,
+          }),
+          meta: buildPermissionDeniedMeta({
+            agentId: ctx.identity.agentId,
+            itemId,
+            capability: action,
+            action,
+          }),
         }),
       );
     }
@@ -633,8 +643,17 @@ export const resolveProfileAccess = (
           new ForbiddenError({
             code: "PERMISSION_DENIED",
             message: `Agent lacks '${action}' permission for item ${item.id}`,
-            hint: "Grant the matching capability on this item (or its profile) before retrying.",
-            meta: { itemId: item.id, action },
+            hint: buildPermissionDeniedHint({
+              agentId: ctx.identity.agentId,
+              itemId: item.id,
+              capability: action,
+            }),
+            meta: buildPermissionDeniedMeta({
+              agentId: ctx.identity.agentId,
+              itemId: item.id,
+              capability: action,
+              action,
+            }),
           }),
         );
       }

@@ -139,9 +139,14 @@ listed, and revoked from the dashboard org Settings page.
 - **Resolves to a session identity (`kind: "session"`), not an agent.** It
   reaches only the `sessionProcedure` management surface (organizations,
   profiles, items metadata, agents, permissions, audit, settings). It is
-  **structurally barred from the agent-gated `access.*` surface** and can
-  never reveal or mount secret values — reading secrets still requires a
-  keypair agent plus an explicit permission.
+  **structurally barred from the agent-gated `access.*` surface** — it can
+  never read a secret *as an agent*, and can never decrypt a `zero_knowledge`
+  item (the server never holds the key). **Caveat:** like any owner/admin
+  session, it CAN owner-reveal a `server_managed` item's own plaintext via
+  `items.ownerReveal` (the server holds those keys by design). Reading a secret
+  *as an agent* still requires a keypair agent plus an explicit permission. See
+  the open gating question in `docs/reviews/2026-05-30-dx-usability-review.md`
+  §SA-1 (whether owner-reveal should be restricted on team orgs).
 - A personal API key cannot create or revoke other API keys (that requires a
   real browser session).
 
@@ -159,8 +164,11 @@ an emailed OTP (WorkOS [auth.md](https://workos.com/auth-md) `anonymous` flow).
 Security properties:
 
 - **Credential is a least-privilege `abu_` personal API key** — a management
-  session bound to the account, never an agent identity, so a leak cannot reveal
-  or mount secrets and cannot escape the account's own org.
+  session bound to the account, never an agent identity, so a leak cannot read
+  any secret *as an agent*, cannot decrypt `zero_knowledge` items, and cannot
+  escape the account's own org. (It can owner-reveal the account's own
+  `server_managed` plaintext via `items.ownerReveal`, as the account owner — see
+  §SA-1 in `docs/reviews/2026-05-30-dx-usability-review.md`.)
 - **Unverified until claimed**: the placeholder owner has a non-routable
   `@unclaimed.abadge.invalid` email and `emailVerified=false`, so it cannot be
   logged into; the OTP ceremony binds (and verifies) the real human's email.

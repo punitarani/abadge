@@ -104,12 +104,20 @@ agent is removed or re-enabled.
 
 ## `abadge agent mcp-config <agent-id>`
 
-Reprint the Claude Desktop config snippet for an already-registered
+Print the Claude Desktop config snippet for an already-registered
 `local_mcp` agent.
 
 ```bash
 abadge agent mcp-config agt_...
 ```
+
+The agent is resolved from the API (in the active organization), so this
+works even when the agent was registered with `--json` (which does not write
+the local `mcp` config slot). It requires the agent's private key to exist
+locally at `~/.abadge/agents/<agent-id>.ed25519.jwk` — the path
+`abadge agent add` writes. If the key file is missing, the command errors and
+explains that the key must exist on this machine. The command also rejects an
+id that resolves to a non-`local_mcp` agent.
 
 ## Deprecated aliases
 

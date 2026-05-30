@@ -189,9 +189,9 @@ Does not own:
 Owns:
 
 * MCP server setup and tool registration (stdio transport)
-* tools: `list_items`, `run_with_secret`, `mount_secret`, `release_mount`, `get_audit`
+* tools: `list_items`, `use_secret`, `mount_secret`, `release_mount`, `get_audit`
 * auth: keypair-backed only (`ABADGE_AGENT_ID` + `ABADGE_PRIVATE_KEY_PATH`)
-* `run_with_secret`: spawns subprocess with secret in env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
+* `use_secret`: spawns subprocess with one secret (or every secret in a profile) injected into env; captures stdout/stderr (bounded to 8 KB per stream) but never forwards output text to the model — returns only exit code, duration, output-line count, and truncation flag (§RED1)
 * `mount_secret`: returns opaque `mountId` (file path never returned to model); auto-cleanup after 5 min
 * orphan cleanup on startup (removes `abadge-*` temp dirs older than 10 minutes)
 * daemon client integration for local decryption of ZK items
@@ -222,7 +222,7 @@ Does not own:
 * No plaintext secret storage. ZK items use client-side XChaCha20-Poly1305; server\_managed items use AES-256-GCM.
 * No plaintext API key storage. Keys are SHA-256 hashed; only the prefix is stored for lookup.
 * No plaintext session token storage. Agent session tokens are hashed before storage.
-* Personal user API keys (`abu_`) authenticate the management surface only. They resolve to a session identity (`kind: "session"`), never an agent identity, and can never reach the agent-gated `access.*` surface — they cannot reveal or mount secret values. Reading secrets still requires a keypair agent plus an explicit permission. A personal API key cannot create or revoke other API keys.
+* Personal user API keys (`abu_`) authenticate the management surface only. They resolve to a session identity (`kind: "session"`), never an agent identity, and can never reach the agent-gated `access.*` surface (no `read_ciphertext`/`reveal_plaintext`/`mount_*` as an agent). **Caveat — owner-reveal:** like any owner/admin session, an `abu_` session CAN reveal a `server_managed` item's own plaintext via `items.ownerReveal` (and the `abadge export` CLI), because the server holds those keys by design. It can never decrypt a `zero_knowledge` item (the server never has the key). So "an `abu_` key cannot read any secret value" is **not** accurate for `server_managed` items; what holds is "an `abu_` key cannot read secrets *as an agent* via `access.*`, and cannot read any `zero_knowledge` plaintext." Reading a secret as an **agent** still requires a keypair agent plus an explicit permission. A personal API key cannot create or revoke other API keys. **Open security question (see `docs/reviews/2026-05-30-dx-usability-review.md` §SA-1):** `items.ownerReveal` gates only on `storageMode`, not org type, so a *team*-org owner/`abu_` can reveal `server_managed` plaintext even though the dashboard frames team orgs as "custody mode (never reveals plaintext)". Whether `ownerReveal`/`export` should be gated to personal orgs (or to a stricter role) for team orgs is a deliberate policy decision — run the `abadge-security-audit` skill to settle it; do not silently change the auth tier in a docs pass.
 * No item access without an explicit permission (agent + item + capability).
 * No cross-org item access. Items and agents are scoped to their owning organization.
 * Every allowed and denied agent access attempt must be logged in audit\_log.

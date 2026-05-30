@@ -8,6 +8,8 @@ import {
   configSlotForKind,
   createAgentCommand,
   defaultMcpBinaryPath,
+  localAgentKeyPath,
+  printMcpConfigForAgent,
 } from "./agent";
 
 describe("configSlotForKind", () => {
@@ -279,5 +281,133 @@ describe("registerKeypairAgent (exported helper)", () => {
         kind: "local_cli",
       }),
     ).rejects.toThrow(/403 cannot create agent/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// localAgentKeyPath + printMcpConfigForAgent — `agent mcp-config <id>` resolves
+// the agent by API (not just config.json) and locates the on-disk key.
+// ---------------------------------------------------------------------------
+
+describe("localAgentKeyPath", () => {
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    originalHome = process.env.HOME;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+  });
+
+  test("resolves the path `agent add` writes, honoring HOME at call time", () => {
+    process.env.HOME = "/tmp/sandbox-home";
+    expect(localAgentKeyPath("agent_abc")).toBe(
+      "/tmp/sandbox-home/.abadge/agents/agent_abc.ed25519.jwk",
+    );
+  });
+});
+
+describe("printMcpConfigForAgent", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+    require("node:fs") as typeof import("node:fs");
+  const { tmpdir } = require("node:os") as typeof import("node:os");
+  const EXIT_SENTINEL = "__test_process_exit__";
+
+  let HOME_DIR: string;
+  let originalHome: string | undefined;
+  let logSpy: ReturnType<typeof spyOn>;
+  let errorSpy: ReturnType<typeof spyOn>;
+  let exitSpy: ReturnType<typeof spyOn>;
+  let exitCode: number | undefined;
+
+  function stubClient(agent: { id: string; kind: string } | Error) {
+    return {
+      agents: {
+        get: async (_id: string) => {
+          if (agent instanceof Error) throw agent;
+          return { agent };
+        },
+      },
+    } as never;
+  }
+
+  function writeKeyFile(agentId: string): string {
+    const dir = join(HOME_DIR, ".abadge", "agents");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const p = join(dir, `${agentId}.ed25519.jwk`);
+    writeFileSync(p, "{}", { mode: 0o600 });
+    return p;
+  }
+
+  beforeEach(() => {
+    HOME_DIR = mkdtempSync(join(tmpdir(), "abadge-mcp-config-test-"));
+    originalHome = process.env.HOME;
+    process.env.HOME = HOME_DIR;
+    const cfgDir = join(HOME_DIR, ".abadge");
+    mkdirSync(cfgDir, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(cfgDir, "config.json"),
+      JSON.stringify({ apiUrl: "http://localhost:8787" }),
+      {
+        mode: 0o600,
+      },
+    );
+    exitCode = undefined;
+    exitSpy = spyOn(process, "exit").mockImplementation(((code?: number) => {
+      exitCode = code;
+      throw new Error(EXIT_SENTINEL);
+    }) as never);
+    logSpy = spyOn(console, "log").mockImplementation(() => undefined);
+    errorSpy = spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    rmSync(HOME_DIR, { recursive: true, force: true });
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  test("prints the snippet for a local_mcp agent whose key exists locally", async () => {
+    const keyPath = writeKeyFile("agent_mcp1");
+    await printMcpConfigForAgent(stubClient({ id: "agent_mcp1", kind: "local_mcp" }), "agent_mcp1");
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const snippet = JSON.parse((logSpy.mock.calls[0]?.[0] ?? "") as string);
+    expect(snippet.mcpServers.abadge.env.ABADGE_AGENT_ID).toBe("agent_mcp1");
+    expect(snippet.mcpServers.abadge.env.ABADGE_PRIVATE_KEY_PATH).toBe(keyPath);
+    expect(snippet.mcpServers.abadge.env.ABADGE_API_URL).toBe("http://localhost:8787");
+  });
+
+  test("rejects a non-local_mcp agent with a clear message", async () => {
+    writeKeyFile("agent_cli1");
+    await expect(
+      printMcpConfigForAgent(stubClient({ id: "agent_cli1", kind: "local_cli" }), "agent_cli1"),
+    ).rejects.toThrow(EXIT_SENTINEL);
+    expect(exitCode).toBe(1);
+    const out = errorSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(out).toContain("not local_mcp");
+  });
+
+  test("errors clearly when the local key file is missing", async () => {
+    // local_mcp agent exists in the org, but no key on this machine — e.g.
+    // registered with --json then run on a different machine.
+    await expect(
+      printMcpConfigForAgent(stubClient({ id: "agent_mcp2", kind: "local_mcp" }), "agent_mcp2"),
+    ).rejects.toThrow(EXIT_SENTINEL);
+    expect(exitCode).toBe(1);
+    const out = errorSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(out).toContain("No local private key found");
+    expect(out).toContain("agent_mcp2.ed25519.jwk");
+  });
+
+  test("propagates a NOT_FOUND from the API for an unknown / cross-org id", async () => {
+    await expect(
+      printMcpConfigForAgent(stubClient(new Error("AGENT_NOT_FOUND")), "agent_nope"),
+    ).rejects.toThrow(/AGENT_NOT_FOUND/);
   });
 });
