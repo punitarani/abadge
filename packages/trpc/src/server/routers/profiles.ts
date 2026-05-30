@@ -40,9 +40,8 @@ const CreateProfileSchema = Schema.Struct({
   orgId: NonEmptyString,
   name: BoundedNameString,
   description: Schema.optional(Schema.String),
-  // §REVAMP-PR5 — optional, stable, customer-supplied identifier.
-  // Scoped per-org via the partial-unique index added in PR1; NULL means
-  // "no external id" and is always allowed.
+  // Optional, stable, customer-supplied identifier. Unique per-org via a
+  // partial-unique index; NULL means "no external id" and is always allowed.
   externalId: Schema.optional(Schema.String),
   storageMode: Schema.Literal("zero_knowledge", "server_managed"),
 });
@@ -381,12 +380,11 @@ const bootstrapProfile = (input: Schema.Schema.Type<typeof ProfileBootstrapSchem
   });
 
 const changeProfilePassword = (input: Schema.Schema.Type<typeof ProfileChangePasswordSchema>) =>
-  // TODO(§W1S7-001-followup): changePassword does NOT advance profile.keyVersion,
-  // but a concurrent rotateKey could commit between the client's `profiles.get`
-  // (which reads keyVersion for the AAD bind) and this UPDATE. Post-AAD the
-  // mismatch fails loudly on the next unlock rather than silently. Adding a
-  // CAS on profile.keyVersion here would tighten that to a synchronous
-  // CONFLICT — out of scope for the AAD fix itself.
+  // TODO: changePassword does NOT advance profile.keyVersion, but a concurrent
+  // rotateKey could commit between the client's `profiles.get` (which reads
+  // keyVersion for the AAD bind) and this UPDATE. The mismatch then fails
+  // loudly on the next unlock rather than silently; a CAS on profile.keyVersion
+  // here would tighten that to a synchronous CONFLICT.
   Effect.gen(function* () {
     const ctx = yield* SessionRequestContextTag;
     const { profileId, wrappedRootKey, kdfSalt, kdfParams } = input;
@@ -495,7 +493,7 @@ const rotateProfileKey = (input: Schema.Schema.Type<typeof ProfileRotateKeySchem
     const nextKeyVersion = yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
         const txScope = scopedDb(tx, profile.organizationId);
-        // Serialize with concurrent items.create on the same profile (§I5-RACE).
+        // Serialize with concurrent items.create on the same profile.
         // Raw SQL because pg_advisory_xact_lock is not expressible in Drizzle's typed API.
         // The lock is released automatically on txn commit/rollback.
         // pg_advisory_xact_lock takes a single int; hashtext(uuid) collapses UUIDs into 32 bits.
@@ -643,8 +641,8 @@ const deleteProfile = (profileId: string) =>
       );
     }
 
-    // §RM-PR2 — Before deleting the profile, snapshot every permission
-    // targeting it so we can write one permission.revoke_cascade audit row
+    // Before deleting the profile, snapshot every permission targeting it
+    // so we can write one permission.revoke_cascade audit row
     // per implicitly-invalidated grant. The DB ON DELETE CASCADE handles
     // the actual row removal; the audit table has no FK so the rows survive.
     // All three steps land in a single transaction so a deleted-without-audit

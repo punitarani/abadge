@@ -129,12 +129,10 @@ const DefaultProfileDataSchema = Schema.Struct({
   keyVersion: Schema.Int,
 });
 
-// §REVAMP-PR3 (Task 5.1) — `organizations.create` now seeds a default
-// `server_managed` profile in the same transaction. The response shape
-// returns both so the client can route straight to the dashboard without a
-// follow-up `profiles.create` round trip and without a "profile setup"
-// step. The onboarding gate is dropped in the next commit; until then,
-// auto-seeding is the only way an org is immediately usable after create.
+// `organizations.create` seeds a default `server_managed` profile in the same
+// transaction, so the response carries both the org and that profile. This lets
+// the client route straight to the dashboard with no follow-up `profiles.create`
+// round trip — a freshly created org is immediately usable.
 const CreateOrgResultSchema = Schema.Struct({
   organization: OrgDataSchema,
   defaultProfile: DefaultProfileDataSchema,
@@ -418,9 +416,9 @@ const listOrgs = Effect.gen(function* () {
   // Second query: for each org the user belongs to, determine whether it has a
   // "bootstrapped" profile (server_managed OR zk-with-wrappedRootKey).
   //
-  // §AB-0011 — `profiles` is under FORCE RLS keyed on the single-valued
-  // `app.current_org` GUC, so a cross-org `inArray(...)` read cannot work under
-  // the runtime role: only the one org matching the GUC would be visible and
+  // `profiles` is under FORCE RLS keyed on the single-valued `app.current_org`
+  // GUC, so a cross-org `inArray(...)` read cannot work under the runtime role:
+  // only the one org matching the GUC would be visible and
   // every other org would falsely report "unbootstrapped" (breaking the
   // onboarding redirect for multi-org users). Probe per org inside one
   // transaction, re-setting the GUC each iteration (set_config is mutable within
@@ -606,7 +604,7 @@ const deleteOrg = (input: { orgId: string; confirmName: string; password: string
 
     // Deleting the organization row cascades to items, profiles, agents, and
     // permissions via their `onDelete: "cascade"` FKs. audit_logs have no FK and
-    // are intentionally preserved (append-only). Items no longer block deletion.
+    // are intentionally preserved (append-only).
     yield* tryAsync(() => ctx.db.delete(organization).where(eq(organization.id, orgId)));
 
     yield* logSessionAudit({
@@ -753,8 +751,8 @@ const createInvite = (input: Schema.Schema.Type<typeof CreateInviteSchema>) =>
       ),
     );
 
-    // §INV1a: Prevent admins from minting owner-role invites (privilege escalation
-    // via invite-accept round-trip). The invited role must not exceed the caller's role.
+    // Prevent admins from minting owner-role invites (privilege escalation via
+    // invite-accept round-trip). The invited role must not exceed the caller's role.
     const inviteRole = role ?? "member";
     yield* tryAsync(async () => assertCanAssignRole(actorRole, inviteRole)).pipe(
       Effect.tapError((err) =>
@@ -1088,7 +1086,7 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
       );
     }
 
-    // §OWN2a: Only owners can remove owners; admins can remove admins + members.
+    // Only owners can remove owners; admins can remove admins + members.
     if (target.role === "owner" && actorRole !== "owner") {
       yield* logSessionAudit({
         organizationId: ctx.identity.organizationId,
@@ -1107,26 +1105,25 @@ const removeMember = (input: Schema.Schema.Type<typeof RemoveMemberSchema>) =>
       );
     }
 
-    // §OWN2b / B37: Do not strand the org with zero owners.
+    // Do not strand the org with zero owners.
     yield* tryAsync(() =>
       assertOwnersRemainAfterChange(ctx.db, orgId, memberId, target.role, "removed"),
     );
 
     // Atomic: delete the member row, write the org.member_remove audit
     // entry, and run the cascade that revokes their agents, sessions, and
-    // granted permissions — all inside one transaction. Prior shape ran
-    // these as three sequential tryAsync steps without a shared tx, so a
-    // mid-flight failure (DB blip, cascade throw) could leave the member
-    // gone but their credentials still live. `onMemberRemoved` internally
-    // opens a transaction on the db-or-tx it is handed; Postgres treats
-    // that inner call as a savepoint on this outer tx.
+    // granted permissions — all inside one transaction. Without a shared tx a
+    // mid-flight failure (DB blip, cascade throw) could leave the member gone
+    // but their credentials still live. `onMemberRemoved` internally opens a
+    // transaction on the db-or-tx it is handed; Postgres treats that inner
+    // call as a savepoint on this outer tx.
     //
     // The audit insert is written inline rather than through
     // logSessionAudit so it shares the same tx; logSessionAudit closes
     // over ctx.db and would commit outside the transaction boundary.
     yield* tryAsync(() =>
       ctx.db.transaction(async (tx) => {
-        // §AB-0011 — removeMember runs on sessionProcedure (no GUC middleware), but
+        // removeMember runs on sessionProcedure (no GUC middleware), but
         // onMemberRemoved deletes the removed member's `permissions` rows (an RLS
         // table). Set the org GUC first or the cascade delete affects zero rows
         // under the runtime role and stale grants survive the removal.
@@ -1188,7 +1185,7 @@ const updateMemberRole = (input: Schema.Schema.Type<typeof UpdateMemberRoleSchem
       );
     }
 
-    // §OWN1 / B37: Do not strand the org with zero owners when demoting the last owner.
+    // Do not strand the org with zero owners when demoting the last owner.
     yield* tryAsync(() =>
       assertOwnersRemainAfterChange(ctx.db, orgId, memberId, target.role, role),
     );

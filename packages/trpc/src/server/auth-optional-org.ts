@@ -36,8 +36,8 @@ async function resolveOptionalOrgId(
     // with no recovery — those are the very calls the client uses to discover
     // and repair its org context. Treat a foreign header as "no org context"
     // and fall through to membership resolution, exactly as if no header were
-    // sent (extends the §ORG2 best-effort contract). Org-SCOPED routes still
-    // reject a foreign header strictly via resolveUserOrgId in auth.ts.
+    // sent. Org-SCOPED routes still reject a foreign header strictly via
+    // resolveUserOrgId in auth.ts.
   }
 
   const memberships = await ctx.db
@@ -48,8 +48,8 @@ async function resolveOptionalOrgId(
 
   // Zero → null (fresh signup). One → auto-resolve. Two-or-more, or a foreign
   // header that fell through above → null; bootstrap-safe routes (userProcedure)
-  // must handle organizationId=null. Deliberately NOT throwing here — that was
-  // the multi-org bootstrap trap (§ORG2).
+  // must handle organizationId=null. Deliberately NOT throwing here — a multi-org
+  // user with no header is a valid bootstrap state, not an error.
   if (memberships.length === 1) {
     const [only] = memberships as [(typeof memberships)[number]];
     return only.organizationId;

@@ -1,28 +1,21 @@
 /**
- * §AB-0050 — keyset (cursor) pagination shared across the high-cardinality
- * list endpoints (items, agents, permissions). Pages are ordered by
- * `(createdAt DESC, id DESC)` — an immutable tuple, so a row inserted
- * concurrently never shifts an existing page (stable, non-overlapping).
+ * Keyset (cursor) pagination shared across the high-cardinality list endpoints
+ * (items, agents, permissions). Pages are ordered by `(createdAt DESC, id DESC)`
+ * — an immutable tuple, so a row inserted concurrently never shifts an existing
+ * page (stable, non-overlapping). Callers that omit `cursor`/`limit` get the
+ * first page (up to DEFAULT_PAGE_LIMIT) and can ignore `nextCursor`.
  *
- * Backward compatible: callers that ignore `cursor`/`limit` get the first page
- * (up to DEFAULT_PAGE_LIMIT) and can ignore `nextCursor`; the existing array
- * key on each result is unchanged.
- *
- * §AB-0052 — cursor precision fix. Postgres `timestamptz` stores microseconds;
- * JS `Date.toISOString()` only has millisecond resolution. Any batch that writes
- * more than MAX_PAGE_LIMIT rows in a single transaction (identical `created_at`)
- * caused all rows beyond the first page to be silently unreachable when the
- * cursor was stored as an ISO-8601 string.
- *
- * Fix: the cursor carries `(EXTRACT(EPOCH FROM created_at) * 1000000)::bigint`
- * — a Postgres bigint (microseconds since Unix epoch). The same expression
- * appears in both the SELECT projection and the WHERE predicate, so the
- * comparison is always value-identical for the same stored timestamp regardless
- * of any intermediate float rounding. JS `Number` can represent all current-era
- * microsecond epoch values exactly (< 2^53).
- *
- * Breaking change: cursors issued before this fix decode as `null` (fail-safe
- * to first page) because the first segment is no longer a valid decimal integer.
+ * The cursor encodes the timestamp at MICROSECOND precision, not as an ISO-8601
+ * string: Postgres `timestamptz` stores microseconds but `Date.toISOString()`
+ * only has millisecond resolution, so a batch writing more than MAX_PAGE_LIMIT
+ * rows in one transaction (identical `created_at`) would leave every row beyond
+ * the first page unreachable. The cursor instead carries
+ * `(EXTRACT(EPOCH FROM created_at) * 1000000)::bigint` (microseconds since Unix
+ * epoch). The identical expression appears in both the SELECT projection and the
+ * WHERE predicate, so the comparison is value-identical for the same stored
+ * timestamp regardless of intermediate float rounding. JS `Number` represents
+ * all current-era microsecond epoch values exactly (< 2^53). A malformed cursor
+ * decodes as `null` and fails safe to the first page.
  */
 
 import { and, type Column, lt, or, type SQL, sql } from "@abadge/db";

@@ -46,7 +46,7 @@ const PermissionIdSchema = Schema.Struct({
 const PermissionListQuerySchema = Schema.Struct({
   agentId: Schema.optional(Schema.String),
   itemId: Schema.optional(Schema.String),
-  // §AB-0050 — keyset pagination.
+  // Keyset pagination cursor.
   cursor: Schema.optional(Schema.String),
   limit: Schema.optional(
     Schema.Int.pipe(Schema.greaterThanOrEqualTo(1), Schema.lessThanOrEqualTo(100)),
@@ -127,7 +127,7 @@ const createPermission = (input: CreatePermissionInput) =>
       ),
     );
 
-    // §RM-PR2 — Profile-target branch.
+    // Profile-target branch.
     // The locality x storage matrix lookup that gates item-target grants
     // doesn't apply here: a profile holds N items, and the unified access
     // pipeline runs the per-item constraint check at access time. Validate
@@ -427,9 +427,9 @@ const createPermission = (input: CreatePermissionInput) =>
       organizationId: ctx.identity.organizationId,
       agentId: input.agentId,
       itemId: input.itemId,
-      // §RM-PR1 — profile-target grants are not wired through this router
-      // yet (PR2); item-target rows must explicitly set profileId=null to
-      // satisfy the new exactly-one-target CHECK constraint.
+      // Item-target rows must set profileId=null to satisfy the
+      // exactly-one-target CHECK constraint (profile-target rows take the
+      // early-return branch above).
       profileId: null,
       capability,
       expiresAt,
@@ -537,7 +537,7 @@ const listPermissions = (input: Schema.Schema.Type<typeof PermissionListQuerySch
       filters.push(eq(perms.itemId, input.itemId));
     }
 
-    // §AB-0050 — keyset pagination over (createdAt DESC, id DESC).
+    // Keyset pagination over (createdAt DESC, id DESC).
     const limit = resolveLimit(input.limit);
     const cursor = decodeCursor(input.cursor);
     // undefined (no cursor) is a no-op inside and(); no branch needed here.

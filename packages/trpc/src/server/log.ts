@@ -1,5 +1,5 @@
 /**
- * Structured-logging redaction guard (§AB-0091).
+ * Structured-logging redaction guard.
  *
  * The prescribed way to log structured data that might carry a secret: masks
  * known secret-bearing keys before the value reaches Workers observability, so

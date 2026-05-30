@@ -476,8 +476,8 @@ describe("access pipeline (unified read/use)", () => {
   // use: persists field + envVarName on mount_reservations row
   //
   // Audit meta records the user-requested field/envVarName, but the row also
-  // needs to carry them so redeem (PR4) is a deterministic lookup rather
-  // than re-deriving from scratch and risking divergence.
+  // needs to carry them so redeem is a deterministic lookup rather than
+  // re-deriving from scratch and risking divergence.
   // -------------------------------------------------------------------------
   test("use persists field + envVarName on mount_reservations row", async () => {
     const owner = await seedUser(auth);
@@ -558,7 +558,7 @@ describe("access pipeline (unified read/use)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // §RM-PR4 — redeemMount
+  // redeemMount
   // ---------------------------------------------------------------------------
 
   test("redeemMount returns SM payload and marks consumedAt", async () => {

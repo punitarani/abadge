@@ -17,8 +17,8 @@ export interface BaseRequestContext {
   resHeaders: Headers;
   env: AppBindings;
   validatedEnv: WorkerEnv;
-  // §AB-0011 — the org-scoped procedures (scopedSessionProcedure / agentProcedure)
-  // replace this with a transaction that has `app.current_org` set (the GUC the
+  // The org-scoped procedures (scopedSessionProcedure / agentProcedure) replace
+  // this with a transaction that has `app.current_org` set (the GUC the
   // FORCE-RLS policies read), so every tenant-table query the request issues runs
   // under that org context. Pre-org procedures (publicProcedure / userProcedure)
   // and pre-auth identity resolution see the pooled Database. Both are structurally
@@ -54,7 +54,7 @@ export interface OptionalOrgSessionRequestContext extends BaseRequestContext {
 export interface AgentIdentity {
   kind: "agent";
   agentId: string;
-  // §AB-0043 — null when the agent is orphaned (its creating user was deleted).
+  // Null when the agent is orphaned (its creating user was deleted).
   agentUserId: string | null;
   agentOrganizationId: string;
   agentLocality: "local" | "remote";

@@ -5,15 +5,12 @@ import { createTrpcRouter, userProcedure } from "../init";
 /**
  * Onboarding status, retained as a compatibility shim.
  *
- * §REVAMP-PR3 Task 5.2 — the onboarding-completeness gate was removed.
- * `organizations.create` (Task 5.1) auto-seeds a default `server_managed`
- * profile so an org is usable on first call. The web dashboard and the
- * `/device/approve` page already fail-open on any status-fetch error, so
- * unconditionally reporting `complete: true` keeps them on the happy path
- * without forcing a coordinated client-side rollout to delete this call.
- *
- * Procedure can be deleted once all `apps/web` callers stop reading
- * `onboarding.status`.
+ * There is no onboarding-completeness gate: `organizations.create` auto-seeds a
+ * default `server_managed` profile, so an org is usable on first call. This
+ * procedure unconditionally reports `complete: true`. The web dashboard and the
+ * `/device/approve` page fail-open on any status-fetch error, so the shim keeps
+ * them on the happy path. It can be deleted once all `apps/web` callers stop
+ * reading `onboarding.status`.
  */
 const OnboardingStatusResultSchema = Schema.Struct({
   complete: Schema.Boolean,

@@ -174,8 +174,9 @@ export function serializeAgent(row: AgentRow): Agent {
 }
 
 export function serializePermission(row: PermissionRow): Permission {
-  // §RM-PR2 — A row sets exactly one of (itemId, profileId); both nullable.
-  // The wire shape now mirrors the row shape so callers can branch.
+  // A permission row targets exactly one of (itemId, profileId); both columns
+  // are nullable. The wire shape mirrors the row shape so callers can branch on
+  // which target is set.
   return {
     id: row.id,
     organizationId: row.organizationId,

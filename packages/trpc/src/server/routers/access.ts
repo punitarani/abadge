@@ -120,7 +120,7 @@ const decryptServerManagedItem = (
         cachedContentKey,
       ),
     ).pipe(
-      // §AB-0022 — an authorized read that fails server-side decryption (corrupt
+      // An authorized read that fails server-side decryption (corrupt
       // ciphertext, wrong/rotated key, missing DEK) still must leave an audit row.
       // decryptServerEnvelope self-audits nothing, so record the denial here. The
       // no-payload case is already audited above before this call runs. Audit-write
@@ -274,8 +274,8 @@ const accessCiphertext = (input: CiphertextAccessInput) =>
       );
     }
 
-    // §W1S7-001 — local decrypt needs (itemId, profileId, contentVersion) to
-    // rebuild the XChaCha20-Poly1305 AAD. Every ZK item must live inside a
+    // Local decrypt needs (itemId, profileId, contentVersion) to rebuild the
+    // XChaCha20-Poly1305 AAD. Every ZK item must live inside a
     // ZK profile (insertZeroKnowledgeItem enforces this); a null profileId
     // here would mean a schema-level orphan, which would be undecryptable.
     if (!item.profileId) {
@@ -503,8 +503,8 @@ const accessMount = (input: MountAccessInput) =>
     }
 
     if (item.storageMode === "zero_knowledge") {
-      // §W1S7-001 — see `accessCiphertext`; the mount path needs the same
-      // AAD meta (itemId, profileId, contentVersion) forwarded to the
+      // Like `accessCiphertext`, the mount path needs the same AAD meta
+      // (itemId, profileId, contentVersion) forwarded to the
       // daemon so local XChaCha20-Poly1305 decrypt can rebuild the AAD.
       if (!item.profileId) {
         yield* logAgentAudit({
@@ -808,9 +808,9 @@ const accessBulkMountEnv = (input: BulkMountEnvInput) =>
     return { items: responseItems };
   });
 
-// §RM-PR2 — ProfileUseAccessResponseSchema is defined here rather than in
-// @abadge/core because it is a thin router-side adapter shape. Each item
-// returns its own mountId; the daemon exchanges them concurrently.
+// Defined here rather than in @abadge/core because it is a thin router-side
+// adapter shape. Each item returns its own mountId; the daemon exchanges them
+// concurrently.
 const ProfileUseAccessResponseSchema = Schema.Struct({
   items: Schema.Array(
     Schema.Struct({
@@ -844,8 +844,8 @@ export const accessRouter = createTrpcRouter({
     .output(strictSchema(BulkMountEnvResponseSchema))
     .mutation(({ ctx, input }) => runAgentEffect(ctx, accessBulkMountEnv(input))),
 
-  // §RM-PR2 — Canonical access procedures. Unified pipeline handles both ZK
-  // and server-managed storage, plus item-level AND profile-level grants.
+  // Canonical access procedures. The unified pipeline handles both ZK and
+  // server-managed storage, plus item-level AND profile-level grants.
   read: agentProcedure
     .meta({
       openapi: {
@@ -941,8 +941,8 @@ export const accessRouter = createTrpcRouter({
       ),
     ),
 
-  // §RM-PR4 — Atomically consume a mount handle and return the underlying
-  // envelope (ZK) or decrypted payload (server_managed). Cross-agent and
+  // Atomically consume a mount handle and return the underlying envelope (ZK)
+  // or decrypted payload (server_managed). Cross-agent and
   // double-redemption are observable to the audit log as denied events; both
   // return NOT_FOUND so reservation existence cannot be probed.
   redeemMount: agentProcedure
@@ -990,7 +990,7 @@ const consumeReservation = (mountId: string) =>
     return rows[0] ?? null;
   });
 
-/** §RM-PR4 — Exported for unit reuse and for the SDK to call. */
+/** Exported for unit reuse and for the SDK to call. */
 export const redeemMount = (mountId: string) =>
   Effect.gen(function* () {
     const ctx = yield* AgentRequestContextTag;
@@ -1136,7 +1136,8 @@ export const redeemMount = (mountId: string) =>
       );
     }
 
-    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
+    // Version-branched decrypt: v1/v2 under the master key, v3 under the
+    // per-profile DEK.
     const decrypted = yield* tryAsync(() =>
       decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
         id: item.id,
@@ -1146,7 +1147,7 @@ export const redeemMount = (mountId: string) =>
         serverKeyVersion: item.serverKeyVersion,
       }),
     ).pipe(
-      // §AB-0022 — an authorized redeem that fails server-side decryption still
+      // An authorized redeem that fails server-side decryption still
       // must leave an audit row (the no-payload case is audited above). Swallow
       // audit-write failures so they cannot mask the primary decrypt error.
       Effect.tapError(() =>

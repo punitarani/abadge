@@ -81,9 +81,9 @@ export interface ProfileUseResult {
 // ---------------------------------------------------------------------------
 
 /**
- * §RM-PR2 — Canonical actions map to themselves + every legacy capability
- * that mapped to them. This lets existing permission rows (`reveal_plaintext`,
- * `mount_env`, etc.) continue to authorize calls against the new pipeline.
+ * Canonical actions map to themselves plus every legacy capability that maps to
+ * them, so existing item-target permission rows (`reveal_plaintext`, `mount_env`,
+ * etc.) continue to authorize canonical `read`/`use` calls.
  */
 export function legacyCapsForAction(action: AccessAction): readonly Capability[] {
   const set = new Set<Capability>([action]);
@@ -243,7 +243,8 @@ const decryptServerManaged = (
     const iv = item.serverIv;
     const keyVersion = item.serverKeyVersion;
 
-    // §AB-0030 — version-branched decrypt (v1/v2 master key, v3 per-profile DEK).
+    // Version-branched decrypt: v1/v2 under the master key, v3 under the
+    // per-profile DEK.
     return yield* tryAsync(() =>
       decryptServerEnvelope(ctx.db, ctx.env.ENCRYPTION_KEY, ctx.identity.agentOrganizationId, {
         id: item.id,
@@ -367,9 +368,10 @@ export const resolveAccess = (
     // 4. Branch on action × storageMode.
     if (action === "read") {
       if (item.storageMode === "server_managed") {
-        // §AB-0022 — If AES-GCM decryption throws (corrupt ciphertext, wrong key),
-        // the authorized access still must produce an audit row. IntegrityError
-        // is already self-audited inside decryptServerManaged; skip it here.
+        // An authorized access must still produce an audit row even when
+        // AES-GCM decryption throws (corrupt ciphertext, wrong key).
+        // IntegrityError is already self-audited inside decryptServerManaged,
+        // so skip re-logging it here.
         const decrypted = yield* decryptServerManaged(item, "access.reveal").pipe(
           Effect.tapError((err) =>
             !(err instanceof IntegrityError)

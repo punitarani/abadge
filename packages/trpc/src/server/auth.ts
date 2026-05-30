@@ -113,7 +113,7 @@ function touchAgentSession(ctx: BaseRequestContext, sessionId: string): void {
 function auditAgentSessionReject(
   ctx: BaseRequestContext,
   input: {
-    // §AB-0043 — null when the rejected agent is orphaned (no owning user).
+    // Null when the rejected agent is orphaned (no owning user).
     userId: string | null;
     agentId: string;
     organizationId: string;
@@ -234,7 +234,7 @@ const verifyAgentSessionIdentity = (
     )) as Array<ActiveAgentSession>;
 
     if (!sessionRecord) {
-      // Fall through to verifyLocalAgentIdentity and the unrecognized-bearer audit path.
+      // Fall through to the unrecognized-bearer audit path in resolveAgentIdentity.
       // Throwing here would short-circuit the audit for abs_-prefixed probes.
       return null;
     }
@@ -271,7 +271,7 @@ const verifyAgentSessionIdentity = (
         .where(
           and(
             eq(agentRecords.id, sessionRecord.agentId),
-            // §AB-0043 — an orphaned agent (createdBy IS NULL) still validates its session;
+            // An orphaned agent (createdBy IS NULL) still validates its session;
             // an owned agent's creator must still match the session's recorded user. The two
             // null states move together — the user-delete FK SET-NULLs createdBy and the
             // session's userId atomically — so a null session user pairs with a null createdBy.
@@ -583,7 +583,7 @@ export const resolveAgentIdentity = (
     // Keypair-backed `abs_` agent sessions are the only agent credential. Anything
     // else (a personal `abu_` key, a browser session token, garbage) is not an
     // agent and must not reach the agent surface. Audit the unrecognized-bearer
-    // rejection — "every denied attempt is logged" (W2T12-001).
+    // rejection — every denied attempt is logged.
     yield* auditUnrecognizedBearer(ctx, token);
     return yield* Effect.fail(unauthorized("Invalid agent credentials"));
   });

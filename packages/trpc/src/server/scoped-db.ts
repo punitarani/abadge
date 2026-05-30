@@ -3,7 +3,7 @@ import { and, eq, type SQL, sql } from "@abadge/db";
 import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/schema";
 
 /**
- * §AB-0010 — Org-scoped data-access layer.
+ * Org-scoped data-access layer.
  *
  * The five tenant tables are reached only through a `scopedDb(executor, orgId)`
  * choke-point, so a forgotten `organization_id` filter cannot leak another
@@ -20,20 +20,15 @@ import { agents, auditLogs, items, permissions, profiles } from "@abadge/db/sche
  *    imports of these tables outside this module, so a server file cannot reach
  *    a tenant table without going through an org scope.
  *
- * Org isolation today is enforced entirely by the `organization_id` filters
- * above — they are present on every scoped read/write by construction.
- *
- * `run()` is the building block for the AB-0011 RLS backstop: it opens a tx and
- * sets the per-transaction GUC `app.current_org` (read by the FORCE-RLS policies
- * in migration 0021) as the first statement. NOTE: `run()` is not yet wired into
- * the request read path, so under the current owner/BYPASSRLS connection the
- * RLS policies are inert and the filters above are the live control. Turning the
- * backstop on for real — setting the GUC at the request boundary so it also
- * covers the non-scoped pre-auth helpers, and reconciling the `agents` table
- * (which must be read pre-org-context during auth) with org-keyed RLS — lands
- * with the least-privilege role rollout (§AB-0012). Do NOT enable the NOBYPASSRLS
- * runtime role until that wiring exists: with the GUC unset, every scoped read
- * would fail closed to zero rows.
+ * The `organization_id` filters are the primary isolation control. A second,
+ * defense-in-depth layer is Postgres FORCE-RLS, keyed off the per-transaction
+ * GUC `app.current_org`: the request boundary opens a transaction and sets that
+ * GUC before any tenant query runs (see `withOrgContext` in init.ts), and the
+ * runtime connects as a NOBYPASSRLS role so the policies actually enforce. With
+ * the GUC unset the policies fail closed to zero rows. `run()` is the in-DAL
+ * primitive for that pattern: it opens a tx and sets the GUC as its first
+ * statement. The `agents` table is RLS-exempt because agent identity must be
+ * resolved pre-org-context during auth.
  */
 
 const TENANT_TABLES = { items, profiles, agents, permissions, auditLogs } as const;
@@ -80,7 +75,7 @@ export interface ScopedDb {
     table: T,
     values: Omit<InsertRow<T>, "organizationId">,
   ): Promise<void>;
-  /** Run `fn` inside a transaction with a tx-bound scope (AB-0011 SET LOCAL hook). */
+  /** Run `fn` inside a transaction with a tx-bound scope (sets the RLS org GUC). */
   run<R>(fn: (scoped: ScopedDb) => Promise<R>): Promise<R>;
 }
 
@@ -124,10 +119,10 @@ export function scopedDb(executor: Executor, orgId: string): ScopedDb {
     },
     run(fn) {
       return executor.transaction(async (tx) => {
-        // §AB-0011 — set the per-transaction org GUC that the RLS policies read, as
-        // the first statement. set_config(_, _, true) is transaction-local (like SET
-        // LOCAL) so it survives connection pooling (Hyperdrive RESETs between txns, so
-        // a non-transaction-local SET would not hold). Unset => RLS fails closed (zero
+        // Set the per-transaction org GUC that the RLS policies read, as the first
+        // statement. set_config(_, _, true) is transaction-local (like SET LOCAL) so
+        // it survives connection pooling (Hyperdrive RESETs between txns, so a
+        // non-transaction-local SET would not hold). Unset => RLS fails closed (zero
         // rows). No-op for superuser/BYPASSRLS connections.
         await tx.execute(sql`select set_config('app.current_org', ${orgId}, true)`);
         return fn(scopedDb(tx, orgId));
