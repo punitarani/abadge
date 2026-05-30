@@ -167,7 +167,9 @@ async function profileUnlock(): Promise<void> {
 
   try {
     const res = await daemonUnlock(profileId, password);
-    success(`Profile unlocked (key version ${res.keyVersion}).`);
+    success(
+      `Profile unlocked (key version ${res.keyVersion}). Auto-locks after 15 min of inactivity — re-run \`abadge profile unlock\` if it locks.`,
+    );
   } catch (err) {
     error(errorMessage(err, "Failed to unlock profile."));
     process.exit(1);

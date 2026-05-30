@@ -1,5 +1,5 @@
 import type { RedeemMountResponse } from "@abadge/core";
-import type { BulkExecItem } from "@abadge/daemon";
+import { type BulkExecItem, daemonErrorKind } from "@abadge/daemon";
 import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
@@ -7,6 +7,34 @@ import { loadConfig } from "../config";
 import { daemonExpandEnv, daemonExpandEnvBulk } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
+
+/**
+ * Map a daemon failure during `run` to an accurate, actionable error instead of
+ * the old one-size-fits-all "start the daemon" message (which misled a user
+ * whose daemon was running but whose vault was locked, or whose real failure was
+ * a wrong field name).
+ */
+function daemonRunError(err: unknown): Error {
+  switch (daemonErrorKind(err)) {
+    case "locked":
+      return new Error(
+        "Profile is locked. Run `abadge profile unlock` to unlock it for this session.",
+        { cause: err },
+      );
+    case "unreachable":
+      return new Error(
+        "The local daemon isn't running. Start it with `abadge daemon start` (zero-knowledge items also need `abadge profile unlock`).",
+        { cause: err },
+      );
+    case "auth":
+      return new Error("Not logged in. Run `abadge login` first.", { cause: err });
+    default:
+      return new Error(
+        err instanceof Error ? err.message : "Failed to inject the secret via the local daemon.",
+        { cause: err },
+      );
+  }
+}
 
 /** Run an item via the unified `access.use` → `redeemMount` → daemon path. */
 export async function runWithUseRedeem(
@@ -55,11 +83,7 @@ export async function runWithUseRedeem(
     if (err instanceof AbadgeApiError) {
       throw err;
     }
-    throw new Error(
-      "abadge run requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge profile unlock",
-      { cause: err },
-    );
+    throw daemonRunError(err);
   }
 }
 
@@ -130,11 +154,7 @@ export async function runWithUseRedeemBulk(
     if (err instanceof AbadgeApiError) {
       throw err;
     }
-    throw new Error(
-      "abadge run --all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge profile unlock",
-      { cause: err },
-    );
+    throw daemonRunError(err);
   }
 }
 
