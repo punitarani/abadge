@@ -342,4 +342,33 @@ describe("run_with_all_secrets handler", () => {
 
     clientSpy.mockRestore();
   });
+
+  test("omits the hint on a non-zero exit that produced no output", async () => {
+    const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(
+      clientReturning([
+        {
+          storageMode: "server_managed",
+          itemId: "item-1",
+          label: "openai-api-key",
+          payload: { fields: { value: "sk-secret-aaa" } },
+        },
+      ]),
+    );
+
+    const result = await handler(
+      {
+        profileId: "prof-1",
+        command: process.execPath,
+        args: ["-e", "process.exit(3)"],
+      },
+      fakeConfig,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.exitCode).toBe(3);
+    // Failure with zero output lines → no withheld output to explain → no hint.
+    expect("hint" in parsed).toBe(false);
+
+    clientSpy.mockRestore();
+  });
 });
