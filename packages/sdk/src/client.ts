@@ -589,8 +589,11 @@ export class AbadgeUserClient {
       // points at the real method. Reject (don't throw synchronously) so
       // `await`/`.catch` and `expect(...).rejects` behave correctly.
       update: async (_profileId, _data): Promise<never> => {
-        throw new Error(
-          "profiles.update is not a generic update. To change a zero-knowledge profile password use profiles.changePassword(id, ...).",
+        throw new AbadgeApiError(
+          400,
+          "UNSUPPORTED_OPERATION",
+          "profiles.update is not a generic update.",
+          "To change a zero-knowledge profile password use profiles.changePassword(id, ...).",
         );
       },
       changePassword: (profileId, data) =>
@@ -673,8 +676,11 @@ export class AbadgeUserClient {
       // instead. Reject (don't throw synchronously) so `await`/`.catch` work and
       // the argument-eval timing of `expect(...).rejects` is preserved.
       update: async (_permissionId): Promise<never> => {
-        throw new Error(
-          "Permissions are immutable. To remove a grant use permissions.delete(id) (which revokes it); to change capabilities, delete the grant and permissions.create a new one.",
+        throw new AbadgeApiError(
+          400,
+          "UNSUPPORTED_OPERATION",
+          "Permissions are immutable.",
+          "To remove a grant use permissions.delete(id) (which revokes it); to change capabilities, delete the grant and permissions.create a new one.",
         );
       },
       delete: (permissionId) =>

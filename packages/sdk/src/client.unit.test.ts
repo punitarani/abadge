@@ -367,9 +367,11 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
   });
   test("profiles.update rejects and does not call the API", async () => {
     const { user, calls } = makeUserClient({ ok: true });
-    await expect(
-      user.profiles.update("p_x", { oldPassword: "a", newPassword: "b" } as never),
-    ).rejects.toThrow(/profiles\.changePassword/);
+    const err = await user.profiles
+      .update("p_x", { oldPassword: "a", newPassword: "b" } as never)
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(AbadgeApiError);
+    expect((err as AbadgeApiError).hint).toMatch(/profiles\.changePassword/);
     expect(calls).toHaveLength(0);
   });
 
@@ -429,7 +431,9 @@ describe("AbadgeUserClient namespaces delegate to tRPC paths", () => {
   });
   test("permissions.update rejects and does not revoke", async () => {
     const { user, calls } = makeUserClient({ ok: true });
-    await expect(user.permissions.update("p_x")).rejects.toThrow(/immutable/);
+    const err = await user.permissions.update("p_x").catch((e) => e);
+    expect(err).toBeInstanceOf(AbadgeApiError);
+    expect((err as AbadgeApiError).message).toMatch(/immutable/);
     expect(calls).toHaveLength(0);
   });
 
