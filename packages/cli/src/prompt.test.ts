@@ -1,5 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { applySilentInputChunk } from "./prompt";
+import { applySilentInputChunk, stripTrailingNewline } from "./prompt";
+
+describe("stripTrailingNewline", () => {
+  test("strips a single LF (from `echo`)", () => {
+    expect(stripTrailingNewline("secret\n")).toBe("secret");
+  });
+  test("strips a single CRLF", () => {
+    expect(stripTrailingNewline("secret\r\n")).toBe("secret");
+  });
+  test("leaves a value with no trailing newline untouched (from `echo -n`)", () => {
+    expect(stripTrailingNewline("secret")).toBe("secret");
+  });
+  test("strips only the LAST newline, preserving interior ones", () => {
+    expect(stripTrailingNewline("line1\nline2\n")).toBe("line1\nline2");
+  });
+  test("an empty string stays empty", () => {
+    expect(stripTrailingNewline("")).toBe("");
+  });
+});
 
 describe("applySilentInputChunk", () => {
   test("handles a full pasted password chunk ending in newline", () => {
