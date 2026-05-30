@@ -41,9 +41,13 @@ export interface BootstrapMaterial {
 export function computeBootstrapMaterial(
   profileId: string,
   masterPassword: string,
+  // Overridable only so tests can use cheap Argon2id params; production always
+  // uses DEFAULT_KDF_PARAMS. The chosen params are persisted with the profile,
+  // and `vault.unlock` re-derives the KEK with the same params at unlock time.
+  kdfParams: KDFParams = DEFAULT_KDF_PARAMS,
 ): BootstrapMaterial {
   const salt = generateSalt();
-  const kek = deriveKEK(masterPassword, salt, DEFAULT_KDF_PARAMS);
+  const kek = deriveKEK(masterPassword, salt, kdfParams);
   const rootKey = generateRootKey();
   const meta = { profileId, keyVersion: INITIAL_PROFILE_KEY_VERSION };
   const wrapped = wrapRootKey(rootKey, kek, meta);
@@ -55,7 +59,7 @@ export function computeBootstrapMaterial(
   return {
     wrappedRootKey: wrapped.wrapped,
     kdfSalt: toBase64(salt),
-    kdfParams: DEFAULT_KDF_PARAMS,
+    kdfParams,
     recoveryWrappedRootKey: recoveryWrapped.wrapped,
     recoveryKey,
   };
