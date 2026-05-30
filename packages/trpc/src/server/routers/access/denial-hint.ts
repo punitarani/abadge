@@ -40,9 +40,11 @@ export type PermissionDeniedMeta = {
  * `permission create` and must keep their own specific hints.
  */
 export function buildPermissionDeniedHint(target: DenialHintTarget): string {
+  // No leading "No valid permission." — that duplicates the ForbiddenError
+  // `message` (and conflicts with the pipeline's "Agent lacks '<action>'…"
+  // message). Keep the hint focused on the actionable remedy.
   const base =
-    "No valid permission. A person with management access must grant this — " +
-    "in the dashboard Permissions page";
+    "A person with management access must grant this — in the dashboard Permissions page";
 
   if (target.agentId && target.itemId && target.capability) {
     return (

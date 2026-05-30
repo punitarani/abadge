@@ -433,7 +433,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
   const formId = useId();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<ItemKind>("opaque");
-  const [storageMode, setStorageMode] = useState<StorageMode>("zero_knowledge");
+  const [storageMode, setStorageMode] = useState<StorageMode>("server_managed");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
@@ -503,7 +503,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
         try {
           key = await requestUnlock(zkProfileId);
         } catch {
-          toast.error("Master password required.");
+          toast.error("Profile password required.");
           return;
         }
 

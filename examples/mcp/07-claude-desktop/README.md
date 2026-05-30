@@ -72,7 +72,7 @@ model.**
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `list_items` | (none) | item metadata only — `id`, `label`, `kind`, `storageMode`, timestamps. Never values. |
+| `list_items` | (none) | item metadata only — `id`, `label`, `storageMode`, `cryptoVersion`, `contentVersion`, `profileId`, timestamps. Never values. |
 | `use_secret` | `itemId` **or** `profileId` (exactly one), `command`, `args?`, `envVarName?`, `field?`, `purpose?` | `exitCode`, `durationMs`, `outputLineCount.{stdout,stderr}`, `truncated`, `injectedCount?`. **No stdout/stderr text.** |
 | `mount_secret` | `itemId`, `field?`, `filename?`, `purpose?` | `{ mountId, permissions: "0600", expiresIn: "5 minutes" }`. The file **path is never returned**; auto-deletes after 5 min. |
 | `release_mount` | `mountId` | `{ released: true, mountId }` — deletes the temp file immediately. |

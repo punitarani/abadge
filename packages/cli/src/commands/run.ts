@@ -1,5 +1,5 @@
 import type { RedeemMountResponse } from "@abadge/core";
-import type { BulkExecItem } from "@abadge/daemon";
+import { type BulkExecItem, daemonErrorKind } from "@abadge/daemon";
 import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { Command } from "commander";
 import { createAgentApiClient } from "../client";
@@ -7,6 +7,34 @@ import { loadConfig } from "../config";
 import { daemonExpandEnv, daemonExpandEnvBulk } from "../daemon";
 import { error, errorMessage } from "../output";
 import { resolveSecretValue } from "../secret";
+
+/**
+ * Map a daemon failure during `run` to an accurate, actionable error instead of
+ * the old one-size-fits-all "start the daemon" message (which misled a user
+ * whose daemon was running but whose vault was locked, or whose real failure was
+ * a wrong field name).
+ */
+function daemonRunError(err: unknown): Error {
+  switch (daemonErrorKind(err)) {
+    case "locked":
+      return new Error(
+        "Profile is locked. Run `abadge profile unlock` to unlock it for this session.",
+        { cause: err },
+      );
+    case "unreachable":
+      return new Error(
+        "The local daemon isn't running. Start it with `abadge daemon start` (zero-knowledge items also need `abadge profile unlock`).",
+        { cause: err },
+      );
+    case "auth":
+      return new Error("Not logged in. Run `abadge login` first.", { cause: err });
+    default:
+      return new Error(
+        err instanceof Error ? err.message : "Failed to inject the secret via the local daemon.",
+        { cause: err },
+      );
+  }
+}
 
 /** Run an item via the unified `access.use` → `redeemMount` → daemon path. */
 export async function runWithUseRedeem(
@@ -55,11 +83,7 @@ export async function runWithUseRedeem(
     if (err instanceof AbadgeApiError) {
       throw err;
     }
-    throw new Error(
-      "abadge run requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge profile unlock",
-      { cause: err },
-    );
+    throw daemonRunError(err);
   }
 }
 
@@ -130,12 +154,40 @@ export async function runWithUseRedeemBulk(
     if (err instanceof AbadgeApiError) {
       throw err;
     }
-    throw new Error(
-      "abadge run --all requires the local daemon.\n" +
-        "hint: Start it with: abadge daemon start && abadge profile unlock",
-      { cause: err },
-    );
+    throw daemonRunError(err);
   }
+}
+
+/** Which flags the user explicitly provided, used for mutual-exclusion checks. */
+export type RunFlagsProvided = {
+  all: boolean;
+  item: boolean;
+  field: boolean;
+  envVar: boolean;
+  expandEnv: boolean;
+};
+
+/**
+ * Validate the combination of `run` flags. `--field` and `--env-var` only apply
+ * in single-item mode; `--all` (bulk) and `--expand-env` each take over field
+ * selection, so combining them with the single-item flags is a silent no-op we
+ * reject up front. Returns an error message when the combination is invalid,
+ * otherwise `null`.
+ */
+export function validateRunFlags(flags: RunFlagsProvided): string | null {
+  if (flags.all && flags.item) {
+    return "--all and --item are mutually exclusive. Pick one.";
+  }
+  if (!flags.all && !flags.item) {
+    return "Specify --item <id> for single-secret mode or --all for bulk-inject mode.\nhint: --all bulk-injects every item in the active profile that the agent has mount_env on.";
+  }
+  if (flags.all && (flags.field || flags.envVar || flags.expandEnv)) {
+    return "--field, --env-var, and --expand-env apply to single-item mode only and cannot be combined with --all.";
+  }
+  if (flags.expandEnv && (flags.field || flags.envVar)) {
+    return "--field and --env-var cannot be combined with --expand-env (which injects every field as its own env var).";
+  }
+  return null;
 }
 
 export function createRunCommand(): Command {
@@ -184,14 +236,18 @@ export function createRunCommand(): Command {
           process.exit(1);
         }
 
-        if (opts.all && opts.item) {
-          error("--all and --item are mutually exclusive. Pick one.");
-          process.exit(1);
-        }
-        if (!opts.all && !opts.item) {
-          error(
-            "Specify --item <id> for single-secret mode or --all for bulk-inject mode.\nhint: --all bulk-injects every item in the active profile that the agent has mount_env on.",
-          );
+        // `--env-var` carries a default, so its mere presence in `opts` does not
+        // mean the user passed it — ask Commander whether the value came from
+        // the CLI.
+        const flagError = validateRunFlags({
+          all: Boolean(opts.all),
+          item: opts.item !== undefined,
+          field: opts.field !== undefined,
+          envVar: cmd.getOptionValueSource("envVar") === "cli",
+          expandEnv: Boolean(opts.expandEnv),
+        });
+        if (flagError) {
+          error(flagError);
           process.exit(1);
         }
 

@@ -489,7 +489,17 @@ export class AbadgeUserClient {
       }>;
     }>;
     get: (profileId: string) => Promise<unknown>;
-    update: (profileId: string, data: ChangePasswordInput) => Promise<SuccessResult>;
+    /**
+     * Not supported: there is no generic profile-metadata update. Always rejects.
+     *
+     * To change a zero-knowledge profile password use
+     * {@link AbadgeUserClient.profiles.changePassword | profiles.changePassword}.
+     *
+     * @throws {Error} always
+     */
+    update: (profileId: string, data: ChangePasswordInput) => Promise<never>;
+    /** Change a zero-knowledge profile's password (rewraps the root key). */
+    changePassword: (profileId: string, data: ChangePasswordInput) => Promise<SuccessResult>;
     delete: (profileId: string) => Promise<SuccessResult>;
   };
 
@@ -512,7 +522,15 @@ export class AbadgeUserClient {
     create: (data: CreatePermissionInput) => Promise<PermissionListResult>;
     list: (filters?: PermissionFilters) => Promise<PermissionListResult>;
     get: (permissionId: string) => Promise<unknown>;
-    update: (permissionId: string) => Promise<SuccessResult>;
+    /**
+     * Not supported: permissions are immutable rows. Always rejects.
+     *
+     * Use {@link delete} (alias for revoke) to remove a grant, or revoke and
+     * then {@link create} a new grant to change capabilities.
+     *
+     * @throws {Error} always
+     */
+    update: (permissionId: string) => Promise<never>;
     delete: (permissionId: string) => Promise<SuccessResult>;
   };
 
@@ -566,7 +584,19 @@ export class AbadgeUserClient {
         call(() => this.client.profiles.list.query({ orgId }), "Failed to list profiles"),
       get: (profileId) =>
         call(() => this.client.profiles.get.query({ profileId }), "Failed to fetch profile"),
-      update: (profileId, data) =>
+      // `update` previously routed to `changePassword`, so a caller expecting a
+      // metadata update silently triggered a password change. It now rejects and
+      // points at the real method. Reject (don't throw synchronously) so
+      // `await`/`.catch` and `expect(...).rejects` behave correctly.
+      update: async (_profileId, _data): Promise<never> => {
+        throw new AbadgeApiError(
+          400,
+          "UNSUPPORTED_OPERATION",
+          "profiles.update is not a generic update.",
+          "To change a zero-knowledge profile password use profiles.changePassword(id, ...).",
+        );
+      },
+      changePassword: (profileId, data) =>
         call(
           () => this.client.profiles.changePassword.mutate({ profileId, ...data }),
           "Failed to change profile password",
@@ -641,11 +671,18 @@ export class AbadgeUserClient {
         }
         return found;
       },
-      update: (permissionId) =>
-        call(
-          () => this.client.permissions.revoke.mutate({ permissionId }),
-          "Failed to revoke permission",
-        ),
+      // Permissions are immutable rows. "update" used to silently revoke the
+      // grant, which is a dangerous footgun — it now rejects with a clear error
+      // instead. Reject (don't throw synchronously) so `await`/`.catch` work and
+      // the argument-eval timing of `expect(...).rejects` is preserved.
+      update: async (_permissionId): Promise<never> => {
+        throw new AbadgeApiError(
+          400,
+          "UNSUPPORTED_OPERATION",
+          "Permissions are immutable.",
+          "To remove a grant use permissions.delete(id) (which revokes it); to change capabilities, delete the grant and permissions.create a new one.",
+        );
+      },
       delete: (permissionId) =>
         call(
           () => this.client.permissions.revoke.mutate({ permissionId }),
@@ -804,10 +841,7 @@ export class AbadgeUserClient {
     profileId: string,
     data: ChangePasswordInput,
   ): Promise<SuccessResult> {
-    return call(
-      () => this.client.profiles.changePassword.mutate({ profileId, ...data }),
-      "Failed to change profile password",
-    );
+    return this.profiles.changePassword(profileId, data);
   }
 
   /**
@@ -1166,8 +1200,15 @@ export class AbadgeAgentClient {
    *   // ZK envelope: decrypt client-side via daemon
    * }
    *
+   * // `use` returns a discriminated union keyed off the target:
+   * //   { itemId }    -> UseAccessResponse        (a single `mountId`)
+   * //   { profileId } -> ProfileUseAccessResponse (an `items[]`, each with `mountId`)
    * const mount = await agent.access.use({ itemId: "item_id" }, { delivery: "env" });
-   * // mount.mountId is an opaque handle; redeem via daemon.
+   * if ("mountId" in mount) {
+   *   // item target: mount.mountId is an opaque handle; redeem via daemon.
+   * } else {
+   *   // profile target: iterate mount.items, each carries its own mountId.
+   * }
    * ```
    */
   readonly access = {
