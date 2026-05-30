@@ -1,18 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
 
-export type LandingHeaderPage = "home" | "security" | "terms" | "privacy";
+export type LandingHeaderPage = "home" | "blog" | "security" | "terms" | "privacy";
 
 type LandingHeaderProps = {
   currentPage: LandingHeaderPage;
 };
 
-export function LandingHeader({ currentPage }: LandingHeaderProps) {
-  const securityLinkClass =
-    currentPage === "security"
-      ? "text-[11px] font-bold uppercase tracking-widest text-[#0047FF]"
-      : "text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]";
+function navLinkClass(isActive: boolean): string {
+  return isActive
+    ? "text-[11px] font-bold uppercase tracking-widest text-[#0047FF]"
+    : "text-[11px] font-bold uppercase tracking-widest transition-colors hover:text-[#0047FF]";
+}
 
+export function LandingHeader({ currentPage }: LandingHeaderProps) {
   return (
     <header className="sticky top-0 z-30 flex w-full items-center justify-between border-b border-black bg-white px-4 py-2">
       <Link href="/" className="inline-flex items-center gap-2">
@@ -21,7 +22,10 @@ export function LandingHeader({ currentPage }: LandingHeaderProps) {
       </Link>
 
       <div className="flex items-center gap-3">
-        <Link href="/security" className={securityLinkClass}>
+        <Link href="/blog" className={navLinkClass(currentPage === "blog")}>
+          Blog
+        </Link>
+        <Link href="/security" className={navLinkClass(currentPage === "security")}>
           Security
         </Link>
         <a

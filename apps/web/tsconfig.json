@@ -2,7 +2,8 @@
   "extends": "../../packages/config/tsconfig.nextjs.json",
   "compilerOptions": {
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "content-collections": ["./.content-collections/generated"]
     },
     "allowJs": true,
     "incremental": true

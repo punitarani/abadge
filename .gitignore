@@ -17,6 +17,9 @@ output
 storybook-static
 *.tsbuildinfo
 
+# content-collections (generated, build-time)
+.content-collections
+
 # testing
 /coverage
 /coverage-comment.md
