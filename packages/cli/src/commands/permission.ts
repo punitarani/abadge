@@ -1,77 +1,123 @@
-import { CAPABILITIES, type Capability } from "@abadge/core";
+import { CANONICAL_CAPABILITIES, CAPABILITIES, type Capability } from "@abadge/core";
 import type { CreatePermissionInput } from "@abadge/sdk";
 import { Command } from "commander";
 import { createUserApiClient } from "../client";
 import { error, errorMessage, json, success, table } from "../output";
+
+const CANONICAL = CANONICAL_CAPABILITIES as readonly string[];
+
+/** Parse, validate, and de-duplicate the repeated/comma-separated `--capability` flags. */
+function parseCapabilities(rawFlags: string[]): Capability[] {
+  const raw = rawFlags
+    .flatMap((s) => s.split(","))
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (raw.length === 0) {
+    error("--capability is required (repeat the flag or pass a comma-separated list)");
+    process.exit(1);
+  }
+
+  const invalid = raw.filter((c) => !CAPABILITIES.includes(c as Capability));
+  if (invalid.length > 0) {
+    error(
+      `Unknown capability ${invalid.length > 1 ? "values" : "value"}: ${invalid.join(", ")}. Must be one of: ${CAPABILITIES.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  const capabilities: Capability[] = [];
+  for (const c of raw) {
+    if (seen.has(c)) {
+      duplicates.push(c);
+      continue;
+    }
+    seen.add(c);
+    capabilities.push(c as Capability);
+  }
+  if (duplicates.length > 0) {
+    error(
+      `Duplicate capabilities: ${duplicates.join(", ")}. Each capability may only appear once.`,
+    );
+    process.exit(1);
+  }
+  return capabilities;
+}
+
+/**
+ * Resolve the grant target from `--item-id` / `--profile-id`, enforcing exactly
+ * one and rejecting canonical capabilities on item targets (with the actionable
+ * fix) instead of a confusing server round-trip. Exits the process on error.
+ */
+function resolveGrantTarget(
+  opts: { itemId?: string; profileId?: string },
+  capabilities: Capability[],
+): { itemId: string } | { profileId: string } {
+  if (Boolean(opts.itemId) === Boolean(opts.profileId)) {
+    error(
+      "Pass exactly one of --item-id or --profile-id. Item grants use legacy capability names; profile grants use canonical read/use.",
+    );
+    process.exit(1);
+  }
+
+  if (opts.itemId) {
+    const canonicalGiven = capabilities.filter((c) => CANONICAL.includes(c));
+    if (canonicalGiven.length > 0) {
+      error(
+        `Item grants don't accept canonical ${canonicalGiven.join(", ")}. ` +
+          "Either pass --profile-id <id> to grant canonical read/use across a profile, " +
+          "or use a legacy item capability: read_ciphertext, reveal_plaintext, mount_env, mount_file.",
+      );
+      process.exit(1);
+    }
+    return { itemId: opts.itemId };
+  }
+  return { profileId: opts.profileId as string };
+}
 
 export function createPermissionCommand(): Command {
   const cmd = new Command("permission").description("Grant, list, and revoke agent access grants");
 
   cmd
     .command("create")
-    .description("Grant one or more capabilities to an agent on a single item (atomic per batch)")
+    .description(
+      "Grant one or more capabilities to an agent on a single item (--item-id) or a whole profile (--profile-id), atomic per batch",
+    )
     .requiredOption("--agent-id <id>", "Agent ID")
-    .requiredOption("--item-id <id>", "Item ID")
+    .option("--item-id <id>", "Item ID — grant on one item (uses legacy capability names)")
+    .option(
+      "--profile-id <id>",
+      "Profile ID — grant on every item in a profile (uses canonical read/use)",
+    )
     .requiredOption(
       "--capability <cap>",
-      "Capability: read, use, or a legacy name (read_ciphertext, reveal_plaintext, mount_env, mount_file). Repeat the flag or comma-separate to grant several.",
+      "Capability. With --profile-id: canonical `read` or `use`. With --item-id: a legacy name (read_ciphertext, reveal_plaintext, mount_env, mount_file). Repeat the flag or comma-separate to grant several.",
       (value: string, previous: string[]) => previous.concat([value]),
       [] as string[],
     )
     .option("--expires-at <timestamp>", "ISO 8601 expiry applied to every granted capability")
     .option("--json", "Output as JSON")
     .action(
-      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: permission.grant parses comma-separated capabilities, validates each against the canonical+legacy set, branches on capability-matrix legality per locality+storage-mode, and surfaces detailed per-capability errors — splitting it would obscure the audit trail.
       async (opts: {
         agentId: string;
-        itemId: string;
+        itemId?: string;
+        profileId?: string;
         capability: string[];
         expiresAt?: string;
         json?: boolean;
       }) => {
-        const raw = opts.capability
-          .flatMap((s) => s.split(","))
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-        if (raw.length === 0) {
-          error("--capability is required (repeat the flag or pass a comma-separated list)");
-          process.exit(1);
-        }
-
-        const invalid = raw.filter((c) => !CAPABILITIES.includes(c as Capability));
-        if (invalid.length > 0) {
-          error(
-            `Unknown capability ${invalid.length > 1 ? "values" : "value"}: ${invalid.join(", ")}. Must be one of: ${CAPABILITIES.join(", ")}`,
-          );
-          process.exit(1);
-        }
-
-        const seen = new Set<string>();
-        const duplicates: string[] = [];
-        const capabilities: Capability[] = [];
-        for (const c of raw) {
-          if (seen.has(c)) {
-            duplicates.push(c);
-            continue;
-          }
-          seen.add(c);
-          capabilities.push(c as Capability);
-        }
-        if (duplicates.length > 0) {
-          error(
-            `Duplicate capabilities: ${duplicates.join(", ")}. Each capability may only appear once.`,
-          );
-          process.exit(1);
-        }
+        const capabilities = parseCapabilities(opts.capability);
+        const target = resolveGrantTarget(opts, capabilities);
 
         try {
           const client = await createUserApiClient();
-          // Length is guarded above; cast narrows to the non-empty tuple
-          // shape demanded by CreatePermissionSchema (Schema.NonEmptyArray).
+          // Length is guarded in parseCapabilities; cast narrows to the
+          // non-empty tuple shape demanded by CreatePermissionSchema.
           const result = await client.permissions.create({
             agentId: opts.agentId,
-            itemId: opts.itemId,
+            ...target,
             capabilities: capabilities as [Capability, ...Capability[]],
             expiresAt: opts.expiresAt,
           } satisfies CreatePermissionInput);

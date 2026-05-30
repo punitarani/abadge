@@ -159,12 +159,15 @@ token and re-enroll).
 ### Permissions (grants)
 
 ```bash
-# Grant a single capability to an agent on an item
+# Grant a single capability to an agent on ONE item (legacy capability names)
 abadge permission create --agent-id <id> --item-id <id> --capability mount_env
 
 # Grant several capabilities atomically (repeat the flag or comma-separate)
 abadge permission create --agent-id <id> --item-id <id> \
   --capability mount_env,mount_file
+
+# Grant canonical read/use across an ENTIRE profile (--profile-id)
+abadge permission create --agent-id <id> --profile-id <id> --capability read
 
 # With expiry (applies to every capability in the batch)
 abadge permission create --agent-id <id> --item-id <id> \
@@ -174,18 +177,18 @@ abadge permission list [--agent-id <id>] [--item-id <id>]
 abadge permission revoke <permission-id>
 ```
 
-`permission create` always targets a single item (`--item-id`), and
-item-target grants accept only the legacy capability names —
-`read_ciphertext`, `reveal_plaintext` (mapped to canonical `read`) and
-`mount_env`, `mount_file` (mapped to canonical `use`). Capability legality
-is still bounded by the agent's locality and the item's storage mode (for
-example, remote agents cannot mount, and only server-managed items can be
-revealed over the API).
+`permission create` targets exactly one of `--item-id` or `--profile-id`:
 
-To grant the canonical `read` / `use` capabilities on an entire profile,
-use the dashboard (it requires a blast-radius confirmation) or the API/SDK
-`permissions.create` with a `profileId` target. The CLI does not create
-profile-target grants.
+- **`--item-id`** grants on a single item and accepts only the legacy
+  capability names — `read_ciphertext`, `reveal_plaintext` (mapped to canonical
+  `read`) and `mount_env`, `mount_file` (mapped to canonical `use`). Passing
+  canonical `read`/`use` here is rejected with a hint to use `--profile-id`.
+- **`--profile-id`** grants the canonical `read` / `use` capabilities across
+  every item in a profile.
+
+Capability legality is still bounded by the agent's locality and the item's
+storage mode (for example, remote agents cannot mount, and only server-managed
+items can be revealed over the API).
 
 ### Runtime — use a secret
 
