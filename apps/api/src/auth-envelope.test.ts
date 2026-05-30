@@ -4,7 +4,7 @@ import { authEnvelopeMiddleware } from "./middleware/auth-envelope";
 
 type AnyObject = Record<string, unknown>;
 
-describe("auth envelope middleware (§ENV2b)", () => {
+describe("auth envelope middleware", () => {
   test("wraps bare {message, code} 400 into full envelope", async () => {
     const app = new Hono();
     app.use("*", authEnvelopeMiddleware);

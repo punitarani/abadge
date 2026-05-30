@@ -15,10 +15,10 @@ import { createTestAuth } from "../helpers/test-auth";
 import { createAgentCaller, createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-// §AB-0043 — Agent-lifecycle entities are org-scoped, not user-scoped. Deleting the
+// Agent-lifecycle entities are org-scoped, not user-scoped. Deleting the
 // user who created an agent must ORPHAN it (createdBy -> NULL via FK SET NULL), not
 // cascade-delete it; the agent, its grants, and its sessions keep working.
-describe("§AB-0043 — agent lifecycle survives creating-user deletion", () => {
+describe("agent lifecycle survives creating-user deletion", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 

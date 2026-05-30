@@ -4,17 +4,16 @@ import type { AbadgeAgentClient } from "@abadge/sdk";
 import { resolveSecretValue } from "./secret";
 
 /**
- * §RM-PR4 — `resolveSecretValue` resolves a secret through the canonical
+ * `resolveSecretValue` resolves a secret through the canonical
  * `access.use` + `access.redeemMount` path so plain `abadge run --item`,
  * `abadge mount`, and the `--expand-env` / `--all` paths all flow through
- * the same mint→redeem→audit lifecycle (review C3).
+ * the same mint→redeem→audit lifecycle.
  *
- * Tests here exercise the same surface contract as before — given an item id,
- * the function returns the decrypted secret string (or throws on
+ * Tests here exercise the surface contract — given an item id, the function
+ * returns the decrypted secret string (or throws on
  * multi-field/daemon-unavailable cases) — by mocking `access.use` and
- * `access.redeemMount`. The legacy `accessMount` method was removed in
- * §AB-0080, so regressing to it is now a compile error rather than something a
- * runtime spy must guard.
+ * `access.redeemMount`. There is no `accessMount` method, so regressing to it
+ * is a compile error rather than something a runtime spy must guard.
  */
 function buildSmAccessClient(fields: Record<string, string>): AbadgeAgentClient {
   return {
@@ -31,7 +30,7 @@ function buildSmAccessClient(fields: Record<string, string>): AbadgeAgentClient 
   } as unknown as AbadgeAgentClient;
 }
 
-describe("resolveSecretValue (§RM-PR4 — redeemMount path)", () => {
+describe("resolveSecretValue — redeemMount path", () => {
   test("resolves the single-field value for server-managed items", async () => {
     const client = buildSmAccessClient({ value: "super-secret" });
     await expect(resolveSecretValue(client, "item_123", "env")).resolves.toBe("super-secret");
@@ -73,10 +72,10 @@ describe("resolveSecretValue (§RM-PR4 — redeemMount path)", () => {
     );
   });
 
-  // PR4 review C3 — pin the canonical mint→redeem lifecycle: resolveSecretValue
-  // calls access.use then access.redeemMount exactly once each. The legacy
-  // accessMount method was removed in §AB-0080, so regressing to it is now a
-  // compile error rather than something a runtime spy must guard.
+  // Pin the canonical mint→redeem lifecycle: resolveSecretValue calls
+  // access.use then access.redeemMount exactly once each. There is no
+  // accessMount method, so regressing to it is a compile error rather than
+  // something a runtime spy must guard.
   test("mints and redeems exactly once (audit uniformity)", async () => {
     let useCalls = 0;
     let redeemCalls = 0;

@@ -12,7 +12,7 @@ describe("roadmap schema foundations", () => {
       "organizationId",
       "name",
       "description",
-      // §RM-PR1 — externalId is the optional, caller-supplied idempotency
+      // externalId is the optional, caller-supplied idempotency
       // key for API-created profiles; partial-unique per organization.
       "externalId",
       "storageMode",
@@ -20,9 +20,9 @@ describe("roadmap schema foundations", () => {
       "kdfSalt",
       "kdfParams",
       "recoveryWrappedRootKey",
-      // §AB-0030 — per-profile server-managed DEK, wrapped under ENCRYPTION_KEY.
+      // per-profile server-managed DEK, wrapped under ENCRYPTION_KEY.
       "serverWrappedDek",
-      // §AB-0031 — nonce-ceiling counter for AES-GCM saturation tracking.
+      // nonce-ceiling counter for AES-GCM saturation tracking.
       "serverEncryptionCount",
       "keyVersion",
       "createdAt",
@@ -38,7 +38,7 @@ describe("roadmap schema foundations", () => {
     expect(Object.keys(columns)).toContain("label");
     expect(Object.keys(columns)).toContain("kind");
     expect(Object.keys(columns)).toContain("tags");
-    // §RM-PR1 — `userId` → `createdBy`: audit metadata, not ownership.
+    // `createdBy` is audit metadata, not ownership.
     expect(Object.keys(columns)).toContain("createdBy");
     expect(Object.keys(columns)).not.toContain("userId");
     expect(Object.keys(columns)).not.toContain("vaultId");
@@ -95,7 +95,7 @@ describe("roadmap schema foundations", () => {
       "organizationId",
       "agentId",
       "itemId",
-      // §RM-PR1 — profile-target permissions. The CHECK constraint enforces
+      // profile-target permissions. The CHECK constraint enforces
       // exactly one of (itemId, profileId) is non-null.
       "profileId",
       "capability",

@@ -42,7 +42,7 @@ function makeAgentClientWithAccess(impl: {
   } as unknown as AbadgeAgentClient;
 }
 
-describe("runWithUseRedeem (§RM-PR4)", () => {
+describe("runWithUseRedeem", () => {
   let exitSpy: ReturnType<typeof spyOn>;
   let lastFake: FakeRunDaemonClient;
 
@@ -143,9 +143,8 @@ describe("runWithUseRedeem (§RM-PR4)", () => {
     expect((caught as AbadgeApiError).code).toBe("MOUNT_NOT_FOUND");
   });
 
-  // Regression for PR4 review C1: when the daemon is unavailable the hint
-  // must point at the canonical `abadge profile unlock` command — the
-  // `abadge vault unlock` command was deleted in this PR.
+  // When the daemon is unavailable the hint must point at the canonical
+  // `abadge profile unlock` command.
   test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
     // Replace the daemon factory with one whose expandEnv throws a non-Abadge
     // error — that is exactly the "daemon down / socket missing" path the
@@ -182,7 +181,7 @@ describe("runWithUseRedeem (§RM-PR4)", () => {
   });
 });
 
-describe("runWithUseRedeemBulk (§RM-PR4)", () => {
+describe("runWithUseRedeemBulk", () => {
   let exitSpy: ReturnType<typeof spyOn>;
   let lastFake: FakeRunDaemonClient;
 
@@ -260,8 +259,8 @@ describe("runWithUseRedeemBulk (§RM-PR4)", () => {
     expect((caught as Error).message).toContain("__exit_0");
   });
 
-  // Regression for PR4 review C1: bulk variant must also point at the
-  // canonical `abadge profile unlock` command in its daemon-unavailable hint.
+  // The bulk variant must also point at the canonical `abadge profile unlock`
+  // command in its daemon-unavailable hint.
   test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
     __setDaemonClientFactoryForTests(
       () =>

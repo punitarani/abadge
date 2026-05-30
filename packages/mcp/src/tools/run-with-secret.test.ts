@@ -73,7 +73,7 @@ describe("run_with_secret OOM bound", () => {
   });
 });
 
-describe("run_with_secret envVarName validation (W3P10-001)", () => {
+describe("run_with_secret envVarName validation", () => {
   test("rejects LD_PRELOAD", () => {
     const result = validateEnvVarName("LD_PRELOAD");
     expect(result.ok).toBe(false);
@@ -133,13 +133,13 @@ describe("run_with_secret envVarName validation (W3P10-001)", () => {
 });
 
 /**
- * Tests for W3P4-001 (Task B1, Critical C-1): run_with_secret must refuse
- * secrets whose byte length exceeds MAX_OUTPUT_BYTES. The in-process redactor
- * can only guarantee scrubbing when the full secret fits in the 8KB
- * STREAM_CAP_BYTES capture window; large secrets must route to
- * mount_secret (filesystem delivery, no redaction required).
+ * run_with_secret must refuse secrets whose byte length exceeds
+ * MAX_OUTPUT_BYTES. The in-process redactor can only guarantee scrubbing when
+ * the full secret fits in the 8KB STREAM_CAP_BYTES capture window; large
+ * secrets must route to mount_secret (filesystem delivery, no redaction
+ * required).
  */
-describe("handler secret size guard — W3P4-001", () => {
+describe("handler secret size guard", () => {
   const fakeClient = {} as never;
   const fakeConfig = {
     apiUrl: "http://localhost",
@@ -200,7 +200,7 @@ describe("handler secret size guard — W3P4-001", () => {
    * The throw IS the proof: if the handler returned a value instead of
    * throwing, this test would fail, exposing the original vulnerability.
    */
-  test("9KB PEM-shaped secret rejected before spawn — no plaintext reaches LLM (W3P4-001 discrimination)", async () => {
+  test("9KB PEM-shaped secret rejected before spawn — no plaintext reaches LLM", async () => {
     const pemLikeSecret = `-----BEGIN PRIVATE KEY-----\n${"A".repeat(8500)}\n-----END PRIVATE KEY-----\n`;
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
     const secretSpy = spyOn(resolveSecretModule, "resolveSecret").mockResolvedValue(pemLikeSecret);
@@ -229,10 +229,9 @@ describe("handler secret size guard — W3P4-001", () => {
  * Integration tests that call handler() directly with mocked dependencies.
  * These tests prove the guard inside handler() is exercised — stashing the
  * validateEnvVarName call in run-with-secret.ts makes these tests fail even
- * though the pure-function tests above would still pass (W3P10-001 regression
- * proof).
+ * though the pure-function tests above would still pass.
  */
-describe("handler envVarName guard — integration (W3P10-001)", () => {
+describe("handler envVarName guard — integration", () => {
   // Stub getApiClient and resolveSecret so handler reaches the validation code
   // without needing a live API server or daemon.
   const fakeClient = {} as never;
@@ -290,15 +289,15 @@ describe("handler envVarName guard — integration (W3P10-001)", () => {
 });
 
 /**
- * §RED1 — response shape tests.
+ * Response shape tests.
  *
  * String-based redaction had 14+ bypass vectors (base64, hex, URL-encoded,
  * emoji cipher, nth-char extraction, byte-split across cap, etc.). The fix
  * is to stop piping subprocess output to the LLM entirely. These tests assert
- * the new contract: response keys = { exitCode, durationMs, outputLineCount,
+ * the contract: response keys = { exitCode, durationMs, outputLineCount,
  * truncated } — never stdoutLines or stderrLines.
  */
-describe("handler response shape — §RED1", () => {
+describe("handler response shape", () => {
   const fakeClient = {} as never;
   const fakeConfig = {
     apiUrl: "http://localhost",
@@ -306,7 +305,7 @@ describe("handler response shape — §RED1", () => {
     privateKey: "{}",
   } as never;
 
-  test("response does NOT contain stdoutLines or stderrLines (§RED1)", async () => {
+  test("response does NOT contain stdoutLines or stderrLines", async () => {
     const clientSpy = spyOn(apiClientModule, "getApiClient").mockResolvedValue(fakeClient);
     // Secret that a subprocess might emit in various encoded forms — the whole
     // point is that even if the subprocess leaks, the JSON response has no

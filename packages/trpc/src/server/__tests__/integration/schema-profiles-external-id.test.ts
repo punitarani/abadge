@@ -4,10 +4,10 @@ import { seedOrg, seedUser } from "../helpers/seed";
 import { createTestAuth } from "../helpers/test-auth";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-// §RM-PR1 — `profiles.external_id` is the caller-supplied idempotency key for
+// `profiles.external_id` is the caller-supplied idempotency key for
 // API-created profiles. Uniqueness must be enforced per-org BUT only when the
-// column is non-NULL, so legacy profiles created before this column existed
-// remain valid even though they all collide on NULL.
+// column is non-NULL, so profiles without an externalId remain valid even
+// though they all collide on NULL.
 
 describe("profiles.externalId schema constraints", () => {
   const db = getTestDb();

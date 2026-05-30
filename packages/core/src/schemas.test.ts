@@ -161,7 +161,7 @@ describe("item write schemas", () => {
     ).toBe(false);
   });
 
-  // §W1S7-001 — client-provided id is required for ZK create and must be a UUID.
+  // Client-provided id is required for ZK create and must be a UUID.
   test("require a client-provided UUID on zero-knowledge creates", () => {
     // Missing id: reject.
     expect(
@@ -222,9 +222,9 @@ describe("item write schemas", () => {
   });
 });
 
-// §AUTH12: ExchangeAgentSessionSchema must reject malformed base64url inputs at
+// ExchangeAgentSessionSchema must reject malformed base64url inputs at
 // the schema boundary so they never reach verifyEd25519 → fromBase64 → SyntaxError → 500.
-describe("ExchangeAgentSessionSchema — §AUTH12 signature/challenge format validation", () => {
+describe("ExchangeAgentSessionSchema — signature/challenge format validation", () => {
   // A realistic challenge: prefix "abc_" + base64url(32 random bytes) = 47 chars.
   const VALID_CHALLENGE = `abc_${"A".repeat(43)}`;
   // A realistic Ed25519 signature: 64 bytes → 86 chars unpadded base64url.

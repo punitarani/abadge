@@ -27,9 +27,8 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 /**
  * `organizations.create` tests cover:
  *   - atomicity: org + owner-member + default server_managed profile all
- *     succeed or fail together (§REVAMP-PR3 Task 5.1 — the default profile
- *     is auto-seeded so the org is immediately usable; the onboarding gate
- *     is removed in the same revamp)
+ *     succeed or fail together (the default profile is auto-seeded so the org
+ *     is immediately usable; there is no onboarding gate)
  *   - slug-race translation: the insert-time unique violation surfaces as
  *     SLUG_TAKEN, not a raw INTERNAL_SERVER_ERROR
  *
@@ -75,9 +74,9 @@ describe("organizations.create atomicity + slug translation", () => {
     expect(ownerMember?.userId).toBe(owner.userId);
     expect(ownerMember?.role).toBe("owner");
 
-    // §REVAMP-PR3 Task 5.1 — exactly one auto-seeded server_managed profile
-    // exists, with externalId="default" so external provisioning has a stable
-    // handle. The org is immediately usable on first call.
+    // Exactly one auto-seeded server_managed profile exists, with
+    // externalId="default" so external provisioning has a stable handle. The
+    // org is immediately usable on first call.
     const profileRows = await db
       .select()
       .from(profiles)

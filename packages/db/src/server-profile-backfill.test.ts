@@ -70,7 +70,7 @@ async function seedV1(id: string, payload: unknown): Promise<Row> {
 }
 
 async function seedV2Null(id: string, payload: unknown): Promise<Row> {
-  // v2 written before §AB-0001: AAD with the no-profile sentinel.
+  // Legacy v2 row: AAD with the no-profile sentinel.
   const aad: ServerAadMeta = {
     orgId: ORG,
     profileId: profileIdForServerAad(null),
@@ -108,7 +108,7 @@ async function decryptUnderProfile(row: Row): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-describe("backfillServerManagedItemProfiles (§AB-0003)", () => {
+describe("backfillServerManagedItemProfiles", () => {
   test("binds v1 and v2-null items; each decrypts under the new profile-bound AAD", async () => {
     const v1 = await seedV1("itm_v1", { secret: "alpha" });
     const v2 = await seedV2Null("itm_v2", { secret: "bravo" });

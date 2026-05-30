@@ -170,7 +170,7 @@ describe("server per-profile DEK envelope", () => {
   });
 });
 
-describe("server key commitment (§AB-0032, v4)", () => {
+describe("server key commitment (v4)", () => {
   const V4_AAD: ServerAadMeta = { ...CONTENT_AAD, keyVersion: 4 };
 
   test("v4 round-trips and grows the ciphertext by the 32-byte commitment (acceptance #2)", async () => {

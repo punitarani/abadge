@@ -14,13 +14,13 @@ import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 const SENTINEL = "PLAINTEXT-SENTINEL-9f8e7d6c5b4a";
 
 /**
- * §AB-0091 — regression guard: the server-side reveal path decrypts plaintext,
+ * The server-side reveal path decrypts plaintext,
  * so a future debug log in that path could leak it to Workers observability.
  * Capture all console output during an agent reveal and assert the known
  * plaintext never appears. Fails loudly if anyone adds a logging statement
  * that prints decrypted payloads.
  */
-describe("no secret plaintext in logs (AB-0091)", () => {
+describe("no secret plaintext in logs", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 

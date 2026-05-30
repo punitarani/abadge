@@ -5,7 +5,7 @@ import * as mountSecret from "./tools/mount-secret.js";
 import * as releaseMount from "./tools/release-mount.js";
 import * as useSecret from "./tools/use-secret.js";
 
-// §RED1: no MCP tool may forward subprocess stdout/stderr or raw secret
+// No MCP tool may forward subprocess stdout/stderr or raw secret
 // material to the model. This test enumerates the registered tools and
 // inspects their description text + every JSON return-shape sample to make
 // sure no key is named with a leaky suffix.
@@ -20,7 +20,7 @@ const TOOLS = [listItems, useSecret, mountSecret, releaseMount, getAudit] as con
 
 const LEAKY_KEY_RE = /stdout|stderr|"text"|secretValue/i;
 
-describe("§RED1 — MCP tool returns no subprocess output text", () => {
+describe("MCP tool returns no subprocess output text", () => {
   test("no tool description promises stdout / stderr / secret text", () => {
     for (const tool of TOOLS) {
       const desc = tool.toolDescription.toLowerCase();
@@ -56,7 +56,7 @@ describe("§RED1 — MCP tool returns no subprocess output text", () => {
     }
   });
 
-  test("tool descriptions surface the §RED1 guarantee explicitly", () => {
+  test("tool descriptions surface the no-output guarantee explicitly", () => {
     // The unified use_secret tool must tell callers stdout/stderr are not
     // returned, so a buggy LLM-side caller can't misinterpret the silence.
     expect(useSecret.toolDescription.toLowerCase()).toMatch(/stdout/);

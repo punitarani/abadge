@@ -111,10 +111,9 @@ export async function seedOrg(
      * exercise the rare "all profiles deleted" code paths. Defaults to
      * `true` so seeded orgs are immediately usable.
      *
-     * Note: the onboarding-completeness gate was removed in §REVAMP-PR3
-     * Task 5.2; production `organizations.create` auto-seeds a default
-     * profile (Task 5.1). This helper mirrors that behaviour for tests
-     * that bypass the tRPC layer.
+     * There is no onboarding-completeness gate; production
+     * `organizations.create` auto-seeds a default profile. This helper
+     * mirrors that behaviour for tests that bypass the tRPC layer.
      */
     withDefaultProfile?: boolean;
   },

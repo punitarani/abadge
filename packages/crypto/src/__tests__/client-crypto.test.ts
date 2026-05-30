@@ -88,16 +88,16 @@ describe("Root key management", () => {
     expect(() => unwrapRootKey(wrapped, wrongKek, ROOT_META)).toThrow();
   });
 
-  // §W1S7-001 — root-wrap AAD binds to (profileId, keyVersion).
+  // Root-wrap AAD binds to (profileId, keyVersion).
 
-  test("§W1S7-001: cross-profile wrapped root key rejected", () => {
+  test("cross-profile wrapped root key rejected", () => {
     const rk = generateRootKey();
     const kek = deriveKEK("pw", generateSalt(), TEST_KDF_PARAMS);
     const wrapped = wrapRootKey(rk, kek, { profileId: "prof_a", keyVersion: 1 });
     expect(() => unwrapRootKey(wrapped, kek, { profileId: "prof_b", keyVersion: 1 })).toThrow();
   });
 
-  test("§W1S7-001: stale keyVersion wrapped root key rejected", () => {
+  test("stale keyVersion wrapped root key rejected", () => {
     const rk = generateRootKey();
     const kek = deriveKEK("pw", generateSalt(), TEST_KDF_PARAMS);
     const wrapped = wrapRootKey(rk, kek, { profileId: "prof_a", keyVersion: 1 });
@@ -117,7 +117,7 @@ describe("Recovery key", () => {
     expect(toBase64(recovered)).toBe(toBase64(rk));
   });
 
-  test("§W1S7-001: cross-profile recovery wrap rejected", () => {
+  test("cross-profile recovery wrap rejected", () => {
     const rk = generateRootKey();
     const { recoveryKey, wrappedRootKey } = generateRecoveryKey(rk, {
       profileId: "prof_a",
@@ -179,12 +179,12 @@ describe("Item encryption", () => {
     expect(a.encryptedItemKey).not.toBe(b.encryptedItemKey);
   });
 
-  // §W1S7-001 — AAD binds ciphertext to (profileId, itemId, contentVersion).
+  // AAD binds ciphertext to (profileId, itemId, contentVersion).
 
-  test("§W1S7-001: cross-item decrypt rejected (DEK-wrap AAD swap)", () => {
+  test("cross-item decrypt rejected (DEK-wrap AAD swap)", () => {
     // Swap the (encryptedItemKey, ciphertext) pair between two items in the
     // same profile, then attempt to decrypt one under the other's identity.
-    // Pre-AAD: decrypt succeeded silently — this test would fail to throw.
+    // Without AAD binding, the decrypt would succeed silently.
     const rk = generateRootKey();
     const plaintextA = serializeItemPayload({
       v: 1,
@@ -202,7 +202,7 @@ describe("Item encryption", () => {
     ).toThrow();
   });
 
-  test("§W1S7-001: cross-profile decrypt rejected", () => {
+  test("cross-profile decrypt rejected", () => {
     const rk = generateRootKey();
     const enc = encryptItem(serializeItemPayload({ x: 1 }), rk, {
       profileId: "prof_a",
@@ -214,7 +214,7 @@ describe("Item encryption", () => {
     ).toThrow();
   });
 
-  test("§W1S7-001: cross-contentVersion decrypt rejected", () => {
+  test("cross-contentVersion decrypt rejected", () => {
     // Content AAD binds to `contentVersion`; attempting to decrypt a v=1 row
     // with v=2 metadata must fail even with the correct root key + ids.
     const rk = generateRootKey();
@@ -260,7 +260,7 @@ describe("Item rekeying", () => {
     expect(() => decryptItem(rekeyed, oldRk, META)).toThrow();
   });
 
-  test("§W1S7-001: rekey with wrong DEK-wrap meta rejected", () => {
+  test("rekey with wrong DEK-wrap meta rejected", () => {
     // A rekey attempt under a different itemId must fail the unwrap step —
     // a rotate that mis-binds the DEK-wrap cannot silently produce a valid
     // new wrap against an attacker-chosen identity.

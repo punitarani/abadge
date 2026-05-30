@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Glob } from "bun";
 
-// §AB-0010 — the five org-scoped tenant tables must be reached through `scopedDb`,
+// The five org-scoped tenant tables must be reached through `scopedDb`,
 // never imported directly into a server file. This CI enforcement bans runtime
 // (non-type) imports of the schema barrel's tenant tables outside the permanent
 // exempt set. `import type` statements are excluded because type-only imports
@@ -47,7 +47,7 @@ function serverFilesImportingTenantTables(): string[] {
   return offenders.sort();
 }
 
-describe("§AB-0010 — tenant tables are reached only through scopedDb", () => {
+describe("tenant tables are reached only through scopedDb", () => {
   test("no server file imports a tenant table directly outside the permanent exempt set", () => {
     const offenders = serverFilesImportingTenantTables().filter((f) => !PERMANENT_EXEMPT.has(f));
     expect(offenders).toEqual([]);

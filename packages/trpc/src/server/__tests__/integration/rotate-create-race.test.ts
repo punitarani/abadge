@@ -20,7 +20,7 @@ function makeIndependentDb(): Database {
   return createDb(TEST_DATABASE_URL);
 }
 
-describe("rotateKey + items.create race (§I5-RACE)", () => {
+describe("rotateKey + items.create race", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 

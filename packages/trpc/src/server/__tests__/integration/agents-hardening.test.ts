@@ -1,8 +1,8 @@
 /**
- * §AGC1 — agents.create hardening regression tests
+ * agents.create hardening
  *
- * Covers: §AGC1a quota, §AGC1b metadata size/depth, §AGC1c combo mutex,
- * §AGC1d name whitespace/zero-width, §AGC1e publicKey format.
+ * Covers: quota, metadata size/depth, combo mutex, name
+ * whitespace/zero-width, publicKey format.
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { MAX_AGENTS_PER_ORG } from "@abadge/core";
@@ -13,7 +13,7 @@ import { createTestAuth } from "../helpers/test-auth";
 import { createOperatorCaller } from "../helpers/test-callers";
 import { getTestDb, migrateTestDb, truncateAll } from "../helpers/test-db";
 
-describe("agents.create hardening (§AGC1)", () => {
+describe("agents.create hardening", () => {
   const db = getTestDb();
   const auth = createTestAuth(db);
 
@@ -26,10 +26,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1a — per-org count cap
+  // per-org count cap
   // -------------------------------------------------------------------------
 
-  test("§AGC1a: quota — agent creation is blocked at MAX_AGENTS_PER_ORG", async () => {
+  test("quota — agent creation is blocked at MAX_AGENTS_PER_ORG", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
 
@@ -64,10 +64,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1b — metadata size cap
+  // metadata size cap
   // -------------------------------------------------------------------------
 
-  test("§AGC1b: metadata size — rejects metadata exceeding 16 KB", async () => {
+  test("metadata size — rejects metadata exceeding 16 KB", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -88,10 +88,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1b — metadata depth cap
+  // metadata depth cap
   // -------------------------------------------------------------------------
 
-  test("§AGC1b: metadata depth — rejects metadata nested more than 8 levels", async () => {
+  test("metadata depth — rejects metadata nested more than 8 levels", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -118,10 +118,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1c — publicKey + issueBootstrapToken combo is rejected
+  // publicKey + issueBootstrapToken combo is rejected
   // -------------------------------------------------------------------------
 
-  test("§AGC1c: combo mutex — public_key_session + publicKey + issueBootstrapToken is rejected", async () => {
+  test("combo mutex — public_key_session + publicKey + issueBootstrapToken is rejected", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -143,10 +143,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1d — whitespace-only name
+  // whitespace-only name
   // -------------------------------------------------------------------------
 
-  test("§AGC1d: name whitespace — rejects whitespace-only name", async () => {
+  test("name whitespace — rejects whitespace-only name", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -165,10 +165,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1d — zero-width character in name (U+200B zero-width space)
+  // zero-width character in name (U+200B zero-width space)
   // -------------------------------------------------------------------------
 
-  test("§AGC1d: name zero-width — rejects name containing zero-width chars", async () => {
+  test("name zero-width — rejects name containing zero-width chars", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -188,10 +188,10 @@ describe("agents.create hardening (§AGC1)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // §AGC1e — publicKey format validation
+  // publicKey format validation
   // -------------------------------------------------------------------------
 
-  test("§AGC1e: publicKey format — rejects non-JWK publicKey on create", async () => {
+  test("publicKey format — rejects non-JWK publicKey on create", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
@@ -210,7 +210,7 @@ describe("agents.create hardening (§AGC1)", () => {
     }
   });
 
-  test("§AGC1e: publicKey format — accepts valid JWK publicKey on create", async () => {
+  test("publicKey format — accepts valid JWK publicKey on create", async () => {
     const owner = await seedUser(auth);
     const org = await seedOrg(auth, owner.userId);
     const caller = createOperatorCaller(db, auth, owner.headers, org.orgId);
