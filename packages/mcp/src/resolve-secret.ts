@@ -1,4 +1,5 @@
 import { payloadToSecret } from "@abadge/core";
+import { daemonErrorKind } from "@abadge/daemon";
 import type { AbadgeAgentClient } from "@abadge/sdk";
 import { daemonDecrypt } from "./daemon-client.js";
 
@@ -21,12 +22,24 @@ export async function resolveSecret(
         contentVersion: result.contentVersion,
       });
       return payloadToSecret(decrypted.payload, field);
-    } catch {
-      throw new Error(
-        "Zero-knowledge items require the local daemon for decryption.\n" +
-          "hint: Start the daemon with: abadge daemon start && abadge profile unlock\n" +
-          "hint: Or use a server-managed profile for MCP access.",
-      );
+    } catch (err) {
+      // An MCP agent cannot unlock a profile (the master password lives only with
+      // the human operator), so address the operator and distinguish the cause
+      // instead of always blaming a missing daemon.
+      switch (daemonErrorKind(err)) {
+        case "locked":
+          throw new Error(
+            "This zero-knowledge item can't be decrypted: the operator's profile is locked. Ask the operator to run `abadge profile unlock` on the machine running this MCP server, or migrate the secret to a server-managed profile for MCP access.",
+          );
+        case "unreachable":
+          throw new Error(
+            "This zero-knowledge item needs the local abadge daemon, which isn't running. Ask the operator to run `abadge daemon start` (and `abadge profile unlock`) on this machine, or use a server-managed profile for MCP access.",
+          );
+        default:
+          throw new Error(
+            `Could not decrypt this zero-knowledge item via the local daemon: ${err instanceof Error ? err.message : String(err)}. Check the field name, or ask the operator to restart \`abadge daemon\` and re-unlock the profile.`,
+          );
+      }
     }
   }
 
