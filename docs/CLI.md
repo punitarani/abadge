@@ -150,6 +150,12 @@ abadge agent add --name "ci-deploy" --kind remote --public-key ./key.jwk  # pre-
 
 abadge agent list
 abadge agent rm <id>       # revoke the agent and invalidate all sessions
+
+# Print a Claude Desktop config snippet for a registered local_mcp agent.
+# Resolves the agent from the API (active org), so it works even if the
+# agent was registered with --json. Requires the agent's private key to
+# exist locally at ~/.abadge/agents/<id>.ed25519.jwk.
+abadge agent mcp-config <id>
 ```
 
 Agents authenticate only with Ed25519 keypair sessions. To replace an
@@ -254,7 +260,20 @@ re-import, or use `abadge item update`. The summary reports
 ```bash
 abadge audit
 abadge audit --json
+abadge audit --result denied --agent-id <id>
+abadge audit --item-id <id> --event-type access.reveal
+abadge audit --limit 25 --cursor <cursor>
 ```
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output as JSON |
+| `--limit <count>` | Maximum number of entries to return |
+| `--cursor <cursor>` | Pagination cursor from a previous page |
+| `--result <result>` | Filter by outcome (`allowed`, `denied`, `expired`, `revoked`, `cascade`) |
+| `--agent-id <id>` | Filter by agent ID |
+| `--item-id <id>` | Filter by item ID |
+| `--event-type <type>` | Filter by event type (e.g. `access.reveal`) |
 
 ### Daemon
 

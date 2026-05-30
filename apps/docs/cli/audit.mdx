@@ -10,6 +10,8 @@ description: "Inspect the immutable audit log from the CLI."
 ```bash
 abadge audit
 abadge audit --limit 100
+abadge audit --result denied --agent-id agent_...
+abadge audit --item-id item_... --event-type access.reveal
 abadge audit --json | jq '.entries[] | select(.result == "denied")'
 ```
 
@@ -19,9 +21,13 @@ abadge audit --json | jq '.entries[] | select(.result == "denied")'
 |---|---|
 | `--limit <count>` | Number of entries to fetch (1–100; API default is 50) |
 | `--cursor <cursor>` | Pagination cursor returned from a previous response |
+| `--result <result>` | Filter by outcome (`allowed`, `denied`, `expired`, `revoked`, `cascade`) |
+| `--agent-id <id>` | Filter by agent ID |
+| `--item-id <id>` | Filter by item ID |
+| `--event-type <type>` | Filter by event type (e.g. `access.reveal`) |
 | `--json` | Print machine-readable JSON (the raw API response) |
 
-The CLI exposes only pagination flags. All filtering — by event type, agent, item, result, surface, or field — is done either with `jq` on `--json` output or via the `GET /v1/audit` endpoint directly.
+The CLI filter flags map directly to the `GET /v1/audit` query parameters. For filtering dimensions the flags don't cover (surface, field), pipe `--json` output through `jq` or call the API directly.
 
 ## Default output
 
@@ -61,7 +67,7 @@ while true; do
 done
 ```
 
-For first-class filters (by event type, agent, item, result, surface, or field), call the API directly: the [`GET /v1/audit`](/api/overview) endpoint accepts all of them.
+The CLI now exposes first-class `--result`, `--agent-id`, `--item-id`, and `--event-type` filters (see [Flags](#flags)). For the remaining dimensions (surface, field), call the API directly: the [`GET /v1/audit`](/api/overview) endpoint accepts all of them.
 
 ## What audit captures
 
