@@ -45,7 +45,7 @@ A JSON object with an `items` array:
 
 ## Why metadata only
 
-Letting the model see secret values would defeat the entire MCP design. The model should plan with metadata (item IDs, kinds, labels) and call `use_secret` or `mount_secret` to use the secret without seeing it.
+Letting the model see secret values would defeat the entire MCP design. The model should plan with metadata (item IDs, labels, storage modes) and call `use_secret` or `mount_secret` to use the secret without seeing it.
 
 ## Related
 

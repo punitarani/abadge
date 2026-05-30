@@ -148,13 +148,24 @@ abadge agent add --name "ci-deploy" --kind remote
 abadge agent add --name "ci-deploy" --kind remote --bootstrap   # issue a one-time bootstrap token instead
 abadge agent add --name "ci-deploy" --kind remote --public-key ./key.jwk  # pre-existing public key
 
+# Register a local_mcp agent and print a Claude Desktop config snippet
+abadge agent add --name "claude-desktop" --kind local_mcp --mcp-config
+
 abadge agent list
 abadge agent rm <id>       # revoke the agent and invalidate all sessions
+
+# Re-print the Claude Desktop config snippet for the registered local_mcp agent
+abadge agent mcp-config <id>
 ```
 
 Agents authenticate only with Ed25519 keypair sessions. To replace an
 agent's keypair, revoke it and register a new one (or re-issue a bootstrap
 token and re-enroll).
+
+`--mcp-config` (on `agent add`) is only valid with `--kind local_mcp` and
+cannot be combined with `--json`. `abadge agent mcp-config <id>` reprints the
+snippet for the local_mcp agent already registered on this machine; `<id>`
+must match the agent in `~/.abadge/config.json`.
 
 ### Permissions (grants)
 
@@ -257,7 +268,12 @@ re-import, or use `abadge item update`. The summary reports
 ```bash
 abadge audit
 abadge audit --json
+abadge audit --limit 50                 # cap the number of entries returned
+abadge audit --cursor <cursor>          # fetch the next page (cursor printed after a capped page)
 ```
+
+`--limit <count>` caps the number of returned entries; `--cursor <cursor>`
+fetches the next page using the cursor printed at the end of a previous page.
 
 ### Daemon
 
@@ -273,8 +289,11 @@ abadge daemon stop
 |------|-------------|
 | `--help, -h` | Show help |
 | `--version, -v` | Show version |
-| `--json` | Print machine-readable output on commands that support it |
 | `--token-stdin` | Read a bearer session token from stdin for this command |
+
+`--json` is **not** a global flag. It is a per-subcommand option on the
+commands that support machine-readable output (e.g. `abadge audit --json`,
+`abadge agent add --json`).
 
 ## Deprecated verbs
 
