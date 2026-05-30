@@ -9,6 +9,53 @@ import { type AbadgeAgentClient, AbadgeApiError } from "@abadge/sdk";
 import { afterEach, beforeEach, spyOn } from "bun:test";
 import type { DaemonClient } from "@abadge/daemon";
 import { __resetDaemonClientFactoryForTests, __setDaemonClientFactoryForTests } from "../daemon";
+import { type RunFlagsProvided, validateRunFlags } from "./run";
+
+describe("validateRunFlags", () => {
+  const base: RunFlagsProvided = {
+    all: false,
+    item: false,
+    field: false,
+    envVar: false,
+    expandEnv: false,
+  };
+
+  test("accepts single-item mode with field/env-var/expand-env", () => {
+    expect(validateRunFlags({ ...base, item: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, field: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, envVar: true })).toBeNull();
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true })).toBeNull();
+  });
+
+  test("accepts bare --all", () => {
+    expect(validateRunFlags({ ...base, all: true })).toBeNull();
+  });
+
+  test("rejects --all combined with --item", () => {
+    expect(validateRunFlags({ ...base, all: true, item: true })).toMatch(/mutually exclusive/);
+  });
+
+  test("rejects neither --all nor --item", () => {
+    expect(validateRunFlags(base)).toMatch(/Specify --item/);
+  });
+
+  test("rejects --all combined with --field / --env-var / --expand-env", () => {
+    expect(validateRunFlags({ ...base, all: true, field: true })).toMatch(/single-item mode only/);
+    expect(validateRunFlags({ ...base, all: true, envVar: true })).toMatch(/single-item mode only/);
+    expect(validateRunFlags({ ...base, all: true, expandEnv: true })).toMatch(
+      /single-item mode only/,
+    );
+  });
+
+  test("rejects --expand-env combined with --field / --env-var", () => {
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true, field: true })).toMatch(
+      /cannot be combined with --expand-env/,
+    );
+    expect(validateRunFlags({ ...base, item: true, expandEnv: true, envVar: true })).toMatch(
+      /cannot be combined with --expand-env/,
+    );
+  });
+});
 
 class FakeRunDaemonClient {
   expandEnvCalls: unknown[] = [];
@@ -143,12 +190,10 @@ describe("runWithUseRedeem", () => {
     expect((caught as AbadgeApiError).code).toBe("MOUNT_NOT_FOUND");
   });
 
-  // When the daemon is unavailable the hint must point at the canonical
-  // `abadge profile unlock` command.
-  test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
-    // Replace the daemon factory with one whose expandEnv throws a non-Abadge
-    // error — that is exactly the "daemon down / socket missing" path the
-    // hint is intended for.
+  // When the daemon is unavailable (socket gone) the hint must point at
+  // `abadge daemon start` — NOT `profile unlock` (you can't unlock a daemon
+  // that isn't running). A locked-vault failure is a separate case below.
+  test("daemon-unavailable hint points to 'abadge daemon start'", async () => {
     __setDaemonClientFactoryForTests(
       () =>
         ({
@@ -176,7 +221,7 @@ describe("runWithUseRedeem", () => {
     } catch (err) {
       caught = err;
     }
-    expect((caught as Error).message).toContain("abadge profile unlock");
+    expect((caught as Error).message).toContain("abadge daemon start");
     expect((caught as Error).message).not.toContain("abadge vault unlock");
   });
 });
@@ -259,9 +304,9 @@ describe("runWithUseRedeemBulk", () => {
     expect((caught as Error).message).toContain("__exit_0");
   });
 
-  // The bulk variant must also point at the canonical `abadge profile unlock`
-  // command in its daemon-unavailable hint.
-  test("daemon-unavailable hint points to 'abadge profile unlock'", async () => {
+  // The bulk variant's daemon-unavailable hint must also point at
+  // `abadge daemon start`.
+  test("daemon-unavailable hint points to 'abadge daemon start'", async () => {
     __setDaemonClientFactoryForTests(
       () =>
         ({
@@ -292,7 +337,47 @@ describe("runWithUseRedeemBulk", () => {
     } catch (err) {
       caught = err;
     }
-    expect((caught as Error).message).toContain("abadge profile unlock");
+    expect((caught as Error).message).toContain("abadge daemon start");
     expect((caught as Error).message).not.toContain("abadge vault unlock");
+  });
+
+  // A locked vault (daemon running, but key cleared) must point at
+  // `abadge profile unlock`, not `daemon start`.
+  test("locked-vault failure points at 'abadge profile unlock'", async () => {
+    const RPC_VAULT_LOCKED = -32000;
+    __setDaemonClientFactoryForTests(
+      () =>
+        ({
+          expandEnv: async () => {
+            throw Object.assign(new Error("vault is locked"), { code: RPC_VAULT_LOCKED });
+          },
+          expandEnvBulk: async () => {
+            throw Object.assign(new Error("vault is locked"), { code: RPC_VAULT_LOCKED });
+          },
+        }) as unknown as DaemonClient,
+    );
+    // Drive the BULK path (use -> items -> redeemMount -> expandEnvBulk) so this
+    // describe block's own catch block is exercised, not the single-item path.
+    const client = makeAgentClientWithAccess({
+      use: async () => ({
+        items: [{ itemId: "i1", mountId: "mnt_1", delivery: "env", expiresAt: "" }],
+      }),
+      redeemMount: async () => ({
+        storageMode: "server_managed",
+        delivery: "env",
+        payload: { fields: { value: "x" } },
+        label: "openai",
+        itemId: "i1",
+      }),
+    });
+    const { runWithUseRedeemBulk } = await import("./run");
+    let caught: unknown;
+    try {
+      await runWithUseRedeemBulk(client, "p_1", "/bin/true", []);
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as Error).message).toContain("abadge profile unlock");
+    expect((caught as Error).message).not.toContain("abadge daemon start");
   });
 });

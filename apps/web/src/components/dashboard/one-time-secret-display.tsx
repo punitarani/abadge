@@ -81,8 +81,13 @@ export function OneTimeSecretDisplay({
         </Button>
       </div>
 
-      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
-        This will not be shown again.
+      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+        <p className="font-medium">This will not be shown again.</p>
+        <p className="mt-1">
+          {type === "bootstrap_token"
+            ? "If you lose it, revoke this agent and register a new one to issue a fresh token."
+            : "If you lose it, revoke this key and create a new one — it cannot be recovered."}
+        </p>
       </div>
 
       {type === "bootstrap_token" && remainingMs !== null && (

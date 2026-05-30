@@ -9,7 +9,7 @@ The MCP server treats the model as **untrusted**. Every tool is designed so the 
 
 | Surface | Content |
 |---|---|
-| `list_items` | Item metadata (IDs, labels, kinds, storage modes, tags, timestamps) |
+| `list_items` | Item metadata (IDs, labels, storage modes, crypto/content versions, profile IDs, timestamps). No `kind`, tags, or field values — those live in the encrypted payload. |
 | `use_secret` | Exit code, duration, output-line count, truncation flag (no stdout/stderr text) |
 | `mount_secret` | Opaque `mountId`, permissions string, expiry window |
 | `release_mount` | Confirmation of release |
