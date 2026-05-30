@@ -30,12 +30,21 @@ export ABADGE_AGENT_ID=agt_...
 export ABADGE_PRIVATE_KEY_PATH=~/.abadge/agents/mcp.ed25519.jwk
 ```
 
-The server performs an Ed25519 session exchange on startup and refreshes
-the session at T-2 minutes before expiry.
+The server performs an Ed25519 session exchange lazily on the first tool
+invocation and refreshes the session at T-2 minutes before expiry.
 
-`~/.abadge/config.json` is also read for these values; environment
-variables take precedence. The MCP server has no other auth method —
-agents authenticate only via Ed25519 keypair sessions.
+Instead of a key file, an inline JWK string may be supplied via
+`ABADGE_PRIVATE_KEY`. Exactly one of `ABADGE_PRIVATE_KEY_PATH` or
+`ABADGE_PRIVATE_KEY` is required.
+
+When the CLI and MCP server share a machine but authenticate as different
+agents, the MCP-only overrides `ABADGE_MCP_AGENT_ID` and
+`ABADGE_MCP_PRIVATE_KEY` take precedence over the generic variables.
+
+`~/.abadge/config.json` is also read for these values (top-level `apiUrl`,
+`agentId`, `privateKeyPath`); environment variables take precedence. The
+MCP server has no other auth method — agents authenticate only via Ed25519
+keypair sessions.
 
 ### Running
 
@@ -78,11 +87,12 @@ The MCP server registers five tools.
 
 ### `list_items`
 
-Lists stored item metadata (IDs, labels, kinds, storage modes,
-timestamps). Never returns secret values.
+Lists stored item metadata (id, label, storageMode, cryptoVersion,
+contentVersion, profileId, timestamps). `kind` and field values live in
+the encrypted payload and are never returned. Never returns secret values.
 
 Input: none.
-Output: JSON array of item summaries.
+Output: JSON object with an `items` array of item summaries.
 
 ### `use_secret`
 
@@ -92,13 +102,12 @@ Returns only the exit code, duration, output-line count, and a
 truncation flag. **Subprocess stdout/stderr text is never returned to the
 model.**
 
-Provide exactly one target field. The three targets are mutually exclusive:
+Provide exactly one target field. The two targets are mutually exclusive:
 
 | Field | Mode | Selects |
 |-------|------|---------|
 | `itemId` | single-item | one item by id |
-| `profileLabel` | bulk | every env-shaped item in the profile, by profile id |
-| `profileExternalId` | bulk | every env-shaped item in the profile, by `externalId` |
+| `profileId` | bulk | every env-shaped item in the profile, by profile id |
 
 Common fields:
 
@@ -138,9 +147,7 @@ Security:
     silently skipped.
   * Labels normalizing to the same env var (or to reserved keys like
     `LD_PRELOAD`, `NODE_OPTIONS`) are hard-rejected.
-  * Cap of 256 items per call.
-  * Each included item produces an `access.use` audit row tagged
-    `meta.viaBulk = true`.
+  * Each included item produces its own `access.use` audit row.
 * Bulk mode is local-only (`use` is unavailable to remote agents).
 
 ### `mount_secret`
@@ -176,8 +183,12 @@ Output: `{ "released": true, "mountId": "..." }`.
 
 Fetches recent audit entries from the control plane.
 
-Input: optional filters supported by `GET /v1/audit`.
-Output: JSON array of audit entries.
+| Input field | Type | Required | Description |
+|------|------|----------|-------------|
+| `itemId` | string | no | Filter to one item |
+| `limit` | number | no | Max entries (1–100; server default ~20) |
+
+Output: JSON object with an `entries` array.
 
 ## Error responses
 
@@ -203,7 +214,7 @@ mount directories older than 10 minutes and removes them.
 
 ## Keypair session lifecycle
 
-For keypair-backed agents the MCP server:
+On the first tool invocation the MCP server:
 
 1. Creates an anonymous API client.
 2. Requests an agent challenge (`abc_...`, 60 s TTL).

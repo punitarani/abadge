@@ -1,4 +1,4 @@
-# Crypto Envelope Specification v1
+# Crypto Envelope Specification
 
 ## Algorithms
 
@@ -8,8 +8,14 @@
 | Key wrapping (KEK → RK, RK → DEK) | XChaCha20-Poly1305 | @noble/ciphers | 32 bytes | 24 bytes |
 | Item encryption (DEK → ciphertext) | XChaCha20-Poly1305 | @noble/ciphers | 32 bytes | 24 bytes |
 | Server-managed encryption | AES-256-GCM | WebCrypto | 32 bytes | 12 bytes |
-| API key hashing | SHA-256 | WebCrypto | N/A | N/A |
-| ID generation | Random | crypto.getRandomValues | N/A | N/A |
+| Server-managed key commitment (v4) | HMAC-SHA256 | WebCrypto | 32 bytes | N/A |
+| API key / token hashing | SHA-256 | WebCrypto | N/A | N/A |
+| ID / token / salt / nonce generation | Random | crypto.getRandomValues | N/A | N/A |
+
+Every AEAD ciphertext is bound with additional authenticated data (AAD) — see
+[AAD binding](#aad-binding). The server-managed envelope has a versioned format
+(`server_key_version`); current default writes are **v4** — see
+[Server-Managed Per-Profile Envelope](#server-managed-per-profile-envelope-v3).
 
 ## Key Hierarchy Overview
 
@@ -27,7 +33,7 @@ flowchart TD
 
   subgraph KeyLayer["Key Hierarchy"]
     KEK["KEK (32 bytes)"]
-    RK["Root Key (32 bytes, per vault)"]
+    RK["Root Key (32 bytes, per profile)"]
     DEK1["DEK 1 (32 bytes)"]
     DEK2["DEK 2 (32 bytes)"]
     DEKn["DEK n (32 bytes)"]
@@ -78,11 +84,32 @@ Memory is in KiB (65536 KiB = 64 MiB). Per RFC 9106 second recommendation for me
 
 Salt: 16 bytes, randomly generated, stored alongside wrapped root key.
 
+## AAD binding
+
+Every AEAD call binds its ciphertext to the smallest identity that uniquely names it, so a
+DB-write-capable adversary cannot transplant a ciphertext (or wrapped key) row from one
+item/profile to another and have AEAD decrypt succeed silently. Each call site uses a distinct
+domain-separation prefix; integer fields are big-endian, fields are null-byte-separated. Helpers
+live in `packages/crypto/src/shared/aad.ts`.
+
+| Ciphertext / wrap | AAD prefix | Bound identity |
+|---|---|---|
+| Server-managed content (v2+) | `abadge-sm-v1` | `(orgId, profileId, itemId, serverKeyVersion)` |
+| Server-managed DEK wrap | `abadge-sm-dek-v1` | `(orgId, profileId)` |
+| ZK item content | `abadge-zk-content-v1` | `(profileId, itemId, contentVersion)` |
+| ZK DEK wrap (`encrypted_item_key`) | `abadge-zk-dek-v1` | `(profileId, itemId)` |
+| ZK root-key wrap (`wrapped_root_key`, `recovery_wrapped_root_key`) | `abadge-zk-root-v1` | `(profileId, keyVersion)` |
+
+Legacy server-managed v1 ciphertext predates AAD and is decrypted without it; the decrypt path
+branches on the stored `serverKeyVersion` (AAD applies only to `serverKeyVersion >= 2`). When a
+server-managed item has no profile (legacy NULL-profile rows), the `profileId` AAD component uses
+the stable sentinel `__no_profile__`.
+
 ## Key Hierarchy Wire Formats
 
 All binary data is encoded as **unpadded base64** (RFC 4648 section 5, URL-safe alphabet) for storage and transport.
 
-### Vault Record
+### Profile Record (zero-knowledge)
 
 ```json
 {
@@ -141,13 +168,17 @@ This entire JSON blob is serialized to UTF-8 bytes, then encrypted with the item
 
 ```json
 {
-  "server_ciphertext": "<base64: AES-256-GCM ciphertext>",
+  "server_ciphertext": "<base64: AES-256-GCM ciphertext (v4: key-commitment tag prefixed)>",
   "server_iv": "<base64: 12 bytes>",
-  "server_key_version": 1
+  "server_key_version": 4
 }
 ```
 
-The plaintext envelope is the same JSON structure as ZK items.
+The plaintext envelope is the same JSON structure as ZK items. `server_key_version` selects the
+content key and AAD (see [the per-profile envelope section](#server-managed-per-profile-envelope-v3)
+for the full version table). Current default writes are v4: content under a per-profile DEK,
+AAD-bound to `(orgId, profileId, itemId, 4)`, with a 32-byte HMAC-SHA256 key-commitment tag
+prefixed to the ciphertext.
 
 ## Recovery Key Format
 
@@ -159,7 +190,7 @@ ABCDE-FGHIJ-KLMNO-PQRST-UVWXY-Z2345-67ABC-DEFGH-IJKLM-NOPQR-STUVW
 
 52 base32 characters = 260 bits (padded from 256). Displayed with dashes every 5 characters for readability.
 
-The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as the KEK wrap. Stored as `recovery_wrapped_root_key` on the vault record.
+The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as the KEK wrap, with the same `abadge-zk-root-v1` `(profileId, keyVersion)` AAD binding. Stored as `recovery_wrapped_root_key` on the profile record.
 
 ## Personal API Key Format
 
@@ -177,7 +208,7 @@ The recovery key wraps the root key using the same XChaCha20-Poly1305 scheme as 
 3. Client derives new KEK from new password + new salt
 4. Client wraps root key with new KEK
 5. Client sends: new wrapped\_root\_key, new kdf\_salt, new kdf\_params
-6. Server replaces vault record (same key\_version, root key unchanged)
+6. Server replaces profile record (same key\_version, root key unchanged)
 
 ```mermaid
 sequenceDiagram
@@ -203,7 +234,7 @@ sequenceDiagram
 3. Client re-wraps all DEKs with new root key
 4. Client wraps new root key with current KEK
 5. Client wraps new root key with recovery key
-6. Client sends batch update: vault (new wrapped keys, incremented key\_version) + all items (new encrypted\_item\_key fields)
+6. Client sends batch update: profile (new wrapped keys, incremented key\_version) + all items (new encrypted\_item\_key fields)
 7. Server applies atomically in a transaction
 
 ```mermaid
@@ -231,7 +262,7 @@ sequenceDiagram
 
 - `crypto_version` on items: Identifies the envelope format. Allows future algorithm changes without breaking old items. Current: 1.
 - `content_version` on items: Optimistic concurrency. Incremented on every update. Server rejects updates with stale version.
-- `key_version` on vaults: Incremented on root key rotation. Allows clients to detect stale local caches.
+- `key_version` on profiles: Incremented on root key rotation. Allows clients to detect stale local caches.
 
 ## Server-Managed Per-Profile Envelope (v3)
 

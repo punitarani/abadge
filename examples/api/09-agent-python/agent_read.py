@@ -24,9 +24,10 @@ keypair -- exactly what this script does. The flow is:
   5. Use that token (plus the org header) to read the granted secret.
 
 The agent must already be enrolled (its public key uploaded at registration)
-and granted the "read" capability on the target item. Do that once from the
+and granted read access on the target item. Do that once from the
 dashboard, the CLI (`abadge agent add` + `abadge permission create
---capability read`), or the management API -- not from this script.
+--capability reveal_plaintext`, the legacy alias for canonical `read` that
+item-target grants require), or the management API -- not from this script.
 """
 
 import base64

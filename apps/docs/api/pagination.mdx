@@ -59,17 +59,9 @@ The result array sits under the endpoint's key (see the table above) next to
 
 ## Iterating
 
-<CodeGroup>
-```ts SDK
-let cursor: string | undefined;
-do {
-  const page = await client.items.list({ cursor });
-  for (const item of page.items) {
-    // ...
-  }
-  cursor = page.nextCursor ?? undefined;
-} while (cursor);
-```
+The SDK list methods (`client.items.list()`, `agents.list()`, etc.) drain every
+page for you and return the full set with `nextCursor: null`. Iterate the cursor
+yourself only when calling `/v1` over raw HTTP:
 
 ```bash cURL
 # First page
@@ -80,4 +72,3 @@ curl "https://api.abadge.io/v1/items?limit=50" \
 curl "https://api.abadge.io/v1/items?limit=50&cursor=eyJpZCI6..." \
   -H "Authorization: Bearer abu_..."
 ```
-</CodeGroup>

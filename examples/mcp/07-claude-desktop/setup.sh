@@ -56,15 +56,17 @@ abadge agent add \
 
 # ---------------------------------------------------------------------------
 # 3. Grant the agent permission to USE specific items. Without an explicit
-#    grant, every access attempt is DENIED (and audited). Capabilities:
-#      use  -> env/file mount (what use_secret and mount_secret need)
-#      read -> reveal / ciphertext
+#    grant, every access attempt is DENIED (and audited). CLI grants target a
+#    single item, so they use the legacy capability names:
+#      mount_env / mount_file -> env/file mount (canonical `use`; what
+#                                use_secret and mount_secret need)
+#      reveal_plaintext / read_ciphertext -> reveal / ciphertext (canonical `read`)
 #    Replace the IDs with real values from `abadge agent list` / `abadge item list`.
 # ---------------------------------------------------------------------------
 #   abadge permission create \
 #     --agent-id  <AGENT_ID_FROM_STEP_1> \
 #     --item-id   <ITEM_ID> \
-#     --capability use
+#     --capability mount_env
 
 # ---------------------------------------------------------------------------
 # 4. ZERO-KNOWLEDGE items only: the MCP server decrypts ZK items through the

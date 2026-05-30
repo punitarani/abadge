@@ -11,18 +11,21 @@ Every SDK error is an instance of `AbadgeApiError`. The class carries the same e
 import { AbadgeApiError } from "@abadge/sdk";
 
 class AbadgeApiError extends Error {
-  readonly statusCode: number;                      // HTTP status code
-  readonly code: ErrorCode | string;                // e.g. "PERMISSION_DENIED"
-  readonly message: string;                         // Human-readable description (inherited from Error)
-  readonly hint?: string;                           // Actionable next step, if provided
-  readonly meta?: Readonly<Record<string, unknown>>; // Structured context for clients
+  readonly statusCode: number;                        // HTTP status code
+  readonly code: ErrorCode | string;                  // e.g. "PERMISSION_DENIED"
+  readonly message: string;                           // Human-readable description (inherited from Error)
+  readonly hint?: string;                             // Actionable next step, if provided
+  readonly meta?: Readonly<Record<string, unknown>>;  // Structured context for clients
+  readonly issues?: ReadonlyArray<                     // VALIDATION_ERROR only
+    { path: (string | number)[]; message: string }
+  >;
 
   static fromResponse(res: Response, fallback: string): Promise<AbadgeApiError>;
   static fromUnknown(error: unknown, fallback: string): AbadgeApiError;
 }
 ```
 
-For `VALIDATION_ERROR`, validation issues are delivered inside `meta.issues` as an array of `{ path, message }` objects. There is no dedicated top-level `issues` field on the SDK error class.
+For `VALIDATION_ERROR`, per-field issues are exposed as a top-level `issues` array of `{ path, message }` objects.
 
 ## Basic usage
 
@@ -109,15 +112,12 @@ try {
 
 ## Validation errors
 
-`VALIDATION_ERROR` carries the failing inputs under `meta.issues`:
+`VALIDATION_ERROR` carries the failing inputs in the top-level `issues` array:
 
 ```ts
-type ValidationIssue = { path: string[]; message: string };
-
 catch (err) {
   if (err instanceof AbadgeApiError && err.code === "VALIDATION_ERROR") {
-    const issues = (err.meta?.issues ?? []) as ValidationIssue[];
-    for (const issue of issues) {
+    for (const issue of err.issues ?? []) {
       console.error(`${issue.path.join(".")}: ${issue.message}`);
     }
   }
@@ -126,15 +126,27 @@ catch (err) {
 
 ## SecretValue opaque type
 
-The SDK uses a `SecretValue` opaque wrapper to discourage accidental logging or serialization of secret data. The wrapper requires an explicit `.expose()` call to access the underlying string:
+The SDK exports a `SecretValue` wrapper class to discourage accidental logging or
+serialization of secret data. Its `toJSON()`, `toString()`, and `util.inspect`
+hooks all render `[REDACTED]`; the underlying string is only reachable via an
+explicit `.expose()` call.
+
+`access.read` returns the decrypted payload directly (`result.payload.fields`),
+not a `SecretValue`. Wrap the field yourself when you want the redaction
+guarantees as a value flows through your own code:
 
 ```ts
+import { SecretValue } from "@abadge/sdk";
+
 const result = await agent.access.read(itemId);
-// result.value is a SecretValue — cannot be directly logged or serialized
-const plaintext = result.value.expose();
+if (result.storageMode !== "server_managed") throw new Error("Expected server_managed");
+
+const secret = new SecretValue(result.payload.fields.password as string);
+console.log(secret);          // SecretValue([REDACTED])
+const plaintext = secret.expose();
 ```
 
-Use this when you build higher-level wrappers — never log a `SecretValue` directly.
+Never log a raw `SecretValue` — only call `.expose()` at the point of use.
 
 ## Retry strategy
 

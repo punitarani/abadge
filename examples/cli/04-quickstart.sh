@@ -113,13 +113,15 @@ echo "Registered agent: $AGENT_ID (name=$AGENT_NAME, kind=local_cli)"
 # ---------------------------------------------------------------------------
 # 6. Grant the agent a capability on the item
 # ---------------------------------------------------------------------------
-# No access without an explicit (agent, item, capability) grant. We grant
-# `use` (the canonical capability for env/file injection). Grant `read` instead
-# (or as well, by repeating --capability) if the agent needs the raw value.
+# No access without an explicit (agent, item, capability) grant. CLI grants
+# target a single item, so they use the legacy capability names: `mount_env`
+# (and `mount_file`) map to canonical `use` for env/file injection, and
+# `reveal_plaintext`/`read_ciphertext` map to canonical `read`. Grant a read
+# alias instead (or as well, by repeating --capability) for the raw value.
 abadge permission create \
   --agent-id "$AGENT_ID" \
   --item-id "$ITEM_ID" \
-  --capability use
+  --capability mount_env
 
 # ---------------------------------------------------------------------------
 # 7. USE the secret — inject it into a child process

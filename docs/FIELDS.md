@@ -21,20 +21,25 @@ Source: `STANDARD_FIELDS_BY_KIND` in `packages/core/src/constants.ts`.
 
 ## Field Resolution Rules
 
-When `field` is not specified:
+Resolution is centralised in `resolveFieldValue` / `expandFieldSelection` in
+`packages/core/src/secret-delivery.ts`. Only **string** fields are eligible; non-string values are ignored.
 
-1. If the item has exactly one string field, that field is returned automatically.
-2. If the item kind has standard fields, the first standard field present in the payload is used.
-   If only one standard field is present, it is returned. If multiple standard fields are present,
-   `MULTI_FIELD_ITEM` is returned.
-3. If neither rule produces a single field, `MULTI_FIELD_ITEM` is returned with the available
-   fields listed in the error hint.
+When `field` is **not** specified, the candidate set is computed in this order:
 
-When `field` is specified:
+1. If the item's kind has standard fields and any of them are present in the payload, the candidate
+   set is those present standard fields (in standard order).
+2. Otherwise, if a `value` field is present, the candidate set is `["value"]`.
+3. Otherwise, the candidate set is every string field in the payload.
+
+The value is auto-delivered only when the candidate set resolves to exactly one field. If the set is
+empty or contains more than one field, `MULTI_FIELD_ITEM` is returned with the available string
+fields in `meta.availableFields`.
+
+When `field` **is** specified:
 
 1. The named field is looked up in the item payload.
-2. If the field is not a string or does not exist, `FIELD_NOT_FOUND` is returned with available
-   fields in the hint.
+2. If the field is not a string or does not exist, `FIELD_NOT_FOUND` is returned with the available
+   string fields in `meta.availableFields`.
 
 ## Using Fields in the CLI
 

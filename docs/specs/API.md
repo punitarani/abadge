@@ -120,26 +120,35 @@ hash plus an 8-character prefix. `list` never returns secrets. `revoke`
 disables a key. A personal API key resolves to a session identity and can
 never reach `access.*`; it also cannot create or revoke other API keys.
 
-### `access.mount`
+### Capability model
 
-Auth: `agentProcedure`
+Permissions carry one of two **canonical** capabilities:
 
-| Field | Type | Required | Description |
-|------|------|----------|-------------|
-| `itemId` | string | yes | Target item |
-| `mountType` | `"env" | "file"` | yes | Requested delivery mode |
+| Capability | Meaning |
+|-----------|---------|
+| `read` | Read the secret (encrypted blob for ZK, decrypted plaintext for server-managed) |
+| `use` | Deliver the secret for local injection (env var or temp file) |
 
-### `access.reveal`
+The legacy names `read_ciphertext`, `reveal_plaintext`, `mount_env`, and
+`mount_file` are still accepted on the wire and are mapped to `read`/`use` at
+access time. **Item-target** grants accept only the legacy four; **profile-target**
+grants accept canonical `read`/`use`.
 
-Auth: `agentProcedure`
+### Canonical access procedures
 
-Returns plaintext only for capabilities and storage modes that the policy matrix allows.
+| Procedure | Auth | Capability | Description |
+|-----------|------|-----------|-------------|
+| `access.read` | `agentProcedure` | `read` | Read one item. ZK returns the encrypted envelope; server-managed returns the decrypted payload. |
+| `access.use` | `agentProcedure` | `use` | Mint a one-time mount handle (`mountId`) for env/file delivery. Local agents only. |
+| `access.useProfile` | `agentProcedure` | `use` | Mint mount handles for every accessible item in a profile. Local agents only. |
+| `access.redeemMount` | `agentProcedure` | — | Atomically consume a `mountId` and return the envelope/payload. Single-use, agent-scoped. |
 
-### `access.ciphertext`
+`access.read` request: `{ itemId, field?, purpose? }`. `access.use` request:
+`{ itemId, delivery: "env" | "file", field?, envVarName?, purpose? }`.
 
-Auth: `agentProcedure`
-
-Returns encrypted payload material only for authorized local zero-knowledge flows.
+The legacy procedures `access.ciphertext`, `access.reveal`, `access.mount`, and
+`access.bulkMountEnv` remain as `@deprecated` aliases for the canonical
+procedures above (removal target: v0.6).
 
 ## Audit events
 

@@ -8,7 +8,7 @@ This is the canonical "GitHub Actions / remote worker first run" pattern.
 
 - [Bun](https://bun.sh) (or Node 18+ with a TypeScript runner).
 - An abadge API URL.
-- An agent the operator has already **registered with `issueBootstrapToken: true`** and **granted the `read` capability** on the item you want to read. Registering the agent and granting the permission is the operator's job (management surface, `AbadgeUserClient`) — see example `01`. From it you need the agent's `id` and the one-time `bootstrapToken` (prefix `abe_`, 10-minute TTL).
+- An agent the operator has already **registered with `issueBootstrapToken: true`** and **granted read access** (a `reveal_plaintext` item grant) on the item you want to read. Registering the agent and granting the permission is the operator's job (management surface, `AbadgeUserClient`) — see example `01`. From it you need the agent's `id` and the one-time `bootstrapToken` (prefix `abe_`, 10-minute TTL).
 
 ## Setup
 

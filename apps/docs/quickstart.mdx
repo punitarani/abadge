@@ -85,10 +85,15 @@ Permissions are explicit: agent + item + capability.
 abadge permission create \
   --agent-id <cli-agent-id> \
   --item-id <item-id> \
-  --capability use
+  --capability mount_env
 ```
 
 Find the `cli-agent-id` with `abadge agent list` (it's the agent with kind `local_cli`).
+
+The CLI grants target a single item, so they use the legacy capability
+names — `mount_env` / `mount_file` (canonical `use`) and `read_ciphertext`
+/ `reveal_plaintext` (canonical `read`). `mount_env` is what `abadge run`
+needs to inject the secret as an environment variable.
 
 ## 7. Use the secret
 
@@ -135,11 +140,11 @@ If you want a remote agent (CI runner, cloud worker) to consume the secret over 
 abadge agent add --kind remote --name "ci-bot"
 # → prints agent ID + abe_... bootstrap token (save it)
 
-# Grant `read` (remote agents can't use `use` — there's no local daemon)
+# Grant reveal access (remote agents can't mount — there's no local daemon)
 abadge permission create \
   --agent-id <remote-agent-id> \
   --item-id <item-id> \
-  --capability read
+  --capability reveal_plaintext
 ```
 
 The remote agent enrolls with the bootstrap token (via the SDK or API),

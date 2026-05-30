@@ -127,7 +127,7 @@ Organization responses (`POST /v1/orgs`, `POST /v1/orgs/personal`, `GET /v1/orgs
 | Method | Path | Auth | Summary |
 |--------|------|------|---------|
 | `GET` | `/v1/orgs/{orgId}/members` | session | List members of the org. |
-| `POST` | `/v1/orgs/{orgId}/members` | session (admin) | Invite a new member by email. Returns an `abi_...` invite token. |
+| `POST` | `/v1/orgs/{orgId}/members` | session (admin) | Create an invite (optional `role`; defaults to `member`). Returns an `abi_...` invite token to share out-of-band. |
 | `POST` | `/v1/invites/accept` | session | Accept an invite by token (`abi_...`). |
 | `DELETE` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Remove a member; cascade-revokes their agents. |
 | `PATCH` | `/v1/orgs/{orgId}/members/{memberId}` | session (admin) | Change a member's role. |

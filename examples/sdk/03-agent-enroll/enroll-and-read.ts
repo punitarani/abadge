@@ -115,7 +115,8 @@ async function main(): Promise<void> {
 
     // 4. READ the granted item. This is the ACCESS surface — it works only
     //    because (a) we are a keypair agent and (b) the operator granted this
-    //    agent the `read` capability on this item. `purpose` is recorded in the
+    //    agent read access on this item (a `reveal_plaintext`/`read_ciphertext`
+    //    item grant, or canonical `read` on the profile). `purpose` is recorded in the
     //    immutable audit log alongside the access.
     const result = await client.access.read(itemId, { purpose: "ci-first-run" });
 

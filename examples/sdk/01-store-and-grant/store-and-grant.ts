@@ -99,12 +99,14 @@ async function main(): Promise<void> {
     }
 
     // ------------------------------------------------------------------
-    // 3. Grant the agent the "read" capability on this item.
-    //    `read` (reveal plaintext / ciphertext) is the right capability when the
-    //    agent needs the secret VALUE delivered to it. Use "use" instead when
-    //    the agent should only mount the secret into a subprocess (env/file)
-    //    without ever receiving the value itself. We grant "read" here so the
-    //    deploy bot can use the API key directly.
+    // 3. Grant the agent read access on this item.
+    //    Item-target grants use the legacy capability names: `reveal_plaintext`
+    //    and `read_ciphertext` map to canonical `read` (the agent receives the
+    //    secret VALUE), while `mount_env`/`mount_file` map to canonical `use`
+    //    (the agent only mounts the secret into a subprocess, never receiving
+    //    the value). Canonical `read`/`use` apply to profile-target grants
+    //    (pass `profileId` instead of `itemId`). We grant `reveal_plaintext`
+    //    here so the deploy bot can read the API key directly.
     //
     //    Note the field is `capabilities` (a non-empty array), not `capability`.
     //    Grants are atomic per batch: all rows commit or none do.
@@ -112,7 +114,7 @@ async function main(): Promise<void> {
     const { permissions } = await client.permissions.create({
       agentId,
       itemId,
-      capabilities: ["read"],
+      capabilities: ["reveal_plaintext"],
     });
     console.log(`Granted ${permissions.length} permission(s) on item ${itemId} to agent ${agentId}`);
 

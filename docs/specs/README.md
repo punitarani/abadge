@@ -34,10 +34,10 @@ DOMAIN.md        ← Start here. The shared model everything else builds on.
 **API.md** is the authoritative specification for every operation. The CLI, MCP, and SDK are all clients of this API.
 
 **CLI.md**, **MCP.md**, and **SDK.md** define how each surface exposes the domain model. They share the same underlying types and operations, but differ in:
-- What operations are available (MCP has no vault management)
+- What operations are available (MCP has no profile/item/agent/permission management)
 - What data is returned (MCP never returns secret values)
 - How errors are presented (CLI uses stderr, SDK throws, MCP returns error objects)
-- Default behaviors (CLI defaults to `mount_env`, MCP limits to `mount_env`/`mount_file`)
+- Available capabilities (CLI accepts canonical `read`/`use` plus legacy aliases; MCP only consumes secrets via `use_secret`/`mount_secret`)
 
 ---
 
@@ -49,10 +49,10 @@ The default storage mode is `zero_knowledge`. The server never sees plaintext fo
 
 ### 2. Least privilege by default
 
-- Default capability: `mount_env` (not `reveal_plaintext`)
-- Remote agents: restricted to `reveal_plaintext` on `server_managed` items only
+- Two canonical capabilities only: `read` (read/reveal) and `use` (env/file mount delivery)
+- Remote agents: restricted to `read` (reveal) on `server_managed` items only — no ciphertext read, no mounts
 - MCP tools: never return raw secrets to the LLM context
-- Permissions: per-agent, per-item, per-capability — no wildcards
+- Permissions: per-agent, per-target (item or profile), per-capability — no wildcards
 
 ### 3. Explicit over implicit
 
@@ -71,29 +71,29 @@ Each operation has one way to do it. There are no alternative endpoints, no shor
 
 ### 6. Capability-based, not role-based
 
-Access is controlled by specific capabilities on specific items, not by roles like "admin" or "read-only". This gives fine-grained control: agent A can `mount_env` item X, agent B can `reveal_plaintext` item Y. No more, no less.
+Access is controlled by specific capabilities on specific targets, not by roles like "admin" or "read-only". This gives fine-grained control: agent A can `use` item X, agent B can `read` item Y. No more, no less.
 
 ---
 
 ## Surface Comparison
 
-| Capability | API | CLI | MCP | SDK |
+| Operation | API | CLI | MCP | SDK |
 |------------|-----|-----|-----|-----|
-| Vault bootstrap | yes | (via daemon) | no | yes |
-| Vault unlock/lock | no (daemon only) | yes | no | no |
+| Profile bootstrap | yes | (via daemon) | no | yes |
+| Profile unlock/lock | no (daemon only) | `profile unlock` / `profile lock` | no | no |
 | Item CRUD | yes | yes | list only | yes |
 | Agent CRUD | yes | yes | no | yes |
 | Permission CRUD | yes | yes | no | yes |
-| Access ciphertext | yes | (via daemon) | no | yes |
-| Access reveal | yes | no | no | yes |
-| Access mount | yes | `run` / `mount` | `run_with_secret` / `mount_secret` | yes |
+| Access read (ciphertext) | yes | (via daemon) | no | yes |
+| Access read (reveal) | yes | no | no | yes |
+| Access use (mount) | yes | `run` / `mount` | `use_secret` / `mount_secret` | yes |
 | Audit query | yes | yes | yes | yes |
 
 ### What each surface does NOT do
 
-- **CLI** does not expose `access.reveal` directly — use `item get` (which decrypts via daemon for ZK) or grant an agent `reveal_plaintext`.
-- **MCP** does not manage vault, items, agents, or permissions — it only consumes secrets and reads audit. Management is done through the CLI or dashboard.
-- **SDK** does not manage the local daemon — it is a pure HTTP client. Daemon operations are handled by the broker/daemon packages.
+- **CLI** does not expose `access.read` (reveal) directly — use `item get` (which decrypts via daemon for ZK) or grant an agent `read`.
+- **MCP** does not manage profiles, items, agents, or permissions — it only consumes secrets and reads audit. Management is done through the CLI or dashboard.
+- **SDK** does not manage the local daemon — it is a pure HTTP client. Daemon operations are handled by the daemon package.
 
 ---
 

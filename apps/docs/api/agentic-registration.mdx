@@ -164,13 +164,16 @@ curl -X POST https://api.abadge.io/agent/auth/claim/complete \
 This surface returns the standard `{ code, message, hint, meta }`
 [error envelope](/api/errors). The auth.md-specific codes are:
 
-| Code | Meaning |
-|---|---|
-| `invalid_claim_token` | The `claim_token` is unknown, already used, or expired. |
-| `otp_not_requested` | `claim/complete` called before `claim`. |
-| `otp_invalid` | The supplied code is wrong. |
-| `otp_expired` | The code passed its 10-minute TTL; start the claim again. |
-| `otp_attempts_exceeded` | Too many wrong codes; restart the claim. |
+| Code | HTTP | Meaning |
+|---|---|---|
+| `INVALID_CLAIM_TOKEN` | 400 | The `claim_token` is unknown, already used, or malformed. |
+| `CLAIM_TOKEN_EXPIRED` | 400 | The `claim_token` passed its 24-hour TTL; register again. |
+| `OTP_NOT_REQUESTED` | 400 | `claim/complete` called before `claim`. |
+| `OTP_INVALID` | 400 | The supplied code is wrong. |
+| `OTP_EXPIRED` | 400 | The code passed its 10-minute TTL; start the claim again. |
+| `OTP_ATTEMPTS_EXCEEDED` | 400 | Too many wrong codes (max 5); restart the claim. |
+| `CLAIM_EMAIL_IN_USE` | 409 | The email already maps to an existing account. |
+| `CLAIM_ALREADY_COMPLETED` | 409 | The claim was already completed. |
 
 ## Revocation
 

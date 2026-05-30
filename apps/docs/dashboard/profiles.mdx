@@ -1,68 +1,66 @@
 ---
 title: "Profiles"
-description: "Create encryption boundaries inside an organization. Bootstrap zero-knowledge profiles and manage recovery keys."
+description: "Create encryption boundaries inside an organization, including zero-knowledge profiles."
 ---
 
-A **profile** is a named credential namespace inside an organization. Each profile has its own encryption root, so credentials can be partitioned by environment, team, or sensitivity.
+A **profile** is a named credential namespace inside an organization. Each profile has its own encryption root, so credentials can be partitioned by environment, team, customer, or sensitivity.
+
+Every organization is created with a default `server_managed` profile. A **personal account** is capped at a single profile, so the create affordance is hidden for it; team organizations are uncapped.
+
+## Listing profiles
+
+The profiles table shows every profile in the active org:
+
+- Profile name (a `DEFAULT` badge marks the seeded default), linking to the profile detail page
+- External ID (if set)
+- Profile ID
+- Storage mode (`ZK` or `Server`)
+- Vault status (`Unlocked` / `Locked` for zero-knowledge profiles; `N/A` for server-managed)
+- Created timestamp
+
+Search by name, and filter by storage mode or vault status.
 
 ## Creating a profile
 
+Click **New profile** (team organizations only). One form covers both storage modes.
+
 <Steps>
-  <Step title="Open the Profiles section">
-    From the dashboard sidebar.
+  <Step title="Name the profile">
+    Kebab-case, unique within the org.
   </Step>
-  <Step title="Click New profile">
-    Provide a display name (unique within the org), an optional description, and pick a storage mode.
+  <Step title="(Optional) Set an External ID">
+    A stable identifier your system controls (per-customer or per-tenant). Unique within the org when set.
   </Step>
-  <Step title="Choose storage mode">
-    - **Zero-knowledge** — server never sees plaintext. Requires bootstrap (next step).
-    - **Server-managed** — items are encrypted with AES-256-GCM by the API. Ready to use immediately.
+  <Step title="(Optional) Enable zero-knowledge">
+    The default is **server-managed** (AES-256-GCM, ready immediately). Tick **Zero-knowledge encryption (advanced)** to make the server store only ciphertext.
+  </Step>
+  <Step title="Set a profile password (zero-knowledge only)">
+    Enter and confirm a profile password (minimum 12 characters). The browser derives a KEK via Argon2id, generates a root key, wraps it, and bootstraps the profile in the same action — the server never sees the password or the root key.
   </Step>
 </Steps>
 
-## Bootstrapping a zero-knowledge profile
+## Storage modes
 
-A new ZK profile is empty until you bootstrap encryption material.
-
-<Steps>
-  <Step title="Open the new profile and click Bootstrap">
-    The dashboard prompts for a master password. Pick something strong — Argon2id makes brute-force expensive, not impossible.
-  </Step>
-  <Step title="Browser derives the KEK">
-    Argon2id (64 MiB memory, 3 iterations) turns your password and a fresh 16-byte salt into a 32-byte KEK.
-  </Step>
-  <Step title="Browser generates the root key">
-    A random 32-byte root key is wrapped with the KEK using XChaCha20-Poly1305 and shipped to the server. The unwrapped root key never leaves your browser.
-  </Step>
-  <Step title="Save the recovery key">
-    The dashboard offers to generate a 256-bit recovery key (base32, shown once). The key wraps a copy of the root key. Store it offline. Without it, losing your master password means losing access to every item in the profile.
-  </Step>
-</Steps>
+| Mode | Encryption | Notes |
+|---|---|---|
+| Server-managed | AES-256-GCM with the Worker's `ENCRYPTION_KEY` | Ready immediately. Required for remote-agent `read` access. |
+| Zero-knowledge | XChaCha20-Poly1305, client-side | Server never sees plaintext. You set a profile password the server never sees. Local agents only. |
 
 <Warning>
-  Take recovery setup seriously. There is no server-side reset for zero-knowledge profiles. The recovery key is shown once.
+  There is no server-side reset for zero-knowledge profiles. The dashboard does not generate a recovery key during bootstrap — manage recovery, password changes, and key rotation through the CLI (`abadge profile`). If you forget the password and have no recovery key, the items in that profile are unrecoverable.
 </Warning>
 
-## Server-managed profiles
+## Profile detail page
 
-Server-managed profiles are ready immediately after creation. The API encrypts each item with AES-256-GCM using the Worker's `ENCRYPTION_KEY`. Use this mode when remote agents need access (`read`).
+Each profile has a detail page showing its vault status, encryption metadata (KDF, algorithm, key version), a preview of items and agents in the org, a **Key management** section, and a **Danger zone**.
 
-## Switching the active profile
+### Key management (zero-knowledge)
 
-Item create / edit forms operate against an active profile. Switch profiles from the profile picker on the **Items** page or the profile detail page.
+The Key management section lists change-vault-password, rotate-item-keys, and recovery-key actions. **These operations are not performed in the dashboard** — each action points you to the CLI, where the local daemon holds the root key. See [Vault security](/dashboard/vault-security).
 
-## Vault security operations
+### Delete profile
 
-Per-profile operations live on the profile detail page:
-
-| Action | What it does |
-|---|---|
-| Change master password | Re-wraps the root key under a new KEK. Root key unchanged. |
-| Set up recovery | Adds a recovery-key-wrapped copy of the root key. |
-| Rotate root key | Generates a new root key and re-wraps every item DEK. Atomic. |
-| Delete profile | Refused if the profile contains items (`PROFILE_NOT_EMPTY`). |
-
-See [Vault security](/dashboard/vault-security) for the full procedures.
+A profile can be deleted only when it contains no items; otherwise the server returns `PROFILE_NOT_EMPTY`. Deletion is confirmed by typing the profile name.
 
 ## Related
 

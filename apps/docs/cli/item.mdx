@@ -18,7 +18,7 @@ abadge item add --label "Deploy SSH key" --kind ssh_key --storage-mode zero_know
 | Flag | Description |
 |---|---|
 | `--label <label>` | Item label (cleartext). `--name` is accepted as a synonym. |
-| `--kind <kind>` | `opaque`, `api_key`, `login`, `token`, `ssh_key`, `certificate`, `json` |
+| `--kind <kind>` | `login`, `api_key`, `token`, `json`, `certificate`, `ssh_key`, `opaque` |
 | `--value <value>` | Secret value. Prefer the interactive prompt — passing on the command line risks leaking into shell history. |
 | `--storage-mode <mode>` | `zero_knowledge` or `server_managed`. Defaults to `server_managed`. |
 | `--json` | Print raw JSON |

@@ -49,6 +49,26 @@ The API worker encrypts and decrypts with a shared key.
 
 **Key source**: `ENCRYPTION_KEY` environment variable on the Cloudflare Worker, validated to decode to exactly 32 bytes (AES-256) at runtime. Decryption only happens after all authorization checks pass.
 
+**Per-profile DEK envelope (default).** New server-managed writes (`server_key_version = 4`) do not
+encrypt item content directly under `ENCRYPTION_KEY`. Each `server_managed` profile owns a 32-byte
+data-encryption key (DEK), generated on first write and stored as `profiles.server_wrapped_dek`
+(AES-256-GCM-wrapped under `ENCRYPTION_KEY`, AAD-bound to `(orgId, profileId)`). Item content is
+encrypted under the profile DEK. Rotating `ENCRYPTION_KEY` therefore rewraps DEKs only — no item
+content is re-encrypted (O(profiles), not O(secrets)). The decrypt path branches on the stored
+`server_key_version`: v1/v2 rows decrypt directly under `ENCRYPTION_KEY`; v3/v4 unwrap the profile
+DEK first. See [`docs/ENVELOPE_SPEC.md`](./ENVELOPE_SPEC.md).
+
+**Integrity binding (AAD).** Every AEAD ciphertext is bound with additional authenticated data so a
+DB-write-capable adversary cannot swap ciphertext rows between items and have decrypt succeed
+silently. Server-managed content (v2+) binds `(orgId, profileId, itemId, keyVersion)`; the DEK wrap
+binds `(orgId, profileId)`. ZK content binds `(profileId, itemId, contentVersion)`, the ZK DEK wrap
+binds `(profileId, itemId)`, and the ZK root-key wrap binds `(profileId, keyVersion)`. Each uses a
+distinct domain-separation prefix.
+
+**Key commitment (v4).** AES-GCM is not key-committing, so `server_key_version = 4` prefixes a
+32-byte `HMAC-SHA256(profileDEK, context)` tag to the ciphertext. On decrypt the tag is recomputed
+and compared in constant time before AES-GCM runs; a mismatch rejects the ciphertext.
+
 #### AES-GCM random-IV ceiling and rotation trigger (AB-0031)
 
 Server-managed content uses AES-256-GCM with a random 96-bit IV. [NIST SP 800-38D](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38d.pdf) caps a single key at **2³² random-IV encryptions** before the IV-collision probability exceeds 2⁻³²; a GCM IV collision under one key is catastrophic (plaintext XOR leak + authentication-key recovery).
@@ -171,17 +191,19 @@ successful personal-API-key authentication updates `lastUsedAt` on the key.
 
 ## SecretValue Opaque Type
 
-The SDK uses a `SecretValue` opaque type to prevent accidental logging or serialization of secret
-data. The type requires an explicit `.expose()` call to access the underlying string value:
+The SDK exports a `SecretValue` opaque wrapper that prevents accidental logging or serialization of
+secret data. `toString()` and `toJSON()` return `[REDACTED]` (and `util.inspect` renders
+`SecretValue([REDACTED])`), so a secret cannot leak through log output, string interpolation, error
+messages, or JSON serialization; the underlying string is reachable only via an explicit `.expose()`
+call.
 
 ```ts
-const result = await agent.access.read(itemId);
-// result.value is a SecretValue — cannot be directly logged or serialized
-const plaintext = result.value.expose(); // explicit unwrap
-```
+import { SecretValue } from "@abadge/sdk";
 
-This ensures secrets are not accidentally included in log output, error messages, or JSON
-serialization.
+const wrapped = new SecretValue("s3cret");
+console.log(`${wrapped}`); // "[REDACTED]" — never the value
+const plaintext = wrapped.expose(); // explicit, deliberate unwrap
+```
 
 ---
 
@@ -189,12 +211,21 @@ serialization.
 
 ### Permission Model
 
-Access requires an explicit permission linking an agent to an item with a specific capability.
-There are no wildcards, no default permissions, and no implicit inheritance.
+Access requires an explicit permission linking an agent to an item (or a profile) with a specific
+capability. There are no wildcards, no default permissions, and no implicit inheritance.
 
 ```
 Agent + Item + Capability → Explicit Permission → Access
 ```
+
+abadge has two canonical capabilities: **`read`** (return the secret value — the ZK envelope for
+local ZK items, or plaintext for server-managed items) and **`use`** (reserve a mount handle the
+local daemon redeems to inject the secret via env var or `0600` temp file, never exposing the
+value). The legacy names `read_ciphertext` / `reveal_plaintext` map to `read`, and
+`mount_env` / `mount_file` map to `use`; both forms are accepted on the wire and normalized to the
+canonical pair at the access boundary. Runtime legality of an (agent locality, storage mode,
+capability) tuple is enforced by the unified access pipeline, not by a static table. See
+[`docs/CAPABILITIES.md`](./CAPABILITIES.md).
 
 ### Decision Flow
 
@@ -220,17 +251,17 @@ Cross-organization isolation has two layers:
 
 ### Capability Enforcement Matrix
 
-| | ZK Item (Local) | ZK Item (Remote) | SM Item (Local) | SM Item (Remote) |
-|---|---|---|---|---|
-| `read_ciphertext` | Allowed | **Denied** | N/A | N/A |
-| `reveal_plaintext` | N/A | N/A | Allowed | Allowed |
-| `mount_env` | Allowed | **Denied** | Allowed | **Denied** |
-| `mount_file` | Allowed | **Denied** | Allowed | **Denied** |
+| Agent locality | Item storage | `read` | `use` |
+|---|---|---|---|
+| `local` | `zero_knowledge` | Allowed | Allowed |
+| `local` | `server_managed` | Allowed | Allowed |
+| `remote` | `zero_knowledge` | **Denied** (server can't decrypt) | **Denied** |
+| `remote` | `server_managed` | Allowed | **Denied** (no local daemon) |
 
 **Key restrictions**:
 - Remote agents can never access zero-knowledge items (no decryption capability)
-- Remote agents can only `reveal_plaintext` on server-managed items
-- Mount capabilities require a local runtime to inject secrets into
+- Remote agents can only `read` server-managed items (returned as plaintext over HTTPS)
+- `use` (env/file mounting) requires a local runtime to inject secrets into
 
 ---
 
@@ -273,12 +304,16 @@ injection. Available only for server-managed items.
 
 ### MCP Secret Handling
 
-The MCP server adds additional protections for AI model contexts:
+The MCP server adds additional protections for AI model contexts (§RED1):
 
 - Secrets are injected into subprocess env vars, never passed to the LLM
-- stdout/stderr is scanned and the secret value is replaced with `[REDACTED]`
-- Output is truncated to 4 KB to prevent memory issues
-- `mount_secret` returns only an opaque `mountId`, never the file path or content
+- Subprocess stdout/stderr text is **never** forwarded to the model. `use_secret`
+  returns only the exit code, duration, per-stream output-line count, and a
+  truncation flag
+- Each captured stream is bounded to 4 KB (`MAX_OUTPUT_BYTES`); past that the
+  output is truncated and the truncation flag is set
+- `mount_secret` returns only an opaque `mountId`, never the file path or content;
+  the mount auto-cleans after 5 minutes
 
 ---
 
@@ -296,13 +331,15 @@ The MCP server adds additional protections for AI model contexts:
 
 | Category | Events Logged |
 |---|---|
-| Profile | Create, rotate, delete, delete cascade |
-| Items | Create, export, update, delete, delete cascade |
-| Auth | Login, logout, token issue, token revoke |
+| Profile | Create, read, bootstrap, rotate, setup recovery, delete, delete cascade |
+| Items | Create, read, update, export, delete, delete cascade |
+| Auth | Signup, login, logout, token issue, token revoke |
+| Org | Create, read, update, delete, member add/list/remove/role-change, invite/accept/reject/revoke |
 | Agents | Create, bootstrap issue, enroll, revoke, revoke cascade, session issue/reject/revoke |
 | Permissions | Create, revoke, revoke cascade |
-| API keys | Create, revoke (`user_api_key.create`, `user_api_key.revoke`) |
-| Access | Ciphertext read, reveal, env mount, file mount |
+| API keys | Create, revoke, expire (`user_api_key.create` / `.revoke` / `.expire`) |
+| Account (auth.md) | Register, claim, claim complete (`account.register` / `.claim` / `.claim_complete`) |
+| Access | Ciphertext read, reveal, env mount, file mount (`access.ciphertext` / `.reveal` / `.mount_env` / `.mount_file`) |
 
 ### Audit Entry Fields
 
@@ -324,12 +361,15 @@ Each entry records: user, agent (if applicable), item (if applicable), event typ
 
 | Control | Implementation |
 |---|---|
-| Rate limiting | In-memory per-IP counters (60/min auth, 100/min API) |
+| Rate limiting | Cross-isolate counters in the `RateLimitCounter` Durable Object, keyed per principal/IP per surface (60/min on `/api/auth/*`, 100/min on `/trpc/*` and `/v1/*`), with `Retry-After` + `X-RateLimit-*` headers. Tighter per-account throttles layer on top of the email/password auth routes (e.g. 10/15min on sign-in). |
+| Body limit | 1 MB request body cap rejected before any other middleware (`PAYLOAD_TOO_LARGE`) |
 | CORS | Restricted to trusted origins only |
 | Secure headers | Hono `secureHeaders()` middleware |
 | CSRF | Built-in CSRF protection |
 | Input validation | Effect Schema on all external input |
 | SQL injection | Drizzle ORM parameterized queries (no raw SQL) |
+| Statement timeout | The API runtime DB role carries a 15s `statement_timeout` so a runaway query cannot pin a pooled connection |
+| Transient DB failures | SQLSTATE class `08` (connection) errors map to a retryable `503 SERVICE_UNAVAILABLE` with a `Retry-After` hint, never an opaque 500 |
 | Audit write ordering | Audit entries are awaited before returning responses |
 | Authorization-read freshness | Hyperdrive query caching **disabled** on the config resource, so revocations/expirations are never stale-served (Hyperdrive caches read-only `SELECT`s ~60s with no write-invalidation). Disable + verify: `wrangler hyperdrive update <id> --caching-disabled true`. See [ADR-002](decisions/002-hyperdrive-authz-cache-disabled.md). |
 
@@ -406,7 +446,8 @@ block-beta
 | Profile root key | KEK-wrapped ciphertext | Only by master password holder |
 | Recovery key | Shown once, wraps root key | Never stored in plaintext |
 | ZK item value | XChaCha20-Poly1305 ciphertext | Only by profile owner |
-| Server-managed item value | AES-256-GCM ciphertext + IV | By server on authorized request |
+| Server-managed item value | AES-256-GCM ciphertext + IV (v4: key-commitment-prefixed, under a per-profile DEK) | By server on authorized request |
+| Server-managed profile DEK | AES-256-GCM-wrapped under `ENCRYPTION_KEY` (`profiles.server_wrapped_dek`) | Only by `ENCRYPTION_KEY` holder |
 | Personal API key (`abu_`) | SHA-256 hash + prefix | Shown once at creation |
 | Agent session token | SHA-256 hash | Shown once at exchange |
 | Bootstrap token | SHA-256 hash | Shown once at issuance |

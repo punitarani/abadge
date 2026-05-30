@@ -98,36 +98,32 @@ Stops the daemon, which also drops any daemon-held operator session and unlocked
 abadge daemon stop
 ```
 
-## Vault commands
+## Profile (vault) commands
 
-### `abadge vault unlock`
+Profile key operations are local to the daemon (zero-knowledge profiles only).
 
-Prompts for the vault password and unwraps the local root key into daemon memory.
+### `abadge profile unlock`
+
+Prompts for the profile password and unwraps the local root key into daemon memory.
 
 ```bash
-abadge vault unlock
+abadge profile unlock
 ```
 
-### `abadge vault lock`
+### `abadge profile lock`
 
-Zeros the in-memory root key and clears daemon-held authenticated state.
+Zeros the in-memory root key and clears daemon-held unlocked profile state.
 
 ```bash
-abadge vault lock
+abadge profile lock
 ```
 
-### `abadge vault status`
+### `abadge profile status`
+
+Shows whether the daemon holds an unlocked profile.
 
 ```bash
-abadge vault status
-```
-
-### `abadge vault change-password`
-
-Changes the wrapped vault root key through the daemon and API.
-
-```bash
-abadge vault change-password
+abadge profile status
 ```
 
 ## Item commands
@@ -226,11 +222,18 @@ abadge agent revoke <agent-id>
 
 ### `abadge permission create`
 
-Creates an explicit permission. Default capability is `mount_env`.
+Grants one or more capabilities to an agent on an item. `--capability` is
+required (there is no default) and may be repeated or comma-separated. The flag
+parser accepts the canonical `read` / `use` as well as the legacy aliases
+(`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`).
+
+> Important: this command targets an **item**, and item-target grants accept the
+> legacy capability names only — canonical `read` / `use` are rejected on an
+> item and accepted only when targeting a profile. Use a legacy alias here.
 
 ```bash
-abadge permission create --agent-id <agent-id> --item-id <item-id>
-abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext
+abadge permission create --agent-id <agent-id> --item-id <item-id> --capability mount_env
+abadge permission create --agent-id <agent-id> --item-id <item-id> --capability reveal_plaintext,mount_env
 ```
 
 ### `abadge permission list`

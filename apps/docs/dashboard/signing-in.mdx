@@ -41,16 +41,16 @@ The CLI uses a device authorization flow. When `abadge login` runs, it prints a 
 
 <Steps>
   <Step title="Open the verification URL">
-    The CLI tries to open it for you. Otherwise, paste it into a browser.
+    The CLI tries to open it for you. Otherwise, paste it into a browser. You can also go to `/device` and type the code manually.
   </Step>
   <Step title="Sign in if needed">
-    If you're not already signed in to the dashboard, complete the sign-in flow first.
+    If you're not already signed in to the dashboard, complete the sign-in flow first. You must have at least one organization before you can approve a device.
   </Step>
   <Step title="Confirm the user code">
-    The dashboard shows the user code from your CLI. Confirm that it matches before approving.
+    The dashboard shows the user code from your CLI and a countdown (codes expire after 15 minutes). Confirm that it matches before approving.
   </Step>
   <Step title="Click Approve">
-    The CLI's device-code poll succeeds within a few seconds. Your CLI is now attached.
+    The CLI's device-code poll succeeds within a few seconds. Your CLI is now attached. **Deny** rejects the request instead.
   </Step>
 </Steps>
 
@@ -65,7 +65,7 @@ The CLI uses a device authorization flow. When `abadge login` runs, it prints a 
 | Storage | HttpOnly cookie |
 | TTL | 7 days |
 | Refresh | Sliding — extended on each request |
-| Revocation | **Settings → Sessions** lists active sessions; sign out invalidates the current one |
+| Revocation | Sign out invalidates the current session |
 
 ## Multi-factor authentication
 

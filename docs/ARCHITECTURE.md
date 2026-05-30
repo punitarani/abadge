@@ -10,13 +10,15 @@ The system keeps one synchronous control plane:
 
 * Postgres is the single source of truth
 * Hono runs as the outer Cloudflare Worker shell
-* tRPC is the only application transport for the control plane
+* tRPC owns all application logic; a thin `/v1` REST surface is derived from the
+  same procedures (no second implementation)
 * local daemon IPC stays on JSON-RPC over a Unix socket
 
 ## System parts
 
-* **API worker**: Hono middleware for headers, CORS, rate limiting, Better Auth, `/health`, and
-  the mounted tRPC fetch adapter at `/trpc`
+* **API worker**: Hono middleware for headers, CORS, rate limiting, body limits, Better Auth,
+  `/health`, the auth.md agentic-registration routes (`/agent/auth*` + discovery docs), the mounted
+  tRPC fetch adapter at `/trpc`, and the derived REST surface at `/v1` (with `/v1/openapi.json`)
 * **Web**: Next.js App Router dashboard. Client-rendered operator surface backed by one React
   Query + tRPC provider
 * **CLI**: local operator tool that talks to the control plane through `@abadge/sdk`, ships as a
@@ -99,16 +101,25 @@ flowchart LR
 The application router is split into domain routers:
 
 * `auth`
-* `organizations`
 * `profiles`
-* `vault` (legacy; retained for web app compatibility)
+* `organizations`
+* `onboarding`
 * `items`
 * `agents`
+* `agentAuth` (auth.md anonymous registration / claim)
+* `apiKeys` (personal `abu_` management keys)
 * `permissions`
 * `access`
 * `audit`
 
-There is no parallel REST layer.
+### REST surface (`/v1`)
+
+There is one application implementation (the tRPC procedures). The `/v1` REST routes are a thin
+adapter generated at request time from each procedure's `.meta({ openapi })` annotation
+(`apps/api/src/rest/v1.ts`); they call the same server caller, so REST and tRPC never diverge.
+`/v1/openapi.json` serves the matching OpenAPI 3.1 document. The REST surface carries the canonical
+access routes (e.g. `POST /v1/access/{itemId}/read`, `POST /v1/access/{itemId}/use`,
+`POST /v1/profiles/{profileId}/access/use`).
 
 ## Request context
 
@@ -145,9 +156,12 @@ Every public procedure declares both input and output schemas. No custom transfo
 
 ### Organizations
 
-Better Auth `organization` table. Every user receives a personal organization on first login.
-Agents and permissions are scoped to an org. Org deletion cascades to agents and their active
-sessions.
+Better Auth `organization` table. Signup does **not** auto-create an org; the user picks one at
+`/onboarding` (create a personal account, create a team org, or join via invite). A personal account
+is a normal single-member org flagged `metadata = {"type":"personal"}`. Org creation transactionally
+seeds the owner `member` row and a default `server_managed` profile, so a new org is immediately
+usable. Agents and permissions are scoped to an org. Org deletion cascades to agents and their
+active sessions.
 
 ### Profiles
 
@@ -194,8 +208,11 @@ manage it (members lose the creator-ownership path), and its audit rows carry a 
 
 ### Permissions
 
-Agent × item capability grants, scoped to an org. Each permission specifies one capability from:
-`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`.
+Agent capability grants, scoped to an org, targeting either a single item or an entire profile.
+Each permission specifies one canonical capability — `read` or `use`. Legacy names
+(`read_ciphertext` / `reveal_plaintext` → `read`; `mount_env` / `mount_file` → `use`) are still
+accepted on the wire and stored in existing rows, normalized to the canonical pair at the access
+boundary. See [`docs/CAPABILITIES.md`](./CAPABILITIES.md).
 
 Permissions reference `grantedBy` (user, nullable) and support an optional `expiresAt`. Deleting an
 item marks associated permissions invalid (cascade); deleting the granting user sets `grantedBy` to
@@ -253,9 +270,16 @@ with: `userId`, `agentId`, `itemId`, `eventType`, `result`, `deliveryMode`, `met
 Keep these boundaries explicit:
 
 * Hono owns outer HTTP concerns
-* tRPC owns application transport and auth middleware
+* tRPC owns application logic and auth middleware; `/v1` REST is a derived adapter over it
 * Effect programs own operation flow and error propagation
 * Drizzle owns all database access
 * daemon JSON-RPC owns local vault operations
 
 That split keeps the repo readable in one pass and prevents duplicate control-plane paths.
+
+## Background infrastructure
+
+There are no queues, workflows, or background jobs. The single documented exception is the
+`RateLimitCounter` Durable Object (`apps/api/src/durable-objects/`), which backs the rate-limit
+middleware. A cross-isolate-consistent counter is a correctness requirement for rate limiting on
+Workers; no simpler primitive provides it.

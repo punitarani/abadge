@@ -3,45 +3,39 @@ title: "Audit"
 description: "Inspect every meaningful action in your organization."
 ---
 
-The **Audit** view is the human interface to the audit log. Every login, agent registration, permission change, and access attempt — allowed or denied — appears here.
+The **Audit log** view is the human interface to the audit log. Every access attempt — allowed or denied — and operator actions like permission changes and agent registrations appear here, newest first.
 
 ## Layout
 
-The audit table shows entries newest-first. Each row carries:
+The audit table shows these columns:
 
-- Timestamp
-- Event type (`access.reveal`, `permission.create`, `agent.session_issue`, etc.)
-- Result (`allowed`, `denied`, `expired`, `revoked`, `cascade`)
-- Agent (if any) and item (if any)
-- User who triggered the event (for operator actions)
-- Surface (`cli`, `mcp`, `api`, `sdk`)
-- Field (when applicable)
+| Column | Notes |
+|---|---|
+| Agent | The agent that triggered the event, if any |
+| Item | The item touched, if any |
+| Profile | The profile the event belongs to, if any |
+| Event | Event type (`access.reveal`, `permission.create`, `agent.session_issue`, etc.) |
+| Result | `allowed`, `denied`, `expired`, `revoked`, or `cascade` |
+| IP address | Client IP from the API, when present |
+| Time | When the event occurred |
 
-Click a row to see the full structured `meta` payload.
+Denied and revoked rows are highlighted.
 
 ## Filters
 
-Filter by:
-
 | Filter | Notes |
 |---|---|
-| Event type | One category at a time |
+| Search | Free text over agent name, item label, or IP address |
+| Event type | One event type at a time |
 | Result | Useful for "show me every denial" |
-| Agent | Pinpoint a single agent's activity |
-| Item | What touched this credential |
-| Surface | Which channel made the call |
-| Field | Specific field name accessed |
-| Date range | Start / end timestamps |
+| Profile | Scope to one profile |
+| Date range | All time, last 7 days, or last 30 days |
 
-Filters compose. Pagination uses cursor tokens (50 entries per page by default; max 100).
-
-## Export
-
-Click **Export JSON** to download the current filtered view as JSON for offline analysis. The export honours your filter settings.
-
-For programmatic export, use `GET /v1/audit` from the API or `abadge audit list --json` from the CLI.
+Filters compose. Use the refresh button to reload the latest entries. Results paginate with a **Load more** button (25 per page).
 
 ## What every event captures
+
+The dashboard renders a subset of the audit record. The full structured record (available via the API) includes:
 
 | Field | Always present? | Description |
 |---|---|---|
@@ -54,10 +48,7 @@ For programmatic export, use `GET /v1/audit` from the API or `abadge audit list 
 | `agentId` | when an agent triggered it | |
 | `itemId` | for item / access events | |
 | `profileId` | for profile events | |
-| `surface` | usually | `cli`, `mcp`, `api`, `sdk` |
 | `deliveryMode` | for access events | `env`, `file`, `reveal`, `ciphertext` |
-| `field` | when a single field was requested | |
-| `purpose` | when the caller declared one | |
 | `meta` | always (often empty) | Structured per event type |
 | `ipAddress` | usually | Client IP from the API |
 
@@ -68,6 +59,10 @@ For programmatic export, use `GET /v1/audit` from the API or `abadge audit list 
 - The plaintext output of subprocesses spawned by `use` with `delivery: env`
 
 If you need byte-level visibility into what an agent did with a secret, instrument the consumer.
+
+## Programmatic export
+
+The dashboard does not have an export button. To export the audit log, use `GET /v1/audit` from the API or `abadge audit list --json` from the CLI.
 
 ## Related
 

@@ -5,9 +5,7 @@ description: "Unlock, lock, inspect, and change the password of a zero-knowledge
 
 Vault commands operate on the **active zero-knowledge profile** through the local daemon. Server-managed profiles do not need unlock — the API decrypts on authorized requests.
 
-<Note>
-  These commands live under `abadge profile`. `abadge vault ...` is a deprecated alias that still works and prints a warning; prefer `abadge profile ...` in scripts.
-</Note>
+These commands live under `abadge profile` (`abadge profile unlock|lock|status|change-password`).
 
 ## `abadge profile unlock`
 

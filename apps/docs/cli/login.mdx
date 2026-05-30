@@ -67,8 +67,8 @@ For unattended flows, `abadge login` has two subcommands that split the device-c
 
 | Subcommand | Purpose |
 |---|---|
-| `abadge login start --json` | Issue a device code and emit `{ deviceCode, userCode, verificationUri, expiresAt }` as JSON |
-| `abadge login poll --device-code <code>` | Poll until approved. `--print-token` prints the bearer; `--interval <s>` tunes backoff. |
+| `abadge login start --json` | Issue a device code and emit `{ device_code, user_code, verification_uri, verification_uri_complete, interval, expires_at }` as JSON (`--json` is required) |
+| `abadge login poll --device-code <code>` | Poll until approved. `--print-token` prints the bearer instead of loading it into the daemon; `--interval <s>` sets the initial poll interval; `--json` emits a JSON result. |
 
 These are for integrations that need to render the verification URL in a custom UI. The default `abadge login` is what humans want.
 

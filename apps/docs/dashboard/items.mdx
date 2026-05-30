@@ -1,60 +1,64 @@
 ---
 title: "Items"
-description: "Browse, create, edit, and delete credentials inside the dashboard."
+description: "Browse, create, and delete credentials inside the dashboard."
 ---
 
-The **Items** view is where you store and manage individual credentials. Every item belongs to a profile and inherits its storage mode.
+The **Items** view is where you store and manage individual credentials. Every item carries a storage mode that determines whether the server can decrypt it.
 
 ## Listing items
 
-The items table shows every item in the active organization that you can see, scoped to the active profile. Each row shows:
+The items table shows every item in the active organization. Each row shows:
 
-- Label and tags
-- Kind (`login`, `api_key`, `token`, `ssh_key`, etc.)
-- Storage mode badge (`zero-knowledge` or `server-managed`)
-- Last updated timestamp
+- Label (links to the item detail page)
+- Storage mode (`Zero-knowledge` or `Server-managed`)
+- Agents — how many agents hold a permission on the item
+- Created timestamp
 
-Filter by kind, tag, or label. The table never displays secret values.
+Search by label, and filter by storage mode. The table never displays secret values.
 
 ## Creating an item
 
+Click **Add item** to open the create panel.
+
 <Steps>
-  <Step title="Click New item">
-    Choose the target profile (defaults to the active profile).
+  <Step title="Name the item">
+    The label is cleartext and shown in lists.
   </Step>
   <Step title="Pick a kind">
-    The dashboard suggests standard fields for the kind. For example, `login` prompts for `username`, `password`, `url`, `totp_secret`. You can add or remove fields freely.
+    Choose `api_key`, `login`, `token`, `certificate`, `ssh_key`, `json`, or `opaque`. The panel shows the typed fields for that kind — for example, `login` prompts for username, password, URL, and TOTP secret. `json` lets you add arbitrary key/value pairs.
   </Step>
-  <Step title="Fill in fields">
-    Each field is a key/value pair. Mark fields as secret to mask them in the UI.
-  </Step>
-  <Step title="Add a label and tags">
-    The label is cleartext and shown in lists. Tags help filtering and bulk operations.
+  <Step title="Choose a storage mode">
+    - **Zero-knowledge** — encrypted in your browser before it leaves. The item is stored in the organization's zero-knowledge profile, which must already exist and be unlocked. Cannot be accessed by remote agents.
+    - **Server-managed** — the API encrypts on receipt with AES-256-GCM. Accessible by local and remote agents.
   </Step>
   <Step title="Save">
-    For zero-knowledge profiles, the browser encrypts the payload locally before sending. For server-managed profiles, the API encrypts on receipt.
+    For zero-knowledge, the browser prompts for the profile password (if the profile isn't already unlocked), encrypts locally, and uploads only ciphertext. For server-managed, the plaintext is sent over HTTPS and encrypted by the API.
   </Step>
 </Steps>
 
-## Viewing and editing
+<Note>
+  Creating a zero-knowledge item requires a zero-knowledge profile in the org. If none exists, create one from the [Profiles](/dashboard/profiles) page first.
+</Note>
 
-Click any row to open the item detail panel.
+## Viewing an item
 
-| Action | What it does |
-|---|---|
-| Reveal | Decrypt the payload locally (ZK) or fetch decrypted plaintext (server-managed). Available in **personal accounts** only — see custody mode below. |
-| Edit | Update fields, label, or tags. Optimistic concurrency rejects stale edits with `STALE_VERSION`. |
-| Copy field | Copies a single field to the clipboard with a 30-second auto-clear |
-| View permissions | Lists every permission grant pointing at this item |
-| View audit | Filters the audit view to this item |
-| Delete | Soft-delete. Ciphertext is retained but inaccessible. |
+Click a row to open the item detail page. It shows:
+
+- Label and storage-mode badge
+- The **Secret value** section (personal accounts only — see below)
+- Metadata cards: Item ID, content version, last modified, active permission count
+- **Agent permissions** — every grant pointing at this item, each revocable
+- **Recent access events** — audit entries scoped to this item
+- **Delete** — soft-deletes the item and revokes its permissions
+
+There is no in-dashboard edit form. To change an item's value, create a new item (or use the CLI).
 
 ## Custody mode vs. personal vault
 
 Whether the dashboard reveals a secret value depends on the active workspace:
 
-- **Personal account** — your own vault. You own every secret, so the item page shows a **Reveal** control: server-managed values are decrypted by owner reveal (recorded in the audit log), and zero-knowledge values are decrypted in your browser after you unlock the profile.
-- **Team organization** — custody mode. The dashboard never displays plaintext; secrets flow only to authorized agents through the firewall. To read a value, use the CLI (`abadge export`, `abadge item --reveal`) or an authorized agent.
+- **Personal account** — your own vault. The item page shows a **Reveal** control. Server-managed values are decrypted by `items.ownerReveal` (recorded in the audit log); zero-knowledge values are decrypted in your browser after you unlock the profile. Reveal shows the full item payload as JSON.
+- **Team organization** — custody mode. The dashboard never displays plaintext. Zero-knowledge items show an informational note instead of a reveal control. To read a value, use the CLI (`abadge item --reveal`, `abadge export`) or an authorized agent.
 
 ## Storage mode badges
 
@@ -65,7 +69,7 @@ Whether the dashboard reveals a secret value depends on the active workspace:
 
 ## Multi-field items
 
-Items can carry multiple named fields. When you grant an agent access, the agent can request a specific field with `--field` (CLI) or the `field` parameter (API/SDK/MCP). The dashboard's reveal panel shows all fields side by side.
+Items can carry multiple named fields. When you grant an agent access, the agent can request a specific field with `--field` (CLI) or the `field` parameter (API/SDK/MCP). The dashboard's reveal shows the whole payload.
 
 See [Field delivery](/concepts/fields) for resolution rules.
 

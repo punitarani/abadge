@@ -189,9 +189,9 @@ sequenceDiagram
   User->>User: Derive KEK via Argon2id (64 MiB)
   User->>User: Generate root key (32 bytes)
   User->>User: Wrap root key with KEK (XChaCha20-Poly1305)
-  User->>API: Bootstrap vault (wrapped root key, salt, KDF params)
-  API->>API: Store vault record
-  API->>API: Audit: profile.create
+  User->>API: Bootstrap profile (wrapped root key, salt, KDF params)
+  API->>API: Store profile encryption envelope
+  API->>API: Audit: profile.bootstrap
   API-->>User: Success
 ```
 
@@ -221,12 +221,18 @@ sequenceDiagram
   participant API as API
 
   User->>API: Create item (payload: {label, kind, fields})
+  API->>API: Load/provision per-profile DEK (wrapped under ENCRYPTION_KEY)
   API->>API: Generate IV (12 bytes)
-  API->>API: Encrypt with AES-256-GCM (ENCRYPTION_KEY)
-  API->>API: Store ciphertext + IV
+  API->>API: Encrypt with AES-256-GCM (profile DEK, AAD-bound)
+  API->>API: Store serverCiphertext + serverIv + serverKeyVersion (>=3)
   API->>API: Audit: item.create
   API-->>User: Item ID
 ```
+
+A v3 server-managed write uses a per-profile DEK (`serverWrappedDek`, wrapped
+under the Worker `ENCRYPTION_KEY`) and binds the ciphertext to AAD derived from
+`(org, profile, item, keyVersion)`. `serverKeyVersion` records the envelope
+epoch: `1` = legacy no-AAD, `>= 2` = AAD-bound, `>= 3` = per-profile DEK.
 
 ### Key Rotation Flow
 
@@ -243,8 +249,8 @@ sequenceDiagram
 
   User->>API: Rotate key (new wrapped keys + all rekeyed items)
   API->>DB: BEGIN transaction
-  API->>DB: Update vault (key_version++)
-  API->>DB: Update each item (new encrypted_item_key)
+  API->>DB: Update profile (keyVersion++)
+  API->>DB: Update each item (new encryptedItemKey)
   API->>DB: COMMIT
   API->>DB: Audit: profile.rotate
   API-->>User: New key version
@@ -262,13 +268,20 @@ sequenceDiagram
   participant API as API
   participant DB as PostgreSQL
 
-  User->>API: Create permission (agent, item, capability, expiry?)
-  API->>API: Validate capability vs agent locality
-  API->>API: Validate capability vs item storage mode
-  API->>DB: Insert grant record
+  User->>API: Create permission (agent, target, capability, expiry?)
+  Note over User: target is an item OR a profile; capability is read or use
+  API->>API: Validate capability vs agent locality + item storage mode
+  API->>DB: Insert grant row(s) (one per capability, all-or-none)
   API->>DB: Audit: permission.create
-  API-->>User: Permission ID
+  API-->>User: Permission ID(s)
 ```
+
+Permissions use two canonical capabilities — `read` (read the plaintext, or
+the ZK envelope to decrypt locally) and `use` (reserve a mount handle the local
+daemon injects via env var or `0600` temp file). A grant targets either a single
+item or a whole profile (profile grants cover every item added later). The legacy
+`read_ciphertext` / `reveal_plaintext` / `mount_env` / `mount_file` capabilities
+are still accepted on the wire and map to `read` / `use`.
 
 ### Capability Matrix
 
@@ -284,28 +297,22 @@ graph TD
     R_SM["Server-Managed Item"]
   end
 
-  L_ZK -->|"read_ciphertext ✓"| OK1["Allowed"]
-  L_ZK -->|"mount_env ✓"| OK2["Allowed"]
-  L_ZK -->|"mount_file ✓"| OK3["Allowed"]
+  L_ZK -->|"read ✓"| OK1["Allowed"]
+  L_ZK -->|"use ✓"| OK2["Allowed"]
 
-  L_SM -->|"reveal_plaintext ✓"| OK4["Allowed"]
-  L_SM -->|"mount_env ✓"| OK5["Allowed"]
-  L_SM -->|"mount_file ✓"| OK6["Allowed"]
+  L_SM -->|"read ✓"| OK4["Allowed"]
+  L_SM -->|"use ✓"| OK5["Allowed"]
 
-  R_ZK -->|"any capability ✗"| DENY1["Denied"]
-  R_SM -->|"reveal_plaintext ✓"| OK7["Allowed"]
-  R_SM -->|"mount_env ✗"| DENY2["Denied"]
-  R_SM -->|"mount_file ✗"| DENY3["Denied"]
+  R_ZK -->|"read ✗ / use ✗"| DENY1["Denied (server can't decrypt)"]
+  R_SM -->|"read ✓"| OK7["Allowed"]
+  R_SM -->|"use ✗"| DENY2["Denied (no local daemon)"]
 
   style DENY1 fill:#fdd,stroke:#c33
   style DENY2 fill:#fdd,stroke:#c33
-  style DENY3 fill:#fdd,stroke:#c33
   style OK1 fill:#dfd,stroke:#3c3
   style OK2 fill:#dfd,stroke:#3c3
-  style OK3 fill:#dfd,stroke:#3c3
   style OK4 fill:#dfd,stroke:#3c3
   style OK5 fill:#dfd,stroke:#3c3
-  style OK6 fill:#dfd,stroke:#3c3
   style OK7 fill:#dfd,stroke:#3c3
 ```
 
@@ -323,11 +330,11 @@ flowchart TD
   SessionAuth --> Resolved{"Agent\nresolved?"}
 
   Resolved -->|No| Deny1["DENY\n(401 Unauthorized)"]
-  Resolved -->|Yes| LoadItem["Load target item\n(same owner check)"]
+  Resolved -->|Yes| LoadItem["Load target item\n(same org check)"]
 
   LoadItem --> ItemExists{"Item\nexists?"}
   ItemExists -->|No| Deny2["DENY\n(404 Not Found)"]
-  ItemExists -->|Yes| PermCheck["Check permission\n(agent + item + capability)"]
+  ItemExists -->|Yes| PermCheck["Check permission\n(agent + item-or-profile + capability)"]
 
   PermCheck --> HasPerm{"Explicit\npermission?"}
   HasPerm -->|No| Deny3["DENY\n(403 Forbidden)"]
@@ -362,13 +369,14 @@ sequenceDiagram
   participant Proc as Subprocess
 
   User->>CLI: abadge run --item <id> --env-var SECRET -- ./app
-  CLI->>API: Access mount (item ID, mount_type: env)
+  CLI->>API: access.use (item ID, delivery: env)
   API->>API: Auth + permission + capability check
-  API->>API: Decrypt (server-managed) or return ciphertext (ZK)
-  API-->>CLI: Secret payload
+  API-->>CLI: Mount handle (mnt_..., 5-min TTL)
+  CLI->>Daemon: Redeem mount handle
+  Daemon->>API: Fetch material (ciphertext / server-decrypted value)
+  API-->>Daemon: Payload
   alt Zero-knowledge item
-    CLI->>Daemon: Decrypt (encrypted_item_key, ciphertext)
-    Daemon-->>CLI: Plaintext
+    Daemon->>Daemon: Decrypt (encryptedItemKey, ciphertext)
   end
   CLI->>Proc: Spawn with SECRET=<value> in env
   Note over Proc: Secret lives only in process memory
@@ -386,10 +394,10 @@ sequenceDiagram
   participant FS as Filesystem
 
   User->>CLI: abadge mount --item <id>
-  CLI->>API: Access mount (item ID, mount_type: file)
+  CLI->>API: access.use (item ID, delivery: file)
   API->>API: Auth + permission check
-  API-->>CLI: Secret payload
-  CLI->>FS: Write to temp file (mode 0600)
+  API-->>CLI: Mount handle (mnt_..., 5-min TTL)
+  CLI->>FS: Redeem handle, write to temp file (mode 0600)
   CLI-->>User: File path
   Note over FS: File auto-cleaned on process exit
 ```
@@ -403,15 +411,13 @@ sequenceDiagram
   participant API as API
   participant Proc as Subprocess
 
-  LLM->>MCP: run_with_secret(itemId, command)
-  MCP->>API: Access mount (item ID)
+  LLM->>MCP: use_secret(itemId, command)
+  MCP->>API: Access use (item ID)
   API->>API: Auth + permission check
   API-->>MCP: Secret value
   MCP->>Proc: Spawn with secret in env var
-  Proc-->>MCP: stdout + stderr
-  MCP->>MCP: Redact secret from output
-  MCP->>MCP: Truncate to 4KB
-  MCP-->>LLM: Sanitized output (secret NEVER visible)
+  Proc-->>MCP: stdout + stderr (captured, bounded to 8 KB/stream)
+  MCP-->>LLM: { exitCode, durationMs, outputLineCount, truncated } (output text NEVER returned)
 ```
 
 ---

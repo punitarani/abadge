@@ -102,7 +102,7 @@ Everything after `--` is the subprocess command and arguments.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `PERMISSION_DENIED` | No matching `use` permission for `localAgents.cli` | `abadge permission create --capability use --agent-id <cli-agent> --item-id <item>` |
+| `PERMISSION_DENIED` | No matching `use` permission for `localAgents.cli` | `abadge permission create --capability mount_env --agent-id <cli-agent> --item-id <item>` |
 | `MULTI_FIELD_ITEM` | Item has multiple fields and `--field` was omitted | Pass `--field <name>` or `--expand-env` |
 | `FIELD_NOT_FOUND` | Specified field doesn't exist on the item | Inspect `meta.availableFields` in the error output |
 | No local agent | `localAgents.cli` is missing from config | `abadge agent add --kind local_cli --name dev-laptop` |

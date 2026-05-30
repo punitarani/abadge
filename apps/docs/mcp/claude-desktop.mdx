@@ -114,11 +114,15 @@ the right capability before invoking a tool:
 abadge permission create \
   --agent-id <mcp-agent-id> \
   --item-id <item-id> \
-  --capability use
+  --capability mount_env
 ```
 
-`use` is the typical capability for MCP — `use_secret` calls
-`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret` calls it with `delivery: file`.
+These CLI grants target a single item, so they use the legacy capability
+names. `mount_env` and `mount_file` both map to the canonical `use`
+capability that MCP needs — `use_secret` calls
+`POST /v1/access/{itemId}/use` with `delivery: env`, and `mount_secret`
+calls it with `delivery: file`. Grant `mount_file` too if the agent mounts
+secrets to files.
 
 ## Full worked example
 

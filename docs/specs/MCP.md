@@ -2,7 +2,9 @@
 
 The abadge MCP server is a stdio MCP surface for local AI runtimes.
 
-Its default security model is unchanged: the model should not receive raw secret material.
+Its security model is fixed: the model never receives raw secret material.
+
+On startup the server sweeps orphaned `abadge-*` temp directories older than 10 minutes.
 
 ## Transport
 
@@ -68,14 +70,18 @@ Fallback config source:
 
 Returns item metadata only (IDs, storage mode, timestamps).
 
-### `run_with_secret`
+### `use_secret`
 
-Runs a command with a secret injected as an environment variable. Returns only the exit code and a
-path to the output log file. The secret and command output are never returned to the model.
+Runs a command with a secret injected as an environment variable. Accepts exactly one of `itemId`
+(single item) or `profileId` (every env-shaped item in a profile). Returns only the exit code,
+duration, output-line count, and a truncation flag — never the secret or the subprocess
+stdout/stderr text. Each output stream is captured but bounded to 8 KB; secret material is capped at
+4 KB.
 
 ### `mount_secret`
 
-Mounts a secret as a temporary file (0600). Returns only the file path. Auto-cleans after 5 minutes.
+Mounts a secret as a temporary file (0600). Returns only an opaque `mountId` (the file path is never
+returned to the model). Auto-cleans after 5 minutes.
 
 ### `release_mount`
 
@@ -90,8 +96,8 @@ Fetches recent audit entries visible to the authenticated operator or local agen
 The MCP server is intentionally designed so the model sees:
 
 * item metadata
-* exit codes and log file paths (not command output)
-* mounted file paths
+* exit codes, duration, output-line counts, and a truncation flag (never command output)
+* opaque mount handles (`mountId`), never mounted file paths
 * audit metadata
 
 The model does not directly receive:

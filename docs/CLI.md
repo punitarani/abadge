@@ -47,8 +47,8 @@ Config lives at `~/.abadge/config.json`:
   "activeOrgId": "org_...",
   "activeProfileId": "prf_...",
   "localAgents": {
-    "cli": { "agentId": "agt_...", "privateKeyPath": "~/.abadge/agents/cli.ed25519.jwk" },
-    "mcp": { "agentId": "agt_...", "privateKeyPath": "~/.abadge/agents/mcp.ed25519.jwk" }
+    "cli": { "agentId": "agt_...", "privateKeyPath": "~/.abadge/agents/<agentId>.ed25519.jwk" },
+    "mcp": { "agentId": "agt_...", "privateKeyPath": "~/.abadge/agents/<agentId>.ed25519.jwk" }
   }
 }
 ```
@@ -135,8 +135,8 @@ abadge item rm <id> [--force]
 ```
 
 `--value` is rejected on a TTY to prevent shell-history leaks; pipe the
-secret from stdin instead. Supported kinds: `opaque`, `api_key`, `login`,
-`token`, `ssh_key`, `certificate`, `json`.
+secret from stdin instead. Supported kinds: `login`, `api_key`, `token`,
+`json`, `certificate`, `ssh_key`, `opaque`.
 
 ### Agents
 
@@ -160,23 +160,32 @@ token and re-enroll).
 
 ```bash
 # Grant a single capability to an agent on an item
-abadge permission create --agent-id <id> --item-id <id> --capability use
+abadge permission create --agent-id <id> --item-id <id> --capability mount_env
 
-# Grant both capabilities atomically (repeat the flag or comma-separate)
-abadge permission create --agent-id <id> --item-id <id> --capability read,use
+# Grant several capabilities atomically (repeat the flag or comma-separate)
+abadge permission create --agent-id <id> --item-id <id> \
+  --capability mount_env,mount_file
 
 # With expiry (applies to every capability in the batch)
 abadge permission create --agent-id <id> --item-id <id> \
-  --capability use --expires-at 2026-12-31T00:00:00Z
+  --capability reveal_plaintext --expires-at 2026-12-31T00:00:00Z
 
 abadge permission list [--agent-id <id>] [--item-id <id>]
 abadge permission revoke <permission-id>
 ```
 
-`--capability` accepts the canonical `read` / `use` and the legacy aliases
-(`read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`). The
-dashboard is the recommended surface for profile-target grants — they
-require the blast-radius confirmation.
+`permission create` always targets a single item (`--item-id`), and
+item-target grants accept only the legacy capability names —
+`read_ciphertext`, `reveal_plaintext` (mapped to canonical `read`) and
+`mount_env`, `mount_file` (mapped to canonical `use`). Capability legality
+is still bounded by the agent's locality and the item's storage mode (for
+example, remote agents cannot mount, and only server-managed items can be
+revealed over the API).
+
+To grant the canonical `read` / `use` capabilities on an entire profile,
+use the dashboard (it requires a blast-radius confirmation) or the API/SDK
+`permissions.create` with a `profileId` target. The CLI does not create
+profile-target grants.
 
 ### Runtime — use a secret
 
@@ -187,14 +196,10 @@ with the child process exit code.
 
 ```bash
 # Single item — default env var ABADGE_SECRET
-abadge run --item <id-or-label> -- npm run deploy
+abadge run --item <id> -- npm run deploy
 
 # Pull a specific field; name the env var explicitly
 abadge run --item <id> --field password --env-var DB_PASSWORD -- psql "$DB_HOST"
-
-# Stack triples to inject multiple fields from one item
-abadge run --item prod-db --field username --env-var DB_USER \
-                          --field password --env-var DB_PASSWORD -- ./migrate.sh
 
 # Expand every field into env vars (field name = var name)
 abadge run --item my-service-env --expand-env -- ./server
@@ -205,6 +210,10 @@ abadge run --all -- npm start
 # Bulk mode against a specific profile
 abadge run --all --profile prf_dev -- ./worker
 ```
+
+`--field` and `--env-var` are single-valued: `abadge run` injects one secret
+per invocation. To inject more than one field from the same item, use
+`--expand-env`, which maps every field to a same-named env var.
 
 Bulk-mode rules: only items with exactly one string field participate;
 multi-field items are silently skipped. Two items normalizing to the same

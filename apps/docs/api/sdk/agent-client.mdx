@@ -7,47 +7,32 @@ description: "Agent-authenticated client for accessing secrets via Ed25519 keypa
 
 ## Construction
 
-<Tabs>
-  <Tab title="Keypair">
-    ```ts
-    import { AbadgeAgentClient } from "@abadge/sdk";
+Agents authenticate only via an Ed25519 keypair. The client runs the challenge /
+session exchange itself; there is no constructor option for a pre-minted session
+token.
 
-    const agent = new AbadgeAgentClient({
-      apiUrl: "https://api.abadge.io",
-      agentId: "agent_...",
-      privateKey: ed25519PrivateKey,   // CryptoKey, JWK object, or JSON-serialized JWK string
-    });
-    ```
+```ts
+import { AbadgeAgentClient } from "@abadge/sdk";
 
-    <ParamField path="apiUrl" type="string" required />
-    <ParamField path="agentId" type="string" required />
-    <ParamField path="privateKey" type="CryptoKey | Ed25519PrivateKeyJwk | string" required>
-      Ed25519 private key. Strings are parsed as JWK JSON at construction; malformed keys fail fast.
-    </ParamField>
-    <ParamField path="onSessionError" type="(error, attempt) => void">
-      Callback fired on each background refresh failure. After the bounded retry budget is exhausted, the client flips to `sessionExpired` and outgoing calls reject with `SESSION_REFRESH_FAILED`.
-    </ParamField>
-  </Tab>
-  <Tab title="Pre-exchanged session">
-    ```ts
-    import { AbadgeAgentClient } from "@abadge/sdk";
+const agent = new AbadgeAgentClient({
+  apiUrl: "https://api.abadge.io",
+  agentId: "agent_...",
+  privateKey: ed25519PrivateKey,   // CryptoKey, JWK object, or JSON-serialized JWK string
+});
+```
 
-    const agent = new AbadgeAgentClient({
-      apiUrl: "https://api.abadge.io",
-      apiKey: "abs_...",    // a short-lived session token minted elsewhere
-    });
-    ```
-
-    <ParamField path="apiUrl" type="string" required />
-    <ParamField path="apiKey" type="string" required>
-      A short-lived agent session token (`abs_`) minted elsewhere. The client uses it directly and does not run the challenge / exchange itself.
-    </ParamField>
-  </Tab>
-</Tabs>
+<ParamField path="apiUrl" type="string" required />
+<ParamField path="agentId" type="string" required />
+<ParamField path="privateKey" type="CryptoKey | Ed25519PrivateKeyJwk | string" required>
+  Ed25519 private key. Strings are parsed as JWK JSON at construction; malformed keys fail fast.
+</ParamField>
+<ParamField path="onSessionError" type="(error, attempt) => void">
+  Callback fired on each background refresh failure. After the bounded retry budget is exhausted, the client flips to `sessionExpired` and outgoing calls reject with `SESSION_REFRESH_FAILED`.
+</ParamField>
 
 ## Lifecycle
 
-For keypair clients you must `connect()` before making requests:
+You must `connect()` before making requests:
 
 ```ts
 await agent.connect();
@@ -57,9 +42,7 @@ await agent.connect();
 agent.disconnect();
 ```
 
-`connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain. The refresh timer is `.unref()`'d so it does not keep the event loop alive on its own.
-
-A client constructed with a pre-exchanged `abs_...` token does not need `connect()` — it uses that bearer token directly (and will not auto-refresh it).
+`connect()` performs the Ed25519 challenge / exchange and starts a background refresher that re-exchanges the session when fewer than 2 minutes of TTL remain. The refresh timer is `.unref()`'d so it does not keep the event loop alive on its own. `disconnect()` stops the refresher.
 
 ## Enrollment
 

@@ -17,11 +17,11 @@ abadge daemon start
 
 What happens:
 
-1. Check `~/.abadge/vaultd.pid` — fail fast if a healthy daemon is already running.
-2. Spawn the daemon as a detached background process.
+1. If a healthy daemon is already running, report that and exit successfully (idempotent).
+2. Otherwise spawn the daemon as a detached background process.
 3. Bind the socket with `0600` permissions.
 4. Write the PID file.
-5. Wait for the socket to accept a status ping.
+5. Wait for the socket to accept a status ping before returning.
 
 The daemon does **not** unlock any profile on start. Run `abadge profile unlock` to load a profile root key into daemon memory.
 
@@ -33,7 +33,18 @@ Print the daemon's runtime state.
 abadge daemon status
 ```
 
-Output includes whether the daemon is running and its PID. For profile-level unlock state, use `abadge profile status`.
+Output:
+
+```
+Daemon: running
+  locked: false
+  keyVersion: 1
+  authenticated: true
+  authType: better_auth_session
+  authExpiresAt: 2026-04-18T01:14:22Z
+```
+
+`locked` reflects whether a profile root key is loaded; `authenticated` reflects whether an operator session is held in daemon memory (`authType` / `authExpiresAt` are shown only when authenticated). If the daemon is not running, the command prints `Daemon is not running.` and exits non-zero.
 
 ## `abadge daemon stop`
 
@@ -45,16 +56,16 @@ abadge daemon stop
 
 What happens:
 
-1. Send a shutdown RPC over the socket.
+1. Signal the daemon process to terminate (using the PID file).
 2. The daemon zeros out the in-memory operator session and any unlocked root key.
 3. Any mounted secret files are released and deleted.
 4. The PID file and socket are removed.
 
-If the daemon is wedged, fall back to `kill $(cat ~/.abadge/vaultd.pid)`.
+If the daemon was already stopped, the command reports that and exits successfully. If the daemon is wedged, fall back to `kill $(cat ~/.abadge/vaultd.pid)`.
 
 ## Auto-lock
 
-The daemon tracks idle time. After the idle window passes, the in-memory root key is zeroed and `abadge profile status` reports `locked`. The operator session stays loaded.
+The daemon tracks idle time. After 15 minutes of inactivity (the default auto-lock window; each RPC resets the timer), the in-memory root key is zeroed and `abadge profile status` reports `locked`. The operator session stays loaded.
 
 ## File permissions
 

@@ -8,30 +8,35 @@ description: "Grant, list, and revoke capabilities."
 Grant one or more capabilities for an agent on an item. Multiple
 capabilities land atomically — either every row is written or none is.
 
+`permission create` always targets a single item, so it accepts only the
+legacy capability names: `read_ciphertext` and `reveal_plaintext` (mapped
+to canonical `read`), and `mount_env` and `mount_file` (mapped to canonical
+`use`).
+
 ```bash
-# Grant `use`
+# Allow an agent to inject a server-managed secret as an env var
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability use
+  --capability mount_env
 
-# Grant both canonical capabilities — repeat the flag or comma-separate
+# Grant several capabilities atomically — repeat the flag or comma-separate
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability read \
-  --capability use
+  --capability mount_env \
+  --capability mount_file
 
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability read,use
+  --capability mount_env,mount_file
 
 # With expiry — applied to every capability in this batch
 abadge permission create \
   --agent-id <agent-id> \
   --item-id <item-id> \
-  --capability use \
+  --capability reveal_plaintext \
   --expires-at 2026-12-31T00:00:00Z
 ```
 
@@ -39,27 +44,31 @@ abadge permission create \
 |---|---|---|
 | `--agent-id <id>` | yes | Target agent |
 | `--item-id <id>` | yes | Target item |
-| `--capability <cap>` | yes | `read` or `use`. Repeat the flag or comma-separate to grant multiple. |
+| `--capability <cap>` | yes | One of `read_ciphertext`, `reveal_plaintext`, `mount_env`, `mount_file`. Repeat the flag or comma-separate to grant multiple. |
 | `--expires-at <ts>` | no | ISO timestamp expiry; applied to every capability in this submission |
 | `--json` | no | Print raw JSON |
 
 <Note>
-  Legacy names (`read_ciphertext`, `reveal_plaintext`, `mount_env`,
-  `mount_file`) remain accepted as aliases and are normalized to `read` /
-  `use` server-side.
+  The canonical capabilities `read` / `use` apply to **profile-target**
+  grants. Item-target grants — the only kind the CLI creates — reject
+  canonical names, so use the legacy aliases above.
 </Note>
 
-### Capability matrix
+### Capability legality
 
-| Capability | Local + ZK | Local + SM | Remote + ZK | Remote + SM |
-|---|---|---|---|---|
-| `read` | ✓ | ✓ | ✗ (server can't decrypt) | ✓ |
-| `use`  | ✓ | ✓ | ✗ (no local daemon) | ✗ (no local daemon) |
+Capability legality depends on the agent's locality and the item's storage
+mode (ZK = zero-knowledge, SM = server-managed):
+
+| Legacy capability | Canonical | Local + ZK | Local + SM | Remote + ZK | Remote + SM |
+|---|---|---|---|---|---|
+| `read_ciphertext` | `read` | ✓ | ✗ | ✗ | ✗ |
+| `reveal_plaintext` | `read` | ✗ | ✓ | ✗ | ✓ |
+| `mount_env` / `mount_file` | `use` | ✓ | ✓ | ✗ (no daemon) | ✗ (no daemon) |
 
 <Warning>
   Profile-target grants are not available from the CLI. Use the
   dashboard's profile-grant flow — it surfaces the blast-radius
-  confirmation before granting `read` on a whole profile.
+  confirmation before granting canonical `read` on a whole profile.
 </Warning>
 
 ## `abadge permission list`

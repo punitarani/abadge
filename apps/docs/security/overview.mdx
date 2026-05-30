@@ -114,13 +114,16 @@ The full decision flow is in [Permissions and capabilities](/concepts/permission
 | Control | Implementation |
 |---|---|
 | Transport | HTTPS via Cloudflare edge TLS |
-| Local IPC | Unix domain socket with `0600` permissions |
-| Rate limiting | Per-principal counters: 60/min on `/api/auth/*`, 100/min on `/v1/*` |
+| Local IPC | Unix domain socket with `0600` permissions (inside a `0700` directory) |
+| Rate limiting | Cross-isolate counters in the `RateLimitCounter` Durable Object: 60/min on `/api/auth/*`, 100/min on `/trpc/*` and `/v1/*`, plus tighter per-account throttles on email/password auth routes. Responses carry `Retry-After` + `X-RateLimit-*`. |
+| Body limit | 1 MB request body cap, rejected before other middleware |
 | CORS | Restricted to trusted origins |
 | Secure headers | `secureHeaders()` middleware |
 | CSRF | Built-in CSRF protection |
 | Input validation | Effect Schema on all external input |
 | SQL safety | Drizzle ORM parameterized queries (no raw SQL) |
+| Statement timeout | 15s on the API runtime DB role |
+| Transient DB failures | SQLSTATE class `08` errors map to a retryable `503` with `Retry-After` |
 | Audit ordering | Audit writes are awaited before responses return |
 
 ## Credential handling on disk
