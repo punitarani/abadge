@@ -27,17 +27,21 @@ Click **Add item** to open the create panel.
   <Step title="Pick a kind">
     Choose `api_key`, `login`, `token`, `certificate`, `ssh_key`, `json`, or `opaque`. The panel shows the typed fields for that kind — for example, `login` prompts for username, password, URL, and TOTP secret. `json` lets you add arbitrary key/value pairs.
   </Step>
-  <Step title="Choose a storage mode">
-    - **Zero-knowledge** — encrypted in your browser before it leaves. The item is stored in the organization's zero-knowledge profile, which must already exist and be unlocked. Cannot be accessed by remote agents.
-    - **Server-managed** — the API encrypts on receipt with AES-256-GCM. Accessible by local and remote agents.
+  <Step title="Choose a profile">
+    Each profile has a fixed storage mode, so picking the profile picks the mode. Options are labeled `name · mode`:
+
+    - A **zero-knowledge** profile encrypts the item in your browser before it leaves; only that profile's key can decrypt it. Cannot be accessed by remote agents.
+    - A **server-managed** profile has the API encrypt on receipt with AES-256-GCM. Accessible by local and remote agents.
+
+    The item is stored in the selected profile and inherits its mode. When the org has a single profile, the panel shows it as a read-only line instead of a dropdown.
   </Step>
   <Step title="Save">
-    For zero-knowledge, the browser prompts for the profile password (if the profile isn't already unlocked), encrypts locally, and uploads only ciphertext. For server-managed, the plaintext is sent over HTTPS and encrypted by the API.
+    For a zero-knowledge profile, the browser prompts for that profile's password (if it isn't already unlocked), encrypts locally, and uploads only ciphertext. For a server-managed profile, the plaintext is sent over HTTPS and encrypted by the API.
   </Step>
 </Steps>
 
 <Note>
-  Creating a zero-knowledge item requires a zero-knowledge profile in the org. If none exists, create one from the [Profiles](/dashboard/profiles) page first.
+  Storing a zero-knowledge item requires a zero-knowledge profile in the org. Newly created orgs start with a single default server-managed profile — add a zero-knowledge profile from the [Profiles](/dashboard/profiles) page first if you need one.
 </Note>
 
 ## Viewing an item
