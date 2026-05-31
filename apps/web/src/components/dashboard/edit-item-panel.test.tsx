@@ -15,6 +15,7 @@ const updateMutate = mock(async (_input: { itemId: string; data: unknown }) => (
   ok: true,
   contentVersion: 3,
 }));
+const encryptMock = mock(() => ({ encryptedItemKey: "EIK", ciphertext: "CT" }));
 
 mock.module("@/components/dashboard/responsive-overlay", () => ({
   ResponsiveOverlay: ({
@@ -41,13 +42,9 @@ mock.module("@/lib/trpc-browser", () => ({
 
 // Mock every name imported from crypto-client across the evaluated module graph
 // (edit-item-panel pulls in item-detail-panel, which imports
-// decryptItemFromProfile). Bun's module mock must provide every named export the
-// graph imports, or a strict runtime (CI's bun 1.3.0) throws at import time.
+// decryptItemFromProfile).
 mock.module("@/lib/crypto-client", () => ({
-  encryptItemForProfile: mock(() => ({
-    encryptedItemKey: "EIK",
-    ciphertext: "CT",
-  })),
+  encryptItemForProfile: encryptMock,
   decryptItemFromProfile: mock(() => ({ v: 1, kind: "opaque", fields: {} })),
 }));
 
@@ -59,10 +56,21 @@ mock.module("@/stores/org-store", () => ({
   useOrgStore: () => ({ activeOrgId: "org_1" }),
 }));
 
-import { encryptItemForProfile } from "@/lib/crypto-client";
-import { EditItemPanel } from "./edit-item-panel";
-
+// Load the component under test lazily INSIDE the helper (not via a static
+// import). Static ES imports are hoisted above the mock.module calls, so on a
+// runtime that doesn't retroactively apply module mocks (CI's bun 1.3.0) a
+// top-level import would evaluate the real crypto/vault/trpc modules before the
+// mocks register. require() defers evaluation until after the mocks are set —
+// the same pattern profile-create-drawer.test.tsx uses.
 function renderPanel(item: ItemDetail, payload: ItemPayload): HTMLElement {
+  const { EditItemPanel } = require("./edit-item-panel") as {
+    EditItemPanel: (props: {
+      item: ItemDetail;
+      payload: ItemPayload;
+      open: boolean;
+      onClose: () => void;
+    }) => React.ReactElement;
+  };
   const client = new QueryClient();
   const { container } = render(
     <QueryClientProvider client={client}>
@@ -83,6 +91,7 @@ const PAYLOAD: ItemPayload = {
 afterEach(() => {
   cleanup();
   updateMutate.mockClear();
+  encryptMock.mockClear();
 });
 
 describe("EditItemPanel submit wiring", () => {
@@ -133,7 +142,7 @@ describe("EditItemPanel submit wiring", () => {
 
     await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
     // AAD binds to the NEXT contentVersion (5) the server will persist.
-    expect(encryptItemForProfile).toHaveBeenCalledWith(
+    expect(encryptMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ itemId: "item_zk", profileId: "prof_zk", contentVersion: 5 }),
