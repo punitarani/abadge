@@ -48,7 +48,14 @@ interface TestHelpers {
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex for TS to serialize
 export function createTestAuth(db: Database, opts?: { cookieCacheMaxAgeSeconds?: number }): any {
   return betterAuth({
-    database: drizzleAdapter(db, { provider: "pg" }),
+    // `better-auth` is a phantom dependency here (declared by @abadge/auth, not
+    // @abadge/trpc), so in this resolution context `betterAuth` and
+    // `drizzleAdapter` instantiate slightly different `BetterAuthOptions` and the
+    // adapter no longer unifies with the `database` field. The runtime call is the
+    // same one @abadge/auth uses in production; anchor the cast to the field type.
+    database: drizzleAdapter(db, { provider: "pg" }) as Parameters<
+      typeof betterAuth
+    >[0]["database"],
     baseURL: TEST_ENV.ABADGE_API_URL,
     secret: TEST_ENV.BETTER_AUTH_SECRET,
     emailAndPassword: {

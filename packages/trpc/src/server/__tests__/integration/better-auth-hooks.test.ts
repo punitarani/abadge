@@ -27,7 +27,12 @@ import { TEST_ENV } from "../helpers/test-env";
 // biome-ignore lint/suspicious/noExplicitAny: Better Auth inferred type is too complex
 function createHookedTestAuth(db: Database): any {
   return betterAuth({
-    database: drizzleAdapter(db, { provider: "pg" }),
+    // See test-auth.ts: `better-auth` is a phantom dependency in @abadge/trpc, so
+    // the adapter doesn't unify with the `database` field here. Anchor the cast to
+    // the field type; the runtime call matches @abadge/auth's production usage.
+    database: drizzleAdapter(db, { provider: "pg" }) as Parameters<
+      typeof betterAuth
+    >[0]["database"],
     baseURL: TEST_ENV.ABADGE_API_URL,
     secret: TEST_ENV.BETTER_AUTH_SECRET,
     emailAndPassword: { enabled: true, requireEmailVerification: false },
