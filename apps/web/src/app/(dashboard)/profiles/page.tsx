@@ -131,7 +131,7 @@ export default function ProfilesListPage(): React.ReactElement {
             resolves. The server (`profiles.create`) is the real enforcement. */}
         {!isPersonal && !orgLoading && (
           <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto">
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
             New profile
           </Button>
         )}
