@@ -43,6 +43,15 @@ type CreateItemValues = {
   value: string;
   storageMode: "zero_knowledge" | "server_managed";
 };
+// `item update` replaces the whole payload (label, kind, value); storage mode is
+// fixed to the existing item's, so it has no --storage-mode flag.
+type UpdateItemOptions = {
+  name?: string;
+  label?: string;
+  kind?: string;
+  value?: string;
+  json?: boolean;
+};
 
 function buildPayload(label: string, value: string, kind: ItemKind): ItemPayload {
   return {
@@ -83,6 +92,41 @@ async function readCreateItemValues(opts: CreateItemOptions): Promise<CreateItem
   }
 
   return { label, kind, value, storageMode };
+}
+
+/**
+ * Resolve the new label/kind/value for `item update`. Flags take precedence so
+ * the interactive prompts are never reached when running non-interactively —
+ * which is what makes the command scriptable: `prompt()` (readline) would
+ * otherwise buffer all piped stdin and starve `readSecretValue`. Mirrors
+ * `readCreateItemValues` (including the `--value` TTY-rejection guard).
+ */
+async function readUpdateItemValues(
+  opts: UpdateItemOptions,
+): Promise<{ label: string; kind: ItemKind; value: string }> {
+  if (opts.value && process.stdin.isTTY) {
+    error(
+      "The --value flag is not accepted on a TTY to prevent shell history leaks. Pipe the value instead: echo 'mysecret' | abadge item update <id> --label 'name' --kind <kind>",
+    );
+    process.exit(1);
+  }
+
+  const label = opts.label ?? opts.name ?? (await prompt("Label: "));
+  const kind = opts.kind ?? (await prompt(`Kind (${ITEM_KINDS.join(", ")}): `));
+  const value = opts.value ?? (await readSecretValue("Value (secret): "));
+
+  if (!label || !kind || !value) {
+    error(
+      "Label, kind, and value are required. To run non-interactively, pass --label and --kind and pipe the value (e.g. echo 'secret' | abadge item update <id> --label name --kind api_key), or pass --value off a non-interactive shell.",
+    );
+    process.exit(1);
+  }
+  if (!ITEM_KINDS.includes(kind as ItemKind)) {
+    error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
+    process.exit(1);
+  }
+
+  return { label, kind: kind as ItemKind, value };
 }
 
 async function buildCreateItemInput(
@@ -227,28 +271,21 @@ export function createItemCommand(): Command {
 
   cmd
     .command("update")
-    .description("Update a vault item")
+    .description(
+      "Update a vault item (provide --label/--kind and pipe the value, or --value, to run non-interactively)",
+    )
     .argument("<id>", "Item ID")
+    .option("--name <name>", "Item label (alias for --label)")
+    .option("--label <label>", "Item label")
+    .option("--kind <kind>", `Item kind (one of: ${ITEM_KINDS.join(", ")})`)
+    .option("--value <value>", "Secret value (rejected on a TTY; pipe via stdin instead)")
     .option("--json", "Output as JSON")
-    .action(async (id: string, opts: { json?: boolean }) => {
+    .action(async (id: string, opts: UpdateItemOptions) => {
       try {
+        const { label, kind, value } = await readUpdateItemValues(opts);
         const client = await createUserApiClient();
         const currentItem = (await client.items.get(id)).item;
-        const label = await prompt("Label: ");
-        const kind = await prompt(`Kind (${ITEM_KINDS.join(", ")}): `);
-        const value = await readSecretValue("Value (secret): ");
-
-        if (!label || !kind || !value) {
-          error("Label, kind, and value are required.");
-          process.exit(1);
-        }
-
-        if (!ITEM_KINDS.includes(kind as ItemKind)) {
-          error(`Kind must be one of: ${ITEM_KINDS.join(", ")}`);
-          process.exit(1);
-        }
-
-        const payload = buildPayload(label, value, kind as ItemKind);
+        const payload = buildPayload(label, value, kind);
         let result: { ok: boolean; contentVersion: number };
 
         if (currentItem.storageMode === "zero_knowledge") {
