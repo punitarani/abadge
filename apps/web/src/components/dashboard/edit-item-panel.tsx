@@ -109,6 +109,10 @@ export function EditItemPanel({
   const [saving, setSaving] = useState(false);
 
   function handleKindChange(newKind: ItemKind): void {
+    // Changing kind swaps the field schema, so the field values are cleared.
+    // Guard the no-op (clicking the already-selected pill) so it never wipes
+    // the pre-filled, server-stored values.
+    if (newKind === kind) return;
     setKind(newKind);
     setFieldValues({});
   }

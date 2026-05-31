@@ -132,6 +132,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
   const [creating, setCreating] = useState(false);
 
   function handleKindChange(newKind: ItemKind): void {
+    if (newKind === kind) return;
     setKind(newKind);
     setFieldValues({});
   }

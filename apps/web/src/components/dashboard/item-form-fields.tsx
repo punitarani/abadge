@@ -2,7 +2,7 @@
 
 import type { ItemKind, ItemPayload } from "@abadge/core";
 import { ITEM_KINDS } from "@abadge/core";
-import { useCallback } from "react";
+import { useCallback, useId } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -260,12 +260,15 @@ export function ItemFormFields({
   onNameChange,
   onKindChange,
 }: ItemFormFieldsProps): React.ReactElement {
+  // Unique per instance so the create and edit panels never collide on the
+  // name input's id if both mount in the same document.
+  const nameId = useId();
   return (
     <>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="item-name">Name</Label>
+        <Label htmlFor={nameId}>Name</Label>
         <Input
-          id="item-name"
+          id={nameId}
           placeholder="e.g., github-deploy-key"
           value={name}
           onChange={(event) => onNameChange(event.target.value)}
