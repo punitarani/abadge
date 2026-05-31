@@ -13,13 +13,12 @@ import { useActiveOrg } from "@/hooks/use-active-org";
 import { decryptItemFromProfile } from "@/lib/crypto-client";
 import { humanizeFieldKey, KIND_FIELD_SPECS } from "@/lib/item-fields";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { storageModeLabel } from "@/lib/storage-mode-label";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 
-export function storageModeLabel(storageMode: ItemDetail["storageMode"]): string {
-  return storageMode === "zero_knowledge" ? "Zero-knowledge" : "Server-managed";
-}
+export { storageModeLabel };
 
 export interface ItemReveal {
   revealedPayload: ItemPayload | null;

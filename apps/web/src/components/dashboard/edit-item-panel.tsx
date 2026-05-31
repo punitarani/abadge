@@ -4,7 +4,6 @@ import type { ItemDetail, ItemKind, ItemPayload } from "@abadge/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { storageModeLabel } from "@/components/dashboard/item-detail-panel";
 import {
   buildFieldsForKind,
   ItemFormFields,
@@ -16,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { encryptItemForProfile } from "@/lib/crypto-client";
 import { dashboardQueryKeys } from "@/lib/query-keys";
+import { storageModeLabel } from "@/lib/storage-mode-label";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
