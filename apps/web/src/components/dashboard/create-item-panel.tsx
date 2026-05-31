@@ -1,212 +1,24 @@
 "use client";
 
 import type { ItemKind, Profile } from "@abadge/core";
-import { ITEM_KINDS } from "@abadge/core";
 import { Warning } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useId, useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
+import {
+  buildFieldsForKind,
+  ItemFormFields,
+  KindFieldEditor,
+} from "@/components/dashboard/item-form-fields";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { encryptItemForProfile } from "@/lib/crypto-client";
-import { KIND_FIELD_SPECS, KIND_LABELS } from "@/lib/item-fields";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
-import { cn } from "@/lib/utils";
 import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
 export type StorageMode = "zero_knowledge" | "server_managed";
-
-function buildFieldsForKind(
-  _kind: ItemKind,
-  fieldValues: Record<string, string>,
-): Record<string, string> {
-  const fields: Record<string, string> = {};
-  for (const [key, value] of Object.entries(fieldValues)) {
-    if (value.trim()) {
-      fields[key] = value;
-    }
-  }
-  return fields;
-}
-
-/* ---- Per-kind field editors ---- */
-
-interface FieldEditorProps {
-  kind: ItemKind;
-  fields: Record<string, string>;
-  onChange: (fields: Record<string, string>) => void;
-}
-
-/**
- * Generic editor for every standard kind: renders the kind's
- * {@link KIND_FIELD_SPECS} through the shared {@link FieldInput} /
- * {@link FieldTextarea} helpers. The `json` kind has arbitrary keys and uses
- * {@link JsonFields} instead.
- */
-function SpecFields({ kind, fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      {KIND_FIELD_SPECS[kind].map((spec) =>
-        spec.multiline ? (
-          <FieldTextarea
-            key={spec.field}
-            label={spec.label}
-            field={spec.field}
-            fields={fields}
-            onChange={onChange}
-            required={spec.required}
-            placeholder={spec.placeholder}
-          />
-        ) : (
-          <FieldInput
-            key={spec.field}
-            label={spec.label}
-            field={spec.field}
-            fields={fields}
-            onChange={onChange}
-            required={spec.required}
-            type={spec.type}
-            placeholder={spec.placeholder}
-          />
-        ),
-      )}
-    </div>
-  );
-}
-
-function JsonFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  const entries = Object.entries(fields).filter(([key]) => key !== "__json_next_id");
-  const addRow = useCallback(() => {
-    const nextId = Number(fields.__json_next_id ?? entries.length);
-    onChange({ ...fields, [`key_${nextId}`]: "", __json_next_id: String(nextId + 1) });
-  }, [fields, entries.length, onChange]);
-
-  const removeRow = useCallback(
-    (key: string) => {
-      const next = { ...fields };
-      delete next[key];
-      onChange(next);
-    },
-    [fields, onChange],
-  );
-
-  const updateKey = useCallback(
-    (oldKey: string, newKey: string, value: string) => {
-      const next = { ...fields };
-      delete next[oldKey];
-      if (newKey.trim()) {
-        next[newKey.trim()] = value;
-      }
-      onChange(next);
-    },
-    [fields, onChange],
-  );
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="text-sm font-medium">Key-value pairs</div>
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex items-center gap-2">
-          <Input
-            placeholder="Key"
-            value={key.startsWith("key_") ? "" : key}
-            onChange={(e) => updateKey(key, e.target.value, value)}
-            className="flex-1"
-          />
-          <Input
-            placeholder="Value"
-            value={value}
-            onChange={(e) => onChange({ ...fields, [key]: e.target.value })}
-            className="flex-1"
-          />
-          <Button type="button" variant="ghost" size="sm" onClick={() => removeRow(key)}>
-            &times;
-          </Button>
-        </div>
-      ))}
-      <Button type="button" variant="outline" size="sm" onClick={addRow} className="w-fit">
-        + Add field
-      </Button>
-    </div>
-  );
-}
-
-/* ---- Shared field helpers ---- */
-
-function FieldInput({
-  label,
-  field,
-  fields,
-  onChange,
-  required,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  field: string;
-  fields: Record<string, string>;
-  onChange: (fields: Record<string, string>) => void;
-  required?: boolean;
-  type?: string;
-  placeholder?: string;
-}): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      <Input
-        type={type}
-        value={fields[field] ?? ""}
-        onChange={(e) => onChange({ ...fields, [field]: e.target.value })}
-        required={required}
-        placeholder={placeholder}
-      />
-    </div>
-  );
-}
-
-function FieldTextarea({
-  label,
-  field,
-  fields,
-  onChange,
-  required,
-  placeholder,
-}: {
-  label: string;
-  field: string;
-  fields: Record<string, string>;
-  onChange: (fields: Record<string, string>) => void;
-  required?: boolean;
-  placeholder?: string;
-}): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      <Textarea
-        value={fields[field] ?? ""}
-        onChange={(e) => onChange({ ...fields, [field]: e.target.value })}
-        required={required}
-        placeholder={placeholder}
-        rows={4}
-      />
-    </div>
-  );
-}
-
-const KIND_FIELD_EDITORS: Record<ItemKind, React.ComponentType<FieldEditorProps>> = {
-  api_key: SpecFields,
-  login: SpecFields,
-  token: SpecFields,
-  certificate: SpecFields,
-  ssh_key: SpecFields,
-  json: JsonFields,
-  opaque: SpecFields,
-};
 
 /* ---- View ---- */
 
@@ -235,42 +47,14 @@ export function CreateItemPanelView({
   onFieldsChange,
   onSubmit,
 }: CreateItemPanelViewProps): React.ReactElement {
-  const FieldEditor = KIND_FIELD_EDITORS[kind];
-
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="item-name">Name</Label>
-        <Input
-          id="item-name"
-          placeholder="e.g., github-deploy-key"
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
-          required
-        />
-      </div>
-
-      {/* Kind selector */}
-      <fieldset className="flex flex-col gap-2">
-        <div className="text-sm font-medium">Kind</div>
-        <div className="flex flex-wrap gap-1.5">
-          {ITEM_KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => onKindChange(k)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                k === kind
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-background text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {KIND_LABELS[k]}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      <ItemFormFields
+        name={name}
+        kind={kind}
+        onNameChange={onNameChange}
+        onKindChange={onKindChange}
+      />
 
       <fieldset className="flex flex-col gap-3">
         <div className="text-sm font-medium">Storage mode</div>
@@ -324,7 +108,7 @@ export function CreateItemPanelView({
       )}
 
       {/* Per-kind fields */}
-      <FieldEditor kind={kind} fields={fieldValues} onChange={onFieldsChange} />
+      <KindFieldEditor kind={kind} fieldValues={fieldValues} onChange={onFieldsChange} />
     </form>
   );
 }
@@ -348,6 +132,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
   const [creating, setCreating] = useState(false);
 
   function handleKindChange(newKind: ItemKind): void {
+    if (newKind === kind) return;
     setKind(newKind);
     setFieldValues({});
   }
@@ -357,18 +142,16 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
     setCreating(true);
 
     try {
+      // buildFieldsForKind drops empty values and the JSON `__json_next_id`
+      // tracking key.
       const fields = buildFieldsForKind(kind, fieldValues);
-
-      // For JSON kind, clean up the internal tracking key
-      const cleanFields = { ...fields };
-      delete cleanFields.__json_next_id;
 
       const payload = {
         v: 1 as const,
         label: name,
         kind,
         tags: [] as string[],
-        fields: cleanFields,
+        fields,
       };
 
       let body:
