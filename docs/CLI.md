@@ -129,14 +129,22 @@ abadge item add --label "Deploy SSH key" --kind ssh_key --storage-mode zero_know
 abadge item list
 abadge item get <id> [--reveal]
 
-# Update / delete
-abadge item update <id>
+# Update (interactive, or non-interactively via flags)
+abadge item update <id>                                   # prompts for label/kind/value
+abadge item update <id> --label X --kind api_key --value secret   # CI / non-TTY
+echo -n 'secret' | abadge item update <id> --label X --kind api_key   # pipe the value
+
+# Delete
 abadge item rm <id> [--force]
 ```
 
-`--value` is rejected on a TTY to prevent shell-history leaks; pipe the
-secret from stdin instead. Supported kinds: `login`, `api_key`, `token`,
-`json`, `certificate`, `ssh_key`, `opaque`.
+`item add` and `item update` accept `--label`/`--name`, `--kind`, and
+`--value`. `--value` is rejected on a TTY to prevent shell-history leaks; pipe
+the secret from stdin instead (or pass `--value` from a non-interactive shell).
+For `item update`, pass `--label` and `--kind` so the interactive prompts are
+skipped and the piped bytes flow to the value — otherwise the command is not
+scriptable. Supported kinds: `login`, `api_key`, `token`, `json`,
+`certificate`, `ssh_key`, `opaque`.
 
 ### Agents
 

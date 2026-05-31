@@ -53,7 +53,7 @@
     {
       "binding": "HYPERDRIVE",
       "id": "3ea93d0186d94581b5b66f4e670216bb",
-      "localConnectionString": "postgresql://abadge:abadge@localhost:5432/abadge"
+      "localConnectionString": "postgresql://abadge:abadge@localhost:5433/abadge"
       // §AB-0052 — Hyperdrive query caching is DISABLED on this config
       // resource (a per-resource setting, NOT a binding field — wrangler
       // ignores a "caching" key here). abadge's authz checks (permission
