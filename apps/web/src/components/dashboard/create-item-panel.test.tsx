@@ -144,6 +144,13 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("CreateItemPanel — profile wiring", () => {
+  test("shows a loading profile state while profiles are in-flight", () => {
+    renderPanel();
+
+    expect(screen.getByText("Loading profiles...")).toBeTruthy();
+    expect(screen.queryByText("No profiles available")).toBeNull();
+  });
+
   test("defaults to the externalId='default' profile and creates server-managed there", async () => {
     const { container } = renderPanel();
 
