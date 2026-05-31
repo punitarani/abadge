@@ -39,11 +39,16 @@ mock.module("@/lib/trpc-browser", () => ({
   getClientErrorMessage: (_e: unknown, fallback: string) => fallback,
 }));
 
+// Mock every name imported from crypto-client across the evaluated module graph
+// (edit-item-panel pulls in item-detail-panel, which imports
+// decryptItemFromProfile). Bun's module mock must provide every named export the
+// graph imports, or a strict runtime (CI's bun 1.3.0) throws at import time.
 mock.module("@/lib/crypto-client", () => ({
   encryptItemForProfile: mock(() => ({
     encryptedItemKey: "EIK",
     ciphertext: "CT",
   })),
+  decryptItemFromProfile: mock(() => ({ v: 1, kind: "opaque", fields: {} })),
 }));
 
 mock.module("@/lib/vault-context", () => ({
