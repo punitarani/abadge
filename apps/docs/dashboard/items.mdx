@@ -1,6 +1,6 @@
 ---
 title: "Items"
-description: "Browse, create, and delete credentials inside the dashboard."
+description: "Browse, create, edit, and delete credentials inside the dashboard."
 ---
 
 The **Items** view is where you store and manage individual credentials. Every item carries a storage mode that determines whether the server can decrypt it.
@@ -49,9 +49,16 @@ Click a row to open the item detail page. It shows:
 - Metadata cards: Item ID, content version, last modified, active permission count
 - **Agent permissions** — every grant pointing at this item, each revocable
 - **Recent access events** — audit entries scoped to this item
+- **Edit** — update the item's name, kind, and field values (personal accounts only — see below)
 - **Delete** — soft-deletes the item and revokes its permissions
 
-There is no in-dashboard edit form. To change an item's value, create a new item (or use the CLI).
+## Editing an item
+
+On a **personal account**, the item page shows an **Edit** button. It reveals the current value (decrypting in your browser for zero-knowledge items, or via `items.ownerReveal` for server-managed), pre-fills the form, and lets you change the name, kind, and field values. Storage mode cannot be changed.
+
+Saving uses optimistic concurrency: the dashboard submits the item's current `contentVersion`, and a concurrent edit elsewhere fails with `STALE_VERSION` (reload and retry). Zero-knowledge items are re-encrypted in your browser under the profile root key before upload.
+
+Editing rides the same custody gate as **Reveal**: it is offered only where the dashboard may show plaintext (personal accounts). In a **team organization** (custody mode), edit an item with the CLI (`abadge item update`) or the API (`PATCH /v1/items/{itemId}`).
 
 ## Custody mode vs. personal vault
 

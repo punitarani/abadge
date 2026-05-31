@@ -1,13 +1,15 @@
 "use client";
 
 import type { AuditEntry, Permission } from "@abadge/core";
-import { Trash } from "@phosphor-icons/react";
+import { PencilSimple, Trash } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { EditItemPanel } from "@/components/dashboard/edit-item-panel";
 import {
+  type ItemReveal,
   ItemSecretSection,
   storageModeLabel,
   useItemReveal,
@@ -44,6 +46,33 @@ import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useOrgStore } from "@/stores/org-store";
+
+/**
+ * Edit rides the reveal gate: the form pre-fills from the revealed payload, so
+ * Edit is only offered where Reveal is (personal accounts). The panel opens once
+ * the reveal produces a payload; closing collapses the revealed value so the
+ * card never shows pre-edit plaintext.
+ */
+function useItemEditGate(reveal: ItemReveal): {
+  editOpen: boolean;
+  open: () => void;
+  close: () => void;
+} {
+  const [editRequested, setEditRequested] = useState(false);
+  return {
+    editOpen: editRequested && reveal.revealedPayload !== null,
+    open: () => {
+      setEditRequested(true);
+      if (reveal.revealedPayload === null && !reveal.revealing) {
+        reveal.reveal();
+      }
+    },
+    close: () => {
+      setEditRequested(false);
+      reveal.hide();
+    },
+  };
+}
 
 export default function ItemDetailPage(): React.ReactElement {
   const params = useParams<{ id: string }>();
@@ -95,6 +124,7 @@ export default function ItemDetailPage(): React.ReactElement {
   // Called unconditionally before the early returns to keep hook order stable;
   // tolerates a null item.
   const itemReveal = useItemReveal(item);
+  const editGate = useItemEditGate(itemReveal);
 
   const deleteItem = useMutation({
     mutationFn: () => browserTrpcClient.items.delete.mutate({ itemId }),
@@ -147,6 +177,17 @@ export default function ItemDetailPage(): React.ReactElement {
           <p className="mt-1 text-sm text-muted-foreground">Created {formatDate(item.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2">
+          {isPersonal && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={editGate.open}
+              disabled={itemReveal.revealing}
+            >
+              <PencilSimple className="mr-1 h-3.5 w-3.5" />
+              {itemReveal.revealing ? "Loading..." : "Edit"}
+            </Button>
+          )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -185,6 +226,15 @@ export default function ItemDetailPage(): React.ReactElement {
           orgs stay in custody mode. The gate lives in ItemSecretSection so the
           custody boundary is enforced by the component, not this call site. */}
       <ItemSecretSection item={item} isPersonal={isPersonal} reveal={itemReveal} />
+
+      {editGate.editOpen && itemReveal.revealedPayload !== null && (
+        <EditItemPanel
+          item={item}
+          payload={itemReveal.revealedPayload}
+          open={editGate.editOpen}
+          onClose={editGate.close}
+        />
+      )}
 
       {/* Metadata cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
