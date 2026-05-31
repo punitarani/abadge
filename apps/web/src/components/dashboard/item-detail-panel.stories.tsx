@@ -1,4 +1,4 @@
-import type { ItemDetail } from "@abadge/core";
+import type { ItemDetail, ItemPayload } from "@abadge/core";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { useState } from "react";
 import { ItemDetailPanelView, type ItemReveal } from "./item-detail-panel";
@@ -46,18 +46,18 @@ type Story = StoryObj<typeof meta>;
 function DemoView({
   item,
   isPersonal,
-  value,
+  payload,
 }: {
   item: ItemDetail;
   isPersonal: boolean;
-  value: string;
+  payload: ItemPayload;
 }): React.ReactElement {
-  const [revealedValue, setRevealedValue] = useState<string | null>(null);
+  const [revealedPayload, setRevealedPayload] = useState<ItemPayload | null>(null);
   const reveal: ItemReveal = {
-    revealedValue,
+    revealedPayload,
     revealing: false,
-    reveal: () => setRevealedValue(value),
-    hide: () => setRevealedValue(null),
+    reveal: () => setRevealedPayload(payload),
+    hide: () => setRevealedPayload(null),
   };
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -68,17 +68,41 @@ function DemoView({
 
 export const PersonalZeroKnowledge: Story = {
   render: () => (
-    <DemoView item={zeroKnowledgeItem} isPersonal value={'{\n  "value": "super-secret-value"\n}'} />
+    <DemoView
+      item={zeroKnowledgeItem}
+      isPersonal
+      payload={{
+        v: 1,
+        label: "Production API Key",
+        kind: "api_key",
+        fields: { value: "sk-live-xxxx" },
+      }}
+    />
   ),
 };
 
 export const PersonalServerManaged: Story = {
   render: () => (
-    <DemoView item={serverManagedItem} isPersonal value={'{\n  "value": "db-password"\n}'} />
+    <DemoView
+      item={serverManagedItem}
+      isPersonal
+      payload={{
+        v: 1,
+        label: "Database Password",
+        kind: "login",
+        fields: { username: "app", password: "db-password", url: "postgres://db:5432" },
+      }}
+    />
   ),
 };
 
 // Team organization: custody mode — no reveal affordance, just the ZK note.
 export const Custody: Story = {
-  render: () => <DemoView item={zeroKnowledgeItem} isPersonal={false} value="" />,
+  render: () => (
+    <DemoView
+      item={zeroKnowledgeItem}
+      isPersonal={false}
+      payload={{ v: 1, label: "Production API Key", kind: "api_key", fields: {} }}
+    />
+  ),
 };

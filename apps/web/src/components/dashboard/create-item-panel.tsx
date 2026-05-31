@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { encryptItemForProfile } from "@/lib/crypto-client";
+import { KIND_FIELD_SPECS, KIND_LABELS } from "@/lib/item-fields";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { cn } from "@/lib/utils";
@@ -19,16 +20,6 @@ import { useVault } from "@/lib/vault-context";
 import { useOrgStore } from "@/stores/org-store";
 
 export type StorageMode = "zero_knowledge" | "server_managed";
-
-const KIND_LABELS: Record<ItemKind, string> = {
-  api_key: "API Key",
-  login: "Login",
-  token: "Token",
-  certificate: "Certificate",
-  ssh_key: "SSH Key",
-  json: "JSON",
-  opaque: "Opaque",
-};
 
 function buildFieldsForKind(
   _kind: ItemKind,
@@ -46,117 +37,44 @@ function buildFieldsForKind(
 /* ---- Per-kind field editors ---- */
 
 interface FieldEditorProps {
+  kind: ItemKind;
   fields: Record<string, string>;
   onChange: (fields: Record<string, string>) => void;
 }
 
-function ApiKeyFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
+/**
+ * Generic editor for every standard kind: renders the kind's
+ * {@link KIND_FIELD_SPECS} through the shared {@link FieldInput} /
+ * {@link FieldTextarea} helpers. The `json` kind has arbitrary keys and uses
+ * {@link JsonFields} instead.
+ */
+function SpecFields({ kind, fields, onChange }: FieldEditorProps): React.ReactElement {
   return (
     <div className="flex flex-col gap-3">
-      <FieldInput label="Key value" field="value" fields={fields} onChange={onChange} required />
-    </div>
-  );
-}
-
-function LoginFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      <FieldInput label="Username" field="username" fields={fields} onChange={onChange} required />
-      <FieldInput
-        label="Password"
-        field="password"
-        fields={fields}
-        onChange={onChange}
-        required
-        type="password"
-      />
-      <FieldInput
-        label="URL"
-        field="url"
-        fields={fields}
-        onChange={onChange}
-        placeholder="https://..."
-      />
-      <FieldInput
-        label="TOTP secret"
-        field="totp_secret"
-        fields={fields}
-        onChange={onChange}
-        placeholder="Optional"
-      />
-    </div>
-  );
-}
-
-function TokenFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      <FieldInput label="Value" field="value" fields={fields} onChange={onChange} required />
-    </div>
-  );
-}
-
-function CertificateFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      <FieldTextarea
-        label="Certificate PEM"
-        field="cert"
-        fields={fields}
-        onChange={onChange}
-        required
-      />
-      <FieldTextarea
-        label="Private Key PEM"
-        field="key"
-        fields={fields}
-        onChange={onChange}
-        required
-      />
-      <FieldTextarea
-        label="Chain"
-        field="chain"
-        fields={fields}
-        onChange={onChange}
-        placeholder="Optional intermediate chain"
-      />
-      <FieldInput
-        label="Passphrase"
-        field="passphrase"
-        fields={fields}
-        onChange={onChange}
-        type="password"
-        placeholder="Optional"
-      />
-    </div>
-  );
-}
-
-function SshKeyFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      <FieldTextarea
-        label="Private Key"
-        field="private_key"
-        fields={fields}
-        onChange={onChange}
-        required
-      />
-      <FieldTextarea
-        label="Public Key"
-        field="public_key"
-        fields={fields}
-        onChange={onChange}
-        placeholder="Optional"
-      />
-      <FieldInput
-        label="Passphrase"
-        field="passphrase"
-        fields={fields}
-        onChange={onChange}
-        type="password"
-        placeholder="Optional"
-      />
+      {KIND_FIELD_SPECS[kind].map((spec) =>
+        spec.multiline ? (
+          <FieldTextarea
+            key={spec.field}
+            label={spec.label}
+            field={spec.field}
+            fields={fields}
+            onChange={onChange}
+            required={spec.required}
+            placeholder={spec.placeholder}
+          />
+        ) : (
+          <FieldInput
+            key={spec.field}
+            label={spec.label}
+            field={spec.field}
+            fields={fields}
+            onChange={onChange}
+            required={spec.required}
+            type={spec.type}
+            placeholder={spec.placeholder}
+          />
+        ),
+      )}
     </div>
   );
 }
@@ -214,14 +132,6 @@ function JsonFields({ fields, onChange }: FieldEditorProps): React.ReactElement 
       <Button type="button" variant="outline" size="sm" onClick={addRow} className="w-fit">
         + Add field
       </Button>
-    </div>
-  );
-}
-
-function OpaqueFields({ fields, onChange }: FieldEditorProps): React.ReactElement {
-  return (
-    <div className="flex flex-col gap-3">
-      <FieldTextarea label="Value" field="value" fields={fields} onChange={onChange} required />
     </div>
   );
 }
@@ -289,13 +199,13 @@ function FieldTextarea({
 }
 
 const KIND_FIELD_EDITORS: Record<ItemKind, React.ComponentType<FieldEditorProps>> = {
-  api_key: ApiKeyFields,
-  login: LoginFields,
-  token: TokenFields,
-  certificate: CertificateFields,
-  ssh_key: SshKeyFields,
+  api_key: SpecFields,
+  login: SpecFields,
+  token: SpecFields,
+  certificate: SpecFields,
+  ssh_key: SpecFields,
   json: JsonFields,
-  opaque: OpaqueFields,
+  opaque: SpecFields,
 };
 
 /* ---- View ---- */
@@ -414,7 +324,7 @@ export function CreateItemPanelView({
       )}
 
       {/* Per-kind fields */}
-      <FieldEditor fields={fieldValues} onChange={onFieldsChange} />
+      <FieldEditor kind={kind} fields={fieldValues} onChange={onFieldsChange} />
     </form>
   );
 }
