@@ -2,8 +2,8 @@
 
 import type { ItemKind, Profile } from "@abadge/core";
 import { Warning } from "@phosphor-icons/react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   buildFieldsForKind,
@@ -12,7 +12,9 @@ import {
 } from "@/components/dashboard/item-form-fields";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { encryptItemForProfile } from "@/lib/crypto-client";
+import { defaultProfileId, profileOptionLabel } from "@/lib/profile-select";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { useVault } from "@/lib/vault-context";
@@ -26,11 +28,18 @@ export interface CreateItemPanelViewProps {
   formId: string;
   name: string;
   kind: ItemKind;
+  /** Profiles the item can be created in (the org's profiles). */
+  profiles: Profile[];
+  /** True while the profile list is being loaded for the open panel. */
+  profilesLoading: boolean;
+  /** Currently selected profile id (its storage mode drives the crypto path). */
+  selectedProfileId: string;
+  /** Derived from the selected profile; used for the ZK note. */
   storageMode: StorageMode;
   fieldValues: Record<string, string>;
   onNameChange: (value: string) => void;
   onKindChange: (kind: ItemKind) => void;
-  onStorageModeChange: (value: StorageMode) => void;
+  onSelectProfile: (profileId: string) => void;
   onFieldsChange: (fields: Record<string, string>) => void;
   onSubmit: React.FormEventHandler<HTMLFormElement>;
 }
@@ -39,14 +48,26 @@ export function CreateItemPanelView({
   formId,
   name,
   kind,
+  profiles,
+  profilesLoading,
+  selectedProfileId,
   storageMode,
   fieldValues,
   onNameChange,
   onKindChange,
-  onStorageModeChange,
+  onSelectProfile,
   onFieldsChange,
   onSubmit,
 }: CreateItemPanelViewProps): React.ReactElement {
+  const profileOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      [...profiles]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((p) => ({ value: p.id, label: profileOptionLabel(p) })),
+    [profiles],
+  );
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null;
+
   return (
     <form id={formId} onSubmit={onSubmit} className="flex flex-col gap-5">
       <ItemFormFields
@@ -56,44 +77,31 @@ export function CreateItemPanelView({
         onKindChange={onKindChange}
       />
 
-      <fieldset className="flex flex-col gap-3">
-        <div className="text-sm font-medium">Storage mode</div>
-        <div className="flex flex-col gap-3">
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="storageMode"
-              value="zero_knowledge"
-              checked={storageMode === "zero_knowledge"}
-              onChange={() => onStorageModeChange("zero_knowledge")}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="font-medium">Zero-knowledge</span>
-              <span className="block text-xs text-muted-foreground">
-                Your device, your key. Encrypted in your browser before leaving — only you can
-                decrypt. Best for personal secrets. Cannot be accessed by remote agents.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="storageMode"
-              value="server_managed"
-              checked={storageMode === "server_managed"}
-              onChange={() => onStorageModeChange("server_managed")}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="font-medium">Server-managed</span>
-              <span className="block text-xs text-muted-foreground">
-                Encrypted server-side with AES-256-GCM. Can be accessed by local and remote agents
-                through the API. Best for credentials shared with automated systems.
-              </span>
-            </span>
-          </label>
-        </div>
+      {/* Profile selector — the chosen profile's storage mode determines how the
+          item is encrypted (zero-knowledge vs server-managed). */}
+      <fieldset className="flex flex-col gap-2">
+        <div className="text-sm font-medium">Profile</div>
+        {profileOptions.length > 1 ? (
+          <SearchableSelect
+            options={profileOptions}
+            value={selectedProfileId}
+            onValueChange={onSelectProfile}
+            placeholder="Select a profile"
+          />
+        ) : (
+          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+            {profilesLoading ? (
+              <span className="text-muted-foreground">Loading profiles...</span>
+            ) : selectedProfile ? (
+              profileOptionLabel(selectedProfile)
+            ) : (
+              <span className="text-muted-foreground">No profiles available</span>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          The item is stored in this profile and inherits its storage mode.
+        </p>
       </fieldset>
 
       {/* ZK warning */}
@@ -127,9 +135,25 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
   const formId = useId();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<ItemKind>("opaque");
-  const [storageMode, setStorageMode] = useState<StorageMode>("server_managed");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
+
+  const { data: profilesData, isLoading: profilesLoading } = useQuery({
+    queryKey: dashboardQueryKeys.profiles(activeOrgId ?? ""),
+    queryFn: () => browserTrpcClient.profiles.list.query({ orgId: activeOrgId ?? "" }),
+    enabled: Boolean(activeOrgId) && open,
+  });
+  const profiles = useMemo<Profile[]>(() => profilesData?.profiles ?? [], [profilesData]);
+
+  // Resolve the effective selection: the user's pick if it still exists in the
+  // org's profiles, else the org default (mirrors the server's
+  // `resolveTargetProfile` default-profile fallback). Deriving — rather than
+  // syncing via effect — keeps the selection correct across org switches.
+  const effectiveProfileId =
+    profiles.find((p) => p.id === selectedProfileId)?.id ?? defaultProfileId(profiles) ?? "";
+  const selectedProfile = profiles.find((p) => p.id === effectiveProfileId) ?? null;
+  const storageMode: StorageMode = selectedProfile?.storageMode ?? "server_managed";
 
   function handleKindChange(newKind: ItemKind): void {
     if (newKind === kind) return;
@@ -139,6 +163,16 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
 
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
+
+    if (!activeOrgId) {
+      toast.error("Select an organization before creating items.");
+      return;
+    }
+    if (!selectedProfile) {
+      toast.error("Select a profile before creating items.");
+      return;
+    }
+
     setCreating(true);
 
     try {
@@ -161,40 +195,20 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
             label: string;
             encryptedItemKey: string;
             ciphertext: string;
+            profileId: string;
           }
         | {
             storageMode: "server_managed";
             payload: typeof payload;
+            profileId: string;
           };
 
-      if (storageMode === "zero_knowledge") {
-        if (!activeOrgId) {
-          toast.error("Select an organization before creating items.");
-          return;
-        }
+      const profileId = selectedProfile.id;
 
-        // The server inserts ZK items into the org's first ZK profile
-        // (items router). Resolve the same profile here so the client
-        // encrypts with that profile's root key.
-        let zkProfileId: string;
-        try {
-          const result = await browserTrpcClient.profiles.list.query({ orgId: activeOrgId });
-          const zkProfile = result.profiles.find(
-            (p: Profile) => p.storageMode === "zero_knowledge",
-          );
-          if (!zkProfile) {
-            toast.error("No zero-knowledge profile in this organization. Create one first.");
-            return;
-          }
-          zkProfileId = zkProfile.id;
-        } catch (lookupError) {
-          toast.error(getClientErrorMessage(lookupError, "Failed to load profiles"));
-          return;
-        }
-
+      if (selectedProfile.storageMode === "zero_knowledge") {
         let key: Uint8Array;
         try {
-          key = await requestUnlock(zkProfileId);
+          key = await requestUnlock(profileId);
         } catch {
           toast.error("Profile password required.");
           return;
@@ -206,7 +220,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
         // and make the row undecryptable.
         const itemId = crypto.randomUUID();
         const encrypted = encryptItemForProfile(payload, key, {
-          profileId: zkProfileId,
+          profileId,
           itemId,
         });
         body = {
@@ -215,17 +229,19 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
           label: name,
           encryptedItemKey: encrypted.encryptedItemKey,
           ciphertext: encrypted.ciphertext,
+          profileId,
         };
       } else {
         body = {
           storageMode: "server_managed",
           payload,
+          profileId,
         };
       }
 
       await browserTrpcClient.items.create.mutate(body);
       await queryClient.invalidateQueries({
-        queryKey: dashboardQueryKeys.orgItems(activeOrgId ?? ""),
+        queryKey: dashboardQueryKeys.orgItems(activeOrgId),
       });
       toast.success("Item created.");
       setName("");
@@ -247,7 +263,7 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       <Button type="button" variant="outline" size="sm" onClick={onClose}>
         Cancel
       </Button>
-      <Button form={formId} type="submit" disabled={creating}>
+      <Button form={formId} type="submit" disabled={creating || profilesLoading}>
         {creating ? buttonTextCreating : buttonText}
       </Button>
     </div>
@@ -258,11 +274,14 @@ export function CreateItemPanel({ open, onClose }: CreateItemPanelProps): React.
       formId={formId}
       name={name}
       kind={kind}
+      profiles={profiles}
+      profilesLoading={profilesLoading}
+      selectedProfileId={effectiveProfileId}
       storageMode={storageMode}
       fieldValues={fieldValues}
       onNameChange={setName}
       onKindChange={handleKindChange}
-      onStorageModeChange={setStorageMode}
+      onSelectProfile={setSelectedProfileId}
       onFieldsChange={setFieldValues}
       onSubmit={handleSubmit}
     />

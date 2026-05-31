@@ -40,9 +40,6 @@ mock.module("@/lib/trpc-browser", () => ({
   getClientErrorMessage: (_e: unknown, fallback: string) => fallback,
 }));
 
-// Mock every name imported from crypto-client across the evaluated module graph
-// (edit-item-panel pulls in item-detail-panel, which imports
-// decryptItemFromProfile).
 mock.module("@/lib/crypto-client", () => ({
   encryptItemForProfile: encryptMock,
   decryptItemFromProfile: mock(() => ({ v: 1, kind: "opaque", fields: {} })),
