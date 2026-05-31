@@ -12,6 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -136,26 +143,34 @@ export default function AgentsListPage(): React.ReactElement {
           />
         </div>
 
-        <select
+        <Select
           value={kindFilter}
-          onChange={(e) => void setFilters({ kind: e.target.value as AgentKindFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ kind: v as AgentKindFilter })}
         >
-          <option value="all">All kinds</option>
-          <option value="local_cli">CLI</option>
-          <option value="local_mcp">MCP</option>
-          <option value="remote">Remote</option>
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All kinds</SelectItem>
+            <SelectItem value="local_cli">CLI</SelectItem>
+            <SelectItem value="local_mcp">MCP</SelectItem>
+            <SelectItem value="remote">Remote</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={statusFilter}
-          onChange={(e) => void setFilters({ status: e.target.value as AgentStatusFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ status: v as AgentStatusFilter })}
         >
-          <option value="all">All status</option>
-          <option value="active">Active</option>
-          <option value="revoked">Revoked</option>
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="revoked">Revoked</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto h-9">
           <Plus className="mr-1 h-3.5 w-3.5" />

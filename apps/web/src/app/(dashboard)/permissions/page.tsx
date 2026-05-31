@@ -31,6 +31,13 @@ import { Button } from "@/components/ui/button";
 import { CapabilityBadge } from "@/components/ui/capability-badge";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -474,42 +481,51 @@ export default function PermissionsListPage(): React.ReactElement {
           />
         </div>
 
-        <select
-          value={agentFilter}
-          onChange={(e) => void setFilters({ agent: e.target.value })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="all">All agents</option>
-          {activeAgents.map((a: Agent) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <Select value={agentFilter} onValueChange={(v) => void setFilters({ agent: v })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All agents</SelectItem>
+            {activeAgents.map((a: Agent) => (
+              <SelectItem key={a.id} value={a.id}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={capabilityFilter}
-          onChange={(e) => void setFilters({ capability: e.target.value as CapabilityFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ capability: v as CapabilityFilter })}
         >
-          <option value="all">All capabilities</option>
-          {CAPABILITIES.map((cap) => (
-            <option key={cap} value={cap}>
-              {cap}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All capabilities</SelectItem>
+            {CAPABILITIES.map((cap) => (
+              <SelectItem key={cap} value={cap}>
+                {cap}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={expiryFilter}
-          onChange={(e) => void setFilters({ expiry: e.target.value as ExpiryFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ expiry: v as ExpiryFilter })}
         >
-          <option value="all">All expiry</option>
-          <option value="permanent">Permanent</option>
-          <option value="expiring">Expiring soon</option>
-          <option value="expired">Expired</option>
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All expiry</SelectItem>
+            <SelectItem value="permanent">Permanent</SelectItem>
+            <SelectItem value="expiring">Expiring soon</SelectItem>
+            <SelectItem value="expired">Expired</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto h-9">
           <Plus className="mr-1 h-3.5 w-3.5" />

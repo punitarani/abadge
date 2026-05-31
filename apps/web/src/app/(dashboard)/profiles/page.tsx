@@ -12,6 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -103,25 +110,33 @@ export default function ProfilesListPage(): React.ReactElement {
           />
         </div>
 
-        <select
+        <Select
           value={storageFilter}
-          onChange={(e) => void setFilters({ storage: e.target.value as StorageFilter })}
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          onValueChange={(v) => void setFilters({ storage: v as StorageFilter })}
         >
-          <option value="all">All storage</option>
-          <option value="zero_knowledge">Zero knowledge</option>
-          <option value="server_managed">Server managed</option>
-        </select>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All storage</SelectItem>
+            <SelectItem value="zero_knowledge">Zero knowledge</SelectItem>
+            <SelectItem value="server_managed">Server managed</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={vaultFilter}
-          onChange={(e) => void setFilters({ vault: e.target.value as VaultStatusFilter })}
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          onValueChange={(v) => void setFilters({ vault: v as VaultStatusFilter })}
         >
-          <option value="all">All vault status</option>
-          <option value="unlocked">Unlocked</option>
-          <option value="locked">Locked</option>
-        </select>
+          <SelectTrigger size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All vault status</SelectItem>
+            <SelectItem value="unlocked">Unlocked</SelectItem>
+            <SelectItem value="locked">Locked</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Badge variant="secondary">{filtered.length} profiles</Badge>
 

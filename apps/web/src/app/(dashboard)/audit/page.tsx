@@ -23,6 +23,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ResultBadge } from "@/components/ui/result-badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -373,54 +380,67 @@ export default function AuditPage(): React.ReactElement {
           />
         </div>
 
-        <select
+        <Select
           value={eventTypeFilter}
-          onChange={(e) => void setFilters({ event: e.target.value as typeof eventTypeFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ event: v as typeof eventTypeFilter })}
         >
-          <option value="all">All events</option>
-          {AUDIT_EVENT_TYPES.map((et) => (
-            <option key={et} value={et}>
-              {et}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All events</SelectItem>
+            {AUDIT_EVENT_TYPES.map((et) => (
+              <SelectItem key={et} value={et}>
+                {et}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={resultFilter}
-          onChange={(e) => void setFilters({ result: e.target.value as typeof resultFilter })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ result: v as typeof resultFilter })}
         >
-          <option value="all">All results</option>
-          {AUDIT_RESULTS.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All results</SelectItem>
+            {AUDIT_RESULTS.map((r) => (
+              <SelectItem key={r} value={r}>
+                {r}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <select
-          value={profileFilter}
-          onChange={(e) => void setFilters({ profile: e.target.value })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-        >
-          <option value="all">All profiles</option>
-          {profiles.map((p: Profile) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <Select value={profileFilter} onValueChange={(v) => void setFilters({ profile: v })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All profiles</SelectItem>
+            {profiles.map((p: Profile) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <select
+        <Select
           value={dateRange}
-          onChange={(e) => void setFilters({ range: e.target.value as typeof dateRange })}
-          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          onValueChange={(v) => void setFilters({ range: v as typeof dateRange })}
         >
-          <option value="all">All time</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-        </select>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="7d">Last 7 days</SelectItem>
+            <SelectItem value="30d">Last 30 days</SelectItem>
+          </SelectContent>
+        </Select>
 
         <Button
           variant="outline"
