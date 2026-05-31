@@ -116,18 +116,12 @@ export default function AgentsListPage(): React.ReactElement {
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Automated callers scoped to this organization. Each agent can only access items it has
-            been explicitly granted permission for.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void setFilters({ create: true })}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Register agent
-        </Button>
+      <div>
+        <h1 className="text-lg font-semibold">Agents</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Automated callers scoped to this organization. Each agent can only access items it has
+          been explicitly granted permission for.
+        </p>
       </div>
 
       {/* Search and filters */}
@@ -162,6 +156,11 @@ export default function AgentsListPage(): React.ReactElement {
           <option value="active">Active</option>
           <option value="revoked">Revoked</option>
         </select>
+
+        <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto h-9">
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Register agent
+        </Button>
       </div>
 
       {/* Active filter chips */}

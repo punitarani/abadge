@@ -110,17 +110,11 @@ export default function ItemsListPage(): React.ReactElement {
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Items</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Encrypted credentials and secrets stored in your vault.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void setFilters({ create: true })}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Add item
-        </Button>
+      <div>
+        <h1 className="text-lg font-semibold">Items</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Encrypted credentials and secrets stored in your vault.
+        </p>
       </div>
 
       {/* Search and filters */}
@@ -144,6 +138,11 @@ export default function ItemsListPage(): React.ReactElement {
           <option value="zero_knowledge">Zero-knowledge</option>
           <option value="server_managed">Server-managed</option>
         </select>
+
+        <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto h-9">
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add item
+        </Button>
       </div>
 
       {/* Active filter chips */}

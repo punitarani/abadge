@@ -84,23 +84,11 @@ export default function ProfilesListPage(): React.ReactElement {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Profiles</h1>
-          <p className="text-sm text-muted-foreground">
-            {workspacePosture(isPersonal).profilesSubtitle}
-          </p>
-        </div>
-        {/* Personal accounts are capped at one profile (the seeded default), so
-            the create affordance is hidden for them. `orgLoading` guards the
-            transient `isPersonal === false` window before the org query
-            resolves. The server (`profiles.create`) is the real enforcement. */}
-        {!isPersonal && !orgLoading && (
-          <Button size="sm" onClick={() => void setFilters({ create: true })}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New profile
-          </Button>
-        )}
+      <div>
+        <h1 className="text-lg font-semibold">Profiles</h1>
+        <p className="text-sm text-muted-foreground">
+          {workspacePosture(isPersonal).profilesSubtitle}
+        </p>
       </div>
 
       {/* Filters */}
@@ -136,6 +124,17 @@ export default function ProfilesListPage(): React.ReactElement {
         </select>
 
         <Badge variant="secondary">{filtered.length} profiles</Badge>
+
+        {/* Personal accounts are capped at one profile (the seeded default), so
+            the create affordance is hidden for them. `orgLoading` guards the
+            transient `isPersonal === false` window before the org query
+            resolves. The server (`profiles.create`) is the real enforcement. */}
+        {!isPersonal && !orgLoading && (
+          <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto">
+            <Plus className="mr-1 h-3.5 w-3.5" />
+            New profile
+          </Button>
+        )}
       </div>
 
       {/* Table */}

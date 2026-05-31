@@ -454,18 +454,12 @@ export default function PermissionsListPage(): React.ReactElement {
       </nav>
 
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Permissions</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Each row is one (agent, item) pair. Capabilities are explicit grants — revoke any chip
-            individually.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => void setFilters({ create: true })}>
-          <Plus className="mr-1 h-3.5 w-3.5" />
-          Grant permission
-        </Button>
+      <div>
+        <h1 className="text-lg font-semibold">Permissions</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Each row is one (agent, item) pair. Capabilities are explicit grants — revoke any chip
+          individually.
+        </p>
       </div>
 
       {/* Search and filters */}
@@ -516,6 +510,11 @@ export default function PermissionsListPage(): React.ReactElement {
           <option value="expiring">Expiring soon</option>
           <option value="expired">Expired</option>
         </select>
+
+        <Button size="sm" onClick={() => void setFilters({ create: true })} className="ml-auto h-9">
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Grant permission
+        </Button>
       </div>
 
       {/* Active filter chips */}
