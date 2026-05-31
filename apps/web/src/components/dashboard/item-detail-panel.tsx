@@ -1,6 +1,6 @@
 "use client";
 
-import type { ItemDetail } from "@abadge/core";
+import type { ItemDetail, ItemPayload } from "@abadge/core";
 import { Warning } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,8 +8,10 @@ import { toast } from "sonner";
 import { ResponsiveOverlay } from "@/components/dashboard/responsive-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { useActiveOrg } from "@/hooks/use-active-org";
 import { decryptItemFromProfile } from "@/lib/crypto-client";
+import { humanizeFieldKey, KIND_FIELD_SPECS } from "@/lib/item-fields";
 import { dashboardQueryKeys } from "@/lib/query-keys";
 import { browserTrpcClient, getClientErrorMessage } from "@/lib/trpc-browser";
 import { formatRelativeTime } from "@/lib/utils";
@@ -20,7 +22,7 @@ export function storageModeLabel(storageMode: ItemDetail["storageMode"]): string
 }
 
 export interface ItemReveal {
-  revealedValue: string | null;
+  revealedPayload: ItemPayload | null;
   revealing: boolean;
   reveal: () => void;
   hide: () => void;
@@ -37,10 +39,10 @@ export interface ItemReveal {
  */
 export function useItemReveal(item: ItemDetail | null): ItemReveal {
   const { requestUnlock } = useVault();
-  const [revealedValue, setRevealedValue] = useState<string | null>(null);
+  const [revealedPayload, setRevealedPayload] = useState<ItemPayload | null>(null);
   const [revealing, setRevealing] = useState(false);
 
-  async function revealZeroKnowledge(): Promise<string | null> {
+  async function revealZeroKnowledge(): Promise<ItemPayload | null> {
     if (!item || item.storageMode !== "zero_knowledge") {
       toast.error("Missing encrypted data.");
       return null;
@@ -71,18 +73,18 @@ export function useItemReveal(item: ItemDetail | null): ItemReveal {
         itemId: item.id,
         contentVersion: item.contentVersion,
       });
-      return JSON.stringify(plaintext, null, 2);
+      return plaintext;
     } catch {
       toast.error("Failed to decrypt item.");
       return null;
     }
   }
 
-  async function revealServerManaged(): Promise<string | null> {
+  async function revealServerManaged(): Promise<ItemPayload | null> {
     if (!item) return null;
     try {
       const result = await browserTrpcClient.items.ownerReveal.mutate({ itemId: item.id });
-      return JSON.stringify(result.payload, null, 2);
+      return result.payload as ItemPayload;
     } catch (error) {
       toast.error(getClientErrorMessage(error, "Failed to reveal item"));
       return null;
@@ -92,25 +94,108 @@ export function useItemReveal(item: ItemDetail | null): ItemReveal {
   async function handleReveal(): Promise<void> {
     if (!item) return;
     setRevealing(true);
-    const value =
+    const payload =
       item.storageMode === "zero_knowledge"
         ? await revealZeroKnowledge()
         : await revealServerManaged();
     setRevealing(false);
-    if (value !== null) setRevealedValue(value);
+    if (payload !== null) setRevealedPayload(payload);
   }
 
   return {
-    revealedValue,
+    revealedPayload,
     revealing,
     reveal: () => void handleReveal(),
-    hide: () => setRevealedValue(null),
+    hide: () => setRevealedPayload(null),
   };
+}
+
+interface RevealRow {
+  key: string;
+  label: string;
+  value: string;
+  multiline: boolean;
+}
+
+function stringifyFieldValue(raw: unknown): string {
+  return typeof raw === "string" ? raw : JSON.stringify(raw);
+}
+
+/**
+ * Flatten a revealed payload into display rows in the same order the create
+ * form uses: the kind's standard fields first (labelled via
+ * {@link KIND_FIELD_SPECS}), then any remaining keys (e.g. a `json` item's
+ * arbitrary keys) with humanized labels.
+ */
+function buildRevealRows(payload: ItemPayload): RevealRow[] {
+  const fields = payload.fields ?? {};
+  const specs = KIND_FIELD_SPECS[payload.kind ?? "opaque"];
+  const specFieldNames = new Set(specs.map((spec) => spec.field));
+  const rows: RevealRow[] = [];
+
+  for (const spec of specs) {
+    const raw = fields[spec.field];
+    if (raw === undefined || raw === null) continue;
+    rows.push({
+      key: spec.field,
+      label: spec.label,
+      value: stringifyFieldValue(raw),
+      multiline: Boolean(spec.multiline),
+    });
+  }
+  for (const [key, raw] of Object.entries(fields)) {
+    if (specFieldNames.has(key) || raw === undefined || raw === null) continue;
+    rows.push({
+      key,
+      label: humanizeFieldKey(key),
+      value: stringifyFieldValue(raw),
+      multiline: false,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Render a revealed payload the same human-readable way it was entered in the
+ * create-item form: each field under its label, read-only. The raw storage
+ * shape (`v`/`kind`/`tags`) is deliberately not shown — `label` and storage
+ * mode already live in the page header.
+ */
+function RevealedFields({ payload }: { payload: ItemPayload }): React.ReactElement {
+  const rows = buildRevealRows(payload);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((row) => (
+        <div key={row.key} className="flex flex-col gap-1.5">
+          <Label>{row.label}</Label>
+          <div
+            className={`w-full rounded-lg border border-border bg-input/50 px-3 py-2 font-mono text-sm break-all ${
+              row.multiline ? "whitespace-pre-wrap" : ""
+            }`}
+          >
+            {row.value}
+          </div>
+        </div>
+      ))}
+      {payload.notes ? (
+        <div className="flex flex-col gap-1.5">
+          <Label>Notes</Label>
+          <div className="w-full rounded-lg border border-border bg-input/50 px-3 py-2 text-sm whitespace-pre-wrap break-words">
+            {payload.notes}
+          </div>
+        </div>
+      ) : null}
+      {rows.length === 0 && !payload.notes ? (
+        <p className="text-sm text-muted-foreground">This item has no field values.</p>
+      ) : null}
+    </div>
+  );
 }
 
 interface SecretValueCardProps {
   item: ItemDetail;
-  revealedValue: string | null;
+  revealedPayload: ItemPayload | null;
   revealing: boolean;
   onReveal: () => void;
   onHide: () => void;
@@ -124,7 +209,7 @@ interface SecretValueCardProps {
  */
 export function SecretValueCard({
   item,
-  revealedValue,
+  revealedPayload,
   revealing,
   onReveal,
   onHide,
@@ -140,11 +225,9 @@ export function SecretValueCard({
         </p>
       </div>
 
-      {revealedValue !== null ? (
-        <div className="flex flex-col gap-3">
-          <pre className="rounded-md border border-border bg-muted p-3 text-sm whitespace-pre-wrap break-all">
-            {revealedValue}
-          </pre>
+      {revealedPayload !== null ? (
+        <div className="flex flex-col gap-4">
+          <RevealedFields payload={revealedPayload} />
           <div>
             <Button variant="outline" size="sm" onClick={onHide}>
               Hide
@@ -190,7 +273,7 @@ export function ItemSecretSection({
     return (
       <SecretValueCard
         item={item}
-        revealedValue={reveal.revealedValue}
+        revealedPayload={reveal.revealedPayload}
         revealing={reveal.revealing}
         onReveal={reveal.reveal}
         onHide={reveal.hide}
