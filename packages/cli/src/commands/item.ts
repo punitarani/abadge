@@ -282,8 +282,10 @@ export function createItemCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (id: string, opts: UpdateItemOptions) => {
       try {
-        const { label, kind, value } = await readUpdateItemValues(opts);
+        // Resolve auth first (matches `item add`) so a missing session fails fast,
+        // before the interactive prompts run or piped stdin is drained.
         const client = await createUserApiClient();
+        const { label, kind, value } = await readUpdateItemValues(opts);
         const currentItem = (await client.items.get(id)).item;
         const payload = buildPayload(label, value, kind);
         let result: { ok: boolean; contentVersion: number };
