@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       # AB-0101/AB-0104 — blocking gate: fail on any high/critical advisory that
-      # is not in .audit-allowlist.toml. Each allowlist entry carries a
+      # is not in audit-allowlist.toml. Each allowlist entry carries a
       # justification and an expiry; an expired entry also fails the build, so
       # suppressions can't become permanent. See scripts/ci/audit-check.ts.
       - name: Audit dependencies (high/critical)

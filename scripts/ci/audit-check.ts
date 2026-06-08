@@ -3,7 +3,7 @@
  * Dependency-audit gate (§AB-0104).
  *
  * Parses `bun audit --json` and fails on any high/critical advisory that is not
- * listed in `.audit-allowlist.toml`, so a newly introduced advisory blocks CI.
+ * listed in `audit-allowlist.toml`, so a newly introduced advisory blocks CI.
  * It also fails if any allowlist entry has passed its `expires` date, forcing
  * periodic re-triage instead of letting a suppression become permanent.
  *
@@ -13,7 +13,7 @@
  * releases, whereas `--json` and the advisory schema are stable.
  */
 import process from "node:process";
-import allowlist from "../../.audit-allowlist.toml";
+import allowlist from "../../audit-allowlist.toml";
 
 interface IgnoreEntry {
   id: string;
@@ -37,12 +37,12 @@ const now = Date.now();
 const expired = entries.filter((entry) => {
   const at = Date.parse(entry.expires);
   if (Number.isNaN(at)) {
-    throw new Error(`Invalid 'expires' for ${entry.id} in .audit-allowlist.toml: ${entry.expires}`);
+    throw new Error(`Invalid 'expires' for ${entry.id} in audit-allowlist.toml: ${entry.expires}`);
   }
   return at < now;
 });
 if (expired.length > 0) {
-  console.error("✗ Expired audit-allowlist entries — re-triage and update .audit-allowlist.toml:");
+  console.error("✗ Expired audit-allowlist entries — re-triage and update audit-allowlist.toml:");
   for (const entry of expired) {
     console.error(`    ${entry.id} (${entry.package}) expired ${entry.expires}`);
   }
@@ -87,7 +87,7 @@ if (blocking.length > 0) {
     console.error(`    ${adv.severity.toUpperCase()} ${adv.pkg} ${adv.id} — ${adv.title}`);
   }
   console.error(
-    "\nUpgrade the dependency, or add a justified, expiring entry to .audit-allowlist.toml.",
+    "\nUpgrade the dependency, or add a justified, expiring entry to audit-allowlist.toml.",
   );
   process.exit(1);
 }
