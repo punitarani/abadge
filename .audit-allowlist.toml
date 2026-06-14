@@ -14,3 +14,9 @@ id = "GHSA-r5fr-rjxr-66jc"
 package = "lodash"
 reason = "Dev-only and not exploitable in our usage. lodash 4.17.21 is pinned exactly by chevrotain, reachable only via @better-auth/cli — a devDependency / schema-migration tool that is never bundled into the api, web, cli, or mcp artifacts. The _.template code-injection vector requires calling _.template with attacker-controlled key names, which this codebase never does. No upgrade path exists: 4.17.21 is lodash's latest published release."
 expires = "2026-08-24"
+
+[[ignore]]
+id = "GHSA-gv7w-rqvm-qjhr"
+package = "esbuild"
+reason = "Not exploitable in our usage: the advisory is a Deno-only install-path vector (missing binary integrity verification when Deno fetches esbuild's native binary via NPM_CONFIG_REGISTRY). This is a Bun/Node monorepo with no Deno install path. The flagged esbuild@0.18.20 is a dev-time transitive dependency via drizzle-kit@0.31.10 -> @esbuild-kit/esm-loader -> @esbuild-kit/core-utils (which pins esbuild ~0.18.20), used only by the schema-migration toolchain and never bundled into the api, web, cli, or mcp runtime artifacts. No clean direct upgrade: @esbuild-kit/core-utils is deprecated and pins ~0.18.20; removing 0.18.20 at the source requires drizzle-kit to drop its legacy loader. Re-triage at expiry by bumping drizzle-kit or forcing an esbuild override once compatible."
+expires = "2026-09-14"
