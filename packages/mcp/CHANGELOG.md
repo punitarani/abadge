@@ -1,5 +1,12 @@
 # @abadge/mcp
 
+## 0.0.7
+
+### Patch Changes
+
+- 49e9a08: Internal: remove the `as Parameters<typeof betterAuth>[0]["database"]` casts from the `@abadge/trpc` better-auth test helpers (added in #244). The casts worked around a duplicate `@better-auth/core@1.5.6` install whose nominally-incompatible `BetterAuthOptions` broke `tsc`. The duplication was driven by a stale `kysely@0.28.15` copy lingering in `node_modules` (a `--frozen` install never purges extraneous dirs) — the lockfile already pins a single `kysely@0.28.17` via the existing root `overrides`, so a clean install collapses the duplicate and `tsc` unifies the adapter with the `database` field directly. No source/runtime change; `bun run typecheck` is 14/14 without the casts.
+- ea123f8: Internal: fix a latent type error in the `@abadge/trpc` test helpers. `better-auth` is a phantom dependency there (declared by `@abadge/auth`, not `@abadge/trpc`), so `betterAuth` and `drizzleAdapter` instantiated incompatible `BetterAuthOptions` and the adapter no longer unified with the `database` field after the better-auth 1.5.6 bump. CI was masking this via a stale Turbo typecheck cache; a fresh `turbo typecheck` failed. Anchored the cast to the `database` field type at both call sites (runtime usage matches `@abadge/auth`'s production wiring). No runtime change.
+
 ## 0.0.6
 
 ### Patch Changes

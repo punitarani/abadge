@@ -1,5 +1,13 @@
 # @abadge/cli
 
+## 0.0.12
+
+### Patch Changes
+
+- 779ca66: `item update` is now scriptable: added `--label`/`--name`, `--kind`, and `--value` flags (mirroring `item add`, including the `--value` TTY-rejection guard). Previously the Label/Kind prompts used readline, which buffers all piped stdin and starved the value read, so `item update` could not be driven non-interactively (it errored "Label, kind, and value are required"). Supplying `--label`/`--kind` now bypasses the prompts so a piped value reaches `readSecretValue` (or pass `--value` from a non-interactive shell).
+- 49e9a08: Internal: remove the `as Parameters<typeof betterAuth>[0]["database"]` casts from the `@abadge/trpc` better-auth test helpers (added in #244). The casts worked around a duplicate `@better-auth/core@1.5.6` install whose nominally-incompatible `BetterAuthOptions` broke `tsc`. The duplication was driven by a stale `kysely@0.28.15` copy lingering in `node_modules` (a `--frozen` install never purges extraneous dirs) — the lockfile already pins a single `kysely@0.28.17` via the existing root `overrides`, so a clean install collapses the duplicate and `tsc` unifies the adapter with the `database` field directly. No source/runtime change; `bun run typecheck` is 14/14 without the casts.
+- ea123f8: Internal: fix a latent type error in the `@abadge/trpc` test helpers. `better-auth` is a phantom dependency there (declared by `@abadge/auth`, not `@abadge/trpc`), so `betterAuth` and `drizzleAdapter` instantiated incompatible `BetterAuthOptions` and the adapter no longer unified with the `database` field after the better-auth 1.5.6 bump. CI was masking this via a stale Turbo typecheck cache; a fresh `turbo typecheck` failed. Anchored the cast to the `database` field type at both call sites (runtime usage matches `@abadge/auth`'s production wiring). No runtime change.
+
 ## 0.0.11
 
 ### Patch Changes
